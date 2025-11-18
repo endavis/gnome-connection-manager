@@ -3000,6 +3000,11 @@ class Wconfig(SimpleGladeApp):
                 self.treeModel2.append(None, [ s[1], s[0] ])
 
         self.treeModel2.append(None, [ '', '' ])
+
+        # Connect signal handlers for color buttons and default colors checkbox
+        self.btnFColor.connect('color-set', self.on_btnFColor_color_set)
+        self.btnBColor.connect('color-set', self.on_btnBColor_color_set)
+        self.chkDefaultColors.connect('toggled', self.on_chkDefaultColors_toggled)
     #-- Wconfig.new }
 
     #-- Wconfig custom methods {
@@ -3137,15 +3142,15 @@ class Wconfig(SimpleGladeApp):
         self.get_widget("wConfig").destroy()
     #-- Wconfig.on_okbutton1_clicked }
 
-    #-- Wconfig.on_btnBColor_clicked {
-    def on_btnBColor_clicked(self, widget, *args):
-        widget.selected_color = widget.get_color().to_string()
-    #-- Wconfig.on_btnBColor_clicked }
+    #-- Wconfig.on_btnBColor_color_set {
+    def on_btnBColor_color_set(self, widget, *args):
+        widget.selected_color = widget.get_rgba().to_string()
+    #-- Wconfig.on_btnBColor_color_set }
 
-    #-- Wconfig.on_btnFColor_clicked {
-    def on_btnFColor_clicked(self, widget, *args):
-        widget.selected_color = widget.get_color().to_string()
-    #-- Wconfig.on_btnFColor_clicked }
+    #-- Wconfig.on_btnFColor_color_set {
+    def on_btnFColor_color_set(self, widget, *args):
+        widget.selected_color = widget.get_rgba().to_string()
+    #-- Wconfig.on_btnFColor_color_set }
 
     #-- Wconfig.on_chkDefaultColors_toggled {
     def on_chkDefaultColors_toggled(self, widget, *args):
