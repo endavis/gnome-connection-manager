@@ -142,6 +142,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="receives-default">False</property>
+                        <signal name="clicked" handler="on_btnAll_clicked" swapped="no"/>
                         <child>
                           <object class="GtkAlignment" id="alignment11">
                             <property name="visible">True</property>
@@ -202,6 +203,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="receives-default">False</property>
+                        <signal name="clicked" handler="on_btnNone_clicked" swapped="no"/>
                         <child>
                           <object class="GtkAlignment" id="alignment12">
                             <property name="visible">True</property>
@@ -262,6 +264,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="receives-default">False</property>
+                        <signal name="clicked" handler="on_btnInvert_clicked" swapped="no"/>
                         <child>
                           <object class="GtkAlignment" id="alignment13">
                             <property name="visible">True</property>
