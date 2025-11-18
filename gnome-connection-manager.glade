@@ -736,6 +736,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="use-underline">True</property>
                     <property name="active">True</property>
                     <property name="draw-indicator">True</property>
+                    <signal name="toggled" handler="on_chkDefaultColors_toggled" swapped="no"/>
                   </object>
                   <packing>
                     <property name="right-attach">2</property>

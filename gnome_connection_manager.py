@@ -220,21 +220,55 @@ def inputbox(title, text, default='', password=False):
     msgBox.destroy()
     return response
 
+def apply_font_to_widget(widget, font_desc):
+    """Apply a Pango FontDescription to a widget using CSS"""
+    css_provider = Gtk.CssProvider()
+    family = font_desc.get_family()
+    size = font_desc.get_size() / Pango.SCALE  # Convert from Pango units to points
+
+    # Build CSS font specification
+    css_parts = []
+
+    # Font style (italic, oblique)
+    style = font_desc.get_style()
+    if style == Pango.Style.ITALIC:
+        css_parts.append("font-style: italic;")
+    elif style == Pango.Style.OBLIQUE:
+        css_parts.append("font-style: oblique;")
+
+    # Font weight
+    weight = font_desc.get_weight()
+    if weight != Pango.Weight.NORMAL:
+        css_parts.append("font-weight: {};".format(int(weight)))
+
+    # Font family and size
+    css_parts.append("font-family: '{}';".format(family))
+    css_parts.append("font-size: {}pt;".format(size))
+
+    css_data = "* {{ {} }}".format(" ".join(css_parts))
+    css_provider.load_from_data(css_data.encode())
+    context = widget.get_style_context()
+    context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
 def show_font_dialog(parent, title, button):
     if not hasattr(parent, 'dlgFont'):
         parent.dlgFont = None
 
     if parent.dlgFont == None:
-        parent.dlgFont = Gtk.FontSelectionDialog(title)
-    fontsel = parent.dlgFont.get_font_selection()
-    fontsel.set_font_name(button.selected_font.to_string())
+        # Get the actual window widget for transient_for
+        parent_window = parent.main_widget if hasattr(parent, 'main_widget') else None
+        parent.dlgFont = Gtk.FontChooserDialog(title=title, parent=parent_window)
+    parent.dlgFont.set_font(button.selected_font.to_string())
 
     response = parent.dlgFont.run()
 
     if response == Gtk.ResponseType.OK:
-        button.selected_font = Pango.FontDescription(fontsel.get_font_name())
+        font_desc = parent.dlgFont.get_font_desc()
+        button.selected_font = font_desc
         button.set_label(button.selected_font.to_string())
-        button.get_children()[0].override_font(button.selected_font)
+        # Apply font using CSS
+        label = button.get_children()[0]
+        apply_font_to_widget(label, font_desc)
     parent.dlgFont.hide()
 
 def show_open_dialog(parent, title, action):
@@ -539,8 +573,6 @@ class Wmain(SimpleGladeApp):
     #-- Wmain.new {
     def new(self):
         self.hpMain = self.get_widget("hpMain")
-        self.hpMainWindow = Gtk.Window()
-        self.hpMainWindow.add(self.hpMain)
         self.wMainWindow = self.builder.get_object("wMain")
         self.nbConsole = self.get_widget("nbConsole")
         self.treeServers = self.get_widget("treeServers")
@@ -639,7 +671,6 @@ class Wmain(SimpleGladeApp):
                         ntbk.next_page()
                 elif cmd == _FULLSCREEN:
                     if self._current_fullscreen_state:
-                        Gtk.Window.unfullscreen(self.hpMainWindow)
                         Gtk.Window.unfullscreen(self.wMainWindow)
                         self.wMainWindow.set_decorated(True)
                         self.wMainWindow.set_has_resize_grip(True)
@@ -647,7 +678,6 @@ class Wmain(SimpleGladeApp):
                         self.get_widget("contextMenu").show()
                         self._current_fullscreen_state = False
                     else:
-                        Gtk.Window.fullscreen(self.hpMainWindow)
                         self.wMainWindow.set_decorated(False)
                         self.wMainWindow.set_has_resize_grip(False)
                         Gtk.Window.fullscreen(self.wMainWindow)
@@ -2867,6 +2897,8 @@ class Wconfig(SimpleGladeApp):
         self.btnBColor = self.get_widget("btnBColor1")
         self.btnFont = self.get_widget("btnFont")
         self.lblFont = self.get_widget("lblFont")
+        self.chkDefaultFont = self.get_widget("chkDefaultFont")
+        self.chkDefaultColors = self.get_widget("chkDefaultColors1")
         self.treeCmd = self.get_widget("treeCommands")
         self.treeCustom = self.get_widget("treeCustom")
         self.dlgColor = None
@@ -2894,13 +2926,13 @@ class Wconfig(SimpleGladeApp):
         self.addParam(_(u"Título"), "conf.APP_TITLE", str)
 
         if len(conf.FONT_COLOR)==0:
-            self.get_widget("chkDefaultColors1").set_active(True)
+            self.chkDefaultColors.set_active(True)
             self.btnFColor.set_sensitive(False)
             self.btnBColor.set_sensitive(False)
             fcolor=DEFAULT_FGCOLOR
             bcolor=DEFAULT_BGCOLOR
         else:
-            self.get_widget("chkDefaultColors1").set_active(False)
+            self.chkDefaultColors.set_active(False)
             self.btnFColor.set_sensitive(True)
             self.btnBColor.set_sensitive(True)
             fcolor=conf.FONT_COLOR
@@ -2919,7 +2951,9 @@ class Wconfig(SimpleGladeApp):
         self.btnFont.set_sensitive(not self.chkDefaultFont.get_active())
         self.btnFont.selected_font = Pango.FontDescription(conf.FONT)
         self.btnFont.set_label(self.btnFont.selected_font.to_string())
-        self.btnFont.get_children()[0].override_font(self.btnFont.selected_font)
+        # Apply font using CSS
+        label = self.btnFont.get_children()[0]
+        apply_font_to_widget(label, self.btnFont.selected_font)
 
         #commandos
         self.treeModel = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_STRING)
