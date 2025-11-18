@@ -518,7 +518,7 @@ class Wmain(SimpleGladeApp):
 
         #get window background color
         context = window.get_style_context()
-        color = context.get_background_color(Gtk.StateFlags.NORMAL)
+        color = context.get_property("background-color", Gtk.StateFlags.NORMAL)
 
         #set the background color to the same as the gtk theme, but with alpha 0.99999 (it looks opaque but allows to have transparent widgets)
         CSS = b"""
@@ -1605,7 +1605,7 @@ class Wmain(SimpleGladeApp):
         #custom method to get alternating row colors in treeview, as that is not possible with gtk3
         if not node:
             self.color_index = 0
-            rgba = self.treeServers.get_style_context().get_background_color(Gtk.StateFlags.NORMAL)
+            rgba = self.treeServers.get_style_context().get_property("background-color", Gtk.StateFlags.NORMAL)
             self.color_back1 = color_to_hex(rgba)
             self.color_back2 = color_to_hex(rgba, -14)
             i = self.treeModel.get_iter_first()
@@ -2906,8 +2906,8 @@ class Wconfig(SimpleGladeApp):
             fcolor=conf.FONT_COLOR
             bcolor=conf.BACK_COLOR
 
-        self.btnFColor.set_color(parse_color(fcolor))
-        self.btnBColor.set_color(parse_color(bcolor))
+        self.btnFColor.set_rgba(parse_color_rgba(fcolor))
+        self.btnBColor.set_rgba(parse_color_rgba(bcolor))
         self.btnFColor.selected_color=fcolor
         self.btnBColor.selected_color=bcolor
 
@@ -2977,7 +2977,8 @@ class Wconfig(SimpleGladeApp):
             obj = Gtk.CheckButton()
             obj.set_label(name)
             obj.set_active(value)
-            obj.set_alignment(0, 0.5)
+            obj.set_halign(Gtk.Align.START)
+            obj.set_valign(Gtk.Align.CENTER)
             obj.show()
             obj.field=field
             self.tblGeneral.attach(obj, 0, 2, x, x+1, Gtk.AttachOptions.EXPAND|Gtk.AttachOptions.FILL, 0)
@@ -2991,7 +2992,9 @@ class Wconfig(SimpleGladeApp):
             obj.show()
             obj.field=field
             lbl = Gtk.Label(label=name)
-            lbl.set_alignment(0, 0.5)
+            lbl.set_halign(Gtk.Align.START)
+
+            lbl.set_valign(Gtk.Align.CENTER)
             lbl.show()
             self.tblGeneral.attach(lbl, 0, 1, x, x+1, Gtk.AttachOptions.FILL, 0)
             self.tblGeneral.attach(obj, 1, 2, x, x+1, Gtk.AttachOptions.EXPAND|Gtk.AttachOptions.FILL, 0)
@@ -3003,7 +3006,9 @@ class Wconfig(SimpleGladeApp):
             obj.show()
             obj.field=field
             lbl = Gtk.Label(label=name)
-            lbl.set_alignment(0, 0.5)
+            lbl.set_halign(Gtk.Align.START)
+
+            lbl.set_valign(Gtk.Align.CENTER)
             lbl.show()
             self.tblGeneral.attach(lbl, 0, 1, x, x+1, Gtk.AttachOptions.FILL, 0)
             self.tblGeneral.attach(obj, 1, 2, x, x+1, Gtk.AttachOptions.EXPAND|Gtk.AttachOptions.FILL, 0)
@@ -3013,7 +3018,9 @@ class Wconfig(SimpleGladeApp):
             obj.show()
             obj.field=field
             lbl = Gtk.Label(label=name)
-            lbl.set_alignment(0, 0.5)
+            lbl.set_halign(Gtk.Align.START)
+
+            lbl.set_valign(Gtk.Align.CENTER)
             lbl.show()
             self.tblGeneral.attach(lbl, 0, 1, x, x+1, Gtk.AttachOptions.FILL, 0)
             self.tblGeneral.attach(obj, 1, 2, x, x+1, Gtk.AttachOptions.EXPAND|Gtk.AttachOptions.FILL, 0)
