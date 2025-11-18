@@ -3205,7 +3205,11 @@ class Wcluster(SimpleGladeApp):
         col = Gtk.TreeViewColumn(_("Activar"), crt, active=0)
         self.treeHosts.append_column( col )
         self.treeHosts.append_column(Gtk.TreeViewColumn(_("Host"), Gtk.CellRendererText(), text=1 ))
-        self.get_widget("txtCommands1").history = []
+
+        # Connect key-press-event signal to handle Enter key for sending commands
+        txtCommands = self.get_widget("txtCommands1")
+        txtCommands.history = []
+        txtCommands.connect('key-press-event', self.on_txtCommands_key_press_event)
     #-- Wcluster.new }
 
     #-- Wcluster custom methods {
