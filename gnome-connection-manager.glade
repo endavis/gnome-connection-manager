@@ -752,6 +752,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="use-underline">True</property>
                     <property name="active">True</property>
                     <property name="draw-indicator">True</property>
+                    <signal name="toggled" handler="on_chkDefaultFont_toggled" swapped="no"/>
                   </object>
                   <packing>
                     <property name="right-attach">2</property>
@@ -786,6 +787,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
                     <property name="use-underline">True</property>
+                    <signal name="clicked" handler="on_btnFont_clicked" swapped="no"/>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
