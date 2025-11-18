@@ -3151,6 +3151,9 @@ class Wcluster(SimpleGladeApp):
 
     #-- Wcluster.new {
     def new(self):
+        # Connect destroy signal to ensure tabs are deselected when window closes
+        self.get_widget('wCluster').connect('destroy', self.on_wCluster_destroy)
+
         self.treeHosts = self.get_widget('treeHosts')
         self.treeStore = Gtk.TreeStore( GObject.TYPE_BOOLEAN, GObject.TYPE_STRING, GObject.TYPE_OBJECT )
         for x in self.terms:
@@ -3174,19 +3177,36 @@ class Wcluster(SimpleGladeApp):
         self.change_color(self.treeStore[path][2], self.treeStore[path][0])
 
     def change_color(self, term, activate):
-        obj = term.get_parent()
-        if obj == None:
-            return
-        nb = obj.get_parent()
-        if nb == None:
-            return
-        nb.get_tab_label(obj).set_selected(activate)
+        try:
+            obj = term.get_parent()
+            if obj == None:
+                return
+            nb = obj.get_parent()
+            if nb == None:
+                return
+            tab_label = nb.get_tab_label(obj)
+            if tab_label and hasattr(tab_label, 'set_selected'):
+                tab_label.set_selected(activate)
+        except:
+            pass  # Silently handle errors if tab no longer exists
 
     #-- Wcluster custom methods }
 
     #-- Wcluster.on_wCluster_destroy {
     def on_wCluster_destroy(self, widget, *args):
-        self.on_btnNone_clicked(None)
+        # Ensure all tabs are deselected when cluster window closes
+        try:
+            self.on_btnNone_clicked(None)
+        except:
+            pass
+
+        # Fallback: directly iterate through original terms list
+        if hasattr(self, 'terms'):
+            for title, term in self.terms:
+                try:
+                    self.change_color(term, False)
+                except:
+                    pass
     #-- Wcluster.on_wCluster_destroy }
 
     #-- Wcluster.on_cancelbutton2_clicked {
