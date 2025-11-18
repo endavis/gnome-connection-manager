@@ -135,7 +135,16 @@ class SimpleGladeApp(object):
             # this would mess stuff up
             # self.main_widget = self.builder.get_object("window-root")
             self.main_widget = self.builder.get_object(root)
+            # Set transient parent for dialogs/windows to fix Wayland positioning
+            if parent and isinstance(self.main_widget, (Gtk.Window, Gtk.Dialog)):
+                self.main_widget.set_transient_for(parent)
             self.main_widget.show_all()
+            # Ensure dialog is properly presented for Wayland popup parenting
+            if isinstance(self.main_widget, (Gtk.Window, Gtk.Dialog)):
+                self.main_widget.present()
+                # Process pending events to ensure window is fully mapped
+                while Gtk.events_pending():
+                    Gtk.main_iteration()
         else:
             self.builder.add_from_file(self.glade_path)
             self.main_widget = None

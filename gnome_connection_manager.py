@@ -210,8 +210,8 @@ def msgconfirm(text):
     return response
 
 
-def inputbox(title, text, default='', password=False):
-    msgBox = EntryDialog(title, text, default, mask=password)
+def inputbox(title, text, default='', password=False, parent=None):
+    msgBox = EntryDialog(title, text, default, mask=password, parent=parent)
     msgBox.set_icon_from_file(ICON_PATH)
     if msgBox.run() == Gtk.ResponseType.OK:
         response = msgBox.value
@@ -598,7 +598,11 @@ class Wmain(SimpleGladeApp):
                 self.popupMenu.mnuCopy.set_sensitive(widget.get_has_selection())
                 self.popupMenu.mnuLog.set_active( hasattr(widget, "log_handler_id") and widget.log_handler_id != 0 )
                 self.popupMenu.terminal = widget
-                self.popupMenu.popup( None, None, None, None, event.button, event.time)
+                # Use GTK3 method for Wayland compatibility
+                if hasattr(self.popupMenu, 'popup_at_pointer'):
+                    self.popupMenu.popup_at_pointer(event)
+                else:
+                    self.popupMenu.popup( None, None, None, None, event.button, event.time)
 
             # enable/disable split menu
             nb = widget.get_parent().get_parent()
@@ -860,7 +864,7 @@ class Wmain(SimpleGladeApp):
                 self.writeConfig()
             return True
         elif item == 'R': #RENAME TAB
-            text = inputbox(_('Renombrar consola'), _('Ingrese nuevo nombre'), self.popupMenuTab.label.get_text().strip())
+            text = inputbox(_('Renombrar consola'), _('Ingrese nuevo nombre'), self.popupMenuTab.label.get_text().strip(), parent=self.window)
             if text != None and text != '':
                 self.popupMenuTab.label.set_text("  %s  " % (text))
                 nb = self.popupMenuTab.label.get_parent().get_parent().get_parent()
@@ -1980,7 +1984,7 @@ class Wmain(SimpleGladeApp):
     def on_importar_servidores1_activate(self, widget, *args):
         filename = show_open_dialog(parent=self.wMain, title=_("Abrir"), action=Gtk.FileChooserAction.OPEN)
         if filename != None:
-            password = inputbox(_('Importar Servidores'), _('Ingrese clave: '), password=True)
+            password = inputbox(_('Importar Servidores'), _('Ingrese clave: '), password=True, parent=self.window)
             if password == None:
                 return
 
@@ -2022,7 +2026,7 @@ class Wmain(SimpleGladeApp):
     def on_exportar_servidores1_activate(self, widget, *args):
         filename = show_open_dialog(parent=self.wMain, title=_("Guardar como"), action=Gtk.FileChooserAction.SAVE)
         if filename != None:
-            password = inputbox(_('Exportar Servidores'), _('Ingrese clave: '), password=True)
+            password = inputbox(_('Exportar Servidores'), _('Ingrese clave: '), password=True, parent=self.window)
             if password == None:
                 return
 
@@ -2338,7 +2342,11 @@ class Wmain(SimpleGladeApp):
                 self.popupMenuFolder.mnuDel.show()
                 self.treeServers.grab_focus()
                 self.treeServers.set_cursor( path, col, 0)
-            self.popupMenuFolder.popup( None, None, None, None, event.button, event.time)
+            # Use GTK3 method for Wayland compatibility
+            if hasattr(self.popupMenuFolder, 'popup_at_pointer'):
+                self.popupMenuFolder.popup_at_pointer(event)
+            else:
+                self.popupMenuFolder.popup( None, None, None, None, event.button, event.time)
             return True
         else:
             return event.type == Gdk.EventType._2BUTTON_PRESS or event.type == Gdk.EventType._3BUTTON_PRESS
@@ -2834,7 +2842,7 @@ class Whost(SimpleGladeApp):
 
     #-- Whost.on_btnBColor_clicked {
     def on_btnBColor_clicked(self, widget, *args):
-        widget.selected_color = widget.get_color().to_string()
+        widget.selected_color = widget.get_rgba().to_string()
     #-- Whost.on_btnBColor_clicked }
 
     #-- Whost.on_chkDefaultColors_toggled {
@@ -2845,7 +2853,7 @@ class Whost(SimpleGladeApp):
 
     #-- Whost.on_btnFColor_clicked {
     def on_btnFColor_clicked(self, widget, *args):
-        widget.selected_color = widget.get_color().to_string()
+        widget.selected_color = widget.get_rgba().to_string()
     #-- Whost.on_btnFColor_clicked }
 
     #-- Whost.on_btnBrowse_clicked {
@@ -3397,9 +3405,13 @@ class NotebookTabLabel(Gtk.HBox):
                 self.popup.mnuSplitH.hide()
                 self.popup.mnuSplitV.hide()
 
-            #enable or disable log checkbox according to terminal 
+            #enable or disable log checkbox according to terminal
             self.popup.mnuLog.set_active( hasattr(self.widget_.get_children()[0], "log_handler_id") and self.widget_.get_children()[0].log_handler_id != 0 )
-            self.popup.popup( None, None, None, None, event.button, event.time)
+            # Use GTK3 method for Wayland compatibility
+            if hasattr(self.popup, 'popup_at_pointer'):
+                self.popup.popup_at_pointer(event)
+            else:
+                self.popup.popup( None, None, None, None, event.button, event.time)
             return True
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 2:
             if conf.CONFIRM_ON_CLOSE_TAB_MIDDLE and msgconfirm("%s [%s]?" % ( _("Cerrar consola"), self.label.get_text().strip()) ) != Gtk.ResponseType.OK:
@@ -3407,8 +3419,8 @@ class NotebookTabLabel(Gtk.HBox):
             self.close_tab(self.widget_)
 
 class EntryDialog( Gtk.Dialog):
-    def __init__(self, title, message, default_text='', modal=True, mask=False):
-        Gtk.Dialog.__init__(self)
+    def __init__(self, title, message, default_text='', modal=True, mask=False, parent=None):
+        Gtk.Dialog.__init__(self, transient_for=parent)
         self.set_title(title)
         self.connect("destroy", self.quit)
         self.connect("delete_event", self.quit)
