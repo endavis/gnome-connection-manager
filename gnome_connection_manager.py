@@ -598,11 +598,48 @@ class Wmain(SimpleGladeApp):
                 self.popupMenu.mnuCopy.set_sensitive(widget.get_has_selection())
                 self.popupMenu.mnuLog.set_active( hasattr(widget, "log_handler_id") and widget.log_handler_id != 0 )
                 self.popupMenu.terminal = widget
-                # Use GTK3 method for Wayland compatibility
-                if hasattr(self.popupMenu, 'popup_at_pointer'):
-                    self.popupMenu.popup_at_pointer(event)
+                # Use popup_at_rect with manual position calculation for proper placement
+                if hasattr(self.popupMenu, 'popup_at_rect'):
+                    # Create a rectangle at the click position
+                    rect = Gdk.Rectangle()
+                    rect.x = int(event.x)
+                    rect.y = int(event.y)
+                    rect.width = 1
+                    rect.height = 1
+
+                    window = widget.get_window()
+
+                    # Calculate position to determine if we need to flip
+                    display = widget.get_display()
+                    monitor = display.get_monitor_at_window(window)
+                    workarea = monitor.get_workarea()
+                    abs_x, abs_y = window.get_root_coords(rect.x, rect.y)
+
+                    # Get menu size - use estimate since actual size isn't known until shown
+                    menu_height = 250
+
+                    # Determine gravity based on available space
+                    margin = 50
+                    if abs_y + menu_height + margin > workarea.y + workarea.height:
+                        # Not enough space below - position menu above
+                        rect_anchor = Gdk.Gravity.NORTH_WEST
+                        menu_anchor = Gdk.Gravity.SOUTH_WEST
+                    else:
+                        # Enough space below - position menu below
+                        rect_anchor = Gdk.Gravity.SOUTH_WEST
+                        menu_anchor = Gdk.Gravity.NORTH_WEST
+
+                    # Popup at rect with calculated gravity
+                    self.popupMenu.popup_at_rect(
+                        window,
+                        rect,
+                        rect_anchor,
+                        menu_anchor,
+                        event
+                    )
                 else:
-                    self.popupMenu.popup( None, None, None, None, event.button, event.time)
+                    # Fallback for older GTK
+                    self.popupMenu.popup(None, None, None, None, event.button, event.time)
 
             # enable/disable split menu
             nb = widget.get_parent().get_parent()
@@ -2342,11 +2379,56 @@ class Wmain(SimpleGladeApp):
                 self.popupMenuFolder.mnuDel.show()
                 self.treeServers.grab_focus()
                 self.treeServers.set_cursor( path, col, 0)
-            # Use GTK3 method for Wayland compatibility
-            if hasattr(self.popupMenuFolder, 'popup_at_pointer'):
-                self.popupMenuFolder.popup_at_pointer(event)
+            # Use popup_at_rect with manual position calculation for proper placement
+            if hasattr(self.popupMenuFolder, 'popup_at_rect'):
+                # Get the cell rectangle for proper positioning
+                if pthinfo is not None:
+                    path, col, cellx, celly = pthinfo
+                    rect = self.treeServers.get_cell_area(path, col)
+                else:
+                    rect = Gdk.Rectangle()
+                    rect.x = int(event.x)
+                    rect.y = int(event.y)
+                    rect.width = 1
+                    rect.height = 1
+
+                window = self.treeServers.get_window()
+
+                # Calculate position to determine if we need to flip
+                display = self.treeServers.get_display()
+                monitor = display.get_monitor_at_window(window)
+                workarea = monitor.get_workarea()
+                abs_x, abs_y = window.get_root_coords(rect.x, rect.y)
+
+                # Get menu size - use estimate since actual size isn't known until shown
+                # Using 250px is a reasonable estimate for typical context menus
+                menu_height = 250
+
+                # Determine gravity based on available space
+                margin = 50  # Increased margin for better clearance
+                menu_bottom = abs_y + rect.height + menu_height
+                workarea_bottom = workarea.y + workarea.height
+
+                if menu_bottom + margin > workarea_bottom:
+                    # Not enough space below - position menu above
+                    rect_anchor = Gdk.Gravity.NORTH_WEST
+                    menu_anchor = Gdk.Gravity.SOUTH_WEST
+                else:
+                    # Enough space below - position menu below
+                    rect_anchor = Gdk.Gravity.SOUTH_WEST
+                    menu_anchor = Gdk.Gravity.NORTH_WEST
+
+                # Popup at rect with calculated gravity
+                self.popupMenuFolder.popup_at_rect(
+                    window,
+                    rect,
+                    rect_anchor,
+                    menu_anchor,
+                    event
+                )
             else:
-                self.popupMenuFolder.popup( None, None, None, None, event.button, event.time)
+                # Fallback for older GTK
+                self.popupMenuFolder.popup(None, None, None, None, event.button, event.time)
             return True
         else:
             return event.type == Gdk.EventType._2BUTTON_PRESS or event.type == Gdk.EventType._3BUTTON_PRESS
@@ -3407,11 +3489,48 @@ class NotebookTabLabel(Gtk.HBox):
 
             #enable or disable log checkbox according to terminal
             self.popup.mnuLog.set_active( hasattr(self.widget_.get_children()[0], "log_handler_id") and self.widget_.get_children()[0].log_handler_id != 0 )
-            # Use GTK3 method for Wayland compatibility
-            if hasattr(self.popup, 'popup_at_pointer'):
-                self.popup.popup_at_pointer(event)
+            # Use popup_at_rect with manual position calculation for proper placement
+            if hasattr(self.popup, 'popup_at_rect'):
+                # Create a rectangle at the click position
+                rect = Gdk.Rectangle()
+                rect.x = int(event.x)
+                rect.y = int(event.y)
+                rect.width = 1
+                rect.height = 1
+
+                window = widget.get_window()
+
+                # Calculate position to determine if we need to flip
+                display = widget.get_display()
+                monitor = display.get_monitor_at_window(window)
+                workarea = monitor.get_workarea()
+                abs_x, abs_y = window.get_root_coords(rect.x, rect.y)
+
+                # Get menu size - use estimate since actual size isn't known until shown
+                menu_height = 250
+
+                # Determine gravity based on available space
+                margin = 50
+                if abs_y + menu_height + margin > workarea.y + workarea.height:
+                    # Not enough space below - position menu above
+                    rect_anchor = Gdk.Gravity.NORTH_WEST
+                    menu_anchor = Gdk.Gravity.SOUTH_WEST
+                else:
+                    # Enough space below - position menu below
+                    rect_anchor = Gdk.Gravity.SOUTH_WEST
+                    menu_anchor = Gdk.Gravity.NORTH_WEST
+
+                # Popup at rect with calculated gravity
+                self.popup.popup_at_rect(
+                    window,
+                    rect,
+                    rect_anchor,
+                    menu_anchor,
+                    event
+                )
             else:
-                self.popup.popup( None, None, None, None, event.button, event.time)
+                # Fallback for older GTK
+                self.popup.popup(None, None, None, None, event.button, event.time)
             return True
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 2:
             if conf.CONFIRM_ON_CLOSE_TAB_MIDDLE and msgconfirm("%s [%s]?" % ( _("Cerrar consola"), self.label.get_text().strip()) ) != Gtk.ResponseType.OK:
