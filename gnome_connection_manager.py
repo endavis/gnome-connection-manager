@@ -1181,7 +1181,10 @@ class Wmain(SimpleGladeApp):
     def on_contents_changed(self, terminal):
         col,row = terminal.get_cursor_position()
         if terminal.last_logged_row != row:
-            text,b = terminal.get_text_range(terminal.last_logged_row, terminal.last_logged_col, row, col, None, None)
+            if Vte.get_minor_version() < 72:
+                text,b = terminal.get_text_range(terminal.last_logged_row, terminal.last_logged_col, row, col, None, None)
+            else:
+                text,b = terminal.get_text_range_format(Vte.Format.TEXT, terminal.last_logged_row, terminal.last_logged_col, row, col)
             terminal.last_logged_row = row
             terminal.last_logged_col = col
             terminal.log.write(text[:-1])
