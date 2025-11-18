@@ -54,9 +54,10 @@ try:
     import gi
     gi.require_version('Gtk', '3.0')
     gi.require_version('Vte', '2.91')
-    from gi.repository import Gtk, Gdk, Vte, Pango, GObject, GLib
+    from gi.repository import Gtk, Gdk, Vte, Pango, GObject, GdkPixbuf, GLib
 except:
-    sys.exit("python3-gi and gir1.2-vte-2.91 required")
+    print >> sys.stderr, "python3-gi required"
+    sys.exit(1)
 
 #check Terminal version
 TERMINAL_V048 = 'spawn_async' in Vte.Terminal.__dict__
