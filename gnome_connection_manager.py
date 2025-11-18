@@ -234,7 +234,7 @@ def show_font_dialog(parent, title, button):
     if response == Gtk.ResponseType.OK:
         button.selected_font = Pango.FontDescription(fontsel.get_font_name())
         button.set_label(button.selected_font.to_string())
-        button.get_child().modify_font(button.selected_font)
+        button.get_children()[0].modify_font(button.selected_font)
     parent.dlgFont.hide()
 
 def show_open_dialog(parent, title, action):
@@ -1104,8 +1104,8 @@ class Wmain(SimpleGladeApp):
         menuItem = Gtk.MenuItem(label='')
         text = "[%s] %s" % (shortcut, label)
         attrs = Pango.parse_markup("<span foreground='blue'  size='x-small'>[%s]</span> %s" % (GLib.markup_escape_text(shortcut, -1), GLib.markup_escape_text(label, -1)), -1, "0")
-        menuItem.get_child().set_attributes(attrs[1])
-        menuItem.get_child().set_label(text)
+        menuItem.get_children()[0].set_attributes(attrs[1])
+        menuItem.get_children()[0].set_label(text)
         menuItem.show()
         return menuItem
 
@@ -2538,7 +2538,7 @@ class Whost(SimpleGladeApp):
 
     #-- Whost custom methods {
     def init(self, group, host=None):
-        self.cmbGroup.get_child().set_text(group)
+        self.cmbGroup.get_children()[0].set_text(group)
         if host == None:
             self.isNew = True
             return
@@ -2946,7 +2946,7 @@ class Wconfig(SimpleGladeApp):
         self.btnFont.set_sensitive(not self.chkDefaultFont.get_active())
         self.btnFont.selected_font = Pango.FontDescription(conf.FONT)
         self.btnFont.set_label(self.btnFont.selected_font.to_string())
-        self.btnFont.get_child().modify_font(self.btnFont.selected_font)
+        self.btnFont.get_children()[0].modify_font(self.btnFont.selected_font)
 
         #commandos
         self.treeModel = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_STRING)
@@ -3325,7 +3325,7 @@ class NotebookTabLabel(Gtk.HBox):
         self.is_active = False
         if conf.AUTO_CLOSE_TAB != 0:
             if conf.AUTO_CLOSE_TAB == 2:
-                terminal = self.widget_.get_parent().get_nth_page(self.widget_.get_parent().page_num(self.widget_)).get_child()
+                terminal = self.widget_.get_parent().get_nth_page(self.widget_.get_parent().page_num(self.widget_)).get_children()[0]
                 if terminal.get_child_exit_status() != 0:
                     return
             self.close_tab(self.widget_)
