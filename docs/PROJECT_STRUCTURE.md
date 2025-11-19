@@ -87,7 +87,7 @@ just fmt       # Format code
 **Ruff errors:** Reduced from 45 to 5 (89% improvement)
 
 #### Phase 2: Modernize (Future)
-- [ ] Convert to GtkApplication framework
+- [x] Convert to GtkApplication framework (single-instance `GcmApplication` with action handling)
 - [x] Replace SimpleGladeApp with direct GtkBuilder (`GladeComponent` helper inside `app.py`)
 - [ ] Add GAction/GMenu system
 - [ ] Proper logging instead of prints

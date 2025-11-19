@@ -683,22 +683,24 @@ class Wmain(GladeComponent):
             screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-        # Por cada parametro de la linea de comandos buscar el host y agregar un tab
-        for arg in sys.argv[1:]:
-            i = arg.rfind("/")
-            if i != -1:
-                group = arg[:i]
-                name = arg[i + 1 :]
-                if group != "" and name != "" and group in groups:
-                    for h in groups[group]:
-                        if h.name == name:
-                            self.addTab(self.nbConsole, h)
-                            break
-
         self.get_widget("txtSearch").set_placeholder_text(_("buscar..."))
 
         if conf.STARTUP_LOCAL:
             self.addTab(self.nbConsole, "local")
+
+    def open_cli_targets(self, args):
+        for arg in args:
+            i = arg.rfind("/")
+            if i == -1:
+                continue
+            group = arg[:i]
+            name = arg[i + 1 :]
+            if not group or not name or group not in groups:
+                continue
+            for host in groups[group]:
+                if host.name == name:
+                    self.addTab(self.nbConsole, host)
+                    break
 
     def update_visual(self):
         window = self.get_widget("wMain")
@@ -4401,9 +4403,10 @@ class GcmApplication(Gtk.Application):
     def __init__(self):
         super().__init__(
             application_id="com.kuthulu.GnomeConnectionManager",
-            flags=Gio.ApplicationFlags.FLAGS_NONE,
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self._controller = None
+        self._pending_cli = []
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -4477,6 +4480,16 @@ class GcmApplication(Gtk.Application):
         if isinstance(main_window, Gtk.Window):
             main_window.set_application(self)
             main_window.present()
+        if self._pending_cli:
+            self._controller.open_cli_targets(self._pending_cli)
+            self._pending_cli.clear()
+
+    def do_command_line(self, command_line):
+        arguments = command_line.get_arguments()[1:]
+        if arguments:
+            self._pending_cli.extend(arguments)
+        self.activate()
+        return 0
 
     def _on_action_quit(self, action, _param):
         if self._controller is not None:

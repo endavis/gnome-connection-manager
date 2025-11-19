@@ -152,7 +152,7 @@ This project is in the process of modernization:
    - ✅ Development tools configured (ruff, mypy, pytest)
    - 🔄 Gradual type hint addition
    - 📋 GTK4 migration (future)
-   - 📋 GtkApplication framework (future)
+   - ✅ GtkApplication framework (single-instance app + GActions)
 
 ## Useful Commands
 
