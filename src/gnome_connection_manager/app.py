@@ -121,7 +121,7 @@ assert (USERHOME_DIR is not None) and (USERHOME_DIR != ""), (
 )
 
 assert os.path.isdir(USERHOME_DIR), (
-    "FATAL: Could not locate home directory '{}' for the current user".format(USERHOME_DIR)
+    f"FATAL: Could not locate home directory '{USERHOME_DIR}' for the current user"
 )
 
 CONFIG_DIR = USERHOME_DIR + "/.gcm"
@@ -357,11 +357,7 @@ def parse_color(spec: str) -> Gdk.Color:
 
 def color_to_hex(rgba: Gdk.RGBA, diff: int = 0) -> str:
     """Convert Gdk.RGBA to hex color string."""
-    return "#{:x}{:x}{:x}".format(
-        int(rgba.red * 255 + diff),
-        int(rgba.green * 255 + diff),
-        int(rgba.blue * 255 + diff),
-    )
+    return f"#{int(rgba.red * 255 + diff):x}{int(rgba.green * 255 + diff):x}{int(rgba.blue * 255 + diff):x}"
 
 
 def get_key_name(event):
@@ -490,7 +486,7 @@ def vte_run(terminal, command, arg=None):
         if hasattr(terminal, "host") and terminal.host.term
         else conf.TERM or os.getenv("TERM") or DEFAULT_TERM_TYPE
     )
-    envv = ["PATH={}".format(os.getenv("PATH")), "TERM={}".format(term_type)]
+    envv = ["PATH={}".format(os.getenv("PATH")), f"TERM={term_type}"]
     args = []
     args.append(command)
     if arg:
@@ -741,9 +737,9 @@ class Wmain(SimpleGladeApp):
         ):
             url, tag = widget.match_check_event(event)
             if tag == widget.tag_url:
-                url = "http://{}".format(url)
+                url = f"http://{url}"
             elif tag == widget.tag_email and not url.startswith("mailto:"):
-                url = "mailto://{}".format(url)
+                url = f"mailto://{url}"
             url = url or widget.hyperlink_check_event(event)
             if url:
                 Gtk.show_uri(Gdk.Screen.get_default(), url, Gtk.get_current_event_time())
@@ -756,7 +752,7 @@ class Wmain(SimpleGladeApp):
         # if shortcuts.has_key(get_key_name(event)):
         if get_key_name(event) in shortcuts:
             cmd = shortcuts[get_key_name(event)]
-            if type(cmd) == list:
+            if isinstance(cmd, list):
                 # comandos predefinidos
                 if cmd == _COPY:
                     self.terminal_copy(widget)
@@ -997,11 +993,11 @@ class Wmain(SimpleGladeApp):
                 selected = self.treeServers.get_selection().get_selected()[1]
                 group = self.get_group(selected)
                 host = self.treeModel.get_value(selected, 1)
-                newname = "{} (copy)".format(host.name)
+                newname = f"{host.name} (copy)"
                 newhost = host.clone()
                 for h in groups[group]:
                     if h.name == newname:
-                        newname = "{} (copy)".format(newname)
+                        newname = f"{newname} (copy)"
                 newhost.name = newname
                 groups[group].append(newhost)
                 self.updateTree()
@@ -1015,7 +1011,7 @@ class Wmain(SimpleGladeApp):
                 parent=self.window,
             )
             if text is not None and text != "":
-                self.popupMenuTab.label.set_text("  {}  ".format(text))
+                self.popupMenuTab.label.set_text(f"  {text}  ")
                 nb = self.popupMenuTab.label.get_parent().get_parent().get_parent()
                 nb.emit(
                     "switch-page", nb.get_nth_page(nb.get_current_page()), nb.get_current_page()
@@ -1261,9 +1257,9 @@ class Wmain(SimpleGladeApp):
 
     def createMenuItem(self, shortcut, label):
         menuItem = Gtk.MenuItem(label="")
-        text = "[{}] {}".format(shortcut, label)
+        text = f"[{shortcut}] {label}"
         attrs = Pango.parse_markup(
-            "<span foreground='blue'  size='x-small'>[{}]</span> {}".format(GLib.markup_escape_text(shortcut, -1), GLib.markup_escape_text(label, -1)),
+            f"<span foreground='blue'  size='x-small'>[{GLib.markup_escape_text(shortcut, -1)}]</span> {GLib.markup_escape_text(label, -1)}",
             -1,
             "0",
         )
@@ -1276,7 +1272,7 @@ class Wmain(SimpleGladeApp):
         self.popupMenu.mnuCommands.foreach(lambda x: self.popupMenu.mnuCommands.remove(x))
         self.menuCustomCommands.foreach(lambda x: self.menuCustomCommands.remove(x))
         for x in shortcuts:
-            if type(shortcuts[x]) != list:
+            if not isinstance(shortcuts[x], list):
                 menuItem = self.createMenuItem(x, shortcuts[x][0:30])
                 self.popupMenu.mnuCommands.append(menuItem)
                 menuItem.connect("activate", self.on_popupmenu, "CP", shortcuts[x])
@@ -1477,7 +1473,7 @@ class Wmain(SimpleGladeApp):
             scrollPane.pack_start(scrollbar, False, False, 0)
 
             tab = NotebookTabLabel(
-                "  {}  ".format(host.name), self.nbConsole, scrollPane, self.popupMenuTab
+                f"  {host.name}  ", self.nbConsole, scrollPane, self.popupMenuTab
             )
 
             v.connect("child-exited", lambda *args: tab.mark_tab_as_closed())
@@ -1532,7 +1528,7 @@ class Wmain(SimpleGladeApp):
                         args = [SSH_COMMAND, host.type, "-l", host.user, "-p", host.port]
                     if host.keep_alive != "0" and host.keep_alive != "":
                         args.append("-o")
-                        args.append("ServerAliveInterval={}".format(host.keep_alive))
+                        args.append(f"ServerAliveInterval={host.keep_alive}")
                     for t in host.tunnel:
                         if t != "":
                             if t.endswith(":*:*"):
@@ -1549,7 +1545,7 @@ class Wmain(SimpleGladeApp):
                         args.append("-C")
                         if host.compressionLevel != "":
                             args.append("-o")
-                            args.append("CompressionLevel={}".format(host.compressionLevel))
+                            args.append(f"CompressionLevel={host.compressionLevel}")
                     if host.private_key is not None and host.private_key != "":
                         args.append("-i")
                         args.append(host.private_key)
@@ -1600,7 +1596,7 @@ class Wmain(SimpleGladeApp):
             msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
 
     def send_data(self, terminal, data):
-        vte_feed(terminal, "{}\r".format(data))
+        vte_feed(terminal, f"{data}\r")
         return False
 
     def initLeftPane(self):
@@ -1637,13 +1633,7 @@ class Wmain(SimpleGladeApp):
         if pos:
             host = list(widget.get_model()[pos[0]])[1]
             if host:
-                text = "<span><b>{}</b>\n{}:{}@{}\n</span><span size='smaller'>{}</span>".format(
-                    host.name,
-                    host.type,
-                    host.user,
-                    host.host,
-                    host.description,
-                )
+                text = f"<span><b>{host.name}</b>\n{host.type}:{host.user}@{host.host}\n</span><span size='smaller'>{host.description}</span>"
                 tooltip.set_markup(text)
                 return True
         return False
@@ -1923,7 +1913,7 @@ class Wmain(SimpleGladeApp):
         cp.add_section("shortcuts")
         i = 1
         for s in shortcuts:
-            if type(shortcuts[s]) == list:
+            if isinstance(shortcuts[s], list):
                 cp.set("shortcuts", shortcuts[s][0], s)
             else:
                 cp.set("shortcuts", f"shortcut{i}", s)
@@ -1993,7 +1983,7 @@ class Wmain(SimpleGladeApp):
             else:
                 tab_text = ""
             if tab_text:
-                self.wMain.set_title("{} - {}".format(conf.APP_TITLE or app_name, tab_text.strip()))
+                self.wMain.set_title(f"{conf.APP_TITLE or app_name} - {tab_text.strip()}")
             else:
                 self.wMain.set_title(conf.APP_TITLE or app_name)
 
@@ -2518,7 +2508,7 @@ class Wmain(SimpleGladeApp):
             if os.name == "nt":
                 os.filestart(f.name)
             elif os.name == "posix":
-                os.system("/usr/bin/xdg-open {}".format(f.name))
+                os.system(f"/usr/bin/xdg-open {f.name}")
 
     # -- Wmain.on_btnDonate_clicked }
 
@@ -2731,12 +2721,7 @@ class Host:
         return arg
 
     def __repr__(self):
-        return "group=[{}],\t name=[{}],\t host=[{}],\t type=[{}]".format(
-            self.group,
-            self.name,
-            self.host,
-            self.type,
-        )
+        return f"group=[{self.group}],\t name=[{self.name}],\t host=[{self.host}],\t type=[{self.type}]"
 
     def tunnel_as_string(self):
         return ",".join(self.tunnel)
@@ -2773,7 +2758,7 @@ class HostUtils:
     @staticmethod
     def get_val(cp, section, name, default):
         try:
-            return cp.get(section, name) if type(default) != bool else cp.getboolean(section, name)
+            return cp.get(section, name) if not isinstance(default, bool) else cp.getboolean(section, name)
         except:
             return default
 
@@ -3100,7 +3085,7 @@ class Whost(SimpleGladeApp):
 
         if ctype == "ssh":
             for x in self.treeModel:
-                tunnel = "{},{}".format(x[3], tunnel)
+                tunnel = f"{x[3]},{tunnel}"
             tunnel = tunnel[:-1]
 
         # Validar datos
@@ -3285,7 +3270,7 @@ class Whost(SimpleGladeApp):
                 msgbox(_("Puerto local ya fue asignado"))
                 return
 
-        tunel = self.treeModel.append([local, host, remote, "{}:{}:{}".format(local, host, remote)])
+        tunel = self.treeModel.append([local, host, remote, f"{local}:{host}:{remote}"])
 
     # -- Whost.on_btnAdd_clicked }
 
@@ -3484,10 +3469,10 @@ class Wconfig(SimpleGladeApp):
         slist = sorted(shortcuts.items(), key=lambda i: i[1][0])
 
         for s in slist:
-            if type(s[1]) == list:
+            if isinstance(s[1], list):
                 self.treeModel.append(None, [s[1][0], s[0]])
         for s in slist:
-            if type(s[1]) != list:
+            if not isinstance(s[1], list):
                 self.treeModel2.append(None, [s[1], s[0]])
 
         self.treeModel2.append(None, ["", ""])
@@ -3504,7 +3489,7 @@ class Wconfig(SimpleGladeApp):
         x = self.tblGeneral.rows
         self.tblGeneral.rows += 1
         value = eval(field)
-        if ptype == bool:
+        if ptype is bool:
             obj = Gtk.CheckButton()
             obj.set_label(name)
             obj.set_active(value)
@@ -3515,7 +3500,7 @@ class Wconfig(SimpleGladeApp):
             self.tblGeneral.attach(
                 obj, 0, 2, x, x + 1, Gtk.AttachOptions.EXPAND | Gtk.AttachOptions.FILL, 0
             )
-        elif ptype == int:
+        elif ptype is int:
             obj = Gtk.SpinButton(climb_rate=10)
             if len(args) == 2:
                 obj.set_range(args[0], args[1])
@@ -3533,7 +3518,7 @@ class Wconfig(SimpleGladeApp):
             self.tblGeneral.attach(
                 obj, 1, 2, x, x + 1, Gtk.AttachOptions.EXPAND | Gtk.AttachOptions.FILL, 0
             )
-        elif ptype == list:
+        elif ptype is list:
             obj = Gtk.ComboBoxText()
             for s in args[0]:
                 obj.append_text(s)
@@ -3603,8 +3588,8 @@ class Wconfig(SimpleGladeApp):
                 elif isinstance(obj, Gtk.ComboBox):
                     value = obj.get_active()
                 else:
-                    value = '"{}"'.format(obj.get_text())
-                exec("{}={}".format(obj.field, value))
+                    value = f'"{obj.get_text()}"'
+                exec(f"{obj.field}={value}")
 
         if self.get_widget("chkDefaultColors1").get_active():
             conf.FONT_COLOR = ""
@@ -3911,7 +3896,7 @@ class NotebookTabLabel(Gtk.HBox):
 
     def mark_tab_as_closed(self):
         self.label.set_markup(
-            "<span color='darkgray' strikethrough='true'>{}</span>".format(self.label.get_text())
+            f"<span color='darkgray' strikethrough='true'>{self.label.get_text()}</span>"
         )
         self.is_active = False
         if conf.AUTO_CLOSE_TAB != 0:
@@ -3926,7 +3911,7 @@ class NotebookTabLabel(Gtk.HBox):
             self.close_tab(self.widget_)
 
     def mark_tab_as_active(self):
-        self.label.set_markup("{}".format(self.label.get_text()))
+        self.label.set_markup(f"{self.label.get_text()}")
         self.is_active = True
 
     def get_text(self):
