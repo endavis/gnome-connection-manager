@@ -3801,20 +3801,19 @@ class Wconfig(GladeComponent):
         if not isinstance(window, Gtk.Window):
             return
 
-        def on_map(_widget, _event):
+        def on_allocate(_widget, _allocation):
             screen = window.get_screen()
             monitor = screen.get_monitor_at_window(window.get_window())
             if monitor < 0:
                 monitor = 0
             geometry = screen.get_monitor_geometry(monitor)
-            width = window.get_allocated_width()
-            height = window.get_allocated_height()
+            width, height = window.get_size()
             x = geometry.x + max(0, (geometry.width - width) // 2)
             y = geometry.y + max(0, (geometry.height - height) // 2)
             window.move(x, y)
             window.disconnect(handler_id)
 
-        handler_id = window.connect("map-event", on_map)
+        handler_id = window.connect("size-allocate", on_allocate)
 
     def addParam(self, name, field, ptype, *args):
         x = self.tblGeneral.rows
