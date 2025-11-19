@@ -39,23 +39,16 @@
 # - Option to disable shortcuts
 
 import base64
-import builtins
 import configparser
 import contextlib
-import gettext
-import json
-import locale
 import operator
 import os
 import re
 import shlex
-import subprocess
 import sys
 import tempfile
 import time
-import tokenize
 import traceback
-import weakref
 from pathlib import Path
 from threading import Thread
 
@@ -72,60 +65,7 @@ except (ImportError, ValueError) as e:
     sys.exit(1)
 
 from gnome_connection_manager.utils import pyAES, urlregex
-
-_TRANSLATION_APP = ""
-
-
-def bindtextdomain(app_name, locale_dir=None):
-    """Bind gettext translations for the application."""
-    global _TRANSLATION_APP
-    _TRANSLATION_APP = app_name
-    try:
-        locale.setlocale(locale.LC_ALL, "")
-        locale.bindtextdomain(app_name, locale_dir)
-        gettext.bindtextdomain(app_name, locale_dir)
-        gettext.textdomain(app_name)
-        gettext.install(app_name, locale_dir)
-    except (OSError, locale.Error):
-        print(
-            "Warning, language not supported, LANG: {}, LANGUAGE: {}, trying with english...".format(
-                os.environ.get("LANG", ""), os.environ.get("LANGUAGE", "")
-            )
-        )
-        try:
-            os.environ["LANG"] = "en_US.UTF-8"
-            os.environ["LANGUAGE"] = "en"
-            locale.setlocale(locale.LC_ALL, "")
-            locale.bindtextdomain(app_name, locale_dir)
-            gettext.bindtextdomain(app_name, locale_dir)
-            gettext.textdomain(app_name)
-            gettext.install(app_name, locale_dir)
-        except (locale.Error, OSError) as error:
-            print(
-                f"language en_US.UTF-8 is not installed, falling back to untranslated strings: {error}"
-            )
-            builtins.__dict__["_"] = lambda x: x
-
-
-def create_app_settings() -> Gio.Settings | None:
-    """Load the Gio.Settings schema from the bundled gschemas directory."""
-    if not SCHEMA_DIR.exists():
-        print(f"Missing GSettings schema directory: {SCHEMA_DIR}", file=sys.stderr)
-        return None
-    compiled = SCHEMA_DIR / "gschemas.compiled"
-    if not compiled.exists():
-        try:
-            subprocess.run(["glib-compile-schemas", str(SCHEMA_DIR)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except (FileNotFoundError, subprocess.CalledProcessError) as error:
-            print(f"Unable to compile GSettings schema: {error}", file=sys.stderr)
-    source = Gio.SettingsSchemaSource.new_from_directory(
-        str(SCHEMA_DIR), Gio.SettingsSchemaSource.get_default(), False
-    )
-    schema = source.lookup(SCHEMA_ID, False)
-    if schema is None:
-        print(f"Unable to locate GSettings schema {SCHEMA_ID}", file=sys.stderr)
-        return None
-    return Gio.Settings.new_full(schema, None, None)
+from gnome_connection_manager.utils.SimpleGladeApp import SimpleGladeApp, bindtextdomain
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -163,9 +103,6 @@ if not Path(BASE_PATH).exists():
     # Fall back to installed location
     BASE_PATH = "/usr/share/gnome-connection-manager"
 
-SCHEMA_DIR = Path(BASE_PATH) / "gschemas"
-SCHEMA_ID = "com.kuthulu.GnomeConnectionManager"
-
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
 SHELL = os.environ["SHELL"]
@@ -193,7 +130,6 @@ assert Path(USERHOME_DIR).is_dir(), (
 CONFIG_DIR = USERHOME_DIR + "/.gcm"
 CONFIG_FILE = CONFIG_DIR + "/gcm.conf"
 KEY_FILE = CONFIG_DIR + "/.gcm.key"
-DEFAULT_LOG_PATH = str(Path(CONFIG_DIR) / "logs")
 
 if not Path(CONFIG_DIR).exists():
     Path(CONFIG_DIR).mkdir(parents=True)
@@ -233,30 +169,6 @@ _NEW_LOCAL = ["new_local"]
 _FULLSCREEN = ["fullscreen"]
 _CLONE = ["clone"]
 
-BUILTIN_SHORTCUTS = [
-    ("copy", _COPY, "CTRL+SHIFT+C"),
-    ("paste", _PASTE, "CTRL+SHIFT+V"),
-    ("copy_all", _COPY_ALL, "CTRL+SHIFT+A"),
-    ("save", _SAVE, "CTRL+S"),
-    ("find", _FIND, "CTRL+F"),
-    ("find_next", _FIND_NEXT, "CTRL+G"),
-    ("find_back", _FIND_BACK, "CTRL+H"),
-    ("console_previous", _CONSOLE_PREV, "CTRL+SHIFT+TAB"),
-    ("console_next", _CONSOLE_NEXT, "CTRL+TAB"),
-    ("console_close", _CONSOLE_CLOSE, "CTRL+W"),
-    ("console_reconnect", _CONSOLE_RECONNECT, "CTRL+N"),
-    ("connect", _CONNECT, "CTRL+RETURN"),
-    ("reset", _CLEAR, "CTRL+SHIFT+K"),
-    ("clone", _CLONE, "CTRL+SHIFT+D"),
-    ("new_local", _NEW_LOCAL, "CTRL+SHIFT+N"),
-    ("fullscreen", _FULLSCREEN, "F11"),
-]
-
-for idx in range(1, 10):
-    BUILTIN_SHORTCUTS.append(
-        (f"console_{idx}", globals()[f"_CONSOLE_{idx}"], f"ALT+{idx}")
-    )
-
 ICON_PATH = str(Path(BASE_PATH) / "icon.png")
 
 glade_dir = str(Path(BASE_PATH) / "ui")
@@ -284,85 +196,6 @@ shortcuts = {}
 enc_passwd = ""
 
 
-class GladeComponent:
-    """Minimal Gtk.Builder loader that replaces SimpleGladeApp."""
-
-    def __init__(
-        self,
-        path,
-        root=None,
-        domain=None,
-        application=None,
-        parent=None,
-        **kwargs,
-    ):
-        self.application = application
-        self.glade_path = self._resolve_glade_path(path)
-        for key, value in kwargs.items():
-            try:
-                setattr(self, key, weakref.proxy(value))
-            except TypeError:
-                setattr(self, key, value)
-
-        self.builder = Gtk.Builder()
-        if domain:
-            self.builder.set_translation_domain(domain)
-        if parent:
-            self.builder.expose_object("wMain", parent)
-
-        if root:
-            self.builder.add_objects_from_file(self.glade_path, [root])
-            self.main_widget = self.builder.get_object(root)
-            if isinstance(self.main_widget, (Gtk.Window, Gtk.Dialog)):
-                if parent and isinstance(parent, Gtk.Window):
-                    self.main_widget.set_transient_for(parent)
-                if application is not None:
-                    self.main_widget.set_application(application)
-                self.main_widget.show_all()
-                self.main_widget.present()
-                while Gtk.events_pending():
-                    Gtk.main_iteration()
-        else:
-            self.builder.add_from_file(self.glade_path)
-            self.main_widget = None
-
-        self.normalize_names()
-        self.new()
-        self.builder.connect_signals(self)
-
-    def _resolve_glade_path(self, path):
-        path_obj = Path(path)
-        if path_obj.is_file():
-            return str(path_obj)
-        return str(Path(sys.argv[0]).parent / path)
-
-    def new(self):
-        """Hook for subclasses once widgets are ready."""
-
-    def get_widget(self, widget_name):
-        return self.builder.get_object(widget_name)
-
-    def get_widgets(self):
-        return self.builder.get_objects()
-
-    def normalize_names(self):
-        """Normalize widget names and assign them as attributes."""
-        for widget in self.get_widgets():
-            if isinstance(widget, Gtk.Buildable):
-                widget_name = Gtk.Buildable.get_name(widget)
-                prefixes_name_l = widget_name.split(":")
-                prefixes = prefixes_name_l[:-1]
-                widget_api_name = prefixes_name_l[-1]
-                widget_api_name = "_".join(re.findall(tokenize.Name, widget_api_name))
-                Gtk.Buildable.set_name(widget, widget_api_name)
-                if hasattr(self, widget_api_name):
-                    raise AttributeError(
-                        f"instance {self} already has an attribute {widget_api_name}"
-                    )
-                setattr(self, widget_api_name, widget)
-                if prefixes:
-                    Gtk.Buildable.set_data(widget, "prefixes", prefixes)
-
 # Variables de configuracion
 class conf:
     WORD_SEPARATORS = "-A-Za-z0-9,./?%&#:_=+@~"
@@ -388,7 +221,7 @@ class conf:
     HIDE_DONATE = False
     DISABLE_HOSTS_STRIPES = False
     AUTO_COPY_SELECTION = 0
-    LOG_PATH = DEFAULT_LOG_PATH
+    LOG_PATH = CONFIG_DIR + "/logs"
     SHOW_TOOLBAR = True
     SHOW_PANEL = True
     VERSION = 0
@@ -690,15 +523,12 @@ def vte_run(terminal, command, arg=None):
         )
 
 
-class Wmain(GladeComponent):
+class Wmain(SimpleGladeApp):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        application = kwargs.pop("application", None)
-        parent = kwargs.pop("parent", None)
-        self.settings = create_app_settings()
-        super().__init__(path, root, domain, application=application, parent=parent)
+        SimpleGladeApp.__init__(self, path, root, domain, **kwargs)
 
         global wMain
         wMain = self
@@ -1813,291 +1643,104 @@ class Wmain(GladeComponent):
                 return True
         return False
 
-    def add_shortcut(self, overrides, scuts, command, name, default):
-        accel = overrides.get(command, default)
-        scuts[accel] = name
+    def add_shortcut(self, cp, scuts, command, name, default):
+        try:
+            scuts[cp.get("shortcuts", command)] = name
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            scuts[default] = name
 
     def loadConfig(self):
-        global groups, shortcuts
+        global groups
 
-        if self.settings is None:
-            groups = {}
-            shortcuts = {}
-            return
-
-        if not self.settings.get_boolean("migrated-config") and Path(CONFIG_FILE).exists():
-            self.import_legacy_config()
-
-        conf.WORD_SEPARATORS = self.settings.get_string("word-separators") or conf.WORD_SEPARATORS
-        conf.BUFFER_LINES = self.settings.get_int("buffer-lines")
-        conf.STARTUP_LOCAL = self.settings.get_boolean("startup-local")
-        conf.LOG_LOCAL = self.settings.get_boolean("log-local")
-        conf.CONFIRM_ON_EXIT = self.settings.get_boolean("confirm-exit")
-        conf.FONT_COLOR = self.settings.get_string("font-color")
-        conf.BACK_COLOR = self.settings.get_string("back-color")
-        conf.TRANSPARENCY = self.settings.get_int("transparency")
-        conf.TERM = self.settings.get_string("term")
-        conf.PASTE_ON_RIGHT_CLICK = self.settings.get_boolean("paste-right-click")
-        conf.CONFIRM_ON_CLOSE_TAB = self.settings.get_boolean("confirm-close-tab")
-        conf.CONFIRM_ON_CLOSE_TAB_MIDDLE = self.settings.get_boolean("confirm-close-tab-middle")
-        conf.CHECK_UPDATES = self.settings.get_boolean("check-updates")
-        conf.FONT = self.settings.get_string("font")
-        conf.HIDE_DONATE = self.settings.get_boolean("hide-donate")
-        conf.DISABLE_HOSTS_STRIPES = self.settings.get_boolean("disable-hosts-stripes")
-        conf.AUTO_COPY_SELECTION = self.settings.get_boolean("auto-copy-selection")
-        conf.LOG_PATH = self.settings.get_string("log-path") or DEFAULT_LOG_PATH
-        conf.VERSION = self.settings.get_string("version")
-        conf.AUTO_CLOSE_TAB = self.settings.get_int("auto-close-tab")
-        conf.CYCLE_TABS = self.settings.get_boolean("cycle-tabs")
-        conf.COLLAPSED_FOLDERS = self.settings.get_string("collapsed-folders")
-        conf.LEFT_PANEL_WIDTH = self.settings.get_int("left-panel-width")
-        conf.WINDOW_WIDTH = self.settings.get_int("window-width")
-        conf.WINDOW_HEIGHT = self.settings.get_int("window-height")
-        conf.SHOW_PANEL = self.settings.get_boolean("show-panel")
-        conf.SHOW_TOOLBAR = self.settings.get_boolean("show-toolbar")
-        conf.UPDATE_TITLE = self.settings.get_boolean("update-title")
-        conf.APP_TITLE = self.settings.get_string("app-title") or app_name
-
-        shortcuts = self.load_shortcuts_from_settings()
-        groups = self.load_hosts_from_settings()
-
-        self.nbConsole.set_property("scrollback-lines", conf.BUFFER_LINES)
-        self.hpMain.previous_position = conf.LEFT_PANEL_WIDTH
-        self.hpMain.set_position(conf.LEFT_PANEL_WIDTH)
-
-    def load_shortcuts_from_settings(self):
-        scuts = {}
-        overrides = self.settings.get_value("shortcut-overrides").unpack()
-        for command, name, default in BUILTIN_SHORTCUTS:
-            accel = overrides.get(command, default)
-            scuts[accel] = name
-        for entry in self.settings.get_value("custom-shortcuts").unpack():
-            try:
-                data = json.loads(entry)
-                accel = data.get("accelerator")
-                command = data.get("command")
-                if accel and command:
-                    scuts[accel] = command
-            except json.JSONDecodeError:
-                continue
-        return scuts
-
-    def serialize_host(self, host):
-        return json.dumps(
-            {
-                "group": host.group,
-                "name": host.name,
-                "description": host.description,
-                "host": host.host,
-                "user": host.user,
-                "password": encrypt(get_password(), host.password),
-                "private_key": host.private_key,
-                "port": host.port,
-                "tunnel": host.tunnel_as_string(),
-                "type": host.type,
-                "commands": host.commands or "",
-                "keep_alive": host.keep_alive,
-                "font_color": host.font_color,
-                "back_color": host.back_color,
-                "x11": bool(host.x11),
-                "agent": bool(host.agent),
-                "compression": bool(host.compression),
-                "compression_level": host.compressionLevel,
-                "extra_params": host.extra_params,
-                "log": bool(host.log),
-                "backspace_key": int(host.backspace_key),
-                "delete_key": int(host.delete_key),
-                "term": host.term,
-            }
-        )
-
-    def deserialize_host(self, payload):
-        data = json.loads(payload)
-        password = decrypt(get_password(), data.get("password", ""))
-        return Host(
-            data.get("group", ""),
-            data.get("name", ""),
-            data.get("description", ""),
-            data.get("host", ""),
-            data.get("user", ""),
-            password,
-            data.get("private_key", ""),
-            data.get("port", "22"),
-            data.get("tunnel", ""),
-            data.get("type", "ssh"),
-            data.get("commands", ""),
-            data.get("keep_alive", ""),
-            data.get("font_color", ""),
-            data.get("back_color", ""),
-            data.get("x11", False),
-            data.get("agent", False),
-            data.get("compression", False),
-            data.get("compression_level", ""),
-            data.get("extra_params", ""),
-            data.get("log", False),
-            int(data.get("backspace_key", int(Vte.EraseBinding.AUTO))),
-            int(data.get("delete_key", int(Vte.EraseBinding.AUTO))),
-            data.get("term", ""),
-        )
-
-    def load_hosts_from_settings(self):
-        result = {}
-        for entry in self.settings.get_value("hosts").unpack():
-            try:
-                host = self.deserialize_host(entry)
-            except (json.JSONDecodeError, ValueError, KeyError):
-                continue
-            result.setdefault(host.group, []).append(host)
-        for group in result:
-            result[group] = sorted(result[group], key=lambda x: x.name.lower())
-        return result
-
-    def save_hosts_to_settings(self):
-        host_strings = []
-        for group in sorted(groups):
-            for host in groups[group]:
-                host_strings.append(self.serialize_host(host))
-        self.settings.set_value("hosts", GLib.Variant("as", host_strings))
-
-    def persist_shortcuts(self, mapping):
-        overrides = {}
-        custom = []
-        default_map = {command: default for command, _name, default in BUILTIN_SHORTCUTS}
-        for accelerator, value in mapping.items():
-            if isinstance(value, list):
-                command_name = value[0]
-                default_accel = default_map.get(command_name)
-                if default_accel is None or accelerator != default_accel:
-                    overrides[command_name] = accelerator
-            else:
-                custom.append(json.dumps({"accelerator": accelerator, "command": value}))
-        self.settings.set_value("shortcut-overrides", GLib.Variant("a{ss}", overrides))
-        self.settings.set_value("custom-shortcuts", GLib.Variant("as", custom))
-
-    def import_legacy_config(self):
         cp = configparser.RawConfigParser()
+        cp.read(CONFIG_FILE)
+
+        # Leer configuracion general
         try:
-            cp.read(CONFIG_FILE)
-        except configparser.Error:
-            return
+            conf.WORD_SEPARATORS = cp.get("options", "word-separators")
+            conf.BUFFER_LINES = cp.getint("options", "buffer-lines")
+            conf.CONFIRM_ON_EXIT = cp.getboolean("options", "confirm-exit")
+            conf.FONT_COLOR = cp.get("options", "font-color")
+            conf.BACK_COLOR = cp.get("options", "back-color")
+            conf.TRANSPARENCY = cp.getint("options", "transparency")
+            conf.PASTE_ON_RIGHT_CLICK = cp.getboolean("options", "paste-right-click")
+            conf.CONFIRM_ON_CLOSE_TAB = cp.getboolean("options", "confirm-close-tab")
+            conf.CHECK_UPDATES = cp.getboolean("options", "check-updates")
+            conf.COLLAPSED_FOLDERS = cp.get("window", "collapsed-folders")
+            conf.LEFT_PANEL_WIDTH = cp.getint("window", "left-panel-width")
+            conf.WINDOW_WIDTH = cp.getint("window", "window-width")
+            conf.WINDOW_HEIGHT = cp.getint("window", "window-height")
+            conf.FONT = cp.get("options", "font")
+            conf.HIDE_DONATE = cp.getboolean("options", "donate")
+            conf.DISABLE_HOSTS_STRIPES = cp.getboolean("options", "disable-hosts-stripes")
+            conf.AUTO_COPY_SELECTION = cp.getboolean("options", "auto-copy-selection")
+            conf.LOG_PATH = cp.get("options", "log-path")
+            conf.VERSION = cp.get("options", "version")
+            conf.AUTO_CLOSE_TAB = cp.getint("options", "auto-close-tab")
+            conf.CYCLE_TABS = cp.getboolean("options", "cycle-tabs")
+            conf.SHOW_PANEL = cp.getboolean("window", "show-panel")
+            conf.SHOW_TOOLBAR = cp.getboolean("window", "show-toolbar")
+            conf.STARTUP_LOCAL = cp.getboolean("options", "startup-local")
+            conf.LOG_LOCAL = cp.getboolean("options", "log-local")
+            conf.CONFIRM_ON_CLOSE_TAB_MIDDLE = cp.getboolean("options", "confirm-close-tab-middle")
+            conf.TERM = cp.get("options", "term")
+            conf.UPDATE_TITLE = cp.getboolean("options", "update-title")
+            conf.APP_TITLE = cp.get("options", "app-title") or app_name
+        except (configparser.Error, ValueError) as e:
+            print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
 
-        def get_value(section, option, fallback, getter="get"):
-            try:
-                return getattr(cp, getter)(section, option)
-            except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
-                return fallback
-
-        legacy_version = get_value("options", "version", conf.VERSION)
-        conf.VERSION = legacy_version
-        self.settings.set_string("version", legacy_version)
-        self.settings.set_string(
-            "word-separators", get_value("options", "word-separators", conf.WORD_SEPARATORS)
-        )
-        self.settings.set_int(
-            "buffer-lines", get_value("options", "buffer-lines", conf.BUFFER_LINES, "getint")
-        )
-        self.settings.set_boolean(
-            "startup-local", get_value("options", "startup-local", conf.STARTUP_LOCAL, "getboolean")
-        )
-        self.settings.set_boolean(
-            "log-local", get_value("options", "log-local", conf.LOG_LOCAL, "getboolean")
-        )
-        self.settings.set_boolean(
-            "confirm-exit", get_value("options", "confirm-exit", conf.CONFIRM_ON_EXIT, "getboolean")
-        )
-        self.settings.set_string("font-color", get_value("options", "font-color", conf.FONT_COLOR))
-        self.settings.set_string("back-color", get_value("options", "back-color", conf.BACK_COLOR))
-        self.settings.set_int(
-            "transparency", get_value("options", "transparency", conf.TRANSPARENCY, "getint")
-        )
-        self.settings.set_string("term", get_value("options", "term", conf.TERM))
-        self.settings.set_boolean(
-            "paste-right-click",
-            get_value("options", "paste-right-click", bool(conf.PASTE_ON_RIGHT_CLICK), "getboolean"),
-        )
-        self.settings.set_boolean(
-            "confirm-close-tab",
-            get_value("options", "confirm-close-tab", conf.CONFIRM_ON_CLOSE_TAB, "getboolean"),
-        )
-        self.settings.set_boolean(
-            "confirm-close-tab-middle",
-            get_value(
-                "options",
-                "confirm-close-tab-middle",
-                conf.CONFIRM_ON_CLOSE_TAB_MIDDLE,
-                "getboolean",
-            ),
-        )
-        self.settings.set_boolean(
-            "check-updates", get_value("options", "check-updates", conf.CHECK_UPDATES, "getboolean")
-        )
-        self.settings.set_string("font", get_value("options", "font", conf.FONT))
-        self.settings.set_boolean(
-            "hide-donate", get_value("options", "donate", conf.HIDE_DONATE, "getboolean")
-        )
-        self.settings.set_boolean(
-            "disable-hosts-stripes",
-            get_value("options", "disable-hosts-stripes", conf.DISABLE_HOSTS_STRIPES, "getboolean"),
-        )
-        self.settings.set_boolean(
-            "auto-copy-selection",
-            get_value("options", "auto-copy-selection", bool(conf.AUTO_COPY_SELECTION), "getboolean"),
-        )
-        self.settings.set_string("log-path", get_value("options", "log-path", conf.LOG_PATH))
-        self.settings.set_int(
-            "auto-close-tab", get_value("options", "auto-close-tab", conf.AUTO_CLOSE_TAB, "getint")
-        )
-        self.settings.set_boolean(
-            "cycle-tabs", get_value("options", "cycle-tabs", conf.CYCLE_TABS, "getboolean")
-        )
-        self.settings.set_boolean(
-            "update-title", get_value("options", "update-title", bool(conf.UPDATE_TITLE), "getboolean")
-        )
-        self.settings.set_string("app-title", get_value("options", "app-title", conf.APP_TITLE or app_name))
-
-        self.settings.set_string("collapsed-folders", get_value("window", "collapsed-folders", ""))
-        self.settings.set_int(
-            "left-panel-width", get_value("window", "left-panel-width", conf.LEFT_PANEL_WIDTH, "getint")
-        )
-        self.settings.set_int(
-            "window-width", get_value("window", "window-width", conf.WINDOW_WIDTH, "getint")
-        )
-        self.settings.set_int(
-            "window-height", get_value("window", "window-height", conf.WINDOW_HEIGHT, "getint")
-        )
-        self.settings.set_boolean(
-            "show-panel", get_value("window", "show-panel", conf.SHOW_PANEL, "getboolean")
-        )
-        self.settings.set_boolean(
-            "show-toolbar", get_value("window", "show-toolbar", conf.SHOW_TOOLBAR, "getboolean")
-        )
-
+        # setup shorcuts
         scuts = {}
-        for command, name, default in BUILTIN_SHORTCUTS:
-            accel = get_value("shortcuts", command, default)
-            scuts[accel] = name
+        self.add_shortcut(cp, scuts, "copy", _COPY, "CTRL+SHIFT+C")
+        self.add_shortcut(cp, scuts, "paste", _PASTE, "CTRL+SHIFT+V")
+        self.add_shortcut(cp, scuts, "copy_all", _COPY_ALL, "CTRL+SHIFT+A")
+        self.add_shortcut(cp, scuts, "save", _SAVE, "CTRL+S")
+        self.add_shortcut(cp, scuts, "find", _FIND, "CTRL+F")
+        self.add_shortcut(cp, scuts, "find_next", _FIND_NEXT, "CTRL+G")
+        self.add_shortcut(cp, scuts, "find_back", _FIND_BACK, "CTRL+H")
+        self.add_shortcut(cp, scuts, "console_previous", _CONSOLE_PREV, "CTRL+SHIFT+TAB")
+        self.add_shortcut(cp, scuts, "console_next", _CONSOLE_NEXT, "CTRL+TAB")
+        self.add_shortcut(cp, scuts, "console_close", _CONSOLE_CLOSE, "CTRL+W")
+        self.add_shortcut(cp, scuts, "console_reconnect", _CONSOLE_RECONNECT, "CTRL+N")
+        self.add_shortcut(cp, scuts, "connect", _CONNECT, "CTRL+RETURN")
+        self.add_shortcut(cp, scuts, "reset", _CLEAR, "CTRL+SHIFT+K")
+        self.add_shortcut(cp, scuts, "clone", _CLONE, "CTRL+SHIFT+D")
+        self.add_shortcut(cp, scuts, "new_local", _NEW_LOCAL, "CTRL+SHIFT+N")
+        self.add_shortcut(cp, scuts, "fullscreen", _FULLSCREEN, "F11")
+
+        # shortcuts para cambiar consola1-consola9
+        for x in range(1, 10):
+            try:
+                scuts[cp.get("shortcuts", f"console_{x}")] = eval(f"_CONSOLE_{x}")
+            except (configparser.NoSectionError, configparser.NoOptionError):
+                scuts[f"ALT+{x}"] = eval(f"_CONSOLE_{x}")
         try:
             i = 1
             while True:
-                accel = cp.get("shortcuts", f"shortcut{i}")
-                cmd = cp.get("shortcuts", f"command{i}").replace("\\\\n", "\\n")
-                scuts[accel] = cmd
-                i += 1
+                scuts[cp.get("shortcuts", f"shortcut{i}")] = cp.get(
+                    "shortcuts", f"command{i}"
+                ).replace("\\n", "\n")
+                i = i + 1
         except (configparser.NoSectionError, configparser.NoOptionError):
             pass
-        self.persist_shortcuts(scuts)
+        global shortcuts
+        shortcuts = scuts
 
-        host_strings = []
+        # Leer lista de hosts
+        groups = {}
         for section in cp.sections():
             if not section.startswith("host "):
                 continue
+            host = cp.options(section)
             try:
                 host = HostUtils.load_host_from_ini(cp, section)
-                host_strings.append(self.serialize_host(host))
-            except (configparser.Error, ValueError, AttributeError):
-                continue
-        self.settings.set_value("hosts", GLib.Variant("as", host_strings))
-        self.settings.set_boolean("migrated-config", True)
+
+                if host.group not in groups:
+                    groups[host.group] = []
+
+                groups[host.group].append(host)
+            except (configparser.Error, ValueError, AttributeError) as e:
+                print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
 
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
@@ -2225,52 +1868,65 @@ class Wmain(GladeComponent):
     def writeConfig(self):
         global groups
 
-        if self.settings is None:
-            return
+        cp = configparser.RawConfigParser()
+        cp.read(CONFIG_FILE + ".tmp")
 
-        self.settings.set_string("word-separators", conf.WORD_SEPARATORS)
-        self.settings.set_int("buffer-lines", conf.BUFFER_LINES)
-        self.settings.set_boolean("startup-local", conf.STARTUP_LOCAL)
-        self.settings.set_boolean("log-local", conf.LOG_LOCAL)
-        self.settings.set_boolean("confirm-exit", conf.CONFIRM_ON_EXIT)
-        self.settings.set_string("font-color", conf.FONT_COLOR)
-        self.settings.set_string("back-color", conf.BACK_COLOR)
-        self.settings.set_string("term", conf.TERM)
-        self.settings.set_int("transparency", conf.TRANSPARENCY)
-        self.settings.set_boolean("paste-right-click", bool(conf.PASTE_ON_RIGHT_CLICK))
-        self.settings.set_boolean("confirm-close-tab", conf.CONFIRM_ON_CLOSE_TAB)
-        self.settings.set_boolean("confirm-close-tab-middle", conf.CONFIRM_ON_CLOSE_TAB_MIDDLE)
-        self.settings.set_boolean("check-updates", conf.CHECK_UPDATES)
-        self.settings.set_string("font", conf.FONT)
-        self.settings.set_boolean("hide-donate", conf.HIDE_DONATE)
-        self.settings.set_boolean("disable-hosts-stripes", conf.DISABLE_HOSTS_STRIPES)
-        self.settings.set_boolean("auto-copy-selection", bool(conf.AUTO_COPY_SELECTION))
-        self.settings.set_string("log-path", conf.LOG_PATH)
-        self.settings.set_string("version", app_fileversion)
-        self.settings.set_int("auto-close-tab", conf.AUTO_CLOSE_TAB)
-        self.settings.set_boolean("cycle-tabs", conf.CYCLE_TABS)
-        self.settings.set_boolean("update-title", bool(conf.UPDATE_TITLE))
-        self.settings.set_string("app-title", conf.APP_TITLE or app_name)
+        cp.add_section("options")
+        cp.set("options", "word-separators", conf.WORD_SEPARATORS)
+        cp.set("options", "buffer-lines", conf.BUFFER_LINES)
+        cp.set("options", "startup-local", conf.STARTUP_LOCAL)
+        cp.set("options", "log-local", conf.LOG_LOCAL)
+        cp.set("options", "confirm-exit", conf.CONFIRM_ON_EXIT)
+        cp.set("options", "font-color", conf.FONT_COLOR)
+        cp.set("options", "back-color", conf.BACK_COLOR)
+        cp.set("options", "term", conf.TERM)
+        cp.set("options", "transparency", conf.TRANSPARENCY)
+        cp.set("options", "paste-right-click", conf.PASTE_ON_RIGHT_CLICK)
+        cp.set("options", "confirm-close-tab", conf.CONFIRM_ON_CLOSE_TAB)
+        cp.set("options", "confirm-close-tab-middle", conf.CONFIRM_ON_CLOSE_TAB_MIDDLE)
+        cp.set("options", "check-updates", conf.CHECK_UPDATES)
+        cp.set("options", "font", conf.FONT)
+        cp.set("options", "donate", conf.HIDE_DONATE)
+        cp.set("options", "disable-hosts-stripes", conf.DISABLE_HOSTS_STRIPES)
+        cp.set("options", "auto-copy-selection", conf.AUTO_COPY_SELECTION)
+        cp.set("options", "log-path", conf.LOG_PATH)
+        cp.set("options", "version", app_fileversion)
+        cp.set("options", "auto-close-tab", conf.AUTO_CLOSE_TAB)
+        cp.set("options", "cycle-tabs", conf.CYCLE_TABS)
+        cp.set("options", "update-title", conf.UPDATE_TITLE)
+        cp.set("options", "app-title", conf.APP_TITLE or app_name)
 
         collapsed_folders = ",".join(self.get_collapsed_nodes())
-        self.settings.set_string("collapsed-folders", collapsed_folders)
-        self.settings.set_int("left-panel-width", self.hpMain.get_position())
+        cp.add_section("window")
+        cp.set("window", "collapsed-folders", collapsed_folders)
+        cp.set("window", "left-panel-width", self.hpMain.get_position())
+        cp.set("window", "window-width", -1 if self.wMain.is_maximized() else conf.WINDOW_WIDTH)
+        cp.set("window", "window-height", -1 if self.wMain.is_maximized() else conf.WINDOW_HEIGHT)
+        cp.set("window", "show-panel", conf.SHOW_PANEL)
+        cp.set("window", "show-toolbar", conf.SHOW_TOOLBAR)
 
-        window = self.get_widget("wMain")
-        if window.is_maximized():
-            self.settings.set_int("window-width", -1)
-            self.settings.set_int("window-height", -1)
-        else:
-            conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT = window.get_size()
-            self.settings.set_int("window-width", conf.WINDOW_WIDTH)
-            self.settings.set_int("window-height", conf.WINDOW_HEIGHT)
+        i = 1
+        for grupo in groups:
+            for host in groups[grupo]:
+                section = "host " + str(i)
+                cp.add_section(section)
+                HostUtils.save_host_to_ini(cp, section, host)
+                i += 1
 
-        self.settings.set_boolean("show-panel", conf.SHOW_PANEL)
-        self.settings.set_boolean("show-toolbar", conf.SHOW_TOOLBAR)
+        cp.add_section("shortcuts")
+        i = 1
+        for s in shortcuts:
+            if isinstance(shortcuts[s], list):
+                cp.set("shortcuts", shortcuts[s][0], s)
+            else:
+                cp.set("shortcuts", f"shortcut{i}", s)
+                cp.set("shortcuts", f"command{i}", shortcuts[s].replace("\n", "\\n"))
+                i = i + 1
 
-        self.save_hosts_to_settings()
-        self.persist_shortcuts(shortcuts)
-        self.settings.set_boolean("migrated-config", True)
+        with Path(CONFIG_FILE + ".tmp").open("w") as f:
+            cp.write(f)
+        Path(CONFIG_FILE + ".tmp").rename(CONFIG_FILE)
+
     def on_tab_scroll(self, notebook, event):
         # According to https://sourcecodequery.com/example-method/Gdk.Event.get_scroll_deltas
         # the deltas below should only be usable for direction == Gdk.ScrollDirection.SMOOTH
@@ -3353,12 +3009,12 @@ class HostUtils:
         cp.set(section, "term", host.term)
 
 
-class Whost(GladeComponent):
+class Whost(SimpleGladeApp):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wHost", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
 
         self.treeModel = Gtk.ListStore(
             GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
@@ -3820,12 +3476,12 @@ class Whost(GladeComponent):
     # -- Whost.on_btnBrowse_clicked }
 
 
-class Wabout(GladeComponent):
+class Wabout(SimpleGladeApp):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wAbout", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
         self.wAbout.set_icon_from_file(ICON_PATH)
 
     # -- Wabout.new {
@@ -3847,10 +3503,10 @@ class Wabout(GladeComponent):
     # -- Wabout.on_wAbout_close }
 
 
-class Wconfig(GladeComponent):
+class Wconfig(SimpleGladeApp):
     def __init__(self, path="gnome-connection-manager.glade", root="wConfig", domain=domain_name):
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
 
     # -- Wconfig.new {
     def new(self):
@@ -4184,7 +3840,7 @@ class Wconfig(GladeComponent):
     # -- Wconfig.on_treeCommands_key_press_event }
 
 
-class Wcluster(GladeComponent):
+class Wcluster(SimpleGladeApp):
     def __init__(
         self,
         path="gnome-connection-manager.glade",
@@ -4195,7 +3851,7 @@ class Wcluster(GladeComponent):
     ):
         self.terms = terms
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
 
     # -- Wcluster.new {
     def new(self):
