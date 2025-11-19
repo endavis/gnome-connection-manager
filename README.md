@@ -33,6 +33,29 @@ cd gnome-connection-manager
 * python3
 * python3-gi and gir1.2-vte-2.91 (debian) / python3-gobject (fedora)
 
+### Modern Development Setup (Recommended)
+
+GCM is being modernized with Python best practices and modern tooling. For development:
+
+```bash
+# Install uv (modern Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create development environment
+uv venv --system-site-packages
+uv sync --extra dev
+
+# Run application
+uv run python -m gnome_connection_manager
+```
+
+**Development Status:**
+- ✅ Phase 1 Code Quality: **COMPLETE** (98.7% of issues resolved)
+- 📋 Phase 2 Modernization: Planned (GtkApplication, GSettings)
+- 📋 Phase 3 GTK4 Migration: Future
+
+See [docs/DEVELOPING.md](docs/DEVELOPING.md) for detailed development guide and [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for project status.
+
 ---
 
 ## Language
