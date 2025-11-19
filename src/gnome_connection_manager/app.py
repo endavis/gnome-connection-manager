@@ -569,14 +569,31 @@ def _pkcs7_unpad(data: bytes) -> bytes:
     return data[:-pad_len]
 
 
+def _iter_blocks(data: bytes, size: int = 16):
+    for i in range(0, len(data), size):
+        yield data[i : i + size]
+
+
+def _generate_keystream(key: bytes, iv: bytes):
+    ecb = pyaes.AESModeOfOperationECB(key)
+    stream = iv
+    while True:
+        stream = ecb.encrypt(stream)
+        yield stream
+
+
 def encrypt(passw: str, string: str) -> str:
     """Encrypt a string using AES."""
     try:
         key = _password_to_key(passw)
         iv = os.urandom(16)
-        aes = pyaes.AESModeOfOperationOFB(key, iv=iv)
-        payload = aes.encrypt(_pkcs7_pad(string.encode("utf-8")))
-        return base64.b64encode(iv + payload).decode("ascii")
+        plaintext = _pkcs7_pad(string.encode("utf-8"))
+        keystream = _generate_keystream(key, iv)
+        ciphertext = bytearray()
+        for block in _iter_blocks(plaintext):
+            stream_block = next(keystream)
+            ciphertext.extend(bytes(b ^ s for b, s in zip(block, stream_block)))
+        return base64.b64encode(iv + ciphertext).decode("ascii")
     except Exception:
         logger.exception("AES encryption error")
         return ""
@@ -588,12 +605,16 @@ def decrypt(passw: str, string: str) -> str:
         if conf.VERSION == 0:
             return decrypt_old(passw, string)
         data = base64.b64decode(string)
-        if len(data) < 17:
+        if len(data) <= 16:
             return ""
         iv, ciphertext = data[:16], data[16:]
-        aes = pyaes.AESModeOfOperationOFB(_password_to_key(passw), iv=iv)
-        decrypted = aes.decrypt(ciphertext)
-        return _pkcs7_unpad(decrypted).decode("utf-8")
+        key = _password_to_key(passw)
+        keystream = _generate_keystream(key, iv)
+        plaintext = bytearray()
+        for block in _iter_blocks(ciphertext):
+            stream_block = next(keystream)
+            plaintext.extend(bytes(b ^ s for b, s in zip(block, stream_block)))
+        return _pkcs7_unpad(bytes(plaintext)).decode("utf-8")
     except Exception:
         logger.exception("AES decryption error")
         return ""
