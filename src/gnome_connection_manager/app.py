@@ -3801,9 +3801,12 @@ class Wconfig(GladeComponent):
         if not isinstance(window, Gtk.Window):
             return
 
-        def on_allocate(_widget, _allocation):
+        def move_to_center():
+            gdk_window = window.get_window()
+            if not gdk_window:
+                return True
             screen = window.get_screen()
-            monitor = screen.get_monitor_at_window(window.get_window())
+            monitor = screen.get_monitor_at_window(gdk_window)
             if monitor < 0:
                 monitor = 0
             geometry = screen.get_monitor_geometry(monitor)
@@ -3811,9 +3814,9 @@ class Wconfig(GladeComponent):
             x = geometry.x + max(0, (geometry.width - width) // 2)
             y = geometry.y + max(0, (geometry.height - height) // 2)
             window.move(x, y)
-            window.disconnect(handler_id)
+            return False
 
-        handler_id = window.connect("size-allocate", on_allocate)
+        GLib.idle_add(move_to_center)
 
     def addParam(self, name, field, ptype, *args):
         x = self.tblGeneral.rows
