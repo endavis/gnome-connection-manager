@@ -60,8 +60,7 @@ def bindtextdomain(app_name, locale_dir=None):
         gettext.install(app_name, locale_dir)
     except (OSError, locale.Error):
         print(
-            "Warning, language not supported, LANG: %s, LANGUAGE: %s, trying with english..."
-            % (
+            "Warning, language not supported, LANG: {}, LANGUAGE: {}, trying with english...".format(
                 os.environ["LANG"] if "LANG" in os.environ else "",
                 os.environ["LANGUAGE"] if "LANGUAGE" in os.environ else "",
             )
@@ -163,9 +162,9 @@ class SimpleGladeApp:
         class_name = self.__class__.__name__
         if self.main_widget:
             root = Gtk.Widget.get_name(self.main_widget)
-            repr = '%s(path="%s", root="%s")' % (class_name, self.glade_path, root)
+            repr = '{}(path="{}", root="{}")'.format(class_name, self.glade_path, root)
         else:
-            repr = '%s(path="%s")' % (class_name, self.glade_path)
+            repr = '{}(path="{}")'.format(class_name, self.glade_path)
         return repr
 
     def new(self):
@@ -212,7 +211,7 @@ class SimpleGladeApp:
                 widget_name = Gtk.Buildable.set_name(widget, widget_api_name)
                 if hasattr(self, widget_api_name):
                     raise AttributeError(
-                        "instance %s already has an attribute %s" % (self, widget_api_name)
+                        "instance {} already has an attribute {}".format(self, widget_api_name)
                     )
                 else:
                     setattr(self, widget_api_name, widget)
