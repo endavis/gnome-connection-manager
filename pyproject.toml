@@ -1,0 +1,149 @@
+[project]
+name = "gnome-connection-manager"
+version = "1.2.0"
+description = "A tabbed SSH and telnet connection manager for GTK environments"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Renzo Bertuzzi", email = "kuthulu@gmail.com"},
+]
+maintainers = [
+    {name = "Eric Davis", email = "6662995+endavis@users.noreply.github.com"},
+]
+keywords = ["ssh", "terminal", "gtk", "connection-manager", "vte"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+    "Topic :: Terminals",
+]
+
+dependencies = [
+    # Note: pygobject and pycairo should be installed via system packages:
+    #   Ubuntu/Debian: sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-vte-2.91
+    #   Fedora: sudo dnf install python3-gobject gtk3 vte291
+    # They are not listed here to avoid build issues
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8.0",
+    "mypy>=1.8.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/endavis/gnome-connection-manager"
+Repository = "https://github.com/endavis/gnome-connection-manager.git"
+Issues = "https://github.com/endavis/gnome-connection-manager/issues"
+
+[project.scripts]
+gnome-connection-manager = "gnome_connection_manager.__main__:main"
+gcm = "gnome_connection_manager.__main__:main"
+
+[project.gui-scripts]
+gnome-connection-manager-gui = "gnome_connection_manager.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gnome_connection_manager"]
+only-include = ["src"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/data",
+    "/lang",
+    "/scripts",
+]
+
+# Ruff - Modern Python linter and formatter
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "N802",   # function name should be lowercase (GTK uses camelCase)
+    "N803",   # argument name should be lowercase (GTK uses camelCase)
+    "N806",   # variable in function should be lowercase (GTK uses camelCase)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# Mypy - Static type checker
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Start lenient, gradually enable
+ignore_missing_imports = true  # GTK bindings don't have type stubs
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# Pytest - Testing framework
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=gnome_connection_manager",
+]
+
+# Coverage
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
