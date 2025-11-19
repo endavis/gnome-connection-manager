@@ -39,6 +39,7 @@
 # - Option to disable shortcuts
 
 import base64
+import configparser
 import operator
 import os
 import re
@@ -47,16 +48,22 @@ import sys
 import tempfile
 import time
 import traceback
+from pathlib import Path
+from threading import Thread
 
 try:
     import gi
 
+    gi.require_version("Gdk", "3.0")
     gi.require_version("Gtk", "3.0")
     gi.require_version("Vte", "2.91")
     from gi.repository import Gdk, GLib, GObject, Gtk, Pango, Vte
-except:
-    print("python3-gi required", file=sys.stderr)
+except (ImportError, ValueError) as e:
+    print(f"python3-gi required: {e}", file=sys.stderr)
     sys.exit(1)
+
+from gnome_connection_manager.utils import pyAES, urlregex
+from gnome_connection_manager.utils.SimpleGladeApp import SimpleGladeApp, bindtextdomain
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -64,7 +71,7 @@ TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
 # Ver si expect esta instalado
 try:
     e = os.system("expect >/dev/null 2>&1 -v")
-except:
+except (OSError, RuntimeError):
     e = -1
 if e != 0:
     error = Gtk.MessageDialog(
@@ -78,11 +85,6 @@ if e != 0:
 
 # Gdk.threads_init()
 
-import configparser
-
-from gnome_connection_manager.utils import pyAES, urlregex
-from gnome_connection_manager.utils.SimpleGladeApp import SimpleGladeApp, bindtextdomain
-
 app_name = "Gnome Connection Manager"
 app_version = "1.2.1"
 app_web = "http://www.kuthulu.com/gcm"
@@ -90,7 +92,6 @@ app_fileversion = "1"
 
 # Get paths for resources
 # Use environment variables set by main.py or calculate from package location
-from pathlib import Path
 
 # Package directory
 PACKAGE_DIR = Path(__file__).parent
@@ -105,15 +106,15 @@ TEL_BIN = "telnet"
 SHELL = os.environ["SHELL"]
 DEFAULT_TERM_TYPE = "xterm-256color"
 
-SSH_COMMAND = os.path.join(BASE_PATH, "scripts", "ssh.expect")
+SSH_COMMAND = str(Path(BASE_PATH) / "scripts" / "ssh.expect")
 try:
     USERHOME_DIR = os.getenv("HOME")
-except:
+except (KeyError, OSError):
     USERHOME_DIR = ""
 if USERHOME_DIR is None or USERHOME_DIR == "":
     try:
         USERHOME_DIR = os.path.expanduser("~")
-    except:
+    except (KeyError, RuntimeError):
         USERHOME_DIR = ""
 
 assert (USERHOME_DIR is not None) and (USERHOME_DIR != ""), (
@@ -166,9 +167,9 @@ _NEW_LOCAL = ["new_local"]
 _FULLSCREEN = ["fullscreen"]
 _CLONE = ["clone"]
 
-ICON_PATH = os.path.join(BASE_PATH, "icon.png")
+ICON_PATH = str(Path(BASE_PATH) / "icon.png")
 
-glade_dir = os.path.join(BASE_PATH, "ui")
+glade_dir = str(Path(BASE_PATH) / "ui")
 # Locale dir is still in the project root
 LANG_DIR = str(PACKAGE_DIR.parent.parent / "lang")
 if not Path(LANG_DIR).exists():
@@ -346,7 +347,7 @@ def show_open_dialog(parent, title, action):
 def parse_color_rgba(spec: str) -> Gdk.RGBA:
     """Parse a color specification string to Gdk.RGBA."""
     rgba = Gdk.RGBA()
-    b = rgba.parse(spec)
+    _success = rgba.parse(spec)
     return rgba
 
 
@@ -392,8 +393,8 @@ def load_encryption_key() -> None:
                 enc_passwd = f.read()
         else:
             enc_passwd = ""
-    except:
-        msgbox("Error trying to open key_file")
+    except (OSError, PermissionError) as e:
+        msgbox(f"Error trying to open key_file: {e}")
         enc_passwd = ""
 
 
@@ -408,8 +409,8 @@ def initialise_encyption_key() -> None:
     try:
         with os.fdopen(os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
             f.write(enc_passwd)
-    except:
-        msgbox("Error initialising key_file")
+    except (OSError, PermissionError) as e:
+        msgbox(f"Error initialising key_file: {e}")
 
 
 ## funciones para encryptar passwords - no son muy seguras, pero impiden que los pass se guarden en texto plano
@@ -433,7 +434,8 @@ def encrypt_old(passw: str, string: str) -> str:
     try:
         ret = xor(passw, string)
         s = base64.b64encode("".join(ret))
-    except:
+    except (ValueError, TypeError, UnicodeError) as e:
+        print(f"Encryption error: {e}")
         s = ""
     return s
 
@@ -443,7 +445,8 @@ def decrypt_old(passw: str, string: str) -> str:
     try:
         ret = xor(passw, base64.b64decode(string))
         s = "".join(ret)
-    except:
+    except (ValueError, TypeError, UnicodeError) as e:
+        print(f"Decryption error: {e}")
         s = ""
     return s
 
@@ -452,7 +455,8 @@ def encrypt(passw: str, string: str) -> str:
     """Encrypt a string using AES."""
     try:
         s = pyAES.encrypt(string, passw)
-    except:
+    except Exception as e:
+        print(f"AES encryption error: {e}")
         traceback.print_exc()
         s = ""
     return s
@@ -462,7 +466,8 @@ def decrypt(passw: str, string: str) -> str:
     """Decrypt a string using AES or legacy XOR."""
     try:
         s = decrypt_old(passw, string) if conf.VERSION == 0 else pyAES.decrypt(string, passw)
-    except:
+    except Exception as e:
+        print(f"Decryption error: {e}")
         traceback.print_exc()
         s = ""
     return s
@@ -523,7 +528,7 @@ class Wmain(SimpleGladeApp):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
     ):
-        path = os.path.join(glade_dir, path)
+        path = str(Path(glade_dir) / path)
         SimpleGladeApp.__init__(self, path, root, domain, **kwargs)
 
         global wMain
@@ -1330,7 +1335,7 @@ class Wmain(SimpleGladeApp):
             self.terminal_copy_all(terminal)
 
     def on_menuSettings_activate(self, widget):
-        wConfig = Wconfig()
+        Wconfig()
 
     def on_contents_changed(self, terminal):
         col, row = terminal.get_cursor_position()
@@ -1641,7 +1646,7 @@ class Wmain(SimpleGladeApp):
     def add_shortcut(self, cp, scuts, command, name, default):
         try:
             scuts[cp.get("shortcuts", command)] = name
-        except:
+        except (configparser.NoSectionError, configparser.NoOptionError):
             scuts[default] = name
 
     def loadConfig(self):
@@ -1681,8 +1686,8 @@ class Wmain(SimpleGladeApp):
             conf.TERM = cp.get("options", "term")
             conf.UPDATE_TITLE = cp.getboolean("options", "update-title")
             conf.APP_TITLE = cp.get("options", "app-title") or app_name
-        except:
-            print("{}: {}".format(_("Entrada invalida en archivo de configuracion"), sys.exc_info()[1]))
+        except (configparser.Error, ValueError) as e:
+            print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
 
         # setup shorcuts
         scuts = {}
@@ -1707,7 +1712,7 @@ class Wmain(SimpleGladeApp):
         for x in range(1, 10):
             try:
                 scuts[cp.get("shortcuts", f"console_{x}")] = eval(f"_CONSOLE_{x}")
-            except:
+            except (configparser.NoSectionError, configparser.NoOptionError):
                 scuts[f"ALT+{x}"] = eval(f"_CONSOLE_{x}")
         try:
             i = 1
@@ -1716,7 +1721,7 @@ class Wmain(SimpleGladeApp):
                     "shortcuts", f"command{i}"
                 ).replace("\\n", "\n")
                 i = i + 1
-        except:
+        except (configparser.NoSectionError, configparser.NoOptionError):
             pass
         global shortcuts
         shortcuts = scuts
@@ -1734,10 +1739,8 @@ class Wmain(SimpleGladeApp):
                     groups[host.group] = []
 
                 groups[host.group].append(host)
-            except:
-                print(
-                    "{}: {}".format(_("Entrada invalida en archivo de configuracion"), sys.exc_info()[1])
-                )
+            except (configparser.Error, ValueError, AttributeError) as e:
+                print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
 
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
@@ -2130,9 +2133,9 @@ class Wmain(SimpleGladeApp):
                 f = open(filename, "w")
                 f.write(buff.strip())
                 f.close()
-            except:
+            except (OSError, PermissionError) as e:
                 dlg.destroy()
-                msgbox("{}: {}".format(_("No se puede abrir archivo para escritura"), filename))
+                msgbox(f"{_('No se puede abrir archivo para escritura')}: {filename} - {e}")
                 return
 
         dlg.destroy()
@@ -2233,8 +2236,8 @@ class Wmain(SimpleGladeApp):
                         grupos[host.group] = []
 
                     grupos[host.group].append(host)
-            except:
-                msgbox(_("Archivo invalido"))
+            except (configparser.Error, ValueError, AttributeError) as e:
+                msgbox(f"{_('Archivo invalido')}: {e}")
                 return
             # sobreescribir lista de hosts
             global groups
@@ -2273,8 +2276,8 @@ class Wmain(SimpleGladeApp):
                 cp.write(f)
                 f.close()
                 os.rename(filename + ".tmp", filename)
-            except:
-                msgbox(_("Archivo invalido"))
+            except (OSError, PermissionError) as e:
+                msgbox(f"{_('Archivo invalido')}: {e}")
 
     # -- Wmain.on_exportar_servidores1_activate }
 
@@ -2300,7 +2303,7 @@ class Wmain(SimpleGladeApp):
 
     # -- Wmain.on_acerca_de1_activate {
     def on_acerca_de1_activate(self, widget, *args):
-        w_about = Wabout()
+        Wabout()
 
     # -- Wmain.on_acerca_de1_activate }
 
@@ -2441,7 +2444,7 @@ class Wmain(SimpleGladeApp):
                 ):
                     try:
                         del groups[group]
-                    except:
+                    except KeyError:
                         pass
                     for h in dict(groups):
                         if h.startswith(group + "/"):
@@ -2487,7 +2490,7 @@ class Wmain(SimpleGladeApp):
 
     # -- Wmain.on_btnConfig_clicked {
     def on_btnConfig_clicked(self, widget, *args):
-        wConfig = Wconfig()
+        Wconfig()
 
     # -- Wmain.on_btnConfig_clicked }
 
@@ -2712,7 +2715,7 @@ class Host:
             self.backspace_key = self.get_arg(args, int(Vte.EraseBinding.AUTO))
             self.delete_key = self.get_arg(args, int(Vte.EraseBinding.AUTO))
             self.term = self.get_arg(args, "")
-        except:
+        except (IndexError, ValueError, AttributeError):
             pass
 
     def get_arg(self, args, default):
@@ -2759,7 +2762,7 @@ class HostUtils:
     def get_val(cp, section, name, default):
         try:
             return cp.get(section, name) if not isinstance(default, bool) else cp.getboolean(section, name)
-        except:
+        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
             return default
 
     @staticmethod
@@ -2855,7 +2858,7 @@ class Whost(SimpleGladeApp):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wHost", domain=domain_name, **kwargs
     ):
-        path = os.path.join(glade_dir, path)
+        path = str(Path(glade_dir) / path)
         SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
 
         self.treeModel = Gtk.ListStore(
@@ -3175,8 +3178,8 @@ class Whost(SimpleGladeApp):
                                 index = groups[self.oldGroup].index(h)
                                 groups[self.oldGroup][index] = host
                                 break
-        except:
-            msgbox("{} [{}]".format(_("Error al guardar el host. Descripcion"), sys.exc_info()[1]))
+        except (KeyError, ValueError, IndexError) as e:
+            msgbox(f"{_('Error al guardar el host. Descripcion')} [{e}]")
 
         global wMain
         wMain.updateTree()
@@ -3270,7 +3273,7 @@ class Whost(SimpleGladeApp):
                 msgbox(_("Puerto local ya fue asignado"))
                 return
 
-        tunel = self.treeModel.append([local, host, remote, f"{local}:{host}:{remote}"])
+        self.treeModel.append([local, host, remote, f"{local}:{host}:{remote}"])
 
     # -- Whost.on_btnAdd_clicked }
 
@@ -3322,7 +3325,7 @@ class Wabout(SimpleGladeApp):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wAbout", domain=domain_name, **kwargs
     ):
-        path = os.path.join(glade_dir, path)
+        path = str(Path(glade_dir) / path)
         SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
         self.wAbout.set_icon_from_file(ICON_PATH)
 
@@ -3347,7 +3350,7 @@ class Wabout(SimpleGladeApp):
 
 class Wconfig(SimpleGladeApp):
     def __init__(self, path="gnome-connection-manager.glade", root="wConfig", domain=domain_name):
-        path = os.path.join(glade_dir, path)
+        path = str(Path(glade_dir) / path)
         SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
 
     # -- Wconfig.new {
@@ -3692,7 +3695,7 @@ class Wcluster(SimpleGladeApp):
         **kwargs,
     ):
         self.terms = terms
-        path = os.path.join(glade_dir, path)
+        path = str(Path(glade_dir) / path)
         SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
 
     # -- Wcluster.new {
@@ -3740,7 +3743,7 @@ class Wcluster(SimpleGladeApp):
             tab_label = nb.get_tab_label(obj)
             if tab_label and hasattr(tab_label, "set_selected"):
                 tab_label.set_selected(activate)
-        except:
+        except (AttributeError, TypeError):
             pass  # Silently handle errors if tab no longer exists
 
     # -- Wcluster custom methods }
@@ -3750,7 +3753,7 @@ class Wcluster(SimpleGladeApp):
         # Ensure all tabs are deselected when cluster window closes
         try:
             self.on_btnNone_clicked(None)
-        except:
+        except (AttributeError, TypeError):
             pass
 
         # Fallback: directly iterate through original terms list
@@ -3758,7 +3761,7 @@ class Wcluster(SimpleGladeApp):
             for title, term in self.terms:
                 try:
                     self.change_color(term, False)
-                except:
+                except (AttributeError, TypeError):
                     pass
 
     # -- Wcluster.on_wCluster_destroy }
@@ -4110,9 +4113,6 @@ class MultilineCellRenderer(Gtk.CellRendererText):
         editor.connect("button-press-event", self._on_editor_pressed)
         editor.show()
         return editor
-
-
-from threading import Thread
 
 
 class CheckUpdates(Thread):

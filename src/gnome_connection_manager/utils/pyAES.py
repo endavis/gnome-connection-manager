@@ -1142,7 +1142,7 @@ def encrypt(text, password):
     # if the file size is a multiple of the block size, we'll need
     # to add a block of padding at the end of the message
     fp.seek(0, 2)
-    filesize = fp.tell()
+    _filesize = fp.tell()  # Not currently used but kept for potential future use
     # put the file pointer back at the beginning of the file
     fp.seek(0)
 

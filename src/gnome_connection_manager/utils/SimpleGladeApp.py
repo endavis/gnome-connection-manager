@@ -17,9 +17,6 @@ Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
 Boston, MA 02110-1301 USA
 """
 
-import gi
-
-gi.require_version("Gtk", "3.0")
 import builtins
 import inspect
 import os
@@ -27,8 +24,12 @@ import re
 import sys
 import tokenize
 import weakref
+from pathlib import Path
 
-from gi.repository import Gtk
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk  # noqa: E402
 
 _app_name = ""
 
@@ -75,8 +76,8 @@ def bindtextdomain(app_name, locale_dir=None):
             gettext.textdomain(app_name)
             gettext.install(app_name, locale_dir)
             return
-        except:
-            print("language en_US.UTF-8 is not installed, using spanish as default language")
+        except (locale.Error, OSError) as e:
+            print(f"language en_US.UTF-8 is not installed, using spanish as default language: {e}")
             # english didnt work, just use spanish
             builtins.__dict__["_"] = lambda x: x
 
@@ -114,7 +115,7 @@ class SimpleGladeApp:
             self.glade_path = path
         else:
             glade_dir = os.path.dirname(sys.argv[0])
-            self.glade_path = os.path.join(glade_dir, path)
+            self.glade_path = str(Path(glade_dir) / path)
         for key, value in kwargs.items():
             try:
                 setattr(self, key, weakref.proxy(value))

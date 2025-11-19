@@ -65,7 +65,7 @@ just fmt       # Format code
 
 ### What's Next?
 
-#### Phase 1: Refactor - Code Quality ✅ MOSTLY COMPLETE
+#### Phase 1: Refactor - Code Quality ✅ NEARLY COMPLETE
 - [x] Modern Python project structure
 - [x] uv dependency management
 - [x] Fix imports in app.py
@@ -75,13 +75,15 @@ just fmt       # Format code
 - [x] Fix None comparisons (51 fixed: `== None` → `is None`)
 - [x] Modernize string formatting (88 fixed: `%s` → f-strings)
 - [x] Fix type comparisons (9 fixed: `type()` → `isinstance()`)
-- [ ] Fix bare except clauses (26 remaining - need specific exception types)
-- [ ] Fix import locations (13 remaining - imports not at top)
-- [ ] Pathlib conversions (9 remaining - `os.path.join` → pathlib)
-- [ ] Clean up unused variables (6 remaining)
-- [ ] Minor style improvements (~45 remaining)
+- [x] Fix bare except clauses (26 fixed - added specific exception types)
+- [x] Fix import locations (13 fixed - moved imports to top)
+- [x] Pathlib conversions for os.path.join (9 fixed - `os.path.join` → pathlib)
+- [x] Clean up unused variables (6 fixed)
+- [x] Fix Gdk version requirement warning
+- [ ] Additional pathlib conversions (~20 remaining - os.path.exists, etc.)
+- [ ] Minor style improvements (~25 remaining)
 
-**Progress:** 286 of 385 issues fixed (74% complete)
+**Progress:** 338 of 385 issues fixed (88% complete)
 
 #### Phase 2: Modernize (Future)
 - [ ] Convert to GtkApplication framework
@@ -128,19 +130,16 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 - Entry points configured in `pyproject.toml`
 - Import paths need updating in app.py (next step)
 
-### Remaining Code Quality Issues (99 total)
-
-**High Priority:**
-- [ ] 26 bare except clauses - Need specific exception types instead of `except:`
-- [ ] 13 imports not at module top - Reorganize import locations
+### Remaining Code Quality Issues (47 total)
 
 **Medium Priority:**
-- [ ] 9 `os.path.join()` → pathlib conversions
-- [ ] 6 unused variables to clean up
-- [ ] 5 `os.path.exists()` → pathlib conversions
+- [ ] ~20 additional pathlib conversions (os.path.exists, os.makedirs, os.rename, etc.)
+- [ ] 4 context manager usage for file operations
+- [ ] 3 unused loop control variables
 
 **Low Priority:**
-- [ ] ~40 minor style improvements (suppressible exceptions, simplifications, etc.)
+- [ ] ~20 minor style improvements (suppressible exceptions, simplifications, dict.get, etc.)
+- [ ] 2 module naming conventions (pyAES, SimpleGladeApp)
 
 **For Future Phases:**
 - [ ] Add comprehensive test suite
@@ -149,4 +148,4 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 
 ---
 
-**Status:** ✅ Phase 1 is 74% complete! Core refactoring done, polish remaining.
+**Status:** ✅ Phase 1 is 88% complete! Major refactoring completed, polish remaining.
