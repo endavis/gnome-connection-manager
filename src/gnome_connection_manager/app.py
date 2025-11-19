@@ -177,6 +177,16 @@ locale_dir = LANG_DIR
 
 bindtextdomain(domain_name, locale_dir)
 
+# Import translation function installed by bindtextdomain
+# gettext.install() adds _ to builtins, but we need to import it for type checking
+try:
+    from builtins import _  # type: ignore
+except ImportError:
+    # Fallback if gettext.install() didn't add _ to builtins
+    def _(s):
+        return s
+
+
 groups = {}
 shortcuts = {}
 
@@ -399,7 +409,7 @@ def initialise_encyption_key():
 def xor(pw, str1):
     c = 0
     liste = []
-    for k in xrange(len(str1)):
+    for k in range(len(str1)):
         if c > len(pw) - 1:
             c = 0
         fi = ord(pw[c])

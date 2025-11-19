@@ -21,6 +21,7 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 import builtins
+import inspect
 import os
 import re
 import sys
@@ -252,7 +253,7 @@ class SimpleGladeApp:
         prefix_actions_d = dict(map(drop_prefix, prefix_actions_t))
 
         for widget in self.get_widgets():
-            prefixes = gtk.Widget.get_data(widget, "prefixes")
+            prefixes = Gtk.Widget.get_data(widget, "prefixes")
             if prefixes:
                 for prefix in prefixes:
                     if prefix in prefix_actions_d:
