@@ -65,12 +65,23 @@ just fmt       # Format code
 
 ### What's Next?
 
-#### Phase 1: Refactor (Current)
+#### Phase 1: Refactor - Code Quality ✅ MOSTLY COMPLETE
 - [x] Modern Python project structure
-- [x] uv dependency management  
-- [ ] Fix imports in app.py
-- [ ] Add basic type hints
-- [ ] Run ruff to clean up code style
+- [x] uv dependency management
+- [x] Fix imports in app.py
+- [x] Add basic type hints (15+ key functions)
+- [x] Run ruff auto-fixes and formatting
+- [x] Fix undefined-name errors (107 fixed)
+- [x] Fix None comparisons (51 fixed: `== None` → `is None`)
+- [x] Modernize string formatting (88 fixed: `%s` → f-strings)
+- [x] Fix type comparisons (9 fixed: `type()` → `isinstance()`)
+- [ ] Fix bare except clauses (26 remaining - need specific exception types)
+- [ ] Fix import locations (13 remaining - imports not at top)
+- [ ] Pathlib conversions (9 remaining - `os.path.join` → pathlib)
+- [ ] Clean up unused variables (6 remaining)
+- [ ] Minor style improvements (~45 remaining)
+
+**Progress:** 286 of 385 issues fixed (74% complete)
 
 #### Phase 2: Modernize (Future)
 - [ ] Convert to GtkApplication framework
@@ -78,6 +89,7 @@ just fmt       # Format code
 - [ ] Migrate to GSettings from INI files
 - [ ] Add GAction/GMenu system
 - [ ] Proper logging instead of prints
+- [ ] Add comprehensive test suite
 
 #### Phase 3: GTK4 (Long-term)
 - [ ] Port to GTK4
@@ -116,13 +128,25 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 - Entry points configured in `pyproject.toml`
 - Import paths need updating in app.py (next step)
 
-### Known Issues
+### Remaining Code Quality Issues (99 total)
 
-- [ ] app.py still uses old import paths (needs fixing)
-- [ ] No tests yet (need to add)
-- [ ] Type hints missing (gradual addition)
-- [ ] GTK deprecation warnings remain
+**High Priority:**
+- [ ] 26 bare except clauses - Need specific exception types instead of `except:`
+- [ ] 13 imports not at module top - Reorganize import locations
+
+**Medium Priority:**
+- [ ] 9 `os.path.join()` → pathlib conversions
+- [ ] 6 unused variables to clean up
+- [ ] 5 `os.path.exists()` → pathlib conversions
+
+**Low Priority:**
+- [ ] ~40 minor style improvements (suppressible exceptions, simplifications, etc.)
+
+**For Future Phases:**
+- [ ] Add comprehensive test suite
+- [ ] GTK deprecation warnings (will be addressed in GTK4 migration)
+- [ ] Complete type hint coverage
 
 ---
 
-**Status:** ✅ Infrastructure complete, ready for refactoring!
+**Status:** ✅ Phase 1 is 74% complete! Core refactoring done, polish remaining.
