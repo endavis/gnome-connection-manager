@@ -62,8 +62,8 @@ def bindtextdomain(app_name, locale_dir=None):
     except (OSError, locale.Error):
         print(
             "Warning, language not supported, LANG: {}, LANGUAGE: {}, trying with english...".format(
-                os.environ["LANG"] if "LANG" in os.environ else "",
-                os.environ["LANGUAGE"] if "LANGUAGE" in os.environ else "",
+                os.environ.get("LANG", ""),
+                os.environ.get("LANGUAGE", ""),
             )
         )
         # force english as default locale
@@ -111,10 +111,10 @@ class SimpleGladeApp:
                 glade_app = SimpleGladeApp("ui.glade", foo="some value", bar="another value")
             sets two attributes (foo and bar) to glade_app.
         """
-        if os.path.isfile(path):
+        if Path(path).is_file():
             self.glade_path = path
         else:
-            glade_dir = os.path.dirname(sys.argv[0])
+            glade_dir = str(Path(sys.argv[0]).parent)
             self.glade_path = str(Path(glade_dir) / path)
         for key, value in kwargs.items():
             try:
@@ -130,7 +130,7 @@ class SimpleGladeApp:
         # self.builder.connect_signals(self.custom_handler)
 
         if root:
-            parent = kwargs["parent"] if "parent" in kwargs else None
+            parent = kwargs.get("parent")
             if parent:
                 self.builder.expose_object("wMain", parent)
             self.builder.add_objects_from_file(self.glade_path, [root])

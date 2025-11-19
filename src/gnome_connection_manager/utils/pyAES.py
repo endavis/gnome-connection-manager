@@ -897,7 +897,7 @@ def addRoundKey(state, roundKey):
 def galoisMult(a, b):
     p = 0
     hiBitSet = 0
-    for i in range(8):
+    for _i in range(8):
         if b & 1 == 1:
             p ^= a
         hiBitSet = a & 0x80
@@ -1118,7 +1118,7 @@ def encrypt(text, password):
 
     # Initialization Vector
     IV = []
-    for i in range(16):
+    for _i in range(16):
         IV.append(randint(0, 255))
 
     text = text.encode("utf-8").decode("iso-8859-1")

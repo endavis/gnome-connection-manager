@@ -40,6 +40,7 @@
 
 import base64
 import configparser
+import contextlib
 import operator
 import os
 import re
@@ -113,7 +114,7 @@ except (KeyError, OSError):
     USERHOME_DIR = ""
 if USERHOME_DIR is None or USERHOME_DIR == "":
     try:
-        USERHOME_DIR = os.path.expanduser("~")
+        USERHOME_DIR = str(Path("~").expanduser())
     except (KeyError, RuntimeError):
         USERHOME_DIR = ""
 
@@ -121,7 +122,7 @@ assert (USERHOME_DIR is not None) and (USERHOME_DIR != ""), (
     "FATAL: Could not determine home directory for the current user"
 )
 
-assert os.path.isdir(USERHOME_DIR), (
+assert Path(USERHOME_DIR).is_dir(), (
     f"FATAL: Could not locate home directory '{USERHOME_DIR}' for the current user"
 )
 
@@ -129,8 +130,8 @@ CONFIG_DIR = USERHOME_DIR + "/.gcm"
 CONFIG_FILE = CONFIG_DIR + "/gcm.conf"
 KEY_FILE = CONFIG_DIR + "/.gcm.key"
 
-if not os.path.exists(CONFIG_DIR):
-    os.makedirs(CONFIG_DIR)
+if not Path(CONFIG_DIR).exists():
+    Path(CONFIG_DIR).mkdir(parents=True)
 
 domain_name = "gcm-lang"
 
@@ -261,10 +262,7 @@ def inputbox(
 ) -> str | None:
     msgBox = EntryDialog(title, text, default, mask=password, parent=parent)
     msgBox.set_icon_from_file(ICON_PATH)
-    if msgBox.run() == Gtk.ResponseType.OK:
-        response = msgBox.value
-    else:
-        response = None
+    response = msgBox.value if msgBox.run() == Gtk.ResponseType.OK else None
     msgBox.destroy()
     return response
 
@@ -337,7 +335,7 @@ def show_open_dialog(parent, title, action):
 
     if dlg.run() == Gtk.ResponseType.OK:
         filename = dlg.get_filename()
-        parent.lastPath = os.path.dirname(filename)
+        parent.lastPath = str(Path(filename).parent)
     else:
         filename = None
     dlg.destroy()
@@ -388,8 +386,8 @@ def load_encryption_key() -> None:
     """Load the encryption key from file."""
     global enc_passwd
     try:
-        if os.path.exists(KEY_FILE):
-            with open(KEY_FILE) as f:
+        if Path(KEY_FILE).exists():
+            with Path(KEY_FILE).open() as f:
                 enc_passwd = f.read()
         else:
             enc_passwd = ""
@@ -855,9 +853,8 @@ class Wmain(SimpleGladeApp):
         return False
 
     def on_terminal_selection(self, widget, *args):
-        if conf.AUTO_COPY_SELECTION:
-            if widget.get_has_selection():
-                self.terminal_copy(widget)
+        if conf.AUTO_COPY_SELECTION and widget.get_has_selection():
+            self.terminal_copy(widget)
         return True
 
     def find_word(self, backwards=False):
@@ -884,7 +881,7 @@ class Wmain(SimpleGladeApp):
             if pos != -1:
                 self.search["index"] = i if backwards else i + 1
                 # print('found at line %d column %d, index=%d, line: %s' % (i, pos, self.search['index'], self.search['lines'][i]))
-                GLib.timeout_add(0, lambda: self.search["terminal"].get_vadjustment().set_value(i))
+                GLib.timeout_add(0, lambda line=i: self.search["terminal"].get_vadjustment().set_value(line))
                 # self.search['terminal'].get_vadjustment().set_value(i)
                 self.search["terminal"].queue_draw()
                 break
@@ -1364,25 +1361,24 @@ class Wmain(SimpleGladeApp):
             terminal.log_handler_id = terminal.connect("contents-changed", self.on_contents_changed)
             p = terminal.get_parent()
             title = p.get_parent().get_tab_label(p).get_text().strip()
-            LOG_PATH = os.path.expanduser(conf.LOG_PATH)
+            LOG_PATH = str(Path(conf.LOG_PATH).expanduser())
             prefix = "{}/{}-{}".format(LOG_PATH, title, time.strftime("%Y%m%d"))
-            if not os.path.exists(LOG_PATH):
-                os.makedirs(LOG_PATH)
+            if not Path(LOG_PATH).exists():
+                Path(LOG_PATH).mkdir(parents=True)
             filename = ""
             for i in range(1, 1000):
-                if not os.path.exists(f"{prefix}-{i:03d}.log"):
+                if not Path(f"{prefix}-{i:03d}.log").exists():
                     filename = f"{prefix}-{i:03d}.log"
                     break
             if filename == "":
                 # End up appending to the latest log file...
                 filename = f"{prefix}-{i:03d}.log"
-            filename == f"{prefix}-{1:03d}.log"
             try:
                 prepend = ""
-                if os.path.exists(filename):
+                if Path(filename).exists():
                     msgbox("{}\n{}".format(_("Anexar el archivo de log existente"), filename))
                     prepend = "\n\n===== {} =====\n\n".format(_("Fin del registro de sesión anterior"))
-                terminal.log = open(filename, "a", 1)
+                terminal.log = Path(filename).open("a", 1)
                 terminal.log.write(
                     "{}Session '{}' opened at {}\n{}\n".format(prepend, title, time.strftime("%Y-%m-%d %H:%M:%S"), "-" * 80)
                 )
@@ -1856,7 +1852,7 @@ class Wmain(SimpleGladeApp):
                 return i
 
     def get_folder_menu(self, obj, folder, path):
-        if not obj or not (isinstance(obj, Gtk.Menu) or isinstance(obj, Gtk.MenuItem)):
+        if not obj or not isinstance(obj, (Gtk.Menu, Gtk.MenuItem)):
             return None
         for item in obj.get_children():
             if path == folder + "/" + item.get_label():
@@ -1923,10 +1919,9 @@ class Wmain(SimpleGladeApp):
                 cp.set("shortcuts", f"command{i}", shortcuts[s].replace("\n", "\\n"))
                 i = i + 1
 
-        f = open(CONFIG_FILE + ".tmp", "w")
-        cp.write(f)
-        f.close()
-        os.rename(CONFIG_FILE + ".tmp", CONFIG_FILE)
+        with Path(CONFIG_FILE + ".tmp").open("w") as f:
+            cp.write(f)
+        Path(CONFIG_FILE + ".tmp").rename(CONFIG_FILE)
 
     def on_tab_scroll(self, notebook, event):
         # According to https://sourcecodequery.com/example-method/Gdk.Event.get_scroll_deltas
@@ -2111,7 +2106,7 @@ class Wmain(SimpleGladeApp):
         dlg.add_button("document-save", Gtk.ResponseType.OK)
         dlg.set_do_overwrite_confirmation(True)
         dlg.set_current_name(
-            os.path.basename("gcm-buffer-{}.txt".format(time.strftime("%Y%m%d%H%M%S")))
+            Path("gcm-buffer-{}.txt".format(time.strftime("%Y%m%d%H%M%S"))).name
         )
         if not hasattr(self, "lastPath"):
             self.lastPath = USERHOME_DIR
@@ -2119,7 +2114,7 @@ class Wmain(SimpleGladeApp):
 
         if dlg.run() == Gtk.ResponseType.OK:
             filename = dlg.get_filename()
-            self.lastPath = os.path.dirname(filename)
+            self.lastPath = str(Path(filename).parent)
 
             try:
                 buff, b = terminal.get_text_range(
@@ -2130,9 +2125,8 @@ class Wmain(SimpleGladeApp):
                     None,
                     None,
                 )
-                f = open(filename, "w")
-                f.write(buff.strip())
-                f.close()
+                with Path(filename).open("w") as f:
+                    f.write(buff.strip())
             except (OSError, PermissionError) as e:
                 dlg.destroy()
                 msgbox(f"{_('No se puede abrir archivo para escritura')}: {filename} - {e}")
@@ -2272,10 +2266,9 @@ class Wmain(SimpleGladeApp):
                         cp.add_section(section)
                         HostUtils.save_host_to_ini(cp, section, host, password)
                         i += 1
-                f = open(filename + ".tmp", "w")
-                cp.write(f)
-                f.close()
-                os.rename(filename + ".tmp", filename)
+                with Path(filename + ".tmp").open("w") as f:
+                    cp.write(f)
+                Path(filename + ".tmp").rename(filename)
             except (OSError, PermissionError) as e:
                 msgbox(f"{_('Archivo invalido')}: {e}")
 
@@ -2442,10 +2435,8 @@ class Wmain(SimpleGladeApp):
                     )
                     == Gtk.ResponseType.OK
                 ):
-                    try:
+                    with contextlib.suppress(KeyError):
                         del groups[group]
-                    except KeyError:
-                        pass
                     for h in dict(groups):
                         if h.startswith(group + "/"):
                             del groups[h]
@@ -3751,18 +3742,14 @@ class Wcluster(SimpleGladeApp):
     # -- Wcluster.on_wCluster_destroy {
     def on_wCluster_destroy(self, widget, *args):
         # Ensure all tabs are deselected when cluster window closes
-        try:
+        with contextlib.suppress(AttributeError, TypeError):
             self.on_btnNone_clicked(None)
-        except (AttributeError, TypeError):
-            pass
 
         # Fallback: directly iterate through original terms list
         if hasattr(self, "terms"):
-            for title, term in self.terms:
-                try:
+            for _title, term in self.terms:
+                with contextlib.suppress(AttributeError, TypeError):
                     self.change_color(term, False)
-                except (AttributeError, TypeError):
-                    pass
 
     # -- Wcluster.on_wCluster_destroy }
 
@@ -3811,21 +3798,22 @@ class Wcluster(SimpleGladeApp):
             widget.history.append(text)
             widget.history_index = -1
             return True
-        if event.state & Gdk.ModifierType.CONTROL_MASK and Gdk.keyval_name(
-            event.keyval
-        ).upper() in ["UP", "DOWN"]:
-            if len(widget.history) > 0:
-                if Gdk.keyval_name(event.keyval).upper() == "UP":
-                    widget.history_index -= 1
-                    if widget.history_index < -1:
-                        widget.history_index = len(widget.history) - 1
-                else:
-                    widget.history_index += 1
-                    if widget.history_index >= len(widget.history):
-                        widget.history_index = -1
-                widget.get_buffer().set_text(
-                    widget.history[widget.history_index] if widget.history_index >= 0 else ""
-                )
+        if (
+            event.state & Gdk.ModifierType.CONTROL_MASK
+            and Gdk.keyval_name(event.keyval).upper() in ["UP", "DOWN"]
+            and len(widget.history) > 0
+        ):
+            if Gdk.keyval_name(event.keyval).upper() == "UP":
+                widget.history_index -= 1
+                if widget.history_index < -1:
+                    widget.history_index = len(widget.history) - 1
+            else:
+                widget.history_index += 1
+                if widget.history_index >= len(widget.history):
+                    widget.history_index = -1
+            widget.get_buffer().set_text(
+                widget.history[widget.history_index] if widget.history_index >= 0 else ""
+            )
 
     # -- Wcluster.on_txtCommands_key_press_event }
 
