@@ -4456,6 +4456,7 @@ class GcmApplication(Gtk.Application):
         self._create_stateful_action(
             "toggle-toolbar", conf.SHOW_TOOLBAR, self._on_toggle_toolbar, ["<Shift>F9"]
         )
+        self._build_menus()
 
     def _create_action(self, name, callback, accels=None, parameter_type=None):
         action = Gio.SimpleAction.new(name, parameter_type)
@@ -4472,6 +4473,49 @@ class GcmApplication(Gtk.Application):
         if accels:
             self.set_accels_for_action(f"app.{name}", accels)
         return action
+
+    def _build_menus(self):
+        app_menu = Gio.Menu()
+        primary = Gio.Menu()
+        primary.append(_("_Preferences"), "app.preferences")
+        primary.append(_("_About"), "app.about")
+        primary.append(_("_Quit"), "app.quit")
+        app_menu.append_section(None, primary)
+        self.set_app_menu(app_menu)
+
+        menubar = Gio.Menu()
+
+        file_menu = Gio.Menu()
+        file_menu.append(_("Save Buffer"), "app.save-buffer")
+        file_menu.append(_("Import Hosts"), "app.import-hosts")
+        file_menu.append(_("Export Hosts"), "app.export-hosts")
+        file_menu.append(_("Quit"), "app.quit")
+        menubar.append_submenu(_("_File"), file_menu)
+
+        edit_menu = Gio.Menu()
+        edit_menu.append(_("Copy"), "app.copy")
+        edit_menu.append(_("Paste"), "app.paste")
+        edit_menu.append(_("Copy & Paste"), "app.copy-paste")
+        edit_menu.append(_("Select All"), "app.select-all")
+        edit_menu.append(_("Copy All"), "app.copy-all")
+        edit_menu.append(_("Preferences"), "app.preferences")
+        menubar.append_submenu(_("_Edit"), edit_menu)
+
+        view_menu = Gio.Menu()
+        view_menu.append(_("Show Toolbar"), "app.toggle-toolbar")
+        view_menu.append(_("Show Panel"), "app.toggle-panel")
+        menubar.append_submenu(_("_View"), view_menu)
+
+        servers_menu = Gio.Menu()
+        servers_menu.append(_("New Local Console"), "app.new-local")
+        servers_menu.append(_("Connect"), "app.connect")
+        servers_menu.append(_("Add Host"), "app.add-host")
+        servers_menu.append(_("Edit Host"), "app.edit-host")
+        servers_menu.append(_("Delete Host"), "app.delete")
+        servers_menu.append(_("Cluster"), "app.cluster")
+        menubar.append_submenu(_("_Servers"), servers_menu)
+
+        self.set_menubar(menubar)
 
     def do_activate(self):
         if self._controller is None:
