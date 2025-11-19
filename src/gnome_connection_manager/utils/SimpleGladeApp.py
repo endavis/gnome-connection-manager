@@ -1,4 +1,3 @@
-# -*- coding: utf-8; -*-
 """
 Copyright (C) 2007-2013 Guake authors
 
@@ -17,23 +16,21 @@ License along with this program; if not, write to the
 Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
 Boston, MA 02110-1301 USA
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
 import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
 
+gi.require_version("Gtk", "3.0")
+import builtins
 import os
 import re
 import sys
 import tokenize
 import weakref
-import builtins
 
-_app_name = ''
+from gi.repository import Gtk
+
+_app_name = ""
+
 
 def bindtextdomain(app_name, locale_dir=None):
     """
@@ -52,16 +49,23 @@ def bindtextdomain(app_name, locale_dir=None):
     _app_name = app_name
 
     try:
-        import locale
         import gettext
+        import locale
+
         locale.setlocale(locale.LC_ALL, "")
         locale.bindtextdomain(app_name, locale_dir)
         gettext.bindtextdomain(app_name, locale_dir)
         gettext.textdomain(app_name)
         gettext.install(app_name, locale_dir)
-    except (IOError, locale.Error) as e:
-        print("Warning, language not supported, LANG: %s, LANGUAGE: %s, trying with english..." % (os.environ["LANG"] if 'LANG' in os.environ else '', os.environ["LANGUAGE"] if 'LANGUAGE' in os.environ else ''))
-        #force english as default locale
+    except (OSError, locale.Error):
+        print(
+            "Warning, language not supported, LANG: %s, LANGUAGE: %s, trying with english..."
+            % (
+                os.environ["LANG"] if "LANG" in os.environ else "",
+                os.environ["LANGUAGE"] if "LANGUAGE" in os.environ else "",
+            )
+        )
+        # force english as default locale
         try:
             os.environ["LANG"] = "en_US.UTF-8"
             os.environ["LANGUAGE"] = "en"
@@ -73,12 +77,11 @@ def bindtextdomain(app_name, locale_dir=None):
             return
         except:
             print("language en_US.UTF-8 is not installed, using spanish as default language")
-            #english didnt work, just use spanish
+            # english didnt work, just use spanish
             builtins.__dict__["_"] = lambda x: x
 
 
-class SimpleGladeApp(object):
-
+class SimpleGladeApp:
     def __init__(self, path, root=None, domain=None, **kwargs):
         """
         Load a glade file specified by glade_filename, using root as
@@ -126,9 +129,9 @@ class SimpleGladeApp(object):
         # self.builder.connect_signals(self.custom_handler)
 
         if root:
-            parent = kwargs['parent'] if 'parent' in kwargs else None
+            parent = kwargs["parent"] if "parent" in kwargs else None
             if parent:
-                self.builder.expose_object('wMain', parent)
+                self.builder.expose_object("wMain", parent)
             self.builder.add_objects_from_file(self.glade_path, [root])
 
             # TODO PORT remove the next line is not needed Guake shuold not pass an root parameter
@@ -399,8 +402,7 @@ class SimpleGladeApp(object):
         return self.builder.get_objects()
 
 
-class SimpleGtk3App(object):
-
+class SimpleGtk3App:
     """
     Basic GtkBuilder wrapper that implements the functions from
     simplegladeapp.py used by Guake with the purpose to minimize
