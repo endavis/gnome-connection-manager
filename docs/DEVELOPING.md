@@ -13,7 +13,6 @@ gnome-connection-manager/
 │   ├── app.py                    # Main application (legacy code)
 │   ├── ui/                       # UI components
 │   └── utils/                    # Utility modules
-│       ├── pyAES.py             # Encryption
 │       └── urlregex.py          # URL patterns
 ├── data/                         # Non-code assets
 │   ├── ui/                      # Glade UI files

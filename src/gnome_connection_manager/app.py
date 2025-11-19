@@ -94,7 +94,9 @@ def bindtextdomain(app_name, locale_dir=None):
     except (OSError, locale.Error):
         builtins.__dict__["_"] = lambda x: x
 
-from gnome_connection_manager.utils import pyAES, urlregex
+import pyAES
+
+from gnome_connection_manager.utils import urlregex
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__

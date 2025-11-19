@@ -18,7 +18,6 @@ gnome-connection-manager/
 │       ├── app.py                # Main application code
 │       ├── ui/                   # UI components (future)
 │       └── utils/
-│           ├── pyAES.py
 │           └── urlregex.py
 ├── data/                  # Non-Python assets
 │   ├── ui/
@@ -135,8 +134,6 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 **Deferred to Phase 2 (Low Priority):**
 - [ ] N801: Class name `conf` - Used extensively throughout codebase, requires widespread refactoring
 - [ ] SIM115: One file operation without context manager - Intentional design for logging (file must remain open)
-- [ ] N999: Module name `pyAES` - Encryption library, requires careful refactoring
-- [ ] N816: Variable `sboxInv` in pyAES - Part of AES algorithm implementation
 
 These 5 remaining issues are intentionally deferred as they either:
 1. Require extensive refactoring that's better suited for Phase 2
