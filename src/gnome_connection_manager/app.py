@@ -226,7 +226,8 @@ class conf:
     APP_TITLE = app_name
 
 
-def msgbox(text, parent=None):
+def msgbox(text: str, parent: Gtk.Window | None = None) -> None:
+    """Show an error message dialog."""
     msgBox = Gtk.MessageDialog(
         parent=parent,
         modal=True,
@@ -239,7 +240,8 @@ def msgbox(text, parent=None):
     msgBox.destroy()
 
 
-def msgconfirm(text):
+def msgconfirm(text: str) -> int:
+    """Show a confirmation dialog and return the response."""
     msgBox = Gtk.MessageDialog(
         parent=wMain.window,
         modal=True,
@@ -253,7 +255,9 @@ def msgconfirm(text):
     return response
 
 
-def inputbox(title, text, default="", password=False, parent=None):
+def inputbox(
+    title: str, text: str, default: str = "", password: bool = False, parent: Gtk.Window | None = None
+) -> str | None:
     msgBox = EntryDialog(title, text, default, mask=password, parent=parent)
     msgBox.set_icon_from_file(ICON_PATH)
     if msgBox.run() == Gtk.ResponseType.OK:
@@ -339,17 +343,20 @@ def show_open_dialog(parent, title, action):
     return filename
 
 
-def parse_color_rgba(spec):
+def parse_color_rgba(spec: str) -> Gdk.RGBA:
+    """Parse a color specification string to Gdk.RGBA."""
     rgba = Gdk.RGBA()
     b = rgba.parse(spec)
     return rgba
 
 
-def parse_color(spec):
+def parse_color(spec: str) -> Gdk.Color:
+    """Parse a color specification string to Gdk.Color."""
     return parse_color_rgba(spec).to_color()
 
 
-def color_to_hex(rgba, diff=0):
+def color_to_hex(rgba: Gdk.RGBA, diff: int = 0) -> str:
+    """Convert Gdk.RGBA to hex color string."""
     return "#%x%x%x" % (
         int(rgba.red * 255 + diff),
         int(rgba.green * 255 + diff),
@@ -370,15 +377,18 @@ def get_key_name(event):
     return name + Gdk.keyval_name(event.keyval).upper()
 
 
-def get_username():
+def get_username() -> str | None:
+    """Get the current username from environment variables."""
     return os.getenv("USER") or os.getenv("LOGNAME") or os.getenv("USERNAME")
 
 
-def get_password():
-    return get_username() + enc_passwd
+def get_password() -> str:
+    """Get the encryption password from username and key."""
+    return (get_username() or "") + enc_passwd
 
 
-def load_encryption_key():
+def load_encryption_key() -> None:
+    """Load the encryption key from file."""
     global enc_passwd
     try:
         if os.path.exists(KEY_FILE):
@@ -391,7 +401,8 @@ def load_encryption_key():
         enc_passwd = ""
 
 
-def initialise_encyption_key():
+def initialise_encyption_key() -> None:
+    """Initialize a new encryption key and save it to file."""
     global enc_passwd
     import random
 
@@ -406,7 +417,8 @@ def initialise_encyption_key():
 
 
 ## funciones para encryptar passwords - no son muy seguras, pero impiden que los pass se guarden en texto plano
-def xor(pw, str1):
+def xor(pw: str, str1: str) -> list[str]:
+    """XOR two strings character by character."""
     c = 0
     liste = []
     for k in range(len(str1)):
@@ -420,7 +432,8 @@ def xor(pw, str1):
     return liste
 
 
-def encrypt_old(passw, string):
+def encrypt_old(passw: str, string: str) -> str:
+    """Encrypt a string using XOR (legacy method)."""
     try:
         ret = xor(passw, string)
         s = base64.b64encode("".join(ret))
@@ -429,7 +442,8 @@ def encrypt_old(passw, string):
     return s
 
 
-def decrypt_old(passw, string):
+def decrypt_old(passw: str, string: str) -> str:
+    """Decrypt a string using XOR (legacy method)."""
     try:
         ret = xor(passw, base64.b64decode(string))
         s = "".join(ret)
@@ -438,7 +452,8 @@ def decrypt_old(passw, string):
     return s
 
 
-def encrypt(passw, string):
+def encrypt(passw: str, string: str) -> str:
+    """Encrypt a string using AES."""
     try:
         s = pyAES.encrypt(string, passw)
     except:
@@ -447,7 +462,8 @@ def encrypt(passw, string):
     return s
 
 
-def decrypt(passw, string):
+def decrypt(passw: str, string: str) -> str:
+    """Decrypt a string using AES or legacy XOR."""
     try:
         s = decrypt_old(passw, string) if conf.VERSION == 0 else pyAES.decrypt(string, passw)
     except:
