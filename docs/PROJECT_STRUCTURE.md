@@ -90,7 +90,7 @@ just fmt       # Format code
 - [x] Convert to GtkApplication framework (single-instance `GcmApplication` with action handling)
 - [x] Replace SimpleGladeApp with direct GtkBuilder (`GladeComponent` helper inside `app.py`)
 - [x] Add GAction/GMenu system (application/menubar exported through `Gio.Menu`)
-- [ ] Proper logging instead of prints
+- [x] Proper logging instead of prints (structured logging via `logging`, configurable with `GCM_LOG_LEVEL`)
 - [ ] Add comprehensive test suite
 
 #### Phase 3: GTK4 (Long-term)

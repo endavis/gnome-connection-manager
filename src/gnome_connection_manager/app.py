@@ -42,6 +42,7 @@ import base64
 import builtins
 import configparser
 import contextlib
+import logging
 import operator
 import os
 import re
@@ -50,10 +51,21 @@ import sys
 import tempfile
 import time
 import tokenize
-import traceback
 import weakref
 from pathlib import Path
 from threading import Thread
+
+
+def _configure_logging():
+    level_name = os.getenv("GCM_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    return logging.getLogger("gnome_connection_manager")
+
+
+logger = _configure_logging()
 
 try:
     import gi
@@ -64,7 +76,7 @@ try:
     gi.require_version("Vte", "2.91")
     from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango, Vte
 except (ImportError, ValueError) as e:
-    print(f"python3-gi required: {e}", file=sys.stderr)
+    logger.critical("python3-gi required: %s", e)
     sys.exit(1)
 
 
@@ -515,8 +527,8 @@ def encrypt_old(passw: str, string: str) -> str:
     try:
         ret = xor(passw, string)
         s = base64.b64encode("".join(ret))
-    except (ValueError, TypeError, UnicodeError) as e:
-        print(f"Encryption error: {e}")
+    except (ValueError, TypeError, UnicodeError):
+        logger.exception("Legacy encryption error")
         s = ""
     return s
 
@@ -526,8 +538,8 @@ def decrypt_old(passw: str, string: str) -> str:
     try:
         ret = xor(passw, base64.b64decode(string))
         s = "".join(ret)
-    except (ValueError, TypeError, UnicodeError) as e:
-        print(f"Decryption error: {e}")
+    except (ValueError, TypeError, UnicodeError):
+        logger.exception("Legacy decryption error")
         s = ""
     return s
 
@@ -536,9 +548,8 @@ def encrypt(passw: str, string: str) -> str:
     """Encrypt a string using AES."""
     try:
         s = pyAES.encrypt(string, passw)
-    except Exception as e:
-        print(f"AES encryption error: {e}")
-        traceback.print_exc()
+    except Exception:
+        logger.exception("AES encryption error")
         s = ""
     return s
 
@@ -547,9 +558,8 @@ def decrypt(passw: str, string: str) -> str:
     """Decrypt a string using AES or legacy XOR."""
     try:
         s = decrypt_old(passw, string) if conf.VERSION == 0 else pyAES.decrypt(string, passw)
-    except Exception as e:
-        print(f"Decryption error: {e}")
-        traceback.print_exc()
+    except Exception:
+        logger.exception("AES decryption error")
         s = ""
     return s
 
@@ -1013,8 +1023,8 @@ class Wmain(GladeComponent):
             terminal.match_add_regex(new_reg_m, 0)
             self.search["pcre2"] = True
             return True
-        except Exception as e:
-            print(e, "Using custom search instead")
+        except Exception:
+            logger.exception("PCRE search failed; using manual fallback")
             self.search["pcre2"] = False
             # no hay soporte para pcre2, usar busqueda artesanal
 
@@ -1471,8 +1481,8 @@ class Wmain(GladeComponent):
                 terminal.log.write(
                     "{}Session '{}' opened at {}\n{}\n".format(prepend, title, time.strftime("%Y-%m-%d %H:%M:%S"), "-" * 80)
                 )
-            except Exception as e:
-                print(e)
+            except Exception:
+                logger.exception("Unable to open log file")
                 msgbox(
                     "{}\n{}".format(_("No se puede abrir el archivo de log para escritura"), filename)
                 )
@@ -1680,9 +1690,8 @@ class Wmain(GladeComponent):
 
             # guardar datos de consola para clonar consola
             v.host = host
-        except Exception as e:
-            print("ERROR", e)
-            traceback.print_exc()
+        except Exception:
+            logger.exception("Error connecting to host")
             msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
 
     def send_data(self, terminal, data):
@@ -1772,7 +1781,7 @@ class Wmain(GladeComponent):
             conf.UPDATE_TITLE = cp.getboolean("options", "update-title")
             conf.APP_TITLE = cp.get("options", "app-title") or app_name
         except (configparser.Error, ValueError) as e:
-            print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
+            logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
 
         # setup shorcuts
         scuts = {}
@@ -1825,7 +1834,7 @@ class Wmain(GladeComponent):
 
                 groups[host.group].append(host)
             except (configparser.Error, ValueError, AttributeError) as e:
-                print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
+                logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
 
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):

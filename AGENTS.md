@@ -35,6 +35,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Configuration defaults reside in the `conf` class (`gnome_connection_manager.py:246`) and must be updated alongside `loadConfig` and `writeConfig` when introducing new settings.
 - Host attributes include group/name/description, connection info, tunnels, terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep `Host.clone`, `HostUtils.save_host_to_ini`, dialogs in `Whost`, and import/export features in sync.
 - Password handling flows through `encrypt`/`decrypt` (`pyAES` with fallback to legacy XOR). Any changes must maintain backward compatibility by honoring `conf.VERSION`.
+- Logging goes to stderr via Python's logging module. Set `GCM_LOG_LEVEL` (e.g., `DEBUG`, `INFO`) to adjust verbosity during troubleshooting.
 
 ## UI, Theming & Localization
 - Modify UI in `gnome-connection-manager.glade` and ensure widget IDs still match the handler names (e.g., `on_btnConnect_clicked`). `GladeComponent` auto-normalizes names, so keep consistent prefixes if you rely on `self.widget_name`.

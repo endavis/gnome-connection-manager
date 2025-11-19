@@ -78,6 +78,14 @@ just run
 python -m gnome_connection_manager
 ```
 
+### Logging
+
+Logs are emitted via Python's `logging` module. Adjust verbosity by setting `GCM_LOG_LEVEL` before running:
+
+```bash
+GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
+```
+
 ### Code Quality
 
 ```bash

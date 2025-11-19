@@ -58,6 +58,16 @@ See [docs/DEVELOPING.md](docs/DEVELOPING.md) for detailed development guide and 
 
 ---
 
+## Logging
+
+GCM writes logs to stderr using Python's logging module. Adjust verbosity by setting `GCM_LOG_LEVEL` (for example `DEBUG`, `INFO`, or `WARNING`) before launching the app:
+
+```bash
+GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
+```
+
+---
+
 ## Language
 GCM should use the default OS language, but if for any reason you want to use another language, then start GCM this way:
 
