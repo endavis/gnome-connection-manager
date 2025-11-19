@@ -39,6 +39,7 @@
 # - Option to disable shortcuts
 
 import base64
+import builtins
 import configparser
 import contextlib
 import operator
@@ -48,7 +49,9 @@ import shlex
 import sys
 import tempfile
 import time
+import tokenize
 import traceback
+import weakref
 from pathlib import Path
 from threading import Thread
 
@@ -64,8 +67,22 @@ except (ImportError, ValueError) as e:
     print(f"python3-gi required: {e}", file=sys.stderr)
     sys.exit(1)
 
+
+def bindtextdomain(app_name, locale_dir=None):
+    global _
+    try:
+        import gettext
+        import locale
+
+        locale.setlocale(locale.LC_ALL, "")
+        locale.bindtextdomain(app_name, locale_dir)
+        gettext.bindtextdomain(app_name, locale_dir)
+        gettext.textdomain(app_name)
+        gettext.install(app_name, locale_dir)
+    except (OSError, locale.Error):
+        builtins.__dict__["_"] = lambda x: x
+
 from gnome_connection_manager.utils import pyAES, urlregex
-from gnome_connection_manager.utils.SimpleGladeApp import SimpleGladeApp, bindtextdomain
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -195,6 +212,71 @@ shortcuts = {}
 
 enc_passwd = ""
 
+
+class GladeComponent:
+    def __init__(self, path, root=None, domain=None, application=None, parent=None, **kwargs):
+        self.builder = Gtk.Builder()
+        if domain:
+            self.builder.set_translation_domain(domain)
+        self.application = application
+        for key, value in kwargs.items():
+            try:
+                setattr(self, key, weakref.proxy(value))
+            except TypeError:
+                setattr(self, key, value)
+
+        glade_path = Path(path)
+        if not glade_path.is_file():
+            glade_path = Path(sys.argv[0]).parent / path
+        self.glade_path = str(glade_path)
+
+        if root:
+            if parent:
+                self.builder.expose_object("wMain", parent)
+            self.builder.add_objects_from_file(self.glade_path, [root])
+            self.main_widget = self.builder.get_object(root)
+            if isinstance(self.main_widget, (Gtk.Window, Gtk.Dialog)):
+                if parent and isinstance(parent, Gtk.Window):
+                    self.main_widget.set_transient_for(parent)
+                if application is not None:
+                    self.main_widget.set_application(application)
+                self.main_widget.show_all()
+                self.main_widget.present()
+                while Gtk.events_pending():
+                    Gtk.main_iteration()
+        else:
+            self.builder.add_from_file(self.glade_path)
+            self.main_widget = None
+
+        self.normalize_names()
+        self.new()
+        self.builder.connect_signals(self)
+
+    def new(self):
+        pass
+
+    def normalize_names(self):
+        for widget in self.get_widgets():
+            if isinstance(widget, Gtk.Buildable):
+                widget_name = Gtk.Buildable.get_name(widget)
+                prefixes_name_l = widget_name.split(":")
+                prefixes = prefixes_name_l[:-1]
+                widget_api_name = prefixes_name_l[-1]
+                widget_api_name = "_".join(re.findall(tokenize.Name, widget_api_name))
+                Gtk.Buildable.set_name(widget, widget_api_name)
+                if hasattr(self, widget_api_name):
+                    raise AttributeError(
+                        f"instance {self} already has an attribute {widget_api_name}"
+                    )
+                setattr(self, widget_api_name, widget)
+                if prefixes:
+                    Gtk.Buildable.set_data(widget, "prefixes", prefixes)
+
+    def get_widget(self, widget_name):
+        return self.builder.get_object(widget_name)
+
+    def get_widgets(self):
+        return self.builder.get_objects()
 
 # Variables de configuracion
 class conf:
@@ -523,12 +605,13 @@ def vte_run(terminal, command, arg=None):
         )
 
 
-class Wmain(SimpleGladeApp):
+class Wmain(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, **kwargs)
+        application = kwargs.get("application")
+        super().__init__(path, root, domain, application=application)
 
         global wMain
         wMain = self
@@ -3009,12 +3092,12 @@ class HostUtils:
         cp.set(section, "term", host.term)
 
 
-class Whost(SimpleGladeApp):
+class Whost(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wHost", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
 
         self.treeModel = Gtk.ListStore(
             GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
@@ -3476,12 +3559,12 @@ class Whost(SimpleGladeApp):
     # -- Whost.on_btnBrowse_clicked }
 
 
-class Wabout(SimpleGladeApp):
+class Wabout(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wAbout", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
         self.wAbout.set_icon_from_file(ICON_PATH)
 
     # -- Wabout.new {
@@ -3503,10 +3586,10 @@ class Wabout(SimpleGladeApp):
     # -- Wabout.on_wAbout_close }
 
 
-class Wconfig(SimpleGladeApp):
+class Wconfig(GladeComponent):
     def __init__(self, path="gnome-connection-manager.glade", root="wConfig", domain=domain_name):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
 
     # -- Wconfig.new {
     def new(self):
@@ -3840,7 +3923,7 @@ class Wconfig(SimpleGladeApp):
     # -- Wconfig.on_treeCommands_key_press_event }
 
 
-class Wcluster(SimpleGladeApp):
+class Wcluster(GladeComponent):
     def __init__(
         self,
         path="gnome-connection-manager.glade",
@@ -3851,7 +3934,7 @@ class Wcluster(SimpleGladeApp):
     ):
         self.terms = terms
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
 
     # -- Wcluster.new {
     def new(self):

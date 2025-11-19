@@ -4,13 +4,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 
 ## Mission & Primary Entry Points
 - GCM is a GTK 3 + VTE based SSH/telnet tabbed terminal manager written in Python (`gnome_connection_manager.py`).
-- UI layout and signal wiring live in `gnome-connection-manager.glade`; widgets are manipulated through the `SimpleGladeApp` helper (`SimpleGladeApp.py`).
+- UI layout and signal wiring live in `gnome-connection-manager.glade`; widgets are loaded through `Gtk.Builder` (`GladeComponent` helper inside `app.py`).
 - Terminal behavior is customized through `style.css`, `urlregex.py` (link detection patterns), and helpers such as `ssh.expect` and `pyAES.py`.
 
 ## Repository Map
 - `gnome_connection_manager.py` – core application logic: configuration (class `conf`), window/controller classes (`Wmain`, `Whost`, `Wconfig`, etc.), `Host`/`HostUtils` models, encryption helpers, and VTE management.
 - `gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget names/signals aligned with handler names in `gnome_connection_manager.py`.
-- `SimpleGladeApp.py` – wrapper that loads the glade file, binds translations, and dispatches signal callbacks.
+- `GladeComponent` (in `gnome_connection_manager/app.py`) – lightweight builder wrapper that loads the glade file, binds translations, and dispatches signal callbacks.
 - `pyAES.py` – bundled AES-256 implementation for encrypting host passwords.
 - `ssh.expect` – Expect script that wraps `/usr/bin/ssh` and `/usr/bin/telnet` to feed stored credentials, propagate terminal resize events, and hand control back to the VTE widget.
 - `urlregex.py` – prebuilt PCRE2-compatible regex strings for hyperlink detection inside terminals.
@@ -37,7 +37,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Password handling flows through `encrypt`/`decrypt` (`pyAES` with fallback to legacy XOR). Any changes must maintain backward compatibility by honoring `conf.VERSION`.
 
 ## UI, Theming & Localization
-- Modify UI in `gnome-connection-manager.glade` and ensure widget IDs still match the handler names (e.g., `on_btnConnect_clicked`). `SimpleGladeApp` auto-normalizes names, so keep consistent prefixes if you rely on `self.widget_name`.
+- Modify UI in `gnome-connection-manager.glade` and ensure widget IDs still match the handler names (e.g., `on_btnConnect_clicked`). `GladeComponent` auto-normalizes names, so keep consistent prefixes if you rely on `self.widget_name`.
 - CSS tweaks go into `style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3 to verify selectors.
 - Translations live in `.po` files; compile MO files with `make translate` (invokes `msgfmt`). Add new locales by copying an existing `.po`, updating headers, and adding a matching directory hierarchy (e.g., `lang/es/LC_MESSAGES/gcm-lang.mo`).
 - Visible strings in Python/Glade should be wrapped with `_()` so gettext picks them up.

@@ -18,7 +18,6 @@ gnome-connection-manager/
 │       ├── app.py                # Main application code
 │       ├── ui/                   # UI components (future)
 │       └── utils/
-│           ├── SimpleGladeApp.py
 │           ├── pyAES.py
 │           └── urlregex.py
 ├── data/                  # Non-Python assets
@@ -89,8 +88,7 @@ just fmt       # Format code
 
 #### Phase 2: Modernize (Future)
 - [ ] Convert to GtkApplication framework
-- [ ] Replace SimpleGladeApp with direct GtkBuilder
-- [ ] Migrate to GSettings from INI files
+- [x] Replace SimpleGladeApp with direct GtkBuilder (`GladeComponent` helper inside `app.py`)
 - [ ] Add GAction/GMenu system
 - [ ] Proper logging instead of prints
 - [ ] Add comprehensive test suite
@@ -137,7 +135,6 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 **Deferred to Phase 2 (Low Priority):**
 - [ ] N801: Class name `conf` - Used extensively throughout codebase, requires widespread refactoring
 - [ ] SIM115: One file operation without context manager - Intentional design for logging (file must remain open)
-- [ ] N999: Module name `SimpleGladeApp` - Requires file rename and import updates across codebase
 - [ ] N999: Module name `pyAES` - Encryption library, requires careful refactoring
 - [ ] N816: Variable `sboxInv` in pyAES - Part of AES algorithm implementation
 

@@ -13,7 +13,6 @@ gnome-connection-manager/
 │   ├── app.py                    # Main application (legacy code)
 │   ├── ui/                       # UI components
 │   └── utils/                    # Utility modules
-│       ├── SimpleGladeApp.py     # Glade wrapper
 │       ├── pyAES.py             # Encryption
 │       └── urlregex.py          # URL patterns
 ├── data/                         # Non-code assets
@@ -149,12 +148,11 @@ All configuration lives in `pyproject.toml`:
 
 This project is in the process of modernization:
 - ✅ Modern Python project structure (src/ layout)
-- ✅ uv for dependency management
-- ✅ Development tools configured (ruff, mypy, pytest)
-- 🔄 Gradual type hint addition
-- 📋 GTK4 migration (future)
-- 📋 GtkApplication framework (future)
-- 📋 GSettings configuration (future)
+   - ✅ uv for dependency management
+   - ✅ Development tools configured (ruff, mypy, pytest)
+   - 🔄 Gradual type hint addition
+   - 📋 GTK4 migration (future)
+   - 📋 GtkApplication framework (future)
 
 ## Useful Commands
 
