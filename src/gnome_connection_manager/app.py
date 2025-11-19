@@ -3790,9 +3790,16 @@ class Wconfig(GladeComponent):
         self.btnBColor.connect("color-set", self.on_btnBColor_color_set)
         self.chkDefaultColors.connect("toggled", self.on_chkDefaultColors_toggled)
 
+        self.center_window()
+
     # -- Wconfig.new }
 
     # -- Wconfig custom methods {
+    def center_window(self):
+        """Ensure the settings window opens in the center of the screen."""
+        if isinstance(self.main_widget, Gtk.Window):
+            self.main_widget.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
+
     def addParam(self, name, field, ptype, *args):
         x = self.tblGeneral.rows
         self.tblGeneral.rows += 1
