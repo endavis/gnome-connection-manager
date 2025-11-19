@@ -42,6 +42,7 @@ import base64
 import builtins
 import configparser
 import contextlib
+import hashlib
 import logging
 import operator
 import os
@@ -94,7 +95,7 @@ def bindtextdomain(app_name, locale_dir=None):
     except (OSError, locale.Error):
         builtins.__dict__["_"] = lambda x: x
 
-import pyAES
+import pyaes
 
 from gnome_connection_manager.utils import urlregex
 
@@ -546,24 +547,56 @@ def decrypt_old(passw: str, string: str) -> str:
     return s
 
 
+def _password_to_key(secret: str | bytes) -> bytes:
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    return hashlib.sha256(secret).digest()
+
+
+def _pkcs7_pad(data: bytes) -> bytes:
+    pad_len = 16 - (len(data) % 16)
+    if pad_len == 0:
+        pad_len = 16
+    return data + bytes([pad_len] * pad_len)
+
+
+def _pkcs7_unpad(data: bytes) -> bytes:
+    if not data:
+        return data
+    pad_len = data[-1]
+    if pad_len < 1 or pad_len > 16:
+        return data
+    return data[:-pad_len]
+
+
 def encrypt(passw: str, string: str) -> str:
     """Encrypt a string using AES."""
     try:
-        s = pyAES.encrypt(string, passw)
+        key = _password_to_key(passw)
+        iv = os.urandom(16)
+        aes = pyaes.AESModeOfOperationOFB(key, iv=iv)
+        payload = aes.encrypt(_pkcs7_pad(string.encode("utf-8")))
+        return base64.b64encode(iv + payload).decode("ascii")
     except Exception:
         logger.exception("AES encryption error")
-        s = ""
-    return s
+        return ""
 
 
 def decrypt(passw: str, string: str) -> str:
     """Decrypt a string using AES or legacy XOR."""
     try:
-        s = decrypt_old(passw, string) if conf.VERSION == 0 else pyAES.decrypt(string, passw)
+        if conf.VERSION == 0:
+            return decrypt_old(passw, string)
+        data = base64.b64decode(string)
+        if len(data) < 17:
+            return ""
+        iv, ciphertext = data[:16], data[16:]
+        aes = pyaes.AESModeOfOperationOFB(_password_to_key(passw), iv=iv)
+        decrypted = aes.decrypt(ciphertext)
+        return _pkcs7_unpad(decrypted).decode("utf-8")
     except Exception:
         logger.exception("AES decryption error")
-        s = ""
-    return s
+        return ""
 
 
 def vte_feed(terminal, data):

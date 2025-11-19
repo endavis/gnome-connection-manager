@@ -5,13 +5,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 ## Mission & Primary Entry Points
 - GCM is a GTK 3 + VTE based SSH/telnet tabbed terminal manager written in Python (`gnome_connection_manager.py`).
 - UI layout and signal wiring live in `gnome-connection-manager.glade`; widgets are loaded through `Gtk.Builder` (`GladeComponent` helper inside `app.py`).
-- Terminal behavior is customized through `style.css`, `urlregex.py` (link detection patterns), and helpers such as `ssh.expect` and the external `pyAES` library.
+- Terminal behavior is customized through `style.css`, `urlregex.py` (link detection patterns), and helpers such as `ssh.expect` and the external `pyaes` library.
 
 ## Repository Map
 - `gnome_connection_manager.py` – core application logic: configuration (class `conf`), window/controller classes (`Wmain`, `Whost`, `Wconfig`, etc.), `Host`/`HostUtils` models, encryption helpers, and VTE management.
 - `gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget names/signals aligned with handler names in `gnome_connection_manager.py`.
 - `GladeComponent` (in `gnome_connection_manager/app.py`) – lightweight builder wrapper that loads the glade file, binds translations, and dispatches signal callbacks.
-- `pyAES` – PyPI dependency used for AES-256 encryption; installed via the Python package manager.
+- `pyaes` – PyPI dependency used for AES-256 encryption; installed via the Python package manager.
 - `ssh.expect` – Expect script that wraps `/usr/bin/ssh` and `/usr/bin/telnet` to feed stored credentials, propagate terminal resize events, and hand control back to the VTE widget.
 - `urlregex.py` – prebuilt PCRE2-compatible regex strings for hyperlink detection inside terminals.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under `<lang>/LC_MESSAGES/gcm-lang.mo`.
@@ -31,10 +31,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 ## Configuration & Data Flow
 - User data lives in `~/.gcm/`:
   - `gcm.conf` (INI) holds options, window state, shortcuts, and serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
-  - `.gcm.key` stores the per-user passphrase used by `pyAES`. `load_encryption_key` + `initialise_encyption_key` manage it; respect permissions (0600).
+- `.gcm.key` stores the per-user passphrase used by `pyaes`. `load_encryption_key` + `initialise_encyption_key` manage it; respect permissions (0600).
 - Configuration defaults reside in the `conf` class (`gnome_connection_manager.py:246`) and must be updated alongside `loadConfig` and `writeConfig` when introducing new settings.
 - Host attributes include group/name/description, connection info, tunnels, terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep `Host.clone`, `HostUtils.save_host_to_ini`, dialogs in `Whost`, and import/export features in sync.
-- Password handling flows through `encrypt`/`decrypt` (PyPI `pyAES` with fallback to legacy XOR). Any changes must maintain backward compatibility by honoring `conf.VERSION`.
+- Password handling flows through `encrypt`/`decrypt` (PyPI `pyaes` with fallback to legacy XOR). Any changes must maintain backward compatibility by honoring `conf.VERSION`.
 - Logging goes to stderr via Python's logging module. Set `GCM_LOG_LEVEL` (e.g., `DEBUG`, `INFO`) to adjust verbosity during troubleshooting.
 
 ## UI, Theming & Localization
