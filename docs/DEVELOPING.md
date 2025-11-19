@@ -13,12 +13,12 @@ gnome-connection-manager/
 │   ├── app.py                    # Main application (legacy code)
 │   ├── ui/                       # UI components
 │   └── utils/                    # Utility modules
-│       ├── SimpleGladeApp.py     # Glade wrapper
 │       ├── pyAES.py             # Encryption
 │       └── urlregex.py          # URL patterns
 ├── data/                         # Non-code assets
 │   ├── ui/                      # Glade UI files
 │   ├── scripts/                 # Expect scripts
+│   ├── gschemas/                # GSettings schema + compiled schemas
 │   └── style.css                # GTK CSS
 ├── lang/                         # Translations
 ├── tests/                        # Test suite
@@ -154,7 +154,7 @@ This project is in the process of modernization:
 - 🔄 Gradual type hint addition
 - 📋 GTK4 migration (future)
 - 📋 GtkApplication framework (future)
-- 📋 GSettings configuration (future)
+   - ✅ GSettings configuration (schema + runtime storage)
 
 ## Useful Commands
 

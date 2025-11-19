@@ -4,13 +4,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 
 ## Mission & Primary Entry Points
 - GCM is a GTK 3 + VTE based SSH/telnet tabbed terminal manager written in Python (`gnome_connection_manager.py`).
-- UI layout and signal wiring live in `gnome-connection-manager.glade`; widgets are manipulated through the `SimpleGladeApp` helper (`SimpleGladeApp.py`).
+- UI layout and signal wiring live in `gnome-connection-manager.glade`; widgets are loaded via `Gtk.Builder` through the `GladeComponent` helper inside `app.py`.
 - Terminal behavior is customized through `style.css`, `urlregex.py` (link detection patterns), and helpers such as `ssh.expect` and `pyAES.py`.
 
 ## Repository Map
 - `gnome_connection_manager.py` – core application logic: configuration (class `conf`), window/controller classes (`Wmain`, `Whost`, `Wconfig`, etc.), `Host`/`HostUtils` models, encryption helpers, and VTE management.
 - `gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget names/signals aligned with handler names in `gnome_connection_manager.py`.
-- `SimpleGladeApp.py` – wrapper that loads the glade file, binds translations, and dispatches signal callbacks.
 - `pyAES.py` – bundled AES-256 implementation for encrypting host passwords.
 - `ssh.expect` – Expect script that wraps `/usr/bin/ssh` and `/usr/bin/telnet` to feed stored credentials, propagate terminal resize events, and hand control back to the VTE widget.
 - `urlregex.py` – prebuilt PCRE2-compatible regex strings for hyperlink detection inside terminals.
@@ -24,20 +23,21 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 
 ## Running & Manual Verification
 - Launch locally with `python3 gnome_connection_manager.py` (from repo root) after ensuring `python3-gi`, `Vte`, and `expect` are installed.
-- GUI/manual tests: open the app, add/edit hosts, connect via SSH/telnet, split notebooks, test clipboard shortcuts, run cluster commands, and verify preferences persist in `~/.gcm/gcm.conf`.
+- GUI/manual tests: open the app, add/edit hosts, connect via SSH/telnet, split notebooks, test clipboard shortcuts, run cluster commands, and verify preferences persist in the `com.kuthulu.GnomeConnectionManager` GSettings schema (`dconf dump /com/kuthulu/GnomeConnectionManager/`).
 - Override language as needed via `LANG=en_US.UTF-8 ./gnome_connection_manager.py` (mirrors README instructions).
 - When touching terminal behavior confirm `ssh.expect` still runs (`chmod +x` if needed) and that resizing, password prompts, and keyboard shortcuts behave.
 
 ## Configuration & Data Flow
-- User data lives in `~/.gcm/`:
-  - `gcm.conf` (INI) holds options, window state, shortcuts, and serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
+- Settings, hosts, and shortcuts are stored via GSettings (schema `com.kuthulu.GnomeConnectionManager`, path `/com/kuthulu/GnomeConnectionManager/`). Use `dconf dump`/`load` or `gsettings` to inspect/migrate data.
+- `~/.gcm/` holds runtime artifacts:
   - `.gcm.key` stores the per-user passphrase used by `pyAES`. `load_encryption_key` + `initialise_encyption_key` manage it; respect permissions (0600).
+  - `logs/` is the default terminal logging directory.
 - Configuration defaults reside in the `conf` class (`gnome_connection_manager.py:246`) and must be updated alongside `loadConfig` and `writeConfig` when introducing new settings.
 - Host attributes include group/name/description, connection info, tunnels, terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep `Host.clone`, `HostUtils.save_host_to_ini`, dialogs in `Whost`, and import/export features in sync.
 - Password handling flows through `encrypt`/`decrypt` (`pyAES` with fallback to legacy XOR). Any changes must maintain backward compatibility by honoring `conf.VERSION`.
 
 ## UI, Theming & Localization
-- Modify UI in `gnome-connection-manager.glade` and ensure widget IDs still match the handler names (e.g., `on_btnConnect_clicked`). `SimpleGladeApp` auto-normalizes names, so keep consistent prefixes if you rely on `self.widget_name`.
+- Modify UI in `gnome-connection-manager.glade` and ensure widget IDs still match the handler names (e.g., `on_btnConnect_clicked`). `GladeComponent` (Gtk.Builder wrapper in `app.py`) auto-normalizes names, so keep consistent prefixes if you rely on `self.widget_name`.
 - CSS tweaks go into `style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3 to verify selectors.
 - Translations live in `.po` files; compile MO files with `make translate` (invokes `msgfmt`). Add new locales by copying an existing `.po`, updating headers, and adding a matching directory hierarchy (e.g., `lang/es/LC_MESSAGES/gcm-lang.mo`).
 - Visible strings in Python/Glade should be wrapped with `_()` so gettext picks them up.
@@ -62,4 +62,4 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 3. Run the app (or at minimum sanity-check `python3 gnome_connection_manager.py --help`) before/after code changes; describe any unverified areas in your final summary.
 4. Rebuild translations (`make translate`) if `.po` files change, and mention this in your response.
 5. For packaging changes, run the relevant `make` target when possible and summarize the outcome (artifacts, issues).
-6. Keep `~/.gcm` backups handy when testing to avoid clobbering user data; include migration notes if you modify file formats.
+6. Back up user data before risky changes: export GSettings (`dconf dump /com/kuthulu/GnomeConnectionManager/`) and copy `~/.gcm` (encryption key, logs) so testers can restore their environment after migrations.

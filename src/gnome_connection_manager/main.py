@@ -30,6 +30,7 @@ def run(argv: list[str] | None = None) -> int:
     os.environ.setdefault("GCM_DATA_DIR", str(data_dir))
     os.environ.setdefault("GCM_GLADE_DIR", str(data_dir / "ui"))
     os.environ.setdefault("GCM_SCRIPTS_DIR", str(data_dir / "scripts"))
+    os.environ.setdefault("GSETTINGS_SCHEMA_DIR", str(data_dir / "gschemas"))
 
     # Import and run the original application
     # This maintains backward compatibility while we refactor

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="com.kuthulu.GnomeConnectionManager" path="/com/kuthulu/GnomeConnectionManager/">
+    <key name="word-separators" type="s">
+      <default>"-A-Za-z0-9,./?%&amp;#:_=+@~"</default>
+      <summary>Characters treated as word separators when selecting text</summary>
+    </key>
+    <key name="buffer-lines" type="i">
+      <default>2000</default>
+      <summary>Scrollback buffer size per terminal</summary>
+    </key>
+    <key name="startup-local" type="b">
+      <default>true</default>
+      <summary>Open a local console at startup</summary>
+    </key>
+    <key name="log-local" type="b">
+      <default>false</default>
+      <summary>Enable logging for local consoles at startup</summary>
+    </key>
+    <key name="confirm-exit" type="b">
+      <default>true</default>
+      <summary>Ask for confirmation before closing the application</summary>
+    </key>
+    <key name="font-color" type="s">
+      <default>""</default>
+      <summary>Custom foreground color for terminals</summary>
+    </key>
+    <key name="back-color" type="s">
+      <default>""</default>
+      <summary>Custom background color for terminals</summary>
+    </key>
+    <key name="transparency" type="i">
+      <default>0</default>
+      <summary>Window transparency percentage</summary>
+    </key>
+    <key name="term" type="s">
+      <default>""</default>
+      <summary>Override terminal type (TERM environment variable)</summary>
+    </key>
+    <key name="paste-right-click" type="b">
+      <default>true</default>
+      <summary>Paste selection when right-clicking inside the terminal</summary>
+    </key>
+    <key name="confirm-close-tab" type="b">
+      <default>true</default>
+      <summary>Ask for confirmation before closing a tab</summary>
+    </key>
+    <key name="confirm-close-tab-middle" type="b">
+      <default>true</default>
+      <summary>Ask for confirmation before closing a tab with middle click</summary>
+    </key>
+    <key name="check-updates" type="b">
+      <default>true</default>
+      <summary>Automatically check for application updates</summary>
+    </key>
+    <key name="font" type="s">
+      <default>""</default>
+      <summary>Override terminal font</summary>
+    </key>
+    <key name="hide-donate" type="b">
+      <default>false</default>
+      <summary>Hide the donate button on the toolbar</summary>
+    </key>
+    <key name="disable-hosts-stripes" type="b">
+      <default>false</default>
+      <summary>Disable striped background in the hosts tree</summary>
+    </key>
+    <key name="auto-copy-selection" type="b">
+      <default>false</default>
+      <summary>Automatically copy selected text to the clipboard</summary>
+    </key>
+    <key name="log-path" type="s">
+      <default>""</default>
+      <summary>Directory where terminal logs are stored</summary>
+    </key>
+    <key name="version" type="s">
+      <default>"1"</default>
+      <summary>Configuration version marker</summary>
+    </key>
+    <key name="auto-close-tab" type="i">
+      <default>0</default>
+      <summary>Automatically close tab when session exits</summary>
+    </key>
+    <key name="cycle-tabs" type="b">
+      <default>true</default>
+      <summary>Cycle when navigating between tabs</summary>
+    </key>
+    <key name="collapsed-folders" type="s">
+      <default>""</default>
+      <summary>Collapsed folders in the hosts tree</summary>
+    </key>
+    <key name="left-panel-width" type="i">
+      <default>100</default>
+      <summary>Width of the hosts panel</summary>
+    </key>
+    <key name="window-width" type="i">
+      <default>-1</default>
+      <summary>Main window width</summary>
+    </key>
+    <key name="window-height" type="i">
+      <default>-1</default>
+      <summary>Main window height</summary>
+    </key>
+    <key name="show-panel" type="b">
+      <default>true</default>
+      <summary>Show the hosts panel at startup</summary>
+    </key>
+    <key name="show-toolbar" type="b">
+      <default>true</default>
+      <summary>Show the toolbar at startup</summary>
+    </key>
+    <key name="update-title" type="b">
+      <default>false</default>
+      <summary>Show the active tab name in the window title</summary>
+    </key>
+    <key name="app-title" type="s">
+      <default>"Gnome Connection Manager"</default>
+      <summary>Custom application title</summary>
+    </key>
+    <key name="hosts" type="as">
+      <default>[]</default>
+      <summary>Serialized host definitions</summary>
+    </key>
+    <key name="shortcut-overrides" type="a{ss}">
+      <default>@a{ss} {}</default>
+      <summary>Custom accelerators for built-in commands</summary>
+    </key>
+    <key name="custom-shortcuts" type="as">
+      <default>[]</default>
+      <summary>User-defined shortcut/command pairs</summary>
+    </key>
+    <key name="migrated-config" type="b">
+      <default>false</default>
+      <summary>Whether legacy gcm.conf settings were imported</summary>
+    </key>
+  </schema>
+</schemalist>

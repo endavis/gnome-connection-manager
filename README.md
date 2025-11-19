@@ -51,7 +51,7 @@ uv run python -m gnome_connection_manager
 
 **Development Status:**
 - ✅ Phase 1 Code Quality: **COMPLETE** (98.7% of issues resolved)
-- 📋 Phase 2 Modernization: Planned (GtkApplication, GSettings)
+- 📋 Phase 2 Modernization: In progress (GtkApplication + GSettings backend complete)
 - 📋 Phase 3 GTK4 Migration: Future
 
 See [docs/DEVELOPING.md](docs/DEVELOPING.md) for detailed development guide and [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for project status.
