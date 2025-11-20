@@ -21,9 +21,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91` (or `python3-gobject` on Fedora), and `expect`. VTE terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
 - Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip, desktop-file utilities (`xdg-desktop-menu` invoked in `postinst`).
 - Paths assume a desktop install (`/usr/share/gnome-connection-manager`). When running from the repo use `./gnome_connection_manager.py` so relative paths resolve for assets, CSS, expect scripts, and translations.
+- Preferred tooling: use the recipes in `justfile` (`just run`, `just check`, `just test`, etc.) for day-to-day work. When you need a command without a recipe, run it through `uv run …` so the repo’s environment is honored.
 
 ## Running & Manual Verification
-- Launch locally with `python3 gnome_connection_manager.py` (from repo root) after ensuring `python3-gi`, `Vte`, and `expect` are installed.
+- Launch locally with `just run` (preferred) or `uv run python -m gnome_connection_manager` after ensuring `python3-gi`, `Vte`, and `expect` are installed.
 - GUI/manual tests: open the app, add/edit hosts, connect via SSH/telnet, split notebooks, test clipboard shortcuts, run cluster commands, and verify preferences persist in `~/.gcm/gcm.conf`.
 - Override language as needed via `LANG=en_US.UTF-8 ./gnome_connection_manager.py` (mirrors README instructions).
 - When touching terminal behavior confirm `ssh.expect` still runs (`chmod +x` if needed) and that resizing, password prompts, and keyboard shortcuts behave.
@@ -44,7 +45,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Visible strings in Python/Glade should be wrapped with `_()` so gettext picks them up.
 
 ## Packaging & Release Flow
-- `make`, `make deb`, and `make rpm` rely on `fpm` packaging: build translations, stage files under `/usr/share/gnome-connection-manager`, and produce artifacts in the repo root.
+- `uv run make`, `uv run make deb`, and `uv run make rpm` rely on `fpm` packaging: build translations, stage files under `/usr/share/gnome-connection-manager`, and produce artifacts in the repo root.
 - `postinst` registers the desktop entry through `xdg-desktop-menu`; update it if install paths change.
 - `Makefile check` / `make style-strip-trailing-whitespace` enforce newline cleanliness; run these before contributing patches meant for release.
 - Desktop integration metadata is defined in `gnome-connection-manager.desktop` (Exec path, categories, icon). Update both the desktop file and packaging copy steps together.

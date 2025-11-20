@@ -43,11 +43,15 @@ gnome-connection-manager/
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-3. **just** (optional, task runner):
+3. **just** (preferred task runner):
    ```bash
    cargo install just
    # or: sudo apt install just
    ```
+
+> Use the `just` recipes for day-to-day development (`just run`, `just check`, etc.).  
+> When you need to run a command that doesn't have a recipe, wrap it with `uv run ...`
+> so the project environment is used.
 
 ### Setup Development Environment
 
@@ -67,14 +71,11 @@ source .venv/bin/activate
 ### Running the Application
 
 ```bash
-# Using uv (recommended)
-uv run python -m gnome_connection_manager
-
-# Or with justfile
+# Using just (preferred)
 just run
 
-# Or after activating venv
-python -m gnome_connection_manager
+# Or directly through uv
+uv run python -m gnome_connection_manager
 ```
 
 ### Logging
