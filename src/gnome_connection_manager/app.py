@@ -138,6 +138,7 @@ if not Path(BASE_PATH).exists():
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
 SHELL = os.environ["SHELL"]
+#SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
 DEFAULT_TERM_TYPE = "xterm-256color"
 
 SSH_COMMAND = str(Path(BASE_PATH) / "scripts" / "ssh.expect")
@@ -640,10 +641,22 @@ def vte_run(terminal, command, arg=None):
     )
     envv = ["PATH={}".format(os.getenv("PATH")), f"TERM={term_type}"]
     args = []
-    args.append(command)
+
+    # Check if this is a local shell before modifying args
+    is_local_shell = (command == SHELL)
+    flag_spawn = GLib.SpawnFlags.DEFAULT if is_local_shell else GLib.SpawnFlags.FILE_AND_ARGV_ZERO
+
+    # For local shells, unset VIRTUAL_ENV
+    if is_local_shell:
+        args.append("env")
+        args.append("-u")
+        args.append("VIRTUAL_ENV")
+        args.append(command)
+    else:
+        args.append(command)
+
     if arg:
         args += arg
-    flag_spawn = GLib.SpawnFlags.DEFAULT if command == SHELL else GLib.SpawnFlags.FILE_AND_ARGV_ZERO
     if TERMINAL_V048:
         terminal.spawn_async(
             Vte.PtyFlags.DEFAULT,
