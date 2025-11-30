@@ -37,6 +37,8 @@ cd gnome-connection-manager
 
 GCM is being modernized with Python best practices and modern tooling. For development:
 
+Use the included `justfile` for common tasks; when a command does not have a `just` recipe, run it through `uv run` so the project environment is used:
+
 ```bash
 # Install uv (modern Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -45,16 +47,31 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --system-site-packages
 uv sync --extra dev
 
-# Run application
+# Prefer `just` for day-to-day commands
+just run      # Launches the app via uv
+just check    # Lint + typecheck + tests
+just test     # Run the pytest suite
+
+# Run an ad-hoc command through uv if no `just` recipe exists
 uv run python -m gnome_connection_manager
 ```
 
 **Development Status:**
 - ✅ Phase 1 Code Quality: **COMPLETE** (98.7% of issues resolved)
-- 📋 Phase 2 Modernization: Planned (GtkApplication, GSettings)
+- 📋 Phase 2 Modernization: GTK refactors and logging/tests in progress
 - 📋 Phase 3 GTK4 Migration: Future
 
 See [docs/DEVELOPING.md](docs/DEVELOPING.md) for detailed development guide and [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for project status.
+
+---
+
+## Logging
+
+GCM writes logs to stderr using Python's logging module. Adjust verbosity by setting `GCM_LOG_LEVEL` (for example `DEBUG`, `INFO`, or `WARNING`) before launching the app:
+
+```bash
+GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
+```
 
 ---
 
@@ -95,13 +112,13 @@ cd gnome-connection-manager
 3. make the desired package:
 ```bash
 #make deb and rpm
-make
+uv run make
 
 #make deb package only
-make deb
+uv run make deb
 
 #make rpm package only
-make rpm
+uv run make rpm
 ```
 
 ## Contributing

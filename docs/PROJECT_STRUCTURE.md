@@ -18,8 +18,6 @@ gnome-connection-manager/
 │       ├── app.py                # Main application code
 │       ├── ui/                   # UI components (future)
 │       └── utils/
-│           ├── SimpleGladeApp.py
-│           ├── pyAES.py
 │           └── urlregex.py
 ├── data/                  # Non-Python assets
 │   ├── ui/
@@ -88,11 +86,10 @@ just fmt       # Format code
 **Ruff errors:** Reduced from 45 to 5 (89% improvement)
 
 #### Phase 2: Modernize (Future)
-- [ ] Convert to GtkApplication framework
-- [ ] Replace SimpleGladeApp with direct GtkBuilder
-- [ ] Migrate to GSettings from INI files
-- [ ] Add GAction/GMenu system
-- [ ] Proper logging instead of prints
+- [x] Convert to GtkApplication framework (single-instance `GcmApplication` with action handling)
+- [x] Replace SimpleGladeApp with direct GtkBuilder (`GladeComponent` helper inside `app.py`)
+- [x] Add GAction/GMenu system (application/menubar exported through `Gio.Menu`)
+- [x] Proper logging instead of prints (structured logging via `logging`, configurable with `GCM_LOG_LEVEL`)
 - [ ] Add comprehensive test suite
 
 #### Phase 3: GTK4 (Long-term)
@@ -137,9 +134,6 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 **Deferred to Phase 2 (Low Priority):**
 - [ ] N801: Class name `conf` - Used extensively throughout codebase, requires widespread refactoring
 - [ ] SIM115: One file operation without context manager - Intentional design for logging (file must remain open)
-- [ ] N999: Module name `SimpleGladeApp` - Requires file rename and import updates across codebase
-- [ ] N999: Module name `pyAES` - Encryption library, requires careful refactoring
-- [ ] N816: Variable `sboxInv` in pyAES - Part of AES algorithm implementation
 
 These 5 remaining issues are intentionally deferred as they either:
 1. Require extensive refactoring that's better suited for Phase 2

@@ -39,8 +39,11 @@
 # - Option to disable shortcuts
 
 import base64
+import builtins
 import configparser
 import contextlib
+import hashlib
+import logging
 import operator
 import os
 import re
@@ -48,23 +51,53 @@ import shlex
 import sys
 import tempfile
 import time
-import traceback
+import tokenize
+import weakref
 from pathlib import Path
 from threading import Thread
+
+
+def _configure_logging():
+    level_name = os.getenv("GCM_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    return logging.getLogger("gnome_connection_manager")
+
+
+logger = _configure_logging()
 
 try:
     import gi
 
     gi.require_version("Gdk", "3.0")
+    gi.require_version("Gio", "2.0")
     gi.require_version("Gtk", "3.0")
     gi.require_version("Vte", "2.91")
-    from gi.repository import Gdk, GLib, GObject, Gtk, Pango, Vte
+    from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango, Vte
 except (ImportError, ValueError) as e:
-    print(f"python3-gi required: {e}", file=sys.stderr)
+    logger.critical("python3-gi required: %s", e)
     sys.exit(1)
 
-from gnome_connection_manager.utils import pyAES, urlregex
-from gnome_connection_manager.utils.SimpleGladeApp import SimpleGladeApp, bindtextdomain
+
+def bindtextdomain(app_name, locale_dir=None):
+    global _
+    try:
+        import gettext
+        import locale
+
+        locale.setlocale(locale.LC_ALL, "")
+        locale.bindtextdomain(app_name, locale_dir)
+        gettext.bindtextdomain(app_name, locale_dir)
+        gettext.textdomain(app_name)
+        gettext.install(app_name, locale_dir)
+    except (OSError, locale.Error):
+        builtins.__dict__["_"] = lambda x: x
+
+import pyaes
+
+from gnome_connection_manager.utils import urlregex
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -105,6 +138,7 @@ if not Path(BASE_PATH).exists():
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
 SHELL = os.environ["SHELL"]
+#SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
 DEFAULT_TERM_TYPE = "xterm-256color"
 
 SSH_COMMAND = str(Path(BASE_PATH) / "scripts" / "ssh.expect")
@@ -194,6 +228,71 @@ shortcuts = {}
 
 enc_passwd = ""
 
+
+class GladeComponent:
+    def __init__(self, path, root=None, domain=None, application=None, parent=None, **kwargs):
+        self.builder = Gtk.Builder()
+        if domain:
+            self.builder.set_translation_domain(domain)
+        self.application = application
+        for key, value in kwargs.items():
+            try:
+                setattr(self, key, weakref.proxy(value))
+            except TypeError:
+                setattr(self, key, value)
+
+        glade_path = Path(path)
+        if not glade_path.is_file():
+            glade_path = Path(sys.argv[0]).parent / path
+        self.glade_path = str(glade_path)
+
+        if root:
+            if parent:
+                self.builder.expose_object("wMain", parent)
+            self.builder.add_objects_from_file(self.glade_path, [root])
+            self.main_widget = self.builder.get_object(root)
+            if isinstance(self.main_widget, (Gtk.Window, Gtk.Dialog)):
+                if parent and isinstance(parent, Gtk.Window):
+                    self.main_widget.set_transient_for(parent)
+                if application is not None:
+                    self.main_widget.set_application(application)
+                self.main_widget.show_all()
+                self.main_widget.present()
+                while Gtk.events_pending():
+                    Gtk.main_iteration()
+        else:
+            self.builder.add_from_file(self.glade_path)
+            self.main_widget = None
+
+        self.normalize_names()
+        self.new()
+        self.builder.connect_signals(self)
+
+    def new(self):
+        pass
+
+    def normalize_names(self):
+        for widget in self.get_widgets():
+            if isinstance(widget, Gtk.Buildable):
+                widget_name = Gtk.Buildable.get_name(widget)
+                prefixes_name_l = widget_name.split(":")
+                prefixes = prefixes_name_l[:-1]
+                widget_api_name = prefixes_name_l[-1]
+                widget_api_name = "_".join(re.findall(tokenize.Name, widget_api_name))
+                Gtk.Buildable.set_name(widget, widget_api_name)
+                if hasattr(self, widget_api_name):
+                    raise AttributeError(
+                        f"instance {self} already has an attribute {widget_api_name}"
+                    )
+                setattr(self, widget_api_name, widget)
+                if prefixes:
+                    Gtk.Buildable.set_data(widget, "prefixes", prefixes)
+
+    def get_widget(self, widget_name):
+        return self.builder.get_object(widget_name)
+
+    def get_widgets(self):
+        return self.builder.get_objects()
 
 # Variables de configuracion
 class conf:
@@ -432,8 +531,8 @@ def encrypt_old(passw: str, string: str) -> str:
     try:
         ret = xor(passw, string)
         s = base64.b64encode("".join(ret))
-    except (ValueError, TypeError, UnicodeError) as e:
-        print(f"Encryption error: {e}")
+    except (ValueError, TypeError, UnicodeError):
+        logger.exception("Legacy encryption error")
         s = ""
     return s
 
@@ -443,32 +542,83 @@ def decrypt_old(passw: str, string: str) -> str:
     try:
         ret = xor(passw, base64.b64decode(string))
         s = "".join(ret)
-    except (ValueError, TypeError, UnicodeError) as e:
-        print(f"Decryption error: {e}")
+    except (ValueError, TypeError, UnicodeError):
+        logger.exception("Legacy decryption error")
         s = ""
     return s
+
+
+def _password_to_key(secret: str | bytes) -> bytes:
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    return hashlib.sha256(secret).digest()
+
+
+def _pkcs7_pad(data: bytes) -> bytes:
+    pad_len = 16 - (len(data) % 16)
+    if pad_len == 0:
+        pad_len = 16
+    return data + bytes([pad_len] * pad_len)
+
+
+def _pkcs7_unpad(data: bytes) -> bytes:
+    if not data:
+        return data
+    pad_len = data[-1]
+    if pad_len < 1 or pad_len > 16:
+        return data
+    return data[:-pad_len]
+
+
+def _iter_blocks(data: bytes, size: int = 16):
+    for i in range(0, len(data), size):
+        yield data[i : i + size]
+
+
+def _generate_keystream(key: bytes, iv: bytes):
+    ecb = pyaes.AESModeOfOperationECB(key)
+    stream = iv
+    while True:
+        stream = ecb.encrypt(stream)
+        yield stream
 
 
 def encrypt(passw: str, string: str) -> str:
     """Encrypt a string using AES."""
     try:
-        s = pyAES.encrypt(string, passw)
-    except Exception as e:
-        print(f"AES encryption error: {e}")
-        traceback.print_exc()
-        s = ""
-    return s
+        key = _password_to_key(passw)
+        iv = os.urandom(16)
+        plaintext = _pkcs7_pad(string.encode("utf-8"))
+        keystream = _generate_keystream(key, iv)
+        ciphertext = bytearray()
+        for block in _iter_blocks(plaintext):
+            stream_block = next(keystream)
+            ciphertext.extend(bytes(b ^ s for b, s in zip(block, stream_block)))
+        return base64.b64encode(iv + ciphertext).decode("ascii")
+    except Exception:
+        logger.exception("AES encryption error")
+        return ""
 
 
 def decrypt(passw: str, string: str) -> str:
     """Decrypt a string using AES or legacy XOR."""
     try:
-        s = decrypt_old(passw, string) if conf.VERSION == 0 else pyAES.decrypt(string, passw)
-    except Exception as e:
-        print(f"Decryption error: {e}")
-        traceback.print_exc()
-        s = ""
-    return s
+        if conf.VERSION == 0:
+            return decrypt_old(passw, string)
+        data = base64.b64decode(string)
+        if len(data) <= 16:
+            return ""
+        iv, ciphertext = data[:16], data[16:]
+        key = _password_to_key(passw)
+        keystream = _generate_keystream(key, iv)
+        plaintext = bytearray()
+        for block in _iter_blocks(ciphertext):
+            stream_block = next(keystream)
+            plaintext.extend(bytes(b ^ s for b, s in zip(block, stream_block)))
+        return _pkcs7_unpad(bytes(plaintext)).decode("utf-8")
+    except Exception:
+        logger.exception("AES decryption error")
+        return ""
 
 
 def vte_feed(terminal, data):
@@ -491,10 +641,22 @@ def vte_run(terminal, command, arg=None):
     )
     envv = ["PATH={}".format(os.getenv("PATH")), f"TERM={term_type}"]
     args = []
-    args.append(command)
+
+    # Check if this is a local shell before modifying args
+    is_local_shell = (command == SHELL)
+    flag_spawn = GLib.SpawnFlags.DEFAULT if is_local_shell else GLib.SpawnFlags.FILE_AND_ARGV_ZERO
+
+    # For local shells, unset VIRTUAL_ENV
+    if is_local_shell:
+        args.append("env")
+        args.append("-u")
+        args.append("VIRTUAL_ENV")
+        args.append(command)
+    else:
+        args.append(command)
+
     if arg:
         args += arg
-    flag_spawn = GLib.SpawnFlags.DEFAULT if command == SHELL else GLib.SpawnFlags.FILE_AND_ARGV_ZERO
     if TERMINAL_V048:
         terminal.spawn_async(
             Vte.PtyFlags.DEFAULT,
@@ -522,12 +684,13 @@ def vte_run(terminal, command, arg=None):
         )
 
 
-class Wmain(SimpleGladeApp):
+class Wmain(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, **kwargs)
+        application = kwargs.get("application")
+        super().__init__(path, root, domain, application=application)
 
         global wMain
         wMain = self
@@ -538,8 +701,13 @@ class Wmain(SimpleGladeApp):
 
         self.createMenu()
         self.window = self.get_widget("wMain")
+        for menu in (self.popupMenu, self.popupMenuFolder, self.popupMenuTab):
+            menu.attach_to_widget(self.window, None)
 
         self._current_fullscreen_state = False
+        self._context_terminal = None
+        self._context_tab_widget = None
+        self._context_tree_path = None
 
         if conf.VERSION == 0:
             initialise_encyption_key()
@@ -594,22 +762,24 @@ class Wmain(SimpleGladeApp):
             screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-        # Por cada parametro de la linea de comandos buscar el host y agregar un tab
-        for arg in sys.argv[1:]:
-            i = arg.rfind("/")
-            if i != -1:
-                group = arg[:i]
-                name = arg[i + 1 :]
-                if group != "" and name != "" and group in groups:
-                    for h in groups[group]:
-                        if h.name == name:
-                            self.addTab(self.nbConsole, h)
-                            break
-
         self.get_widget("txtSearch").set_placeholder_text(_("buscar..."))
 
         if conf.STARTUP_LOCAL:
             self.addTab(self.nbConsole, "local")
+
+    def open_cli_targets(self, args):
+        for arg in args:
+            i = arg.rfind("/")
+            if i == -1:
+                continue
+            group = arg[:i]
+            name = arg[i + 1 :]
+            if not group or not name or group not in groups:
+                continue
+            for host in groups[group]:
+                if host.name == name:
+                    self.addTab(self.nbConsole, host)
+                    break
 
     def update_visual(self):
         window = self.get_widget("wMain")
@@ -684,10 +854,8 @@ class Wmain(SimpleGladeApp):
             if conf.PASTE_ON_RIGHT_CLICK:
                 widget.paste_clipboard()
             else:
+                self.set_context_terminal(widget)
                 self.popupMenu.mnuCopy.set_sensitive(widget.get_has_selection())
-                self.popupMenu.mnuLog.set_active(
-                    hasattr(widget, "log_handler_id") and widget.log_handler_id != 0
-                )
                 self.popupMenu.terminal = widget
                 # Use popup_at_rect with manual position calculation for proper placement
                 if hasattr(self.popupMenu, "popup_at_rect"):
@@ -924,8 +1092,8 @@ class Wmain(SimpleGladeApp):
             terminal.match_add_regex(new_reg_m, 0)
             self.search["pcre2"] = True
             return True
-        except Exception as e:
-            print(e, "Using custom search instead")
+        except Exception:
+            logger.exception("PCRE search failed; using manual fallback")
             self.search["pcre2"] = False
             # no hay soporte para pcre2, usar busqueda artesanal
 
@@ -1085,44 +1253,45 @@ class Wmain(SimpleGladeApp):
 
     def createMenu(self):
         self.popupMenu = Gtk.Menu()
+        self.popupMenu.connect("hide", self.clear_context_terminal)
         self.popupMenu.mnuCopy = menuItem = Gtk.MenuItem(label=_("Copiar"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "C")
+        menuItem.set_action_name("app.copy")
         menuItem.show()
 
         self.popupMenu.mnuPaste = menuItem = Gtk.MenuItem(label=_("Pegar"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "V")
+        menuItem.set_action_name("app.paste")
         menuItem.show()
 
         self.popupMenu.mnuCopyPaste = menuItem = Gtk.MenuItem(label=_("Copiar y Pegar"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "CV")
+        menuItem.set_action_name("app.copy-paste")
         menuItem.show()
 
         self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Seleccionar todo"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "A")
+        menuItem.set_action_name("app.select-all")
         menuItem.show()
 
         self.popupMenu.mnuCopyAll = menuItem = Gtk.MenuItem(label=_("Copiar todo"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "CA")
+        menuItem.set_action_name("app.copy-all")
         menuItem.show()
 
         self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Guardar buffer en archivo"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "S")
+        menuItem.set_action_name("app.save-buffer")
         menuItem.show()
 
         self.popupMenu.mnuSplitH = menuItem = Gtk.MenuItem(label=_("Split H"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "SPH")
+        menuItem.set_action_name("app.split-horizontal")
         menuItem.show()
 
         self.popupMenu.mnuSplitV = menuItem = Gtk.MenuItem(label=_("Split V"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "SPV")
+        menuItem.set_action_name("app.split-vertical")
         menuItem.show()
 
         menuItem = Gtk.MenuItem()
@@ -1131,27 +1300,27 @@ class Wmain(SimpleGladeApp):
 
         self.popupMenu.mnuReset = menuItem = Gtk.MenuItem(label=_("Reiniciar consola"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "RS2")
+        menuItem.set_action_name("app.console-reset")
         menuItem.show()
 
         self.popupMenu.mnuClear = menuItem = Gtk.MenuItem(label=_("Reiniciar y Limpiar consola"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "RC2")
+        menuItem.set_action_name("app.console-reset-clear")
         menuItem.show()
 
         self.popupMenu.mnuClone = menuItem = Gtk.MenuItem(label=_("Clonar consola"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "CC2")
+        menuItem.set_action_name("app.console-clone")
         menuItem.show()
 
         self.popupMenu.mnuLog = menuItem = Gtk.CheckMenuItem(label=_("Habilitar log"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "L2")
+        menuItem.set_action_name("app.console-log")
         menuItem.show()
 
         self.popupMenu.mnuClose = menuItem = Gtk.MenuItem(label=_("Cerrar consola"))
         self.popupMenu.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "X")
+        menuItem.set_action_name("app.console-close")
         menuItem.show()
 
         menuItem = Gtk.MenuItem()
@@ -1169,35 +1338,36 @@ class Wmain(SimpleGladeApp):
 
         # Menu contextual para panel de servidores
         self.popupMenuFolder = Gtk.Menu()
+        self.popupMenuFolder.connect("hide", self.clear_context_tree_path)
 
         self.popupMenuFolder.mnuConnect = menuItem = Gtk.MenuItem(label=_("Conectar"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", self.on_btnConnect_clicked)
+        menuItem.set_action_name("app.connect")
         menuItem.show()
 
         self.popupMenuFolder.mnuCopyAddress = menuItem = Gtk.MenuItem(label=_("Copiar Direccion"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "H")
+        menuItem.set_action_name("app.copy-address")
         menuItem.show()
 
         self.popupMenuFolder.mnuAdd = menuItem = Gtk.MenuItem(label=_("Agregar Host"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", self.on_btnAdd_clicked)
+        menuItem.set_action_name("app.add-host")
         menuItem.show()
 
         self.popupMenuFolder.mnuEdit = menuItem = Gtk.MenuItem(label=_("Editar"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", self.on_bntEdit_clicked)
+        menuItem.set_action_name("app.edit-host")
         menuItem.show()
 
         self.popupMenuFolder.mnuDel = menuItem = Gtk.MenuItem(label=_("Eliminar"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", self.on_btnDel_clicked)
+        menuItem.set_action_name("app.delete")
         menuItem.show()
 
         self.popupMenuFolder.mnuDup = menuItem = Gtk.MenuItem(label=_("Duplicar Host"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "D")
+        menuItem.set_action_name("app.duplicate-host")
         menuItem.show()
 
         menuItem = Gtk.SeparatorMenuItem()
@@ -1206,55 +1376,56 @@ class Wmain(SimpleGladeApp):
 
         self.popupMenuFolder.mnuExpand = menuItem = Gtk.MenuItem(label=_("Expandir todo"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", lambda *args: self.treeServers.expand_all())
+        menuItem.set_action_name("app.expand-groups")
         menuItem.show()
 
         self.popupMenuFolder.mnuCollapse = menuItem = Gtk.MenuItem(label=_("Contraer todo"))
         self.popupMenuFolder.append(menuItem)
-        menuItem.connect("activate", lambda *args: self.treeServers.collapse_all())
+        menuItem.set_action_name("app.collapse-groups")
         menuItem.show()
 
         # Menu contextual para tabs
         self.popupMenuTab = Gtk.Menu()
+        self.popupMenuTab.connect("hide", self.clear_context_tab_widget)
 
         self.popupMenuTab.mnuRename = menuItem = Gtk.MenuItem(label=_("Renombrar consola"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "R")
+        menuItem.set_action_name("app.console-rename")
         menuItem.show()
 
         self.popupMenuTab.mnuReset = menuItem = Gtk.MenuItem(label=_("Reiniciar consola"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "RS")
+        menuItem.set_action_name("app.console-reset")
         menuItem.show()
 
         self.popupMenuTab.mnuClear = menuItem = Gtk.MenuItem(label=_("Reiniciar y Limpiar consola"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "RC")
+        menuItem.set_action_name("app.console-reset-clear")
         menuItem.show()
 
         self.popupMenuTab.mnuReopen = menuItem = Gtk.MenuItem(label=_("Reconectar al host"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "RO")
+        menuItem.set_action_name("app.console-reconnect")
         # menuItem.show()
 
         self.popupMenuTab.mnuClone = menuItem = Gtk.MenuItem(label=_("Clonar consola"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "CC")
+        menuItem.set_action_name("app.console-clone")
         menuItem.show()
 
         self.popupMenuTab.mnuLog = menuItem = Gtk.CheckMenuItem(label=_("Habilitar log"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "L")
+        menuItem.set_action_name("app.console-log")
         menuItem.show()
 
         self.popupMenuTab.mnuSplitH = menuItem = Gtk.MenuItem(label=_("Split H"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "SPH")
+        menuItem.set_action_name("app.split-horizontal")
         menuItem.show()
 
         self.popupMenuTab.mnuSplitV = menuItem = Gtk.MenuItem(label=_("Split V"))
         self.popupMenuTab.append(menuItem)
-        menuItem.connect("activate", self.on_popupmenu, "SPV")
+        menuItem.set_action_name("app.split-vertical")
         menuItem.show()
 
     def createMenuItem(self, shortcut, label):
@@ -1277,16 +1448,13 @@ class Wmain(SimpleGladeApp):
             if not isinstance(shortcuts[x], list):
                 menuItem = self.createMenuItem(x, shortcuts[x][0:30])
                 self.popupMenu.mnuCommands.append(menuItem)
-                menuItem.connect("activate", self.on_popupmenu, "CP", shortcuts[x])
+                menuItem.set_action_name("app.custom-command")
+                menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
 
                 menuItem = self.createMenuItem(x, shortcuts[x][0:30])
                 self.menuCustomCommands.append(menuItem)
-                menuItem.connect("activate", self.on_menuCustomCommands_activate, shortcuts[x])
-
-    def on_menuCustomCommands_activate(self, widget, command):
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal:
-            vte_feed(terminal, command)
+                menuItem.set_action_name("app.custom-command")
+                menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
 
     def terminal_copy(self, terminal):
         terminal.copy_clipboard_format(Vte.Format.TEXT)
@@ -1382,8 +1550,8 @@ class Wmain(SimpleGladeApp):
                 terminal.log.write(
                     "{}Session '{}' opened at {}\n{}\n".format(prepend, title, time.strftime("%Y-%m-%d %H:%M:%S"), "-" * 80)
                 )
-            except Exception as e:
-                print(e)
+            except Exception:
+                logger.exception("Unable to open log file")
                 msgbox(
                     "{}\n{}".format(_("No se puede abrir el archivo de log para escritura"), filename)
                 )
@@ -1591,9 +1759,8 @@ class Wmain(SimpleGladeApp):
 
             # guardar datos de consola para clonar consola
             v.host = host
-        except Exception as e:
-            print("ERROR", e)
-            traceback.print_exc()
+        except Exception:
+            logger.exception("Error connecting to host")
             msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
 
     def send_data(self, terminal, data):
@@ -1683,7 +1850,7 @@ class Wmain(SimpleGladeApp):
             conf.UPDATE_TITLE = cp.getboolean("options", "update-title")
             conf.APP_TITLE = cp.get("options", "app-title") or app_name
         except (configparser.Error, ValueError) as e:
-            print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
+            logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
 
         # setup shorcuts
         scuts = {}
@@ -1736,7 +1903,7 @@ class Wmain(SimpleGladeApp):
 
                 groups[host.group].append(host)
             except (configparser.Error, ValueError, AttributeError) as e:
-                print(f"{_('Entrada invalida en archivo de configuracion')}: {e}")
+                logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
 
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
@@ -2147,6 +2314,7 @@ class Wmain(SimpleGladeApp):
             GLib.timeout_add(200, lambda: self.hpMain.set_position(0))
         self.get_widget("show_panel").set_active(visibility)
         conf.SHOW_PANEL = visibility
+        self._update_toggle_action("toggle-panel", visibility)
 
     def set_toolbar_visible(self, visibility):
         # self.get_widget("toolbar1").set_visible(visibility)
@@ -2156,13 +2324,168 @@ class Wmain(SimpleGladeApp):
             self.get_widget("toolbar1").hide()
         self.get_widget("show_toolbar").set_active(visibility)
         conf.SHOW_TOOLBAR = visibility
+        self._update_toggle_action("toggle-toolbar", visibility)
+
+    def _update_toggle_action(self, action_name, state):
+        window = self.get_widget("wMain")
+        application = window.get_application() if isinstance(window, Gtk.Window) else None
+        if application is None:
+            return
+        action = application.lookup_action(action_name)
+        if action is None:
+            return
+        current_state = action.get_state()
+        current_value = current_state.get_boolean() if current_state is not None else None
+        if current_value != state:
+            action.set_state(GLib.Variant("b", state))
+
+    def sync_console_log_action(self, terminal):
+        window = self.get_widget("wMain")
+        application = window.get_application() if isinstance(window, Gtk.Window) else None
+        if application is None:
+            return
+        action = application.lookup_action("console-log")
+        if action is None:
+            return
+        enabled = hasattr(terminal, "log_handler_id") and terminal.log_handler_id != 0
+        action.set_state(GLib.Variant("b", enabled))
+
+    def set_context_terminal(self, terminal):
+        self._context_terminal = terminal
+        if isinstance(terminal, Vte.Terminal):
+            self.current = terminal
+            self.sync_console_log_action(terminal)
+
+    def clear_context_terminal(self, *args):
+        self._context_terminal = None
+
+    def get_target_terminal(self):
+        if self._context_terminal is not None:
+            return self._context_terminal
+        terminal = self.find_active_terminal(self.hpMain)
+        if terminal is not None:
+            return terminal
+        return self.current
+
+    def set_context_tab_widget(self, widget):
+        self._context_tab_widget = widget
+        if widget and widget.get_children():
+            self.set_context_terminal(widget.get_children()[0])
+
+    def clear_context_tab_widget(self, *args):
+        self._context_tab_widget = None
+
+    def get_context_tab_widget(self):
+        if self._context_tab_widget is not None:
+            return self._context_tab_widget
+        if self.nbConsole.get_n_pages() == 0:
+            return None
+        return self.nbConsole.get_nth_page(self.nbConsole.get_current_page())
+
+    def get_context_tab_label(self):
+        widget = self.get_context_tab_widget()
+        if widget is None:
+            return None
+        notebook = widget.get_parent()
+        return notebook.get_tab_label(widget)
+
+    def set_context_tree_path(self, path):
+        self._context_tree_path = path
+
+    def clear_context_tree_path(self, *args):
+        self._context_tree_path = None
+
+    def get_context_tree_iter(self):
+        if self._context_tree_path is not None:
+            try:
+                return self.treeModel.get_iter(self._context_tree_path)
+            except (TypeError, ValueError):
+                return None
+        selection = self.treeServers.get_selection()
+        model, iter_ = selection.get_selected()
+        return iter_
+
+    def get_selected_host(self):
+        iter_ = self.get_context_tree_iter()
+        if iter_ is None or self.treeModel.iter_has_child(iter_):
+            return None
+        return self.treeModel.get_value(iter_, 1)
+
+    def copy_selected_address(self):
+        host = self.get_selected_host()
+        if host is None:
+            return
+        cb = Gtk.Clipboard.get_default(Gdk.Display.get_default())
+        cb.set_text(host.host, len(host.host))
+        cb.store()
+
+    def duplicate_selected_host(self):
+        host = self.get_selected_host()
+        if host is None:
+            return
+        iter_ = self.get_context_tree_iter()
+        if iter_ is None:
+            return
+        group = self.get_group(iter_)
+        newname = f"{host.name} (copy)"
+        for h in groups.get(group, []):
+            if h.name == newname:
+                newname = f"{newname} (copy)"
+        newhost = host.clone()
+        newhost.name = newname
+        groups.setdefault(group, []).append(newhost)
+        self.updateTree()
+        self.writeConfig()
+
+    def expand_all_groups(self):
+        self.treeServers.expand_all()
+
+    def collapse_all_groups(self):
+        self.treeServers.collapse_all()
+
+    def run_custom_command(self, command):
+        terminal = self.get_target_terminal()
+        if terminal:
+            vte_feed(terminal, command)
+
+    def trigger_popup_action(self, terminal_code, tab_code=None, *args):
+        if tab_code is not None and (
+            self._context_tab_widget is not None or self.nbConsole.get_n_pages() > 0
+        ):
+            if self._context_tab_widget is None:
+                widget = self.nbConsole.get_nth_page(self.nbConsole.get_current_page())
+                if widget is not None:
+                    self.set_context_tab_widget(widget)
+            self.on_popupmenu(None, tab_code, *args)
+        else:
+            terminal = self.get_target_terminal()
+            if terminal is None:
+                return
+            self.popupMenu.terminal = terminal
+            self.on_popupmenu(None, terminal_code, *args)
+        self.clear_context_terminal()
+        self.clear_context_tab_widget()
+
+    def request_quit(self):
+        (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
+        self.writeConfig()
+        self.quit_application()
+
+    def quit_application(self):
+        """Quit through GtkApplication when available (fallback to Gtk.main_quit)."""
+        window = self.get_widget("wMain")
+        application = window.get_application() if isinstance(window, Gtk.Window) else None
+        if application is not None:
+            application.quit()
+        else:
+            Gtk.main_quit()
 
     # -- Wmain custom methods }
 
     # -- Wmain.on_wMain_destroy {
     def on_wMain_destroy(self, widget, *args):
         self.writeConfig()
-        Gtk.main_quit()
+        self.quit_application()
 
     # -- Wmain.on_wMain_destroy }
 
@@ -2276,20 +2599,22 @@ class Wmain(SimpleGladeApp):
 
     # -- Wmain.on_salir1_activate {
     def on_salir1_activate(self, widget, *args):
-        (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
-        self.writeConfig()
-        Gtk.main_quit()
+        self.request_quit()
 
     # -- Wmain.on_salir1_activate }
 
     # -- Wmain.on_show_toolbar_activate {
     def on_show_toolbar_toggled(self, widget, *args):
+        if widget.get_active() == conf.SHOW_TOOLBAR:
+            return
         self.set_toolbar_visible(widget.get_active())
 
     # -- Wmain.on_show_toolbar_activate }
 
     # -- Wmain.on_show_panel_activate {
     def on_show_panel_toggled(self, widget, *args):
+        if widget.get_active() == conf.SHOW_PANEL:
+            return
         self.set_panel_visible(widget.get_active())
 
     # -- Wmain.on_show_panel_activate }
@@ -2608,12 +2933,14 @@ class Wmain(SimpleGladeApp):
             y = int(event.y)
             pthinfo = self.treeServers.get_path_at_pos(x, y)
             if pthinfo is None:
+                self.set_context_tree_path(None)
                 self.popupMenuFolder.mnuDel.hide()
                 self.popupMenuFolder.mnuEdit.hide()
                 self.popupMenuFolder.mnuCopyAddress.hide()
                 self.popupMenuFolder.mnuDup.hide()
             else:
                 path, col, cellx, celly = pthinfo
+                self.set_context_tree_path(path)
                 if self.treeModel.iter_children(self.treeModel.get_iter(path)):
                     self.popupMenuFolder.mnuEdit.hide()
                     self.popupMenuFolder.mnuCopyAddress.hide()
@@ -2845,12 +3172,12 @@ class HostUtils:
         cp.set(section, "term", host.term)
 
 
-class Whost(SimpleGladeApp):
+class Whost(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wHost", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
 
         self.treeModel = Gtk.ListStore(
             GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
@@ -3312,12 +3639,12 @@ class Whost(SimpleGladeApp):
     # -- Whost.on_btnBrowse_clicked }
 
 
-class Wabout(SimpleGladeApp):
+class Wabout(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wAbout", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
         self.wAbout.set_icon_from_file(ICON_PATH)
 
     # -- Wabout.new {
@@ -3339,10 +3666,10 @@ class Wabout(SimpleGladeApp):
     # -- Wabout.on_wAbout_close }
 
 
-class Wconfig(SimpleGladeApp):
+class Wconfig(GladeComponent):
     def __init__(self, path="gnome-connection-manager.glade", root="wConfig", domain=domain_name):
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
 
     # -- Wconfig.new {
     def new(self):
@@ -3476,9 +3803,34 @@ class Wconfig(SimpleGladeApp):
         self.btnBColor.connect("color-set", self.on_btnBColor_color_set)
         self.chkDefaultColors.connect("toggled", self.on_chkDefaultColors_toggled)
 
+        self.center_window()
+
     # -- Wconfig.new }
 
     # -- Wconfig custom methods {
+    def center_window(self):
+        """Ensure the settings window opens centered on the current monitor."""
+        window = self.main_widget
+        if not isinstance(window, Gtk.Window):
+            return
+
+        def move_to_center():
+            gdk_window = window.get_window()
+            if not gdk_window:
+                return True
+            screen = window.get_screen()
+            monitor = screen.get_monitor_at_window(gdk_window)
+            if monitor < 0:
+                monitor = 0
+            geometry = screen.get_monitor_geometry(monitor)
+            width, height = window.get_size()
+            x = geometry.x + max(0, (geometry.width - width) // 2)
+            y = geometry.y + max(0, (geometry.height - height) // 2)
+            window.move(x, y)
+            return False
+
+        GLib.idle_add(move_to_center)
+
     def addParam(self, name, field, ptype, *args):
         x = self.tblGeneral.rows
         self.tblGeneral.rows += 1
@@ -3676,7 +4028,7 @@ class Wconfig(SimpleGladeApp):
     # -- Wconfig.on_treeCommands_key_press_event }
 
 
-class Wcluster(SimpleGladeApp):
+class Wcluster(GladeComponent):
     def __init__(
         self,
         path="gnome-connection-manager.glade",
@@ -3687,7 +4039,7 @@ class Wcluster(SimpleGladeApp):
     ):
         self.terms = terms
         path = str(Path(glade_dir) / path)
-        SimpleGladeApp.__init__(self, path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=wMain.window)
 
     # -- Wcluster.new {
     def new(self):
@@ -3910,6 +4262,9 @@ class NotebookTabLabel(Gtk.HBox):
 
     def popupmenu(self, widget, event, label):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            global wMain
+            if wMain:
+                wMain.set_context_tab_widget(self.widget_)
             self.popup.label = self.label
             if self.is_active:
                 self.popup.mnuReopen.hide()
@@ -3925,11 +4280,6 @@ class NotebookTabLabel(Gtk.HBox):
                 self.popup.mnuSplitH.hide()
                 self.popup.mnuSplitV.hide()
 
-            # enable or disable log checkbox according to terminal
-            self.popup.mnuLog.set_active(
-                hasattr(self.widget_.get_children()[0], "log_handler_id")
-                and self.widget_.get_children()[0].log_handler_id != 0
-            )
             # Use popup_at_rect with manual position calculation for proper placement
             if hasattr(self.popup, "popup_at_rect"):
                 # Create a rectangle at the click position
@@ -4150,15 +4500,343 @@ class CheckUpdates(Thread):
             pass
 
 
+class GcmApplication(Gtk.Application):
+    """GtkApplication bootstrap that owns the main window."""
+
+    def __init__(self):
+        super().__init__(
+            application_id="com.kuthulu.GnomeConnectionManager",
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
+        )
+        self._controller = None
+        self._pending_cli = []
+
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        self._create_action("quit", self._on_action_quit, ["<Primary>q"])
+        self._create_action("new-local", self._on_action_new_local, ["<Primary><Shift>n"])
+        self._create_action("connect", self._on_action_connect, ["<Primary>Return"])
+        self._create_action("add-host", self._on_action_add_host, ["<Primary>n"])
+        self._create_action("edit-host", self._on_action_edit_host, ["<Primary>e"])
+        self._create_action("delete", self._on_action_delete_host, ["Delete"])
+        self._create_action("refresh", self._on_action_refresh, ["<Primary>r"])
+        self._create_action("preferences", self._on_action_preferences, ["<Primary>comma"])
+        self._create_action("about", self._on_action_about, ["F1"])
+        self._create_action("cluster", self._on_action_cluster, ["<Primary><Shift>c"])
+        self._create_action("save-buffer", self._on_action_save_buffer, ["<Primary><Shift>s"])
+        self._create_action("import-hosts", self._on_action_import_hosts)
+        self._create_action("export-hosts", self._on_action_export_hosts)
+        self._create_action("copy", self._on_action_copy, ["<Primary><Shift>c"])
+        self._create_action("paste", self._on_action_paste, ["<Primary><Shift>v"])
+        self._create_action("copy-paste", self._on_action_copy_paste)
+        self._create_action("select-all", self._on_action_select_all, ["<Primary><Shift>a"])
+        self._create_action("copy-all", self._on_action_copy_all)
+        self._create_action("split-horizontal", self._on_action_split_horizontal)
+        self._create_action("split-vertical", self._on_action_split_vertical)
+        self._create_action("unsplit", self._on_action_unsplit)
+        self._create_action("search-back", self._on_action_search_back)
+        self._create_action("search-next", self._on_action_search_next)
+        self._create_action("donate", self._on_action_donate)
+        self._create_action("console-reset", self._on_action_console_reset)
+        self._create_action("console-reset-clear", self._on_action_console_reset_clear)
+        self._create_action("console-clone", self._on_action_console_clone)
+        self._create_action("console-rename", self._on_action_console_rename)
+        self._create_action("console-reconnect", self._on_action_console_reconnect)
+        self._create_action("console-close", self._on_action_console_close)
+        self._create_stateful_action("console-log", False, self._on_action_console_log)
+        self._create_action(
+            "custom-command",
+            self._on_action_custom_command,
+            parameter_type=GLib.VariantType.new("s"),
+        )
+        self._create_action("copy-address", self._on_action_copy_address)
+        self._create_action("duplicate-host", self._on_action_duplicate_host)
+        self._create_action("expand-groups", self._on_action_expand_groups)
+        self._create_action("collapse-groups", self._on_action_collapse_groups)
+        self._create_stateful_action(
+            "toggle-panel", conf.SHOW_PANEL, self._on_toggle_panel, ["F9"]
+        )
+        self._create_stateful_action(
+            "toggle-toolbar", conf.SHOW_TOOLBAR, self._on_toggle_toolbar, ["<Shift>F9"]
+        )
+        self._build_menus()
+
+    def _create_action(self, name, callback, accels=None, parameter_type=None):
+        action = Gio.SimpleAction.new(name, parameter_type)
+        action.connect("activate", callback)
+        self.add_action(action)
+        if accels:
+            self.set_accels_for_action(f"app.{name}", accels)
+        return action
+
+    def _create_stateful_action(self, name, initial_state, callback, accels=None):
+        action = Gio.SimpleAction.new_stateful(name, None, GLib.Variant("b", initial_state))
+        action.connect("change-state", callback)
+        self.add_action(action)
+        if accels:
+            self.set_accels_for_action(f"app.{name}", accels)
+        return action
+
+    def _build_menus(self):
+        app_menu = Gio.Menu()
+        primary = Gio.Menu()
+        primary.append(_("_Preferences"), "app.preferences")
+        primary.append(_("_About"), "app.about")
+        primary.append(_("_Quit"), "app.quit")
+        app_menu.append_section(None, primary)
+        self.set_app_menu(app_menu)
+
+        menubar = Gio.Menu()
+
+        file_menu = Gio.Menu()
+        file_menu.append(_("Save Buffer"), "app.save-buffer")
+        file_menu.append(_("Import Hosts"), "app.import-hosts")
+        file_menu.append(_("Export Hosts"), "app.export-hosts")
+        file_menu.append(_("Quit"), "app.quit")
+        menubar.append_submenu(_("_File"), file_menu)
+
+        edit_menu = Gio.Menu()
+        edit_menu.append(_("Copy"), "app.copy")
+        edit_menu.append(_("Paste"), "app.paste")
+        edit_menu.append(_("Copy & Paste"), "app.copy-paste")
+        edit_menu.append(_("Select All"), "app.select-all")
+        edit_menu.append(_("Copy All"), "app.copy-all")
+        edit_menu.append(_("Preferences"), "app.preferences")
+        menubar.append_submenu(_("_Edit"), edit_menu)
+
+        view_menu = Gio.Menu()
+        view_menu.append(_("Show Toolbar"), "app.toggle-toolbar")
+        view_menu.append(_("Show Panel"), "app.toggle-panel")
+        menubar.append_submenu(_("_View"), view_menu)
+
+        servers_menu = Gio.Menu()
+        servers_menu.append(_("New Local Console"), "app.new-local")
+        servers_menu.append(_("Connect"), "app.connect")
+        servers_menu.append(_("Add Host"), "app.add-host")
+        servers_menu.append(_("Edit Host"), "app.edit-host")
+        servers_menu.append(_("Delete Host"), "app.delete")
+        servers_menu.append(_("Cluster"), "app.cluster")
+        menubar.append_submenu(_("_Servers"), servers_menu)
+
+        self.set_menubar(menubar)
+
+    def do_activate(self):
+        if self._controller is None:
+            self._controller = Wmain(application=self)
+        main_window = self._controller.get_widget("wMain")
+        if isinstance(main_window, Gtk.Window):
+            main_window.set_application(self)
+            main_window.present()
+        if self._pending_cli:
+            self._controller.open_cli_targets(self._pending_cli)
+            self._pending_cli.clear()
+
+    def do_command_line(self, command_line):
+        arguments = command_line.get_arguments()[1:]
+        if arguments:
+            self._pending_cli.extend(arguments)
+        self.activate()
+        return 0
+
+    def _on_action_quit(self, action, _param):
+        if self._controller is not None:
+            self._controller.request_quit()
+        else:
+            self.quit()
+
+    def _on_action_new_local(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnLocal_clicked(None)
+
+    def _on_action_connect(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnConnect_clicked(None)
+
+    def _on_action_add_host(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnAdd_clicked(None)
+
+    def _on_action_edit_host(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_bntEdit_clicked(None)
+
+    def _on_action_delete_host(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnDel_clicked(None)
+
+    def _on_action_refresh(self, action, _param):
+        if self._controller is not None:
+            self._controller.updateTree()
+
+    def _on_action_preferences(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnConfig_clicked(None)
+
+    def _on_action_about(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_acerca_de1_activate(None)
+
+    def _on_action_cluster(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnCluster_clicked(None)
+
+    def _on_action_save_buffer(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.show_save_buffer(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_import_hosts(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_importar_servidores1_activate(None)
+
+    def _on_action_export_hosts(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_exportar_servidores1_activate(None)
+
+    def _on_action_copy(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.terminal_copy(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_paste(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.terminal_paste(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_copy_paste(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.terminal_copy_paste(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_select_all(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.terminal_select_all(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_copy_all(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.terminal_copy_all(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_split_horizontal(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnHSplit_clicked(None)
+
+    def _on_action_split_vertical(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnVSplit_clicked(None)
+
+    def _on_action_unsplit(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnUnsplit_clicked(None)
+
+    def _on_action_search_back(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnSearchBack_clicked(None)
+
+    def _on_action_search_next(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnSearch_clicked(None)
+
+    def _on_action_donate(self, action, _param):
+        if self._controller is not None:
+            self._controller.on_btnDonate_clicked(None)
+
+    def _on_action_console_reset(self, action, _param):
+        if self._controller is not None:
+            self._controller.trigger_popup_action("RS2", "RS")
+
+    def _on_action_console_reset_clear(self, action, _param):
+        if self._controller is not None:
+            self._controller.trigger_popup_action("RC2", "RC")
+
+    def _on_action_console_clone(self, action, _param):
+        if self._controller is not None:
+            self._controller.trigger_popup_action("CC2", "CC")
+
+    def _on_action_console_rename(self, action, _param):
+        if self._controller is not None:
+            self._controller.trigger_popup_action("R", "R")
+
+    def _on_action_console_reconnect(self, action, _param):
+        if self._controller is not None:
+            self._controller.trigger_popup_action("RO", "RO")
+
+    def _on_action_console_close(self, action, _param):
+        if self._controller is not None:
+            self._controller.trigger_popup_action("X", "X")
+
+    def _on_action_console_log(self, action, state):
+        if self._controller is None:
+            return
+        enable = state.get_boolean()
+        terminal = self._controller.get_target_terminal()
+        if terminal is None:
+            return
+        if not self._controller.set_terminal_logger(terminal, enable):
+            enable = False
+        action.set_state(GLib.Variant("b", enable))
+        self._controller.clear_context_terminal()
+        self._controller.clear_context_tab_widget()
+
+    def _on_action_custom_command(self, action, parameter):
+        if self._controller is None or parameter is None:
+            return
+        self._controller.run_custom_command(parameter.get_string())
+        self._controller.clear_context_terminal()
+
+    def _on_action_copy_address(self, action, _param):
+        if self._controller is not None:
+            self._controller.copy_selected_address()
+            self._controller.clear_context_tree_path()
+
+    def _on_action_duplicate_host(self, action, _param):
+        if self._controller is not None:
+            self._controller.duplicate_selected_host()
+            self._controller.clear_context_tree_path()
+
+    def _on_action_expand_groups(self, action, _param):
+        if self._controller is not None:
+            self._controller.expand_all_groups()
+
+    def _on_action_collapse_groups(self, action, _param):
+        if self._controller is not None:
+            self._controller.collapse_all_groups()
+
+    def _on_toggle_panel(self, action, state):
+        action.set_state(state)
+        if self._controller is not None:
+            self._controller.set_panel_visible(state.get_boolean())
+
+    def _on_toggle_toolbar(self, action, state):
+        action.set_state(state)
+        if self._controller is not None:
+            self._controller.set_toolbar_visible(state.get_boolean())
+
+
 # -- main {
 
 
-def main():
-    w_main = Wmain()
-    w_main.run()
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
+    application = GcmApplication()
+    return application.run(argv)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 
 # -- main }
