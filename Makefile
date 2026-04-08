@@ -1,32 +1,21 @@
 PKG_NAME=gnome-connection-manager
-PKG_DESCRIPTION="Simple tabbed ssh and telnet connection manager for GTK+ environments\nMore info in http://kuthulu.com/gcm"
-PKG_VERSION=1.2.1
+PKG_DESCRIPTION="Simple tabbed SSH and telnet connection manager for GTK environments"
+PKG_VERSION=1.2.2
 PKG_MAINTAINER="Renzo Bertuzzi <kuthulu@gmail.com>"
-PKG_VENDOR=kuthulu.com
-PKG_URL=http://kuthulu.com/gcm
 PKG_ARCH=all
-PKG_ARCH_RPM=noarch
 PKG_DEB=${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb
-PKG_RPM=${PKG_NAME}-${PKG_VERSION}.${PKG_ARCH_RPM}.rpm
-FPM_OPTS=-s dir -n $(PKG_NAME) -v $(PKG_VERSION)  -C $(TMPINSTALLDIR) --maintainer ${PKG_MAINTAINER} --description "$$(printf ${PKG_DESCRIPTION})" -a $(PKG_ARCH) --license GPLv3 --vendor ${PKG_VENDOR} --category net --url ${PKG_URL}
 TMPINSTALLDIR=/tmp/$(PKG_NAME)-fpm-install
+DATADIR=$(TMPINSTALLDIR)/usr/share/$(PKG_NAME)
+FPM_OPTS=-s dir -n $(PKG_NAME) -v $(PKG_VERSION) -C $(TMPINSTALLDIR) \
+	--maintainer $(PKG_MAINTAINER) \
+	--description $(PKG_DESCRIPTION) \
+	-a $(PKG_ARCH) --license GPLv3 --category net
 
-all : deb rpm
-.PHONY : all
+.PHONY: all deb install translate clean
 
-#install all files in a temp directory
-install: translate
-	mkdir -p $(DESTDIR)/usr/share/$(PKG_NAME)
-	mkdir -p $(DESTDIR)/usr/share/applications
-	mkdir -p $(DESTDIR)/usr/share/doc/$(PKG_NAME)
-	echo "${PKG_NAME} (${PKG_VERSION}.${PKG_RELEASE}) all; urgency=low" > $(DESTDIR)/usr/share/doc/$(PKG_NAME)/changelog
-	git log --no-merges --format="* %s" >> $(DESTDIR)/usr/share/doc/$(PKG_NAME)/changelog
-	gzip -9 $(DESTDIR)/usr/share/doc/$(PKG_NAME)/changelog
-	cp gnome-connection-manager.desktop $(DESTDIR)/usr/share/applications
-	cp LICENSE $(DESTDIR)/usr/share/doc/$(PKG_NAME)/copyright
-	cp -r lang donate.gif gnome_connection_manager.py gnome-connection-manager.glade icon.png ssh.expect urlregex.py style.css $(DESTDIR)/usr/share/gnome-connection-manager/
+all: deb
 
-#compile translation files
+# Compile .po → .mo translation files
 translate:
 	msgfmt lang/de_DE.po -o lang/de/LC_MESSAGES/gcm-lang.mo
 	msgfmt lang/en_US.po -o lang/en/LC_MESSAGES/gcm-lang.mo
@@ -37,54 +26,51 @@ translate:
 	msgfmt lang/pt_BR.po -o lang/pt/LC_MESSAGES/gcm-lang.mo
 	msgfmt lang/ru_RU.po -o lang/ru/LC_MESSAGES/gcm-lang.mo
 
-# Generate a deb package using fpm
-deb:
+# Stage all files into TMPINSTALLDIR
+install: translate
 	rm -rf $(TMPINSTALLDIR)
-	rm -f $(PKG_DEB)
-	chmod -R g-w *
-	make install DESTDIR=$(TMPINSTALLDIR)
 
+	# Install the Python package into staging tree (pyaes provided by system python3-pyaes)
+	pip3 install --no-deps --prefix=/usr --root=$(TMPINSTALLDIR) .
+
+	# Data files: Glade UI, expect script, icon, stylesheet
+	mkdir -p $(DATADIR)/ui
+	mkdir -p $(DATADIR)/scripts
+	cp data/ui/gnome-connection-manager.glade $(DATADIR)/ui/
+	cp data/scripts/ssh.expect $(DATADIR)/scripts/
+	chmod +x $(DATADIR)/scripts/ssh.expect
+	cp data/icon.png $(DATADIR)/
+	cp data/style.css $(DATADIR)/
+
+	# Translations
+	cp -r lang $(DATADIR)/
+
+	# Desktop integration
+	mkdir -p $(TMPINSTALLDIR)/usr/share/applications
+	cp gnome-connection-manager.desktop $(TMPINSTALLDIR)/usr/share/applications/
+
+	# App icon for desktop environments
+	mkdir -p $(TMPINSTALLDIR)/usr/share/pixmaps
+	cp data/icon.png $(TMPINSTALLDIR)/usr/share/pixmaps/$(PKG_NAME).png
+
+# Build the .deb package using fpm
+deb: install
+	rm -f $(PKG_DEB)
 	fpm -t deb -p $(PKG_DEB) $(FPM_OPTS) \
 		-d python3 \
 		-d python3-gi \
-		-d expect \
+		-d python3-gi-cairo \
+		-d gir1.2-gtk-3.0 \
 		-d gir1.2-vte-2.91 \
+		-d expect \
+		-d python3-pyaes \
 		--after-install postinst \
 		--deb-priority optional \
 		usr
 	@echo "\033[92mOK: $(PKG_DEB)\033[0m"
 
-# Generate a rpm package using fpm
-rpm:
+clean:
 	rm -rf $(TMPINSTALLDIR)
-	rm -f $(PKG_RPM)
-	chmod -R g-w *
-	make install DESTDIR=$(TMPINSTALLDIR)
-
-	fpm -t rpm -p $(PKG_RPM) $(FPM_OPTS) \
-		-d python3 \
-		-d python3-gobject \
-		-d expect \
-		--after-install postinst \
-		usr
-	@echo "\033[92mOK: $(PKG_RPM)\033[0m"
-
-# Developer aids below
-
-# Files might be not committed by a developer, or changed by the build or a helper like style-strip-trailing-whitespace
-check-gitignore:
-	@if [ -n "`git status -uno -s`" ]; then \
-		echo "ERROR: Changes to files tracked in Git are not committed" >&2; \
-		git status -uno -s; \
-		exit 1; \
-	 fi
-
-# Style fix: strip trailing whitespace in text-file sources
-style-strip-trailing-whitespace:
-	@git ls-files | egrep -v '\.(png|gif|mo)$$' | \
-	 while read F ; do sed -e 's,[ '"`printf '\t'`"']*$$,,' -i "$$F" ; done
-
-check-strip-trailing-whitespace: style-strip-trailing-whitespace
-	@$(MAKE) check-gitignore
-
-check: check-strip-trailing-whitespace
+	rm -f $(PKG_DEB)
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name '*.pyc' -delete 2>/dev/null || true

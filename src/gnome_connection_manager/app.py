@@ -4349,14 +4349,14 @@ class EntryDialog(Gtk.Dialog):
         box.pack_start(self.entry, True, True, 0)
         self.entry.show()
         self.entry.grab_focus()
-        button = Gtk.Button(_label="_OK")
+        button = Gtk.Button(label="OK")
         button.connect("clicked", self.click)
         self.entry.connect("activate", self.click)
         button.set_can_default(True)
         self.action_area.pack_start(button, True, True, 0)
         button.show()
         button.grab_default()
-        button = Gtk.Button(_label="_Cancel")
+        button = Gtk.Button(label="Cancel")
         button.connect("clicked", self.quit)
         button.set_can_default(True)
         self.action_area.pack_start(button, True, True, 0)
@@ -4522,7 +4522,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("refresh", self._on_action_refresh, ["<Primary>r"])
         self._create_action("preferences", self._on_action_preferences, ["<Primary>comma"])
         self._create_action("about", self._on_action_about, ["F1"])
-        self._create_action("cluster", self._on_action_cluster, ["<Primary><Shift>c"])
+        self._create_action("cluster", self._on_action_cluster)
         self._create_action("save-buffer", self._on_action_save_buffer, ["<Primary><Shift>s"])
         self._create_action("import-hosts", self._on_action_import_hosts)
         self._create_action("export-hosts", self._on_action_export_hosts)
@@ -4689,11 +4689,17 @@ class GcmApplication(Gtk.Application):
 
     def _on_action_import_hosts(self, action, _param):
         if self._controller is not None:
-            self._controller.on_importar_servidores1_activate(None)
+            try:
+                self._controller.on_importar_servidores1_activate(None)
+            except Exception:
+                logger.exception("Error during import hosts")
 
     def _on_action_export_hosts(self, action, _param):
         if self._controller is not None:
-            self._controller.on_exportar_servidores1_activate(None)
+            try:
+                self._controller.on_exportar_servidores1_activate(None)
+            except Exception:
+                logger.exception("Error during export hosts")
 
     def _on_action_copy(self, action, _param):
         if self._controller is not None:
