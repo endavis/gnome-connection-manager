@@ -1650,8 +1650,7 @@ class Wmain(GladeComponent):
 
             if len(conf.FONT) == 0:
                 conf.FONT = "monospace"
-            else:
-                v.set_font(Pango.FontDescription(conf.FONT))
+            v.set_font(Pango.FontDescription(conf.FONT))
 
             scrollPane = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
             scrollbar = Gtk.Scrollbar().new(Gtk.Orientation.VERTICAL, v.get_vadjustment())
