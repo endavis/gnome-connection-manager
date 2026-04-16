@@ -4522,7 +4522,7 @@ class GcmApplication(Gtk.Application):
     def __init__(self):
         super().__init__(
             application_id="com.kuthulu.GnomeConnectionManager",
-            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
+            flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE | Gio.ApplicationFlags.NON_UNIQUE,
         )
         self._controller = None
         self._pending_cli = []
