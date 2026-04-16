@@ -639,7 +639,18 @@ def vte_run(terminal, command, arg=None):
         if hasattr(terminal, "host") and terminal.host.term
         else conf.TERM or os.getenv("TERM") or DEFAULT_TERM_TYPE
     )
-    envv = ["PATH={}".format(os.getenv("PATH")), f"TERM={term_type}"]
+    # Set terminal environment variables so the child inherits them.
+    # VTE does not automatically add these to spawned children; the host
+    # app must provide them.  Programs use COLORTERM and VTE_VERSION to
+    # detect terminal capabilities and choose appropriate characters.
+    saved_env = {}
+    for var, val in [
+        ("TERM", term_type),
+        ("COLORTERM", "truecolor"),
+        ("VTE_VERSION", f"{Vte.MAJOR_VERSION * 10000 + Vte.MINOR_VERSION * 100 + Vte.MICRO_VERSION}"),
+    ]:
+        saved_env[var] = os.environ.get(var)
+        os.environ[var] = val
     args = []
 
     # Check if this is a local shell before modifying args
@@ -662,7 +673,7 @@ def vte_run(terminal, command, arg=None):
             Vte.PtyFlags.DEFAULT,
             os.getenv("HOME"),
             args,
-            envv,
+            None,
             flag_spawn | GLib.SpawnFlags.SEARCH_PATH,
             None,
             None,
@@ -676,12 +687,18 @@ def vte_run(terminal, command, arg=None):
             Vte.PtyFlags.DEFAULT,
             os.getenv("HOME"),
             args,
-            envv,
+            None,
             flag_spawn | GLib.SpawnFlags.DO_NOT_REAP_CHILD | GLib.SpawnFlags.SEARCH_PATH,
             None,
             None,
             None,
         )
+    # Restore environment so other spawns with different settings aren't affected
+    for var, old_val in saved_env.items():
+        if old_val is not None:
+            os.environ[var] = old_val
+        elif var in os.environ:
+            del os.environ[var]
 
 
 class Wmain(GladeComponent):
