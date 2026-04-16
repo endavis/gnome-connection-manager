@@ -4522,7 +4522,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("refresh", self._on_action_refresh, ["<Primary>r"])
         self._create_action("preferences", self._on_action_preferences, ["<Primary>comma"])
         self._create_action("about", self._on_action_about, ["F1"])
-        self._create_action("cluster", self._on_action_cluster, ["<Primary><Shift>c"])
+        self._create_action("cluster", self._on_action_cluster, ["<Primary><Shift>u"])
         self._create_action("save-buffer", self._on_action_save_buffer, ["<Primary><Shift>s"])
         self._create_action("import-hosts", self._on_action_import_hosts)
         self._create_action("export-hosts", self._on_action_export_hosts)
