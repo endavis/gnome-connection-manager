@@ -1808,8 +1808,15 @@ class Wmain(GladeComponent):
 
         self.treeServers.set_has_tooltip(True)
         self.treeServers.connect("query-tooltip", self.on_treeServers_tooltip)
+        self.treeServers.connect("key-press-event", self.on_treeServers_key_press)
         self.loadConfig()
         self.updateTree()
+
+    def on_treeServers_key_press(self, widget, event, *args):
+        if event.keyval == Gdk.KEY_Delete:
+            self.on_btnDel_clicked(None)
+            return True
+        return False
 
     def on_treeServers_tooltip(self, widget, x, y, keyboard, tooltip):
         x, y = widget.convert_widget_to_bin_window_coords(x, y)
@@ -4534,7 +4541,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("connect", self._on_action_connect, ["<Primary>Return"])
         self._create_action("add-host", self._on_action_add_host, ["<Primary>n"])
         self._create_action("edit-host", self._on_action_edit_host, ["<Primary>e"])
-        self._create_action("delete", self._on_action_delete_host, ["Delete"])
+        self._create_action("delete", self._on_action_delete_host)
         self._create_action("refresh", self._on_action_refresh, ["<Primary>r"])
         self._create_action("preferences", self._on_action_preferences, ["<Primary>comma"])
         self._create_action("about", self._on_action_about, ["F1"])
