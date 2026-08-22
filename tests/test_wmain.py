@@ -503,11 +503,12 @@ class ClipboardStub:
 class ClipboardTerminal:
     """Mirrors the Vte.Terminal clipboard surface. Only add methods VTE really has."""
 
-    def __init__(self, has_selection: bool = True):
+    def __init__(self, has_selection: bool = True, screen_text: str = "visible screen\n"):
         self.copied = []
         self.pasted = 0
         self.selected = []
         self._has_selection = has_selection
+        self.screen_text = screen_text
 
     def get_has_selection(self):
         return self._has_selection
@@ -525,6 +526,12 @@ class ClipboardTerminal:
     def unselect_all(self):
         self.selected.append("none")
         self._has_selection = False
+
+    def get_text_format(self, fmt):
+        return self.screen_text
+
+    def get_text(self, *args):
+        return (self.screen_text, None)
 
 
 class LogWriter:
@@ -840,3 +847,87 @@ class DummyTreeNode:
 
     def iterchildren(self):
         return self.children
+
+
+def _clipboard(monkeypatch, app_module):
+    clipboard = ClipboardStub()
+    monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: object())
+    monkeypatch.setattr(app_module.Gtk.Clipboard, "get_default", lambda *_args: clipboard)
+    return clipboard
+
+
+def test_terminal_copy_screen_uses_format_api(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 76, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(screen_text="ALT-LINE-000\nALT-LINE-001\n\n")
+    clipboard = _clipboard(monkeypatch, app_module)
+
+    wmain.terminal_copy_screen(terminal)
+
+    assert clipboard.text == "ALT-LINE-000\nALT-LINE-001"
+
+
+def test_terminal_copy_screen_uses_legacy_api_pre72(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 60, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(screen_text="legacy screen\n")
+    clipboard = _clipboard(monkeypatch, app_module)
+
+    wmain.terminal_copy_screen(terminal)
+
+    assert clipboard.text == "legacy screen"
+
+
+def test_terminal_copy_screen_ignores_blank_screen(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 76, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(screen_text="   \n\n")
+    clipboard = _clipboard(monkeypatch, app_module)
+
+    wmain.terminal_copy_screen(terminal)
+
+    assert clipboard.text is None
+
+
+def test_terminal_copy_falls_back_to_screen_only_when_enabled(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 76, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(has_selection=False, screen_text="screen body\n")
+
+    monkeypatch.setattr(app_module.conf, "COPY_SCREEN_IF_NO_SELECTION", 0)
+    clipboard = _clipboard(monkeypatch, app_module)
+    wmain.terminal_copy(terminal)
+    assert clipboard.text is None
+    assert terminal.copied == []
+
+    monkeypatch.setattr(app_module.conf, "COPY_SCREEN_IF_NO_SELECTION", 1)
+    clipboard = _clipboard(monkeypatch, app_module)
+    wmain.terminal_copy(terminal)
+    assert clipboard.text == "screen body"
+
+
+def test_terminal_copy_prefers_the_selection_over_the_screen(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "COPY_SCREEN_IF_NO_SELECTION", 1)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(has_selection=True)
+    clipboard = _clipboard(monkeypatch, app_module)
+
+    wmain.terminal_copy(terminal)
+
+    assert terminal.copied == [app_module.Vte.Format.TEXT]
+    assert clipboard.text is None
+
+
+def test_terminal_copy_paste_never_falls_back_to_screen(monkeypatch, app_module):
+    """Pasting a whole screen back into the terminal is never the intent."""
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 76, raising=False)
+    monkeypatch.setattr(app_module.conf, "COPY_SCREEN_IF_NO_SELECTION", 1)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(has_selection=False)
+    clipboard = _clipboard(monkeypatch, app_module)
+
+    wmain.terminal_copy_paste(terminal)
+
+    assert terminal.copied == []
+    assert clipboard.text is None
+    assert terminal.pasted == 1
