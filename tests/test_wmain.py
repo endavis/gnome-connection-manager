@@ -5,6 +5,8 @@ from __future__ import annotations
 import types
 import configparser
 
+import pytest
+
 
 class FakeIter:
     def __init__(self, label: str, host=None, has_child: bool = False):
@@ -499,10 +501,16 @@ class ClipboardStub:
 
 
 class ClipboardTerminal:
-    def __init__(self):
+    """Mirrors the Vte.Terminal clipboard surface. Only add methods VTE really has."""
+
+    def __init__(self, has_selection: bool = True):
         self.copied = []
         self.pasted = 0
         self.selected = []
+        self._has_selection = has_selection
+
+    def get_has_selection(self):
+        return self._has_selection
 
     def copy_clipboard_format(self, fmt):
         self.copied.append(fmt)
@@ -512,9 +520,11 @@ class ClipboardTerminal:
 
     def select_all(self):
         self.selected.append("all")
+        self._has_selection = True
 
-    def select_none(self):
+    def unselect_all(self):
         self.selected.append("none")
+        self._has_selection = False
 
 
 class LogWriter:
@@ -668,6 +678,54 @@ def test_terminal_copy_helpers(monkeypatch, app_module):
 
     wmain.terminal_copy_all(terminal)
     assert terminal.selected == ["all", "none"]
+
+
+def test_terminal_copy_without_selection_leaves_clipboard_alone(app_module):
+    """VTE serves an empty string when it owns the clipboard with no selection."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(has_selection=False)
+
+    wmain.terminal_copy(terminal)
+
+    assert terminal.copied == []
+
+
+def test_terminal_copy_paste_without_selection_still_pastes(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(has_selection=False)
+
+    wmain.terminal_copy_paste(terminal)
+
+    assert terminal.copied == []
+    assert terminal.pasted == 1
+
+
+def test_terminal_copy_all_deselects_after_copying(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal(has_selection=False)
+
+    wmain.terminal_copy_all(terminal)
+
+    assert terminal.copied == [app_module.Vte.Format.TEXT]
+    assert terminal.selected == ["all", "none"]
+    assert terminal.get_has_selection() is False
+
+
+def test_clipboard_terminal_fake_matches_real_vte_api():
+    """Guards against the fake offering methods Vte.Terminal lacks."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Vte", "2.91")
+    from gi.repository import Vte
+
+    for name in (
+        "get_has_selection",
+        "copy_clipboard_format",
+        "paste_clipboard",
+        "select_all",
+        "unselect_all",
+    ):
+        assert hasattr(ClipboardTerminal, name), f"fake is missing {name}"
+        assert hasattr(Vte.Terminal, name), f"Vte.Terminal has no {name}"
 
 
 def test_terminal_menu_actions_use_active_terminal(app_module):

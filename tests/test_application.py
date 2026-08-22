@@ -190,3 +190,54 @@ def test_application_console_actions(app_module):
     assert ("popup", ("RC2", "RC")) in controller.calls
     assert ("popup", ("CC2", "CC")) in controller.calls
     assert ("popup", ("R", "R")) in controller.calls
+
+
+def test_copy_all_owns_the_ctrl_shift_a_accelerator(app_module, monkeypatch):
+    """select-all used to shadow copy-all, which made the Copy All shortcut dead."""
+    app = app_module.GcmApplication()
+    registered: dict[str, list[str] | None] = {}
+
+    def record(name, callback, accels=None, parameter_type=None):
+        registered[name] = accels
+
+    def record_stateful(name, initial_state, callback, accels=None):
+        registered[name] = accels
+
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "do_startup", lambda *_args: None, raising=False
+    )
+    monkeypatch.setattr(app, "_create_action", record)
+    monkeypatch.setattr(app, "_create_stateful_action", record_stateful)
+    monkeypatch.setattr(app, "_build_menus", lambda: None)
+
+    app.do_startup()
+
+    assert registered["copy-all"] == ["<Primary><Shift>a"]
+    assert registered["select-all"] is None
+
+
+def test_no_two_actions_share_an_accelerator(app_module, monkeypatch):
+    """Duplicate accelerators silently disable the action registered second."""
+    app = app_module.GcmApplication()
+    registered: dict[str, list[str] | None] = {}
+
+    def record(name, callback, accels=None, parameter_type=None):
+        registered[name] = accels
+
+    def record_stateful(name, initial_state, callback, accels=None):
+        registered[name] = accels
+
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "do_startup", lambda *_args: None, raising=False
+    )
+    monkeypatch.setattr(app, "_create_action", record)
+    monkeypatch.setattr(app, "_create_stateful_action", record_stateful)
+    monkeypatch.setattr(app, "_build_menus", lambda: None)
+
+    app.do_startup()
+
+    owners: dict[str, str] = {}
+    for name, accels in registered.items():
+        for accel in accels or ():
+            assert accel not in owners, f"{accel} claimed by both {owners[accel]} and {name}"
+            owners[accel] = name

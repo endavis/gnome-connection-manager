@@ -1474,13 +1474,17 @@ class Wmain(GladeComponent):
                 menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
 
     def terminal_copy(self, terminal):
+        # With an empty selection VTE still takes clipboard ownership and serves an
+        # empty string, so an unguarded copy destroys whatever was on the clipboard.
+        if not terminal.get_has_selection():
+            return
         terminal.copy_clipboard_format(Vte.Format.TEXT)
 
     def terminal_paste(self, terminal):
         terminal.paste_clipboard()
 
     def terminal_copy_paste(self, terminal):
-        terminal.copy_clipboard_format(Vte.Format.TEXT)
+        self.terminal_copy(terminal)
         terminal.paste_clipboard()
 
     def terminal_select_all(self, terminal):
@@ -1488,8 +1492,8 @@ class Wmain(GladeComponent):
 
     def terminal_copy_all(self, terminal):
         terminal.select_all()
-        terminal.copy_clipboard_format(Vte.Format.TEXT)
-        terminal.select_none()
+        self.terminal_copy(terminal)
+        terminal.unselect_all()
 
     def on_menuCopy_activate(self, widget):
         terminal = self.find_active_terminal(self.hpMain)
@@ -4552,8 +4556,8 @@ class GcmApplication(Gtk.Application):
         self._create_action("copy", self._on_action_copy, ["<Primary><Shift>c"])
         self._create_action("paste", self._on_action_paste, ["<Primary><Shift>v"])
         self._create_action("copy-paste", self._on_action_copy_paste)
-        self._create_action("select-all", self._on_action_select_all, ["<Primary><Shift>a"])
-        self._create_action("copy-all", self._on_action_copy_all)
+        self._create_action("select-all", self._on_action_select_all)
+        self._create_action("copy-all", self._on_action_copy_all, ["<Primary><Shift>a"])
         self._create_action("split-horizontal", self._on_action_split_horizontal)
         self._create_action("split-vertical", self._on_action_split_vertical)
         self._create_action("unsplit", self._on_action_unsplit)
