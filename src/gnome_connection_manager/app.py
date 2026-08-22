@@ -179,7 +179,6 @@ VSPLIT = 1
 _COPY = ["copy"]
 _PASTE = ["paste"]
 _COPY_ALL = ["copy_all"]
-_COPY_SCREEN = ["copy_screen"]
 _SAVE = ["save"]
 _FIND = ["find"]
 _CLEAR = ["reset"]
@@ -950,8 +949,6 @@ class Wmain(GladeComponent):
                     self.terminal_paste(widget)
                 elif cmd == _COPY_ALL:
                     self.terminal_copy_all(widget)
-                elif cmd == _COPY_SCREEN:
-                    self.terminal_copy_screen(widget)
                 elif cmd == _SAVE:
                     self.show_save_buffer(widget)
                 elif cmd == _FIND:
@@ -1151,9 +1148,6 @@ class Wmain(GladeComponent):
         elif item == "CA":  # COPY ALL
             self.terminal_copy_all(self.popupMenu.terminal)
             return True
-        elif item == "CS":  # COPY SCREEN
-            self.terminal_copy_screen(self.popupMenu.terminal)
-            return True
         elif item == "X":  # CLOSE CONSOLE
             widget = self.popupMenu.terminal.get_parent()
             notebook = widget.get_parent()
@@ -1301,11 +1295,6 @@ class Wmain(GladeComponent):
         self.popupMenu.mnuCopyAll = menuItem = Gtk.MenuItem(label=_("Copiar todo"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy-all")
-        menuItem.show()
-
-        self.popupMenu.mnuCopyScreen = menuItem = Gtk.MenuItem(label=_("Copiar pantalla"))
-        self.popupMenu.append(menuItem)
-        menuItem.set_action_name("app.copy-screen")
         menuItem.show()
 
         self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Guardar buffer en archivo"))
@@ -1497,7 +1486,7 @@ class Wmain(GladeComponent):
         if self._copy_selection(terminal):
             return
         if conf.COPY_SCREEN_IF_NO_SELECTION:
-            self.terminal_copy_screen(terminal)
+            self._copy_screen(terminal)
 
     def terminal_paste(self, terminal):
         terminal.paste_clipboard()
@@ -1516,9 +1505,11 @@ class Wmain(GladeComponent):
         self._copy_selection(terminal)
         terminal.unselect_all()
 
-    def terminal_copy_screen(self, terminal):
+    def _copy_screen(self, terminal):
         # The visible screen is all that is reachable while an application holds the
-        # alternate screen, which has no scrollback of its own.
+        # alternate screen, which has no scrollback of its own. Copy All already covers
+        # this case; this exists so the no-selection fallback does not have to run
+        # select_all(), which would flash and discard any selection the user had.
         if Vte.get_minor_version() < 72:
             text, attrs = terminal.get_text(None, None)
         else:
@@ -1920,7 +1911,6 @@ class Wmain(GladeComponent):
         self.add_shortcut(cp, scuts, "copy", _COPY, "CTRL+SHIFT+C")
         self.add_shortcut(cp, scuts, "paste", _PASTE, "CTRL+SHIFT+V")
         self.add_shortcut(cp, scuts, "copy_all", _COPY_ALL, "CTRL+SHIFT+A")
-        self.add_shortcut(cp, scuts, "copy_screen", _COPY_SCREEN, "CTRL+SHIFT+E")
         self.add_shortcut(cp, scuts, "save", _SAVE, "CTRL+S")
         self.add_shortcut(cp, scuts, "find", _FIND, "CTRL+F")
         self.add_shortcut(cp, scuts, "find_next", _FIND_NEXT, "CTRL+G")
@@ -4599,7 +4589,6 @@ class GcmApplication(Gtk.Application):
         self._create_action("copy-paste", self._on_action_copy_paste)
         self._create_action("select-all", self._on_action_select_all)
         self._create_action("copy-all", self._on_action_copy_all, ["<Primary><Shift>a"])
-        self._create_action("copy-screen", self._on_action_copy_screen)
         self._create_action("split-horizontal", self._on_action_split_horizontal)
         self._create_action("split-vertical", self._on_action_split_vertical)
         self._create_action("unsplit", self._on_action_unsplit)
@@ -4670,7 +4659,6 @@ class GcmApplication(Gtk.Application):
         edit_menu.append(_("Copy & Paste"), "app.copy-paste")
         edit_menu.append(_("Select All"), "app.select-all")
         edit_menu.append(_("Copy All"), "app.copy-all")
-        edit_menu.append(_("Copy Screen"), "app.copy-screen")
         edit_menu.append(_("Preferences"), "app.preferences")
         menubar.append_submenu(_("_Edit"), edit_menu)
 
@@ -4798,13 +4786,6 @@ class GcmApplication(Gtk.Application):
             terminal = self._controller.get_target_terminal()
             if terminal:
                 self._controller.terminal_copy_all(terminal)
-            self._controller.clear_context_terminal()
-
-    def _on_action_copy_screen(self, action, _param):
-        if self._controller is not None:
-            terminal = self._controller.get_target_terminal()
-            if terminal:
-                self._controller.terminal_copy_screen(terminal)
             self._controller.clear_context_terminal()
 
     def _on_action_split_horizontal(self, action, _param):

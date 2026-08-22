@@ -856,35 +856,35 @@ def _clipboard(monkeypatch, app_module):
     return clipboard
 
 
-def test_terminal_copy_screen_uses_format_api(monkeypatch, app_module):
+def test_copy_screen_uses_format_api(monkeypatch, app_module):
     monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 76, raising=False)
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal(screen_text="ALT-LINE-000\nALT-LINE-001\n\n")
     clipboard = _clipboard(monkeypatch, app_module)
 
-    wmain.terminal_copy_screen(terminal)
+    wmain._copy_screen(terminal)
 
     assert clipboard.text == "ALT-LINE-000\nALT-LINE-001"
 
 
-def test_terminal_copy_screen_uses_legacy_api_pre72(monkeypatch, app_module):
+def test_copy_screen_uses_legacy_api_pre72(monkeypatch, app_module):
     monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 60, raising=False)
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal(screen_text="legacy screen\n")
     clipboard = _clipboard(monkeypatch, app_module)
 
-    wmain.terminal_copy_screen(terminal)
+    wmain._copy_screen(terminal)
 
     assert clipboard.text == "legacy screen"
 
 
-def test_terminal_copy_screen_ignores_blank_screen(monkeypatch, app_module):
+def test_copy_screen_ignores_blank_screen(monkeypatch, app_module):
     monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 76, raising=False)
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal(screen_text="   \n\n")
     clipboard = _clipboard(monkeypatch, app_module)
 
-    wmain.terminal_copy_screen(terminal)
+    wmain._copy_screen(terminal)
 
     assert clipboard.text is None
 
