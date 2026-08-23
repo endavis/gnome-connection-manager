@@ -472,6 +472,12 @@ class GladeComponent:
         self.new()
         self.builder.connect_signals(self)
 
+        # The dialogs are already on screen by now: they are presented before
+        # new() fills them, and Whost is filled later still by its init(). Wait
+        # for the size to settle before deciding whether it fits the monitor.
+        if isinstance(self.main_widget, Gtk.Dialog):
+            GLib.idle_add(fit_window_to_monitor, self.main_widget, priority=GLib.PRIORITY_LOW)
+
     def new(self):
         pass
 
@@ -1003,6 +1009,142 @@ def paste_preview(text: str, max_lines: int = 10, max_width: int = 80) -> str:
     return summary + "\n\n" + "\n".join(shown)
 
 
+# What a window manager puts around a window: a title bar, and under client-side
+# decorations a shadow either side of it. Measured at 89-97px tall under GNOME on
+# both X11 and Wayland. It cannot be read back while a resize is in flight — the
+# window manager's frame and GTK's own size settle on different clocks, and
+# subtracting one from the other then yields nonsense — so allow for it instead.
+# Erring large only costs a window some height it had no room for anyway.
+WINDOW_FRAME_ALLOWANCE = 96
+
+# What GTK reports as a position before the window manager has placed a window.
+UNPLACED_WINDOW_COORD = -30000
+
+
+def monitor_workarea(window=None):
+    """Usable area of the monitor showing `window`, or of the primary one."""
+    display = Gdk.Display.get_default()
+    if display is None:
+        return None
+    monitor = None
+    if window is not None:
+        gdk_window = window.get_window()
+        if gdk_window is not None:
+            monitor = display.get_monitor_at_window(gdk_window)
+    if monitor is None:
+        monitor = display.get_primary_monitor()
+    if monitor is None and display.get_n_monitors() > 0:
+        monitor = display.get_monitor(0)
+    if monitor is None:
+        return None
+    return monitor.get_workarea()
+
+
+def clamp_to_workarea(width, height, workarea, allowance=0):
+    """Shrink a requested size so it stays inside `workarea`, frame included."""
+    if workarea is None:
+        return width, height
+    return (
+        min(width, max(workarea.width - allowance, 1)),
+        min(height, max(workarea.height - allowance, 1)),
+    )
+
+
+def scroll_notebook_page(notebook, page):
+    """Put `page` inside a scroller, keeping its place and tab in `notebook`.
+
+    The scroller propagates the child's natural size, so a dialog that already
+    fits looks exactly as it did; only its *minimum* size drops.
+    """
+    if isinstance(page, Gtk.ScrolledWindow):
+        return None
+    scroller = Gtk.ScrolledWindow()
+    scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+    scroller.set_propagate_natural_width(True)
+    scroller.set_propagate_natural_height(True)
+    position = notebook.page_num(page)
+    label = notebook.get_tab_label(page)
+    notebook.remove_page(position)
+    scroller.add(page)
+    notebook.insert_page(scroller, label, position)
+    scroller.show_all()
+    return scroller
+
+
+def scroll_oversized_content(window, workarea):
+    """Make a window's content scrollable when it cannot fit on screen.
+
+    Dialogs built from the glade file pack their notebook straight into the
+    content area, so a page that grows at runtime — `tblGeneral` gains a row per
+    option — pushes the OK/Cancel row off the bottom of the screen, where it can
+    be neither seen nor resized back into view: the minimum size is the problem,
+    not the natural one. Wrapping the pages rather than the notebook keeps the
+    tabs pinned above the scrolled area.
+    """
+    if workarea is None or not isinstance(window, Gtk.Dialog):
+        return False
+    _, width = window.get_preferred_width()
+    _, height = window.get_preferred_height()
+    if (width, height) == clamp_to_workarea(width, height, workarea, WINDOW_FRAME_ALLOWANCE):
+        return False
+    wrapped = False
+    for child in window.get_content_area().get_children():
+        if not isinstance(child, Gtk.Notebook):
+            continue
+        for page in list(child.get_children()):
+            wrapped = scroll_notebook_page(child, page) is not None or wrapped
+    return wrapped
+
+
+def onscreen_position(window, workarea, width, height):
+    """Where a `width` x `height` `window` has to sit to stay inside `workarea`.
+
+    None when it is already inside, or when the window manager has not placed it
+    yet — GTK reports a large negative sentinel until it does, and it places the
+    window once, later, at its final size, so there is nothing to correct.
+    """
+    if workarea is None:
+        return None
+    x, y = window.get_position()
+    if x <= UNPLACED_WINDOW_COORD or y <= UNPLACED_WINDOW_COORD:
+        return None
+    room_x = workarea.x + workarea.width - width - WINDOW_FRAME_ALLOWANCE
+    room_y = workarea.y + workarea.height - height - WINDOW_FRAME_ALLOWANCE
+    placed = (
+        min(max(x, workarea.x), max(room_x, workarea.x)),
+        min(max(y, workarea.y), max(room_y, workarea.y)),
+    )
+    return placed if placed != (x, y) else None
+
+
+def fit_window_to_monitor(window):
+    """Keep `window` within the monitor work area, buttons included.
+
+    A window that already fits keeps the size GTK would have given it. Placement
+    is corrected when it does not: the dialogs are presented, and so placed, while
+    still empty, then grow once new() has filled them in — which walks the bottom
+    edge, and with it the OK/Cancel row, off the screen.
+    """
+    if not window.get_visible():
+        # Closed again before the idle ran; there is nothing left to fit.
+        return
+    workarea = monitor_workarea(window)
+    if workarea is None:
+        return
+    scroll_oversized_content(window, workarea)
+    _, width = window.get_preferred_width()
+    _, height = window.get_preferred_height()
+    capped = clamp_to_workarea(width, height, workarea, WINDOW_FRAME_ALLOWANCE)
+    if capped != (width, height):
+        window.resize(*capped)
+    # Nothing moves a window that grew after the window manager placed it, so
+    # slide it back up itself. resize() is asynchronous, hence measuring against
+    # the size just asked for rather than reading one back.
+    placed = onscreen_position(window, workarea, *capped)
+    if placed is not None:
+        window.move(*placed)
+
+
 def apply_font_to_widget(widget, font_desc):
     """Apply a Pango FontDescription to a widget using CSS"""
     css_provider = Gtk.CssProvider()
@@ -1413,7 +1555,10 @@ class Wmain(GladeComponent):
         self.get_widget("wMain").get_screen().connect("composited-changed", self.update_visual)
 
         if conf.WINDOW_WIDTH != -1 and conf.WINDOW_HEIGHT != -1:
-            self.get_widget("wMain").resize(conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT)
+            # The saved geometry may come from a larger monitor than this one.
+            self.get_widget("wMain").resize(
+                *clamp_to_workarea(conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT, monitor_workarea())
+            )
         else:
             self.get_widget("wMain").maximize()
         self.get_widget("wMain").show()
@@ -5321,7 +5466,7 @@ class BufferViewer(Gtk.Window):
         Gtk.Window.__init__(self, title=title)
         self.controller = controller
         self.terminal = terminal
-        self.set_default_size(900, 600)
+        self.set_default_size(*clamp_to_workarea(900, 600, monitor_workarea()))
         with contextlib.suppress(Exception):
             self.set_icon_from_file(ICON_PATH)
 
