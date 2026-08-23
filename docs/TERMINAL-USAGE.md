@@ -115,6 +115,29 @@ Applications that support bracketed paste are told the content is a paste rather
 typing, which stops a shell from executing each line as it arrives. GCM preserves that
 framing.
 
+## Recording a session in full
+
+The session log records what the terminal *displayed*, so anything redrawn in place —
+a progress bar, a full-screen application's frames — collapses to its final state.
+
+Raw recording captures the byte stream instead, exactly as it arrived:
+
+```ini
+[options]
+raw-session-log = true
+```
+
+It writes `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw`, alongside the text
+log and numbered independently of it.
+
+**A raw file is not something you read.** Measured, a full-screen application's stream
+is around 90% escape sequences. It is a faithful record for replaying or post-processing,
+not a transcript — the text log remains the readable one. Recordings are also larger, and
+contain everything the terminal received.
+
+Like OSC 52, this runs sessions under a small relay process. With both preferences off,
+sessions are spawned exactly as before.
+
 ## Letting applications set the clipboard (OSC 52)
 
 Applications ask a terminal to set the system clipboard with an escape sequence called

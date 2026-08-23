@@ -8,6 +8,7 @@ the positive ones.
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 import os
 import subprocess
@@ -219,14 +220,17 @@ def test_malformed_relay_messages_are_discarded(app_module, monkeypatch, line):
     assert calls == []
 
 
-def test_spawning_is_untouched_when_the_preference_is_off(app_module, monkeypatch):
-    """The default path must carry none of the relay's risk."""
-    source = Path(app_module.__file__).read_text()
-    body = source.split("def vte_run", 1)[1].split("\ndef ", 1)[0]
+def test_spawning_is_untouched_when_the_preference_is_off(app_module):
+    """The default path must carry none of the relay's risk.
+
+    Read with inspect rather than by slicing the file: module-level functions are
+    followed by indented defs, so splitting on "\ndef " swallows the rest of the module
+    and the assertions below stop meaning anything.
+    """
+    body = inspect.getsource(app_module.vte_run)
 
     assert "conf.OSC52_ENABLED and controller" in body, "the relay must be gated on the preference"
     assert body.index("socket_path = ") < body.index("if TERMINAL_V048")
-    # and the wrap is the only thing the gate does
     assert body.count("relay_command(") == 1
 
 
@@ -297,3 +301,135 @@ def test_the_relay_forwards_output_captures_osc52_and_propagates_exit_status():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "OK" in result.stdout
+
+
+# -- raw session recording (#69) --------------------------------------------
+
+
+def test_relay_command_passes_only_the_destinations_that_are_wanted(app_module):
+    """Each flag appears only when its feature is on, so the relay does no idle work."""
+    both = app_module.relay_command(["sh"], "/run/clip.sock", "/logs/a.raw")
+    assert both[-3:] == ["--", "sh"] or both[-2:] == ["--", "sh"]
+    assert "--clipboard-socket" in both and "--raw-log" in both
+
+    clip_only = app_module.relay_command(["sh"], "/run/clip.sock", None)
+    assert "--clipboard-socket" in clip_only
+    assert "--raw-log" not in clip_only
+
+    raw_only = app_module.relay_command(["sh"], None, "/logs/a.raw")
+    assert "--raw-log" in raw_only
+    assert "--clipboard-socket" not in raw_only
+
+    neither = app_module.relay_command(["sh"])
+    assert neither[-2:] == ["--", "sh"]
+    assert "--clipboard-socket" not in neither and "--raw-log" not in neither
+
+
+def test_next_session_file_takes_the_first_free_number(tmp_path, app_module):
+    prefix = tmp_path / "web-01-20260823"
+    (tmp_path / "web-01-20260823-001.log").write_text("x")
+    (tmp_path / "web-01-20260823-002.log").write_text("x")
+
+    assert app_module.next_session_file(prefix, ".log").endswith("-003.log")
+
+
+def test_next_session_file_keeps_raw_and_text_numbering_independent(tmp_path, app_module):
+    prefix = tmp_path / "web-01-20260823"
+    (tmp_path / "web-01-20260823-001.log").write_text("x")
+
+    assert app_module.next_session_file(prefix, ".log").endswith("-002.log")
+    assert app_module.next_session_file(prefix, ".raw").endswith("-001.raw")
+
+
+def test_next_session_file_appends_to_the_last_when_exhausted(tmp_path, app_module, monkeypatch):
+    """Refusing to log because 999 sessions happened today would be worse."""
+    prefix = tmp_path / "busy-20260823"
+    monkeypatch.setattr(
+        app_module.Path, "exists", lambda self: True, raising=False
+    )
+
+    assert app_module.next_session_file(prefix, ".raw").endswith("-999.raw")
+
+
+def test_session_file_shares_the_text_log_identity(tmp_path, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
+    terminal = types.SimpleNamespace(
+        host=types.SimpleNamespace(group="Work", name="web-01", user="root", host="10.0.0.5")
+    )
+
+    path = app_module.session_file_for(terminal, ".raw")
+
+    assert path == str(tmp_path / "Work" / "web-01" / "root-20260823-001.raw")
+    assert (tmp_path / "Work" / "web-01").is_dir()
+
+
+def test_spawning_stays_untouched_when_neither_feature_is_on(app_module):
+    """Both preferences off must mean the relay is not in the path at all."""
+    body = inspect.getsource(app_module.vte_run)
+
+    assert "conf.OSC52_ENABLED and controller" in body
+    assert "conf.RAW_SESSION_LOG" in body, "raw recording must be gated too"
+    assert "if socket_path or raw_path:" in body
+    assert body.count("relay_command(") == 1
+
+
+@pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs pty support")
+def test_the_relay_records_the_raw_stream():
+    """Captures every redraw, keeps attributes, and never takes the session down."""
+    check = Path(__file__).resolve().parent / "helpers" / "raw_relay_check.py"
+    result = subprocess.run(
+        [sys.executable, str(check)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2500:]
+    assert "RAW-OK" in result.stdout
+
+
+def test_raw_recorder_releases_its_handle(tmp_path):
+    """Opened unbuffered, so nothing is lost without a close -- but the fd would leak."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    target = tmp_path / "session.raw"
+    recorder = RawRecorder(str(target))
+    recorder.write(b"chunk")
+
+    assert target.read_bytes() == b"chunk"
+
+    recorder.close()
+    assert recorder._handle is None
+    recorder.close()  # idempotent
+    recorder.write(b"after close")  # must not raise
+    assert target.read_bytes() == b"chunk"
+
+
+def test_raw_recorder_without_a_path_is_inert(tmp_path):
+    from gnome_connection_manager.relay import RawRecorder
+
+    recorder = RawRecorder(None)
+    recorder.write(b"nowhere")
+    recorder.close()
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_raw_recorder_survives_an_unwritable_destination():
+    """A logging failure must never take the session down."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    recorder = RawRecorder("/proc/nonexistent-dir/session.raw")
+    recorder.write(b"still fine")
+    recorder.close()
+
+
+def test_the_relay_closes_the_recorder():
+    from gnome_connection_manager import relay as relay_module
+
+    body = inspect.getsource(relay_module.relay)
+
+    assert "recorder.close()" in body
+    assert body.index("finally:") < body.index("recorder.close()")
