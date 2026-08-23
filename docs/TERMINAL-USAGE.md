@@ -155,6 +155,31 @@ review, the same rule paste follows. Handy for `@`-referencing files in an AI CL
 Non-file URLs are inserted as URLs rather than converted to paths. Dragged plain text goes
 in exactly as it came, without quoting, since it is text rather than a path.
 
+## Opening file:line from output
+
+Compilers, linters, test runners and AI CLIs all print locations like
+`src/app.py:42` or `src/app.py:42:7`. Ctrl+click one to open it in your editor.
+
+```ini
+[options]
+editor-command = code --goto {file}:{line}:{col}
+```
+
+`{file}`, `{line}` and `{col}` are substituted. With no template set, GCM uses `$VISUAL`
+or `$EDITOR` with the `+LINE` convention that vi, vim, nano and emacs understand, and
+falls back to `xdg-open` — which cannot jump to a line.
+
+Two deliberate limits:
+
+- **Local sessions only.** A path printed by a remote host does not exist on your machine,
+  so Ctrl+click does nothing in an SSH session rather than opening the wrong file.
+- **The name needs an extension.** `src/app.py:42` matches; `Makefile:12` does not. Without
+  that requirement, ordinary output like `host:22` would be treated as a file.
+
+Relative paths resolve against the terminal's working directory, taken from OSC 7 if your
+shell emits it and otherwise read from the running process — so plain `cd` is tracked with
+no shell configuration.
+
 ## Font zoom
 
 `Ctrl+scroll` zooms, as do `Ctrl+=` and `Ctrl+-`. `Ctrl+0` returns to normal size.

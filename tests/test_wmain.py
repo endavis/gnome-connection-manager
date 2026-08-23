@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import time
 import types
 import configparser
 from pathlib import Path
@@ -2197,3 +2199,254 @@ def test_drag_targets_are_registered_at_creation(app_module):
     assert "drag_dest_add_text_targets()" in body
     connections = _terminal_signal_connections(app_module)
     assert connections.get("drag-data-received") == "on_terminal_drag_data_received"
+
+
+# -- file:line links (#23) --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("match", "expected"),
+    [
+        ("src/app.py:42", ("src/app.py", 42, 0)),
+        ("src/app.py:42:7", ("src/app.py", 42, 7)),
+        ("/abs/mod.rs:1234:56", ("/abs/mod.rs", 1234, 56)),
+        ("  padded.py:3  ", ("padded.py", 3, 0)),
+        ("no-line.py", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_file_location(app_module, match, expected):
+    assert app_module.parse_file_location(match) == expected
+
+
+class LocationTerminal:
+    def __init__(self, host=None, cwd_uri=None, pgid_cwd=None):
+        self.host = host
+        self._cwd_uri = cwd_uri
+        self._pgid_cwd = pgid_cwd
+
+    def get_current_directory_uri(self):
+        return self._cwd_uri
+
+    def get_pty(self):
+        return types.SimpleNamespace(get_fd=lambda: 7) if self._pgid_cwd else None
+
+
+def test_terminal_is_local_only_for_a_shell_session(app_module):
+    """A path printed by a remote host does not exist here."""
+    assert app_module.terminal_is_local(LocationTerminal(LogHost(name="local", host=""))) is True
+    assert app_module.terminal_is_local(LocationTerminal(LogHost(name="w", host="10.0.0.5"))) is False
+    assert app_module.terminal_is_local(LocationTerminal(None)) is False
+
+
+def test_working_directory_prefers_osc7(app_module, monkeypatch, _real_uri_decoding):
+    terminal = LocationTerminal(cwd_uri="file:///srv/from%20osc7", pgid_cwd="/other")
+    monkeypatch.setattr(app_module.os, "tcgetpgrp", lambda fd: 123)
+    monkeypatch.setattr(app_module.os, "readlink", lambda p: "/other")
+
+    assert app_module.terminal_working_directory(terminal) == "/srv/from osc7"
+
+
+def test_working_directory_falls_back_to_the_pty_process(app_module, monkeypatch):
+    """Measured: bash emits no OSC 7 by default, so this is the path that actually runs."""
+    terminal = LocationTerminal(cwd_uri=None, pgid_cwd="/srv/work")
+    monkeypatch.setattr(app_module.os, "tcgetpgrp", lambda fd: 123)
+    monkeypatch.setattr(app_module.os, "readlink", lambda p: "/srv/work")
+
+    assert app_module.terminal_working_directory(terminal) == "/srv/work"
+
+
+def test_working_directory_is_none_without_a_pty(app_module):
+    assert app_module.terminal_working_directory(LocationTerminal()) is None
+
+
+def test_build_editor_command_prefers_the_configured_template(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "EDITOR_COMMAND", "code --goto {file}:{line}:{col}")
+
+    assert app_module.build_editor_command("/tmp/x.py", 42, 7) == [
+        "code", "--goto", "/tmp/x.py:42:7",
+    ]
+
+
+def test_build_editor_command_uses_editor_with_the_plus_line_convention(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "EDITOR_COMMAND", "")
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.setenv("EDITOR", "vim")
+
+    assert app_module.build_editor_command("/tmp/x.py", 42, 7) == ["vim", "+42", "/tmp/x.py"]
+
+
+def test_build_editor_command_falls_back_to_xdg_open(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "EDITOR_COMMAND", "")
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+
+    assert app_module.build_editor_command("/tmp/x.py", 42, 7) == ["xdg-open", "/tmp/x.py"]
+
+
+@pytest.fixture
+def _spawned(monkeypatch, app_module):
+    calls = []
+    monkeypatch.setattr(app_module.subprocess, "Popen", lambda cmd, *a, **k: calls.append(cmd))
+    monkeypatch.setattr(app_module.conf, "EDITOR_COMMAND", "ed {file} {line}")
+    return calls
+
+
+def test_open_file_location_resolves_a_relative_path(tmp_path, app_module, monkeypatch, _spawned):
+    (tmp_path / "app.py").write_text("x\n")
+    terminal = LocationTerminal(LogHost(name="local", host=""), pgid_cwd=str(tmp_path))
+    monkeypatch.setattr(app_module.os, "tcgetpgrp", lambda fd: 1)
+    monkeypatch.setattr(app_module.os, "readlink", lambda p: str(tmp_path))
+
+    assert app_module.Wmain.open_file_location(None, terminal, "app.py:42") is True
+    assert _spawned == [["ed", str(tmp_path / "app.py"), "42"]]
+
+
+def test_open_file_location_skips_remote_sessions(tmp_path, app_module, _spawned):
+    (tmp_path / "app.py").write_text("x\n")
+    terminal = LocationTerminal(LogHost(name="w", host="10.0.0.5"))
+
+    result = app_module.Wmain.open_file_location(
+        None, terminal, f"{tmp_path / 'app.py'}:42"
+    )
+
+    assert result is False
+    assert _spawned == []
+
+
+def test_open_file_location_skips_a_path_that_does_not_exist(tmp_path, app_module, _spawned):
+    terminal = LocationTerminal(LogHost(name="local", host=""))
+
+    result = app_module.Wmain.open_file_location(None, terminal, f"{tmp_path / 'gone.py'}:42")
+
+    assert result is False
+    assert _spawned == []
+
+
+def test_open_file_location_ignores_a_non_location_match(app_module, _spawned):
+    terminal = LocationTerminal(LogHost(name="local", host=""))
+
+    assert app_module.Wmain.open_file_location(None, terminal, "not-a-location") is False
+    assert _spawned == []
+
+
+def test_file_pattern_is_registered_as_a_match(app_module):
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def registerUrlRegexes", 1)[1].split("\n    def ", 1)[0]
+
+    assert "urlregex.FILE_LINE" in body
+    assert "terminal.tag_file" in body
+
+
+class ClickTerminal:
+    def __init__(self, match, tag, tag_file):
+        self._match = match
+        self._tag = tag
+        self.tag_file = tag_file
+        self.tag_url = "url"
+        self.tag_email = "email"
+
+    def match_check_event(self, event):
+        return self._match, self._tag
+
+
+def _ctrl_click_event(app_module):
+    return types.SimpleNamespace(
+        type=app_module.Gdk.EventType.BUTTON_PRESS,
+        button=1,
+        get_state=lambda: 1,  # conftest maps CONTROL_MASK to 1
+    )
+
+
+def test_ctrl_click_on_a_file_match_opens_it(app_module, monkeypatch):
+    """Without this the match is registered, shows a pointer, and does nothing."""
+    opened = []
+    monkeypatch.setattr(
+        app_module.Wmain, "open_file_location",
+        lambda self, term, match: opened.append(match) or True, raising=False,
+    )
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClickTerminal("src/app.py:42", "file", "file")
+
+    assert wmain.on_terminal_click(terminal, _ctrl_click_event(app_module)) is True
+    assert opened == ["src/app.py:42"]
+
+
+def test_ctrl_click_on_a_url_does_not_go_to_the_file_handler(app_module, monkeypatch):
+    opened = []
+    shown = []
+    monkeypatch.setattr(
+        app_module.Wmain, "open_file_location",
+        lambda self, term, match: opened.append(match), raising=False,
+    )
+    monkeypatch.setattr(app_module.Gtk, "show_uri", lambda *a: shown.append(a), raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClickTerminal("www.example.com", "url", "file")
+    terminal.hyperlink_check_event = lambda e: None
+    terminal.get_parent = lambda: types.SimpleNamespace(
+        get_parent=lambda: types.SimpleNamespace(
+            get_nth_page=lambda i: None, get_current_page=lambda: 0
+        )
+    )
+    wmain.on_tab_focus = lambda *a: None
+
+    wmain.on_terminal_click(terminal, _ctrl_click_event(app_module))
+
+    assert opened == []
+    assert shown, "a url should still reach show_uri"
+
+
+@pytest.mark.filterwarnings("ignore:Vte.Terminal.match_check is deprecated")
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real terminal")
+def test_file_line_pattern_matches_only_real_locations():
+    """The pattern must require both an extension and a line number.
+
+    Without the line number every bare word matches; without the extension "host:22"
+    does. Checked against real PCRE2 through VTE, since that is what compiles it.
+    """
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Vte", "2.91")
+    from gi.repository import Gtk, Vte
+
+    from gnome_connection_manager.utils import urlregex
+
+    def settle(seconds=0.6):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            while Gtk.events_pending():
+                Gtk.main_iteration_do(False)
+            time.sleep(0.01)
+
+    window = Gtk.Window()
+    terminal = Vte.Terminal()
+    window.add(terminal)
+    window.show_all()
+    settle()  # the terminal has no grid until it is realised
+
+    regex = Vte.Regex.new_for_match(
+        urlregex.FILE_LINE, len(urlregex.FILE_LINE), urlregex.PCRE2_FLAGS
+    )
+    tag = terminal.match_add_regex(regex, 0)
+
+    should_match = ["src/app.py:42", "src/app.py:42:7", "./rel/f.ts:10", "/abs/m.rs:1:2"]
+    should_not = ["file.py", "host:22", "192.168.1.10:8080", "plain words", "app.py:"]
+    for line in should_match + should_not:
+        terminal.feed((line + "\r\n").encode())
+    settle()
+
+    def matched(row, text):
+        for col in range(len(text)):
+            found = terminal.match_check(col, row)
+            if found and found[0] and found[1] == tag:
+                return found[0]
+        return None
+
+    for row, text in enumerate(should_match):
+        assert matched(row, text) == text, f"{text!r} should match"
+    for offset, text in enumerate(should_not):
+        row = len(should_match) + offset
+        assert matched(row, text) is None, f"{text!r} should not match"
+
+    window.destroy()

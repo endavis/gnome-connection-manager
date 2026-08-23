@@ -48,6 +48,7 @@ import operator
 import os
 import re
 import shlex
+import subprocess
 import sys
 import tempfile
 import time
@@ -481,6 +482,7 @@ class conf:
     VERSION = 0
     UPDATE_TITLE = 0
     TAB_TITLE_FROM_TERMINAL = 1
+    EDITOR_COMMAND = ""
     APP_TITLE = app_name
 
 
@@ -517,6 +519,7 @@ CONFIG_OPTIONS = (
     ("TERM", "options", "term", str),
     ("UPDATE_TITLE", "options", "update-title", bool),
     ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
+    ("EDITOR_COMMAND", "options", "editor-command", str),
     ("APP_TITLE", "options", "app-title", str),
     ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
     ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
@@ -547,6 +550,72 @@ def sanitize_log_name(title):
 
 
 TAB_TITLE_MAX = 40
+
+
+_FILE_LOCATION = re.compile(r"^(?P<path>.+?):(?P<line>[0-9]+)(?::(?P<col>[0-9]+))?$")
+
+
+def parse_file_location(match):
+    """Split "path/to/file.py:42:7" into its parts, or None if it is not that shape."""
+    found = _FILE_LOCATION.match((match or "").strip())
+    if not found:
+        return None
+    return (
+        found.group("path"),
+        int(found.group("line")),
+        int(found.group("col") or 0),
+    )
+
+
+def terminal_is_local(terminal):
+    """True when the terminal runs a local shell rather than an ssh/telnet session.
+
+    A path printed by a remote host does not exist here, so opening it locally would
+    silently open the wrong file or nothing at all.
+    """
+    host = getattr(terminal, "host", None)
+    if host is None:
+        return False
+    return not (getattr(host, "host", "") or "")
+
+
+def terminal_working_directory(terminal):
+    """Best-effort cwd for resolving a relative path.
+
+    OSC 7 first: a shell that emits it stays correct even mid-command. Otherwise read
+    the pty's foreground process group, which needs no shell cooperation -- measured on
+    this platform, bash emits no OSC 7 at all, so that fallback is the path that runs.
+    """
+    uri = terminal.get_current_directory_uri() if hasattr(terminal, "get_current_directory_uri") else None
+    if uri:
+        try:
+            path, _host = GLib.filename_from_uri(uri)
+            return path
+        except Exception:
+            logger.debug("Undecodable OSC 7 directory URI: %r", uri)
+    pty = terminal.get_pty() if hasattr(terminal, "get_pty") else None
+    if pty is None:
+        return None
+    try:
+        return os.readlink(f"/proc/{os.tcgetpgrp(pty.get_fd())}/cwd")
+    except OSError:
+        return None
+
+
+def build_editor_command(path, line, col):
+    """Command to open a file at a line, as a list ready for Popen.
+
+    conf.EDITOR_COMMAND wins when set, as a template over {file}, {line} and {col}.
+    Otherwise $VISUAL or $EDITOR with the +LINE convention that vi, vim, nano and emacs
+    all understand, and xdg-open as the last resort -- which cannot take a line number.
+    """
+    template = (conf.EDITOR_COMMAND or "").strip()
+    if template:
+        return shlex.split(template.format(file=path, line=line, col=col))
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if editor:
+        return [*shlex.split(editor), f"+{line}", path]
+    return ["xdg-open", path]
 
 
 def uri_to_terminal_text(uri):
@@ -1324,6 +1393,9 @@ class Wmain(GladeComponent):
             and event.get_state() & Gdk.ModifierType.CONTROL_MASK
         ):
             url, tag = widget.match_check_event(event)
+            if url and tag is not None and tag == getattr(widget, "tag_file", None):
+                self.open_file_location(widget, url)
+                return True
             if tag == widget.tag_url:
                 url = f"http://{url}"
             elif tag == widget.tag_email and not url.startswith("mailto:"):
@@ -2001,6 +2073,38 @@ class Wmain(GladeComponent):
         terminal.set_font_scale(1.0)
         return 1.0
 
+    def open_file_location(self, terminal, match):
+        """Open a clicked path:line in an editor.
+
+        Local sessions only: a path printed by a remote host does not exist here, so
+        opening it locally would open the wrong file or nothing.
+        """
+        parsed = parse_file_location(match)
+        if parsed is None:
+            return False
+        path, line, col = parsed
+        if not terminal_is_local(terminal):
+            logger.debug("Not opening %r: terminal is not a local session", path)
+            return False
+        target = Path(path).expanduser()
+        if not target.is_absolute():
+            cwd = terminal_working_directory(terminal)
+            if cwd is None:
+                logger.debug("Not opening %r: no working directory for the terminal", path)
+                return False
+            target = Path(cwd) / target
+        if not target.is_file():
+            logger.debug("Not opening %r: no such file", target)
+            return False
+        command = build_editor_command(str(target), line, col)
+        try:
+            subprocess.Popen(command)
+        except OSError:
+            logger.exception("Could not run the editor command %r", command)
+            msgbox("{}\n{}".format(_("No se puede abrir el editor"), " ".join(command)))
+            return False
+        return True
+
     def on_terminal_drag_data_received(self, widget, context, x, y, data, info, drop_time):
         """Insert dropped paths at the prompt.
 
@@ -2185,6 +2289,7 @@ class Wmain(GladeComponent):
         terminal.tag_direct = self.registerUrlRegex(terminal, urlregex.DIRECT)
         terminal.tag_url = self.registerUrlRegex(terminal, urlregex.URL)
         terminal.tag_email = self.registerUrlRegex(terminal, urlregex.EMAIL)
+        terminal.tag_file = self.registerUrlRegex(terminal, urlregex.FILE_LINE)
 
     def registerUrlRegex(self, terminal, regex):
         try:
@@ -2662,6 +2767,7 @@ class Wmain(GladeComponent):
         cp.set("options", "cycle-tabs", conf.CYCLE_TABS)
         cp.set("options", "update-title", conf.UPDATE_TITLE)
         cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
+        cp.set("options", "editor-command", conf.EDITOR_COMMAND)
         cp.set("options", "app-title", conf.APP_TITLE or app_name)
 
         collapsed_folders = ",".join(self.get_collapsed_nodes())
@@ -4342,6 +4448,7 @@ class Wconfig(GladeComponent):
         self.addParam(_("Transparencia"), "conf.TRANSPARENCY", int, 0, 100)
         self.addParam(_("TERM"), "conf.TERM", str)
         self.addParam(_("Ruta de logs"), "conf.LOG_PATH", str)
+        self.addParam(_("Comando del editor"), "conf.EDITOR_COMMAND", str)
         self.addParam(_("Abrir consola local al inicio"), "conf.STARTUP_LOCAL", bool)
         self.addParam(_("Log consola local"), "conf.LOG_LOCAL", bool)
         self.addParam(_("Pegar con botón derecho"), "conf.PASTE_ON_RIGHT_CLICK", bool)
