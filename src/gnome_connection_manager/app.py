@@ -201,6 +201,9 @@ _CONNECT = ["connect"]
 _NEW_LOCAL = ["new_local"]
 _FULLSCREEN = ["fullscreen"]
 _CLONE = ["clone"]
+_ZOOM_IN = ["zoom_in"]
+_ZOOM_OUT = ["zoom_out"]
+_ZOOM_RESET = ["zoom_reset"]
 
 # Terminal commands and their default keys, owned by [shortcuts] in gcm.conf.
 SHORTCUT_DEFAULTS = (
@@ -220,6 +223,9 @@ SHORTCUT_DEFAULTS = (
     ("clone", _CLONE, "CTRL+SHIFT+D"),
     ("new_local", _NEW_LOCAL, "CTRL+SHIFT+N"),
     ("fullscreen", _FULLSCREEN, "F11"),
+    ("zoom_in", _ZOOM_IN, "CTRL+EQUAL"),
+    ("zoom_out", _ZOOM_OUT, "CTRL+MINUS"),
+    ("zoom_reset", _ZOOM_RESET, "CTRL+0"),
 )
 
 # Commands that also exist as an application action. Their accelerator is derived from
@@ -242,7 +248,23 @@ TERMINAL_ACTIONS = {
     "fullscreen": "fullscreen",
     "console_next": "console-next",
     "console_previous": "console-previous",
+    "zoom_in": "zoom-in",
+    "zoom_out": "zoom-out",
+    "zoom_reset": "zoom-reset",
 }
+
+# VTE clamps set_font_scale() to this range itself (measured on 0.76: 0.1 lands on
+# 0.25 and 99.0 on 4.0). Mirroring it here keeps a held-down zoom key from walking
+# a scale value that VTE has already stopped honouring.
+FONT_SCALE_MIN = 0.25
+FONT_SCALE_MAX = 4.0
+FONT_SCALE_STEP = 1.1
+
+
+def clamp_font_scale(scale):
+    """Hold a font scale inside the range VTE will actually apply."""
+    return min(FONT_SCALE_MAX, max(FONT_SCALE_MIN, scale))
+
 
 _ACCEL_MODIFIERS = (
     ("CTRL+", Gdk.ModifierType.CONTROL_MASK),
@@ -1241,6 +1263,12 @@ class Wmain(GladeComponent):
                 elif cmd == _FIND_NEXT:
                     if hasattr(self, "search"):
                         self.find_word()
+                elif cmd == _ZOOM_IN:
+                    self.terminal_zoom_in(widget)
+                elif cmd == _ZOOM_OUT:
+                    self.terminal_zoom_out(widget)
+                elif cmd == _ZOOM_RESET:
+                    self.terminal_zoom_reset(widget)
                 elif cmd == _CLEAR:
                     widget.reset(True, True)
                 elif cmd == _FIND_BACK:
@@ -1863,6 +1891,44 @@ class Wmain(GladeComponent):
     def _clipboard_text(self):
         return Gtk.Clipboard.get_default(Gdk.Display.get_default()).wait_for_text()
 
+    def terminal_zoom(self, terminal, factor):
+        """Scale one terminal's font. Zoom is per-terminal: set_font_scale() is a widget
+        property, and a wide log in one tab should not shrink the shell in the next."""
+        scale = clamp_font_scale(terminal.get_font_scale() * factor)
+        terminal.set_font_scale(scale)
+        return scale
+
+    def terminal_zoom_in(self, terminal):
+        return self.terminal_zoom(terminal, FONT_SCALE_STEP)
+
+    def terminal_zoom_out(self, terminal):
+        return self.terminal_zoom(terminal, 1 / FONT_SCALE_STEP)
+
+    def terminal_zoom_reset(self, terminal):
+        terminal.set_font_scale(1.0)
+        return 1.0
+
+    def on_terminal_scroll(self, widget, event, *args):
+        """Ctrl+scroll zooms. VTE 0.76 does not do this itself -- measured: neither
+        Ctrl+scroll nor Ctrl+plus emits increase-font-size -- so the wheel is ours to
+        handle, and the event has to be swallowed or the buffer scrolls as well."""
+        if not event.state & Gdk.ModifierType.CONTROL_MASK:
+            return False
+        direction = event.direction
+        if direction == Gdk.ScrollDirection.UP:
+            self.terminal_zoom_in(widget)
+        elif direction == Gdk.ScrollDirection.DOWN:
+            self.terminal_zoom_out(widget)
+        elif direction == Gdk.ScrollDirection.SMOOTH:
+            ok, _dx, dy = event.get_scroll_deltas()
+            if not ok or not dy:
+                return False
+            # Smooth scroll reports upward movement as a negative delta.
+            self.terminal_zoom_out(widget) if dy > 0 else self.terminal_zoom_in(widget)
+        else:
+            return False
+        return True
+
     def terminal_select_all(self, terminal):
         terminal.select_all()
 
@@ -2068,6 +2134,11 @@ class Wmain(GladeComponent):
             v.connect("button_press_event", self.on_terminal_click)
             v.connect("key_press_event", self.on_terminal_keypress)
             v.connect("selection-changed", self.on_terminal_selection)
+            v.connect("scroll-event", self.on_terminal_scroll)
+            # VTE never raises these on its own in 0.76, but they are the documented
+            # way to ask for a zoom, so honour them if anything ever does.
+            v.connect("increase-font-size", self.terminal_zoom_in)
+            v.connect("decrease-font-size", self.terminal_zoom_out)
 
             if conf.TRANSPARENCY > 0 and self.wMain.transparency:
                 # v.set_opacity(1 - (conf.TRANSPARENCY / 100)) #posibly a bug in gtk3, set_opacity only works if parent is transparent too (worked just fine in gtk2),
@@ -5003,6 +5074,9 @@ class GcmApplication(Gtk.Application):
         self._create_action("split-horizontal", self._on_action_split_horizontal)
         self._create_action("split-vertical", self._on_action_split_vertical)
         self._create_action("unsplit", self._on_action_unsplit)
+        self._create_action("zoom-in", self._on_action_zoom_in)
+        self._create_action("zoom-out", self._on_action_zoom_out)
+        self._create_action("zoom-reset", self._on_action_zoom_reset)
         self._create_action("search-back", self._on_action_search_back)
         self._create_action("find", self._on_action_find)
         self._create_action("fullscreen", self._on_action_fullscreen)
@@ -5114,6 +5188,11 @@ class GcmApplication(Gtk.Application):
         split_section.append(_("Split Vertical"), "app.split-vertical")
         split_section.append(_("Unsplit"), "app.unsplit")
         view_menu.append_section(None, split_section)
+        zoom_section = Gio.Menu()
+        zoom_section.append(_("Zoom In"), "app.zoom-in")
+        zoom_section.append(_("Zoom Out"), "app.zoom-out")
+        zoom_section.append(_("Normal Size"), "app.zoom-reset")
+        view_menu.append_section(None, zoom_section)
         menubar.append_submenu(_("_View"), view_menu)
 
         terminal_menu = Gio.Menu()
@@ -5259,6 +5338,22 @@ class GcmApplication(Gtk.Application):
             terminal = self._controller.get_target_terminal()
             if terminal:
                 self._controller.terminal_paste(terminal, single_line=True)
+            self._controller.clear_context_terminal()
+
+    def _on_action_zoom_in(self, action, _param):
+        self._zoom(lambda controller, terminal: controller.terminal_zoom_in(terminal))
+
+    def _on_action_zoom_out(self, action, _param):
+        self._zoom(lambda controller, terminal: controller.terminal_zoom_out(terminal))
+
+    def _on_action_zoom_reset(self, action, _param):
+        self._zoom(lambda controller, terminal: controller.terminal_zoom_reset(terminal))
+
+    def _zoom(self, apply_zoom):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                apply_zoom(self._controller, terminal)
             self._controller.clear_context_terminal()
 
     def _on_action_copy_paste(self, action, _param):

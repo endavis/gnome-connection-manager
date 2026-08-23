@@ -66,6 +66,9 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
   pyte has no alternate screen; termqt has no truecolor, mouse reporting or bracketed paste.
   Assume a custom widget over an extended parser, and spike it before committing to the port.
 - Configurable font (default: monospace)
+- Per-terminal font zoom (Ctrl+scroll, Ctrl+=/Ctrl+-, Ctrl+0 to reset), clamped to
+  0.25x-4.0x, which is the range VTE itself honours. Zoom is per-terminal, not global,
+  and is not persisted across restarts.
 - Configurable foreground and background colors (global default + per-host override)
 - Transparency (where supported by platform)
 - Configurable scrollback buffer (1-1,000,000 lines, default 10000)
@@ -206,6 +209,9 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 | Ctrl+W | Close tab |
 | Ctrl+N | Reconnect |
 | Ctrl+Return | Connect to selected host |
+| Ctrl+= | Zoom in |
+| Ctrl+- | Zoom out |
+| Ctrl+0 | Normal size |
 | Ctrl+Shift+K | Reset and clear |
 | Ctrl+Shift+D | Clone connection |
 | Ctrl+Shift+N | New local terminal |

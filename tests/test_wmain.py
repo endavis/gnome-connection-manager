@@ -542,6 +542,7 @@ class ClipboardTerminal:
         self.selected = []
         self._has_selection = has_selection
         self.screen_text = screen_text
+        self.font_scale = 1.0
 
     def get_has_selection(self):
         return self._has_selection
@@ -568,6 +569,13 @@ class ClipboardTerminal:
 
     def get_text(self, *args):
         return (self.screen_text, None)
+
+    def get_font_scale(self):
+        return self.font_scale
+
+    def set_font_scale(self, scale):
+        # Vte clamps for real; the fake mirrors that so tests cannot drift optimistic.
+        self.font_scale = min(4.0, max(0.25, scale))
 
 
 class LogWriter:
@@ -761,6 +769,8 @@ def test_clipboard_terminal_fake_matches_real_vte_api():
     for name in (
         "get_has_selection",
         "copy_clipboard_format",
+        "get_font_scale",
+        "set_font_scale",
         "paste_clipboard",
         "paste_text",
         "select_all",
@@ -1148,6 +1158,160 @@ class NotebookAncestor:
 
     def get_n_pages(self):
         return self.pages
+
+
+# -- font zoom (#19) --------------------------------------------------------
+
+
+class ScrollEvent:
+    """Mirrors the Gdk.EventScroll surface on_terminal_scroll actually reads."""
+
+    def __init__(self, direction, ctrl=True, deltas=None):
+        self.direction = direction
+        self.state = 1 if ctrl else 0  # conftest maps CONTROL_MASK to 1
+        self._deltas = deltas
+
+    def get_scroll_deltas(self):
+        if self._deltas is None:
+            return (False, 0.0, 0.0)
+        return (True, *self._deltas)
+
+
+def _terminal_signal_connections(app_module):
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def addTab", 1)[1].split("\n    def ", 1)[0]
+    return dict(re.findall(r'v\.connect\(\s*"([a-z_-]+)",\s*(?:self\.)?([A-Za-z_.]+)', body))
+
+
+def test_terminal_signals_are_wired_at_creation(app_module):
+    """A handler that exists but is never connected stays invisible until someone tries it."""
+    connections = _terminal_signal_connections(app_module)
+
+    assert connections.get("scroll-event") == "on_terminal_scroll"
+    assert connections.get("increase-font-size") == "terminal_zoom_in"
+    assert connections.get("decrease-font-size") == "terminal_zoom_out"
+    # Pre-existing wiring, guarded here because this is the only place that checks it.
+    assert connections.get("key_press_event") == "on_terminal_keypress"
+    assert connections.get("button_press_event") == "on_terminal_click"
+    assert connections.get("bell") == "on_terminal_bell"
+
+
+def test_clamp_font_scale_holds_vte_limits(app_module):
+    """VTE itself lands 0.1 on 0.25 and 99.0 on 4.0; the clamp mirrors that."""
+    assert app_module.clamp_font_scale(0.01) == app_module.FONT_SCALE_MIN
+    assert app_module.clamp_font_scale(99.0) == app_module.FONT_SCALE_MAX
+    assert app_module.clamp_font_scale(1.0) == 1.0
+
+
+def test_terminal_zoom_steps_and_resets(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+
+    assert wmain.terminal_zoom_in(terminal) > 1.0
+    assert terminal.font_scale > 1.0
+    wmain.terminal_zoom_out(terminal)
+    assert terminal.font_scale == pytest.approx(1.0)
+
+    wmain.terminal_zoom_in(terminal)
+    assert wmain.terminal_zoom_reset(terminal) == 1.0
+    assert terminal.font_scale == 1.0
+
+
+def test_terminal_zoom_saturates_instead_of_running_away(app_module):
+    """A held-down zoom key must not walk a scale VTE has stopped honouring."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+
+    for _ in range(80):
+        wmain.terminal_zoom_in(terminal)
+    assert terminal.font_scale == app_module.FONT_SCALE_MAX
+
+    for _ in range(120):
+        wmain.terminal_zoom_out(terminal)
+    assert terminal.font_scale == app_module.FONT_SCALE_MIN
+
+
+def test_terminal_zoom_is_per_terminal_not_global(app_module):
+    """set_font_scale is a widget property; a wide log must not shrink the next tab."""
+    wmain = object.__new__(app_module.Wmain)
+    zoomed, untouched = ClipboardTerminal(), ClipboardTerminal()
+
+    wmain.terminal_zoom_in(zoomed)
+
+    assert zoomed.font_scale > 1.0
+    assert untouched.font_scale == 1.0
+
+
+def test_ctrl_scroll_zooms_and_swallows_the_event(app_module):
+    """Returning False as well would scroll the buffer while zooming it."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    direction = app_module.Gdk.ScrollDirection
+
+    assert wmain.on_terminal_scroll(terminal, ScrollEvent(direction.UP)) is True
+    assert terminal.font_scale > 1.0
+    assert wmain.on_terminal_scroll(terminal, ScrollEvent(direction.DOWN)) is True
+    assert terminal.font_scale == pytest.approx(1.0)
+
+
+def test_plain_scroll_is_left_to_vte(app_module):
+    """Without Ctrl the wheel belongs to the scrollback, untouched."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    direction = app_module.Gdk.ScrollDirection
+
+    handled = wmain.on_terminal_scroll(terminal, ScrollEvent(direction.UP, ctrl=False))
+
+    assert handled is False
+    assert terminal.font_scale == 1.0
+
+
+@pytest.mark.parametrize(
+    ("dy", "grows"),
+    [(-1.0, True), (1.0, False)],
+)
+def test_ctrl_smooth_scroll_zooms_by_delta_sign(app_module, dy, grows):
+    """Smooth scroll reports upward movement as a negative delta."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    event = ScrollEvent(app_module.Gdk.ScrollDirection.SMOOTH, deltas=(0.0, dy))
+
+    assert wmain.on_terminal_scroll(terminal, event) is True
+    assert (terminal.font_scale > 1.0) is grows
+
+
+def test_ctrl_smooth_scroll_without_usable_deltas_is_ignored(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    direction = app_module.Gdk.ScrollDirection
+
+    assert wmain.on_terminal_scroll(terminal, ScrollEvent(direction.SMOOTH)) is False
+    assert (
+        wmain.on_terminal_scroll(terminal, ScrollEvent(direction.SMOOTH, deltas=(0.0, 0.0)))
+        is False
+    )
+    assert terminal.font_scale == 1.0
+
+
+def test_sideways_ctrl_scroll_does_not_zoom(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+
+    handled = wmain.on_terminal_scroll(terminal, ScrollEvent(app_module.Gdk.ScrollDirection.LEFT))
+
+    assert handled is False
+    assert terminal.font_scale == 1.0
+
+
+def test_zoom_commands_are_configurable_shortcuts(app_module):
+    """Zoom rides the [shortcuts] table so its keys can be rebound like any other."""
+    defaults = {command: key for command, _token, key in app_module.SHORTCUT_DEFAULTS}
+
+    assert defaults["zoom_in"] == "CTRL+EQUAL"
+    assert defaults["zoom_out"] == "CTRL+MINUS"
+    assert defaults["zoom_reset"] == "CTRL+0"
+    for command in ("zoom_in", "zoom_out", "zoom_reset"):
+        assert command in app_module.TERMINAL_ACTIONS
 
 
 def _context_menu_actions(app_module):
