@@ -83,3 +83,92 @@ def test_doc_is_linked_from_the_readme():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
 
     assert "docs/TERMINAL-USAGE.md" in readme
+
+
+# -- AGENTS.md must describe the tree that exists (#51) ---------------------
+
+AGENTS = Path(__file__).resolve().parents[1] / "AGENTS.md"
+REPO = AGENTS.parent
+
+def _agents_references():
+    return sorted(set(re.findall(r"`([^`]+)`", AGENTS.read_text())))
+
+
+# Suffixes that mark a reference as naming a file in this repo. Anything else -- API
+# names like Gtk.Builder, bare globs like .deb, absolute system paths -- is left alone.
+_FILE_SUFFIXES = (".py", ".md", ".glade", ".css", ".png", ".gif", ".expect", ".toml", ".desktop")
+_REPO_DIRS = ("src/", "data/", "tests/", "docs/", "lang/")
+
+# Bare filenames allowed as shorthand, but only where the full path is also given.
+_SHORTHAND = {"app.py", "main.py", "__main__.py", "conftest.py"}
+
+
+def _agents_file_refs():
+    refs = []
+    for ref in _agents_references():
+        if " " in ref or ref.startswith(("/", "~", "$", ".")):
+            continue
+        if ref.endswith(_FILE_SUFFIXES) or ref.startswith(_REPO_DIRS):
+            refs.append(ref)
+    return refs
+
+
+def test_agents_md_references_paths_that_exist():
+    """The previous version described the pre-src/ layout and had 11 dead references.
+
+    A reference is wrong two ways: the path may not exist at all, or -- the case that
+    actually happened -- it may name a bare filename that lives somewhere else now.
+    """
+    refs = _agents_file_refs()
+    assert len(refs) >= 10, f"reference extraction looks broken, only found {refs}"
+
+    problems = []
+    for ref in refs:
+        if (REPO / ref).exists():
+            continue
+        base = Path(ref).name
+        if base in _SHORTHAND:
+            if not any(r.endswith("/" + base) for r in refs):
+                problems.append(f"{ref}: used as shorthand but its full path is never given")
+            continue
+        elsewhere = [
+            str(h.relative_to(REPO))
+            for h in REPO.rglob(base)
+            if ".git" not in h.parts and ".venv" not in h.parts
+        ]
+        problems.append(
+            f"{ref}: does not exist" + (f", actual location {elsewhere}" if elsewhere else "")
+        )
+
+    assert not problems, "AGENTS.md is out of step with the tree: " + "; ".join(problems)
+
+
+def test_agents_md_names_symbols_that_exist():
+    """It names symbols rather than line numbers, so the names have to be real."""
+    source = (REPO / "src" / "gnome_connection_manager" / "app.py").read_text()
+
+    for symbol in ("conf", "CONFIG_OPTIONS", "SHORTCUT_DEFAULTS", "TERMINAL_ACTIONS"):
+        assert symbol in AGENTS.read_text(), f"AGENTS.md no longer names {symbol}"
+        assert re.search(rf"^(class |){symbol}\b", source, re.M), f"{symbol} is gone from app.py"
+
+
+def test_agents_md_carries_no_line_number_references():
+    """Line numbers rot: the old file pointed at a path:line wrong in both halves."""
+    stale = re.findall(r"`[^`]*\.py:\d+`", AGENTS.read_text())
+
+    assert not stale, f"replace line-number references with symbol names: {stale}"
+
+
+def test_agents_md_does_not_claim_tests_are_manual():
+    text = AGENTS.read_text().lower()
+
+    assert "tests are manual" not in text
+    assert "just test" in text
+
+
+def test_agents_md_lists_the_locales_that_exist():
+    locales = sorted(p.name for p in (REPO / "lang").iterdir() if p.is_dir())
+    text = AGENTS.read_text()
+
+    for locale in locales:
+        assert re.search(rf"\b{locale}\b", text), f"AGENTS.md omits the {locale} locale"
