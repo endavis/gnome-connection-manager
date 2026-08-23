@@ -110,6 +110,36 @@ Applications that support bracketed paste are told the content is a paste rather
 typing, which stops a shell from executing each line as it arrives. GCM preserves that
 framing.
 
+## Tab titles
+
+Tabs show the host name. When the running program advertises a window title, it is appended:
+
+```
+prod-web-01: npm run build
+prod-web-01: ✳ Claude Code
+```
+
+The host name always stays in front, so tabs remain identifiable — several sessions of the
+same tool would otherwise look identical. Titles are truncated, and the full text is in the
+tab's tooltip.
+
+**Renaming a tab wins.** Once you rename a tab, programs stop changing its label.
+
+Turn the behaviour off entirely with:
+
+```ini
+[options]
+tab-title-from-terminal = false
+```
+
+The title is display only. It never affects where sessions are logged, what a cloned tab
+connects to, or which console a cluster command targets — those all use the tab's identity,
+which is the host name or your explicit rename. This matters because a window title is set by
+whatever runs in the terminal, including a remote host over SSH.
+
+Note that not every program sets a title: of the agent CLIs measured above, only Claude Code
+does, and it advertises a fixed string rather than per-task status.
+
 ## Font zoom
 
 `Ctrl+scroll` zooms, as do `Ctrl+=` and `Ctrl+-`. `Ctrl+0` returns to normal size.

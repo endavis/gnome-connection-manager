@@ -1846,3 +1846,212 @@ def test_glade_no_longer_defines_a_menubar(app_module):
     """One menubar definition only; a second would silently shadow the model (#43)."""
     glade = Path(app_module.glade_dir) / "gnome-connection-manager.glade"
     assert "GtkMenuBar" not in glade.read_text()
+
+
+# -- tab titles from window-title-changed (#18) -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("npm run build", "npm run build"),
+        ("  spaced   out  ", "spaced out"),
+        ("bell\x07and\x1bescape", "bellandescape"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_sanitize_tab_title(app_module, raw, expected):
+    """Titles arrive over OSC from whatever runs in the terminal, including a remote host."""
+    assert app_module.sanitize_tab_title(raw) == expected
+
+
+def test_sanitize_tab_title_truncates(app_module):
+    out = app_module.sanitize_tab_title("y" * 300)
+
+    assert len(out) == app_module.TAB_TITLE_MAX
+    assert out.endswith("…")
+
+
+class StubLabel:
+    def __init__(self):
+        self.text = ""
+        self.markup = None
+
+    def set_text(self, text):
+        self.text = text
+        self.markup = None
+
+    def get_text(self):
+        return self.text
+
+    def set_markup(self, markup):
+        self.markup = markup
+
+
+def _tab_label(app_module, title="  prod-web-01  "):
+    tab = object.__new__(app_module.NotebookTabLabel)
+    tab.title = title
+    tab.terminal_title = ""
+    tab.renamed = False
+    tab.label = StubLabel()
+    tab.label.set_text(title)
+    tab.set_tooltip_text = lambda _text: None
+    return tab
+
+
+def test_tab_get_text_returns_identity_not_the_rendered_title(app_module, monkeypatch):
+    """Clone and cluster selection read get_text(); a program title must not decide those."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module)
+
+    tab.set_terminal_title("npm run build")
+
+    assert tab.label.get_text() == "  prod-web-01: npm run build  "
+    assert tab.get_text() == "  prod-web-01  "
+
+
+def test_tab_title_is_ignored_when_the_preference_is_off(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 0)
+    tab = _tab_label(app_module)
+
+    tab.set_terminal_title("npm run build")
+
+    assert tab.label.get_text() == "  prod-web-01  "
+
+
+def test_set_terminal_title_sanitises_before_rendering(app_module, monkeypatch):
+    """The label is fed straight into set_markup elsewhere, so it must arrive clean."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module)
+
+    tab.set_terminal_title("  bell\x07here   and\x1bescape  ")
+
+    assert tab.terminal_title == "bellhere andescape"
+    assert tab.label.get_text() == "  prod-web-01: bellhere andescape  "
+
+
+def test_set_terminal_title_truncates_before_rendering(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module)
+
+    tab.set_terminal_title("y" * 300)
+
+    assert len(tab.terminal_title) == app_module.TAB_TITLE_MAX
+    assert tab.label.get_text().endswith("…  ")
+
+
+def test_manual_rename_becomes_identity_and_outranks_later_titles(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module)
+
+    tab.rename("my session")
+    assert tab.get_text() == "  my session  "
+
+    tab.set_terminal_title("program tries again")
+
+    assert tab.label.get_text() == "  my session  "
+    assert tab.get_text() == "  my session  "
+
+
+def test_an_empty_title_leaves_the_tab_alone(app_module, monkeypatch):
+    """Programs clear the title on exit; that must not blank the tab."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module)
+
+    tab.set_terminal_title("busy")
+    tab.set_terminal_title("")
+
+    assert tab.label.get_text() == "  prod-web-01  "
+
+
+def test_closed_tab_markup_escapes_the_label(app_module, monkeypatch):
+    """A label containing & failed set_markup outright before this; OSC titles make it reachable."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    monkeypatch.setattr(app_module.conf, "AUTO_CLOSE_TAB", 0)
+    monkeypatch.setattr(
+        app_module.GLib,
+        "markup_escape_text",
+        lambda t: t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"),
+        raising=False,
+    )
+    tab = _tab_label(app_module)
+    tab.is_active = False
+    tab.set_terminal_title("A & B <b>x</b>")
+
+    tab.mark_tab_as_closed()
+
+    assert "&amp;" in tab.label.markup
+    assert "&lt;b&gt;" in tab.label.markup
+
+
+def test_glib_really_provides_markup_escape_text():
+    """The stub above would happily pass against a function that does not exist."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import GLib
+
+    assert GLib.markup_escape_text("A & B") == "A &amp; B"
+
+
+class TitleTerminal(ClipboardTerminal):
+    def __init__(self, title, label):
+        super().__init__()
+        self._title = title
+        self._label = label
+
+    def get_window_title(self):
+        return self._title
+
+    def get_parent(self):
+        pane = types.SimpleNamespace()
+        pane.get_parent = lambda: types.SimpleNamespace(get_tab_label=lambda _p: self._label)
+        return pane
+
+
+def test_on_terminal_title_changed_updates_the_tab(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    wmain = object.__new__(app_module.Wmain)
+    tab = _tab_label(app_module)
+    terminal = TitleTerminal("npm run build", tab)
+
+    wmain.on_terminal_title_changed(terminal)
+
+    assert tab.label.get_text() == "  prod-web-01: npm run build  "
+
+
+def test_on_terminal_title_changed_tolerates_a_plain_tab_label(app_module):
+    """Glade placeholder pages carry a label with no set_terminal_title."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = TitleTerminal("anything", PlainTabLabel())
+
+    wmain.on_terminal_title_changed(terminal)  # must not raise
+
+
+def test_window_title_changed_is_wired_at_creation(app_module):
+    connections = _terminal_signal_connections(app_module)
+
+    assert connections.get("window-title-changed") == "on_terminal_title_changed"
+
+
+def test_a_program_set_title_cannot_reach_the_log_path(tmp_path, app_module, monkeypatch):
+    """#18's headline risk: OSC titles are remote-controlled, and logging once read the label.
+
+    Decoupled by #49, but this is the regression that would matter, so it is named.
+    """
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
+    wmain = object.__new__(app_module.Wmain)
+
+    tab = _tab_label(app_module)
+    tab.set_terminal_title("../../../../tmp/pwned")
+    assert "pwned" in tab.label.get_text()  # the label really did take the title
+
+    terminal = LoggingTerminal(LogHost(group="Work", name="web-01", user="root"))
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    written = list(tmp_path.rglob("*.log"))
+    assert written == [tmp_path / "Work" / "web-01" / "root-20260823-001.log"]
+    assert not list(tmp_path.parent.glob("pwned*"))
