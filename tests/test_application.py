@@ -480,3 +480,136 @@ def test_apply_menu_accels_is_inert_without_an_application(app_module, monkeypat
     monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
 
     app_module.apply_menu_accels(object())  # must not raise
+
+
+# -- custom key sequences must not shadow anything (#78) ---------------------
+
+
+def test_reserved_accelerators_match_what_do_startup_registers(app_module):
+    """The reserved list is what collision checks are made against, so it has to be real.
+
+    Application accelerators are dispatched by GTK before the focused terminal sees the
+    key, so a custom binding on one of them would silently never fire -- the failure mode
+    behind #3 and #15.
+    """
+    source = Path(app_module.__file__).read_text()
+    startup = source.split("def do_startup", 1)[1].split("def _create_action", 1)[0]
+    registered = set(re.findall(r'_create_action\([^)]*?\["([^"]+)"\]', startup, re.S))
+
+    as_gcm_keys = {
+        accel.replace("<Primary>", "CTRL+").replace("<Shift>", "SHIFT+").replace("<Alt>", "ALT+").upper()
+        for accel in registered
+    }
+
+    assert set(app_module.RESERVED_ACCELERATORS) == as_gcm_keys, (
+        "RESERVED_ACCELERATORS has drifted from the accelerators do_startup registers"
+    )
+
+
+def test_a_custom_key_on_a_terminal_shortcut_is_refused(app_module):
+    """Accepting it would shadow copy, paste or find depending on the user's config."""
+    accepted = app_module.parse_custom_keys(
+        {"CTRL+SHIFT+C": "\\n", "SHIFT+RETURN": "\\n"},
+        reserved={"CTRL+SHIFT+C"},
+    )
+
+    assert "CTRL+SHIFT+C" not in accepted
+    assert accepted["SHIFT+RETURN"] == b"\n"
+
+
+def test_a_custom_key_on_an_application_accelerator_is_refused(app_module):
+    """The terminal handler never runs for these, so the binding would be inert."""
+    reserved = set(app_module.RESERVED_ACCELERATORS)
+    assert "CTRL+Q" in reserved, "quit is the clearest example and must be reserved"
+
+    accepted = app_module.parse_custom_keys({"CTRL+Q": "\\n"}, reserved=reserved)
+
+    assert accepted == {}
+
+
+def test_custom_keys_decode_escape_sequences(app_module):
+    accepted = app_module.parse_custom_keys(
+        {
+            "SHIFT+RETURN": "\\n",
+            "ALT+RETURN": "\\x1b\\r",
+            "CTRL+SHIFT+RETURN": "\\r\\n",
+            "SHIFT+TAB": "literal",
+        },
+        reserved=set(),
+    )
+
+    assert accepted["SHIFT+RETURN"] == b"\n"
+    assert accepted["ALT+RETURN"] == b"\x1b\r"
+    assert accepted["CTRL+SHIFT+RETURN"] == b"\r\n"
+    assert accepted["SHIFT+TAB"] == b"literal"
+
+
+def test_an_undecodable_custom_key_is_dropped_not_fatal(app_module):
+    accepted = app_module.parse_custom_keys(
+        {"SHIFT+RETURN": "\\xZZ", "SHIFT+TAB": "\\n"}, reserved=set()
+    )
+
+    assert "SHIFT+RETURN" not in accepted
+    assert accepted["SHIFT+TAB"] == b"\n"
+
+
+def test_an_empty_custom_sequence_is_dropped(app_module):
+    assert app_module.parse_custom_keys({"SHIFT+RETURN": ""}, reserved=set()) == {}
+
+
+class KeypressTerminal:
+    def __init__(self):
+        self.fed = []
+
+    def feed_child(self, data, *args):
+        self.fed.append(data)
+
+
+def _key_event(name, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "get_key_name", lambda event: name)
+    return object()
+
+
+def test_a_custom_key_reaches_the_child(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "custom_keys", {"SHIFT+RETURN": b"\n"})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    wmain = object.__new__(app_module.Wmain)
+    terminal = KeypressTerminal()
+
+    handled = wmain.on_terminal_keypress(
+        terminal, _key_event("SHIFT+RETURN", app_module, monkeypatch)
+    )
+
+    assert handled is True, "the event must be consumed or VTE also sends its own encoding"
+    assert terminal.fed == [b"\n"]
+
+
+def test_a_shortcut_still_wins_over_a_custom_key(app_module, monkeypatch):
+    """Covers a shortcut being rebound onto a key that already had a custom sequence."""
+    copied = []
+    monkeypatch.setattr(app_module, "custom_keys", {"CTRL+SHIFT+C": b"\n"})
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+C": app_module._COPY})
+    monkeypatch.setattr(
+        app_module.Wmain, "terminal_copy", lambda self, term: copied.append(term), raising=False
+    )
+    wmain = object.__new__(app_module.Wmain)
+    terminal = KeypressTerminal()
+
+    wmain.on_terminal_keypress(terminal, _key_event("CTRL+SHIFT+C", app_module, monkeypatch))
+
+    assert terminal.fed == [], "the custom sequence must not be sent"
+    assert copied == [terminal]
+
+
+def test_an_unbound_key_is_left_alone(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "custom_keys", {"SHIFT+RETURN": b"\n"})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    wmain = object.__new__(app_module.Wmain)
+    terminal = KeypressTerminal()
+
+    result = wmain.on_terminal_keypress(
+        terminal, _key_event("SHIFT+TAB", app_module, monkeypatch)
+    )
+
+    assert terminal.fed == []
+    assert result is not True, "VTE must keep handling keys GCM has no binding for"

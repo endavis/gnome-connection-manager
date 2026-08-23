@@ -253,6 +253,16 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Custom command shortcuts (separate from built-in shortcuts)
 - Platform-aware defaults (Ctrl on Linux/Windows, Cmd on macOS)
 
+### Custom Key Sequences
+- `[keys]` in `gcm.conf` maps a key combination to raw bytes sent to the child, so
+  combinations the terminal cannot distinguish (notably `Shift+Enter` against `Enter`) can be
+  made distinguishable. Values accept `\n`, `\r`, `\t` and `\xNN`.
+- Bindings on keys claimed by `[shortcuts]` or by a fixed application accelerator are refused
+  at load time and logged: GTK dispatches window accelerators before the focused terminal, so
+  such a binding would silently never fire.
+- Dispatched after the built-in commands and skipped for any key a shortcut claims, so a
+  custom sequence can never shadow copy, paste or find.
+
 ### Default Shortcuts
 | Shortcut | Action |
 |---|---|

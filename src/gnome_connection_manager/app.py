@@ -234,6 +234,54 @@ SHORTCUT_DEFAULTS = (
     ("view_buffer", _VIEW_BUFFER, "CTRL+SHIFT+F"),
 )
 
+# Accelerators GCM registers on the window itself. GTK dispatches these before the
+# focused terminal sees the key, so a custom sequence bound to one of them would never
+# fire -- silently, which is how #3 and #15 presented. A test keeps this in step with
+# what do_startup actually registers.
+RESERVED_ACCELERATORS = (
+    "CTRL+Q",
+    "CTRL+SHIFT+H",
+    "CTRL+E",
+    "CTRL+R",
+    "CTRL+COMMA",
+    "F1",
+    "CTRL+SHIFT+U",
+    "CTRL+SHIFT+S",
+)
+
+# Key combinations bound to raw byte sequences by [keys] in gcm.conf.
+custom_keys: dict = {}
+
+
+def parse_custom_keys(entries, reserved):
+    """Turn a [keys] section into {key name: bytes}, dropping what cannot be delivered.
+
+    A binding on a reserved combination is refused at load time rather than ignored at
+    press time: the terminal handler never runs for those, so the user would otherwise
+    see nothing happen and get no explanation.
+    """
+    accepted = {}
+    for name, value in (entries or {}).items():
+        key = (name or "").strip().upper()
+        if not key:
+            continue
+        if key in reserved:
+            logger.warning(
+                "Ignoring [keys] entry %r: already bound, so it would never reach the terminal",
+                key,
+            )
+            continue
+        try:
+            sequence = value.encode("utf-8").decode("unicode_escape").encode("latin-1")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            logger.warning("Ignoring [keys] entry %r: %r is not a decodable sequence", key, value)
+            continue
+        if not sequence:
+            continue
+        accepted[key] = sequence
+    return accepted
+
+
 # Commands that also exist as an application action. Their accelerator is derived from
 # the configured shortcut rather than hardcoded, so a fixed accelerator can never shadow
 # the user's binding -- GTK dispatches window accelerators before the focused widget
@@ -1567,6 +1615,13 @@ class Wmain(GladeComponent):
         self.on_tab_focus(nb, nb.get_nth_page(nb.get_current_page()), nb.get_current_page())
 
     def on_terminal_keypress(self, widget, event, *args):
+        # Custom sequences are consulted after the built-in commands and skipped for any
+        # key a shortcut claims, so a [keys] entry can never shadow copy, paste or find --
+        # including when a shortcut is rebound onto one after the fact.
+        key_name = get_key_name(event)
+        if key_name not in shortcuts and key_name in custom_keys:
+            widget.feed_child(custom_keys[key_name])
+            return True
         # if shortcuts.has_key(get_key_name(event)):
         if get_key_name(event) in shortcuts:
             cmd = shortcuts[get_key_name(event)]
@@ -2787,6 +2842,13 @@ class Wmain(GladeComponent):
             pass
         global shortcuts
         shortcuts = scuts
+
+        global custom_keys
+        try:
+            entries = dict(cp.items("keys"))
+        except configparser.NoSectionError:
+            entries = {}
+        custom_keys = parse_custom_keys(entries, set(scuts) | set(RESERVED_ACCELERATORS))
 
         # Leer lista de hosts
         groups = {}
