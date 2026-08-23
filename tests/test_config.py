@@ -248,7 +248,7 @@ def test_load_config_missing_option_still_applies_the_later_ones(
         },
     )
 
-    assert conf.BUFFER_LINES == 2000  # absent -> default
+    assert conf.BUFFER_LINES == 10000  # absent -> default
     assert conf.AUTO_COPY_SELECTION is True
     assert conf.LOG_PATH == "/tmp/custom-logs"
     assert conf.TERM == "xterm-kitty"
@@ -270,7 +270,7 @@ def test_load_config_malformed_value_only_affects_its_own_option(
         },
     )
 
-    assert conf.BUFFER_LINES == 2000
+    assert conf.BUFFER_LINES == 10000
     assert conf.TRANSPARENCY == 0
     assert conf.TERM == "xterm-kitty"
     assert conf.APP_TITLE == "Custom App"
@@ -287,7 +287,7 @@ def test_load_config_without_a_config_file_falls_back_to_defaults(
     wmain.loadConfig()
 
     default_title = app_module.app_name
-    assert app_module.conf.BUFFER_LINES == 2000
+    assert app_module.conf.BUFFER_LINES == 10000
     assert default_title == app_module.conf.APP_TITLE
 
 
