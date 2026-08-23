@@ -1493,3 +1493,242 @@ msgstr "_Edit"
 #: ../gnome-connection-manager.glade:308
 msgid "_Servidores"
 msgstr "_Servers"
+
+# --- added for GCM UI strings that had no catalog entry ---
+
+msgid "About"
+msgstr "About"
+
+msgid "Actualizar"
+msgstr "Refresh"
+
+msgid "Add Host"
+msgstr "Add Host"
+
+msgid "Buffer"
+msgstr "Buffer"
+
+msgid "Buscar"
+msgstr "Search"
+
+msgid "Campana audible"
+msgstr "Audible bell"
+
+msgid "Cerrar"
+msgstr "Close"
+
+msgid "Clone"
+msgstr "Clone"
+
+msgid "Close Console"
+msgstr "Close Console"
+
+msgid "Collapse All Groups"
+msgstr "Collapse All Groups"
+
+msgid "Comando del editor"
+msgstr "Editor command"
+
+msgid "Confirmar al pegar más de N bytes (0 desactiva)"
+msgstr "Confirm pasting more than N bytes (0 disables)"
+
+msgid "Confirmar al pegar más de N líneas (0 desactiva)"
+msgstr "Confirm pasting more than N lines (0 disables)"
+
+msgid "Connect"
+msgstr "Connect"
+
+msgid "Consola"
+msgstr "Console"
+
+msgid "Copiar pantalla si no hay selección"
+msgstr "Copy screen if there is no selection"
+
+msgid "Copiar selección"
+msgstr "Copy selection"
+
+msgid "Copy"
+msgstr "Copy"
+
+msgid "Copy & Paste"
+msgstr "Copy & Paste"
+
+msgid "Copy Address"
+msgstr "Copy Address"
+
+msgid "Copy All"
+msgstr "Copy All"
+
+msgid "Custom Commands"
+msgstr "Custom Commands"
+
+msgid "Delete Host"
+msgstr "Delete Host"
+
+msgid "Duplicate Host"
+msgstr "Duplicate Host"
+
+msgid "Edit Host"
+msgstr "Edit Host"
+
+msgid "Expand All Groups"
+msgstr "Expand All Groups"
+
+msgid "Export Hosts"
+msgstr "Export Hosts"
+
+msgid "Find"
+msgstr "Find"
+
+msgid "Find Next"
+msgstr "Find Next"
+
+msgid "Find Previous"
+msgstr "Find Previous"
+
+msgid "Fullscreen"
+msgstr "Fullscreen"
+
+msgid "Import Hosts"
+msgstr "Import Hosts"
+
+msgid "La sesion requiere atencion"
+msgstr "The session requires attention"
+
+msgid "Log Session"
+msgstr "Log Session"
+
+msgid "Marcar pestaña al recibir la campana"
+msgstr "Mark tab when the bell rings"
+
+msgid "Mostrar el título del programa en la pestaña"
+msgstr "Show the program title in the tab"
+
+msgid "New Local Console"
+msgstr "New Local Console"
+
+msgid "Next Console"
+msgstr "Next Console"
+
+msgid "No se puede abrir el editor"
+msgstr "Cannot open the editor"
+
+msgid "Normal Size"
+msgstr "Normal Size"
+
+msgid "Notificar al recibir la campana"
+msgstr "Notify when the bell rings"
+
+msgid "Paste"
+msgstr "Paste"
+
+msgid "Paste as One Line"
+msgstr "Paste as One Line"
+
+msgid "Pegar en una línea"
+msgstr "Paste as one line"
+
+msgid "Pegar {lines} líneas ({bytes} bytes)?"
+msgstr "Paste {lines} lines ({bytes} bytes)?"
+
+msgid "Preferences"
+msgstr "Preferences"
+
+msgid "Previous Console"
+msgstr "Previous Console"
+
+msgid "Quit"
+msgstr "Quit"
+
+msgid "Quitar el salto de línea final al pegar"
+msgstr "Strip the trailing newline when pasting"
+
+msgid "Reconnect"
+msgstr "Reconnect"
+
+msgid "Refresh"
+msgstr "Refresh"
+
+msgid "Rename"
+msgstr "Rename"
+
+msgid "Reset"
+msgstr "Reset"
+
+msgid "Reset and Clear"
+msgstr "Reset and Clear"
+
+msgid "Ruta de log invalida"
+msgstr "Invalid log path"
+
+msgid "Save Buffer"
+msgstr "Save Buffer"
+
+msgid "Select All"
+msgstr "Select All"
+
+msgid "Show Panel"
+msgstr "Show Panel"
+
+msgid "Show Toolbar"
+msgstr "Show Toolbar"
+
+msgid "Split H"
+msgstr "Split H"
+
+msgid "Split Horizontal"
+msgstr "Split Horizontal"
+
+msgid "Split V"
+msgstr "Split V"
+
+msgid "Split Vertical"
+msgstr "Split Vertical"
+
+msgid "TERM"
+msgstr "TERM"
+
+msgid "Unsplit"
+msgstr "Unsplit"
+
+msgid "Ver buffer"
+msgstr "View buffer"
+
+msgid "View Buffer"
+msgstr "View Buffer"
+
+msgid "Zoom In"
+msgstr "Zoom In"
+
+msgid "Zoom Out"
+msgstr "Zoom Out"
+
+msgid "_About"
+msgstr "_About"
+
+msgid "_Edit"
+msgstr "_Edit"
+
+msgid "_File"
+msgstr "_File"
+
+msgid "_Help"
+msgstr "_Help"
+
+msgid "_Hosts"
+msgstr "_Hosts"
+
+msgid "_Preferences"
+msgstr "_Preferences"
+
+msgid "_Quit"
+msgstr "_Quit"
+
+msgid "_Servers"
+msgstr "_Servers"
+
+msgid "_Terminal"
+msgstr "_Terminal"
+
+msgid "_View"
+msgstr "_View"
