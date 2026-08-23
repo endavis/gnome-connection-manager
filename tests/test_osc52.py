@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -433,3 +434,161 @@ def test_the_relay_closes_the_recorder():
 
     assert "recorder.close()" in body
     assert body.index("finally:") < body.index("recorder.close()")
+
+
+# -- recordings need timing to be replayable (#74) ---------------------------
+
+
+def test_timing_path_sits_beside_the_recording(app_module):
+    assert app_module.timing_path_for("/logs/Work/web-01/root-20260823-001.raw") == (
+        "/logs/Work/web-01/root-20260823-001.timing"
+    )
+
+
+def test_relay_command_asks_for_timing_whenever_it_asks_for_a_recording(app_module):
+    """A recording without timing cannot be replayed frame by frame, only read."""
+    command = app_module.relay_command(["sh"], None, "/logs/a.raw")
+
+    assert "--raw-log" in command
+    assert "--timing-log" in command
+    assert command[command.index("--timing-log") + 1] == "/logs/a.timing"
+
+
+def test_relay_command_asks_for_no_timing_without_a_recording(app_module):
+    assert "--timing-log" not in app_module.relay_command(["sh"], "/run/clip.sock", None)
+
+
+def test_recorder_writes_a_timing_line_per_chunk(tmp_path):
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw, timing = tmp_path / "s.raw", tmp_path / "s.timing"
+    recorder = RawRecorder(str(raw), str(timing))
+    for chunk in (b"first", b"second chunk", b"3"):
+        recorder.write(chunk)
+    recorder.close()
+
+    lines = timing.read_text().splitlines()
+    assert len(lines) == 3
+    assert [int(line.split()[1]) for line in lines] == [5, 12, 1]
+    assert lines[0].split()[0] == "0.000000", "the first chunk has no delay to report"
+
+
+def test_timing_accounts_for_every_byte_of_the_recording(tmp_path):
+    """The counts are what let a replayer cut the stream back into the original writes."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw, timing = tmp_path / "s.raw", tmp_path / "s.timing"
+    recorder = RawRecorder(str(raw), str(timing))
+    written = [b"alpha\n", b"\x1b[H\x1b[2Jframe\n", b"tail"]
+    for chunk in written:
+        recorder.write(chunk)
+    recorder.close()
+
+    sizes = [int(line.split()[1]) for line in timing.read_text().splitlines()]
+    assert sum(sizes) == raw.stat().st_size
+
+    data, offset, rebuilt = raw.read_bytes(), 0, []
+    for size in sizes:
+        rebuilt.append(data[offset : offset + size])
+        offset += size
+    assert rebuilt == written
+    assert offset == len(data)
+
+
+def test_a_recording_without_timing_still_records(tmp_path):
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw = tmp_path / "s.raw"
+    recorder = RawRecorder(str(raw), None)
+    recorder.write(b"still here")
+    recorder.close()
+
+    assert raw.read_bytes() == b"still here"
+
+
+def test_an_unwritable_timing_file_does_not_stop_the_recording(tmp_path):
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw = tmp_path / "s.raw"
+    recorder = RawRecorder(str(raw), "/proc/nonexistent-dir/s.timing")
+    recorder.write(b"recorded anyway")
+    recorder.close()
+
+    assert raw.read_bytes() == b"recorded anyway"
+
+
+class FailingHandle:
+    """A file that accepts one write then starts failing, like a full disk."""
+
+    def __init__(self, fail_after=0):
+        self.writes = []
+        self._fail_after = fail_after
+        self.closed = False
+
+    def write(self, data):
+        if len(self.writes) >= self._fail_after:
+            raise OSError("no space left on device")
+        self.writes.append(data)
+
+    def close(self):
+        self.closed = True
+
+
+def test_no_timing_line_is_written_for_a_chunk_that_was_not_recorded(tmp_path):
+    """Otherwise the timing desyncs from the data and the offsets stop lining up."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    recorder = RawRecorder(str(tmp_path / "s.raw"), str(tmp_path / "s.timing"))
+    timing = FailingHandle(fail_after=99)
+    recorder._handle = FailingHandle(fail_after=0)
+    recorder._timing = timing
+
+    recorder.write(b"never lands")
+
+    assert timing.writes == [], "timing must not record a chunk the data write rejected"
+
+
+def test_closing_releases_the_timing_file_too(tmp_path):
+    from gnome_connection_manager.relay import RawRecorder
+
+    recorder = RawRecorder(str(tmp_path / "s.raw"), str(tmp_path / "s.timing"))
+    assert recorder._timing is not None
+
+    recorder.close()
+
+    assert recorder._timing is None
+    assert recorder._handle is None
+    recorder.close()  # idempotent
+
+
+def test_a_timing_write_failure_leaves_the_recording_running(tmp_path):
+    """A logging failure must never take the session down -- including the timing half."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw = tmp_path / "s.raw"
+    recorder = RawRecorder(str(raw), str(tmp_path / "s.timing"))
+    recorder._timing = FailingHandle(fail_after=0)
+
+    recorder.write(b"recorded regardless")
+    recorder.write(b" and this too")
+    recorder.close()
+
+    assert recorder._timing is None, "the broken timing file should be dropped"
+    assert raw.read_bytes() == b"recorded regardless and this too"
+
+
+def test_delays_reflect_the_gap_between_chunks(tmp_path):
+    """The byte counts alone cut the stream up; the delays are what replay it at speed."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    recorder = RawRecorder(str(tmp_path / "s.raw"), str(tmp_path / "s.timing"))
+    recorder.write(b"first")
+    time.sleep(0.05)
+    recorder.write(b"second")
+    recorder.close()
+
+    delays = [float(line.split()[0]) for line in (tmp_path / "s.timing").read_text().splitlines()]
+
+    assert delays[0] == 0.0, "nothing precedes the first chunk"
+    # generous bounds: this asserts the delay is measured, not that the clock is precise
+    assert 0.02 < delays[1] < 5.0, delays
