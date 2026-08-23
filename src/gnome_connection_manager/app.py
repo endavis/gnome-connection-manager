@@ -450,6 +450,9 @@ class conf:
     BELL_NOTIFY = 0
     BELL_AUDIBLE = 1
     COPY_SCREEN_IF_NO_SELECTION = 0
+    PASTE_STRIP_TRAILING_NEWLINE = 1
+    PASTE_CONFIRM_LINES = 5
+    PASTE_CONFIRM_BYTES = 8192
     LOG_PATH = CONFIG_DIR + "/logs"
     SHOW_TOOLBAR = True
     SHOW_PANEL = True
@@ -479,6 +482,9 @@ CONFIG_OPTIONS = (
     ("BELL_NOTIFY", "options", "bell-notify", bool),
     ("BELL_AUDIBLE", "options", "bell-audible", bool),
     ("COPY_SCREEN_IF_NO_SELECTION", "options", "copy-screen-if-no-selection", bool),
+    ("PASTE_STRIP_TRAILING_NEWLINE", "options", "paste-strip-trailing-newline", bool),
+    ("PASTE_CONFIRM_LINES", "options", "paste-confirm-lines", int),
+    ("PASTE_CONFIRM_BYTES", "options", "paste-confirm-bytes", int),
     ("LOG_PATH", "options", "log-path", str),
     ("LOG_LOCAL", "options", "log-local", bool),
     ("STARTUP_LOCAL", "options", "startup-local", bool),
@@ -596,6 +602,51 @@ def inputbox(
     response = msgBox.value if msgBox.run() == Gtk.ResponseType.OK else None
     msgBox.destroy()
     return response
+
+
+def paste_transform(text, single_line: bool = False) -> str:
+    """Apply paste hygiene to clipboard text before it reaches the terminal.
+
+    Pasted text that ends in a newline submits itself the moment it lands, which is how a
+    prompt meant for review turns into a command that already ran. VTE delivers the
+    clipboard verbatim -- bracketed paste wraps the text but still passes the newline
+    through -- so the trailing terminator has to come off here.
+    """
+    if not text:
+        return ""
+    content: str = text
+    if single_line:
+        # Join every non-blank line so a multi-line paste lands as a single command.
+        return " ".join(line.strip() for line in content.splitlines() if line.strip())
+    if conf.PASTE_STRIP_TRAILING_NEWLINE:
+        # Every trailing terminator, not just one. A VTE line selection reaches the
+        # clipboard as "text\n\n", so dropping a single newline would still submit.
+        # CRLF is covered too: Windows clipboards arrive that way under WSL.
+        return content.rstrip("\r\n")
+    return content
+
+
+def paste_needs_confirmation(text: str) -> bool:
+    """True when the paste is big enough to be worth a look before it is delivered."""
+    lines = conf.PASTE_CONFIRM_LINES
+    max_bytes = conf.PASTE_CONFIRM_BYTES
+    if lines and len(text.splitlines()) > lines:
+        return True
+    return bool(max_bytes and len(text.encode("utf-8", "replace")) > max_bytes)
+
+
+def paste_preview(text: str, max_lines: int = 10, max_width: int = 80) -> str:
+    """Render the confirmation prompt: a size summary plus the head of the content."""
+    lines = text.splitlines()
+    summary: str = _("Pegar {lines} líneas ({bytes} bytes)?").format(
+        lines=len(lines), bytes=len(text.encode("utf-8", "replace"))
+    )
+    shown = []
+    for line in lines[:max_lines]:
+        shown.append(line[:max_width] + "…" if len(line) > max_width else line)
+    if len(lines) > max_lines:
+        shown.append("…")
+    return summary + "\n\n" + "\n".join(shown)
 
 
 def apply_font_to_widget(widget, font_desc):
@@ -1104,7 +1155,7 @@ class Wmain(GladeComponent):
     def on_terminal_click(self, widget, event, *args):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             if conf.PASTE_ON_RIGHT_CLICK:
-                widget.paste_clipboard()
+                self.terminal_paste(widget)
             else:
                 self.set_context_terminal(widget)
                 self.popupMenu.mnuCopy.set_sensitive(widget.get_has_selection())
@@ -1568,6 +1619,13 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.paste")
         menuItem.show()
 
+        self.popupMenu.mnuPasteSingleLine = menuItem = Gtk.MenuItem(
+            label=_("Pegar en una línea")
+        )
+        self.popupMenu.append(menuItem)
+        menuItem.set_action_name("app.paste-single-line")
+        menuItem.show()
+
         self.popupMenu.mnuCopyPaste = menuItem = Gtk.MenuItem(label=_("Copiar y Pegar"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy-paste")
@@ -1780,14 +1838,30 @@ class Wmain(GladeComponent):
         if conf.COPY_SCREEN_IF_NO_SELECTION:
             self._copy_screen(terminal)
 
-    def terminal_paste(self, terminal):
-        terminal.paste_clipboard()
+    def terminal_paste(self, terminal, single_line: bool = False):
+        text = self._clipboard_text()
+        if text is None:
+            # Nothing text-shaped on the clipboard. Hand back to VTE rather than
+            # swallowing the paste, so any format it understands still lands.
+            terminal.paste_clipboard()
+            return
+        text = paste_transform(text, single_line=single_line)
+        if not text:
+            return
+        if paste_needs_confirmation(text) and msgconfirm(paste_preview(text)) != Gtk.ResponseType.OK:
+            return
+        # paste_text() keeps VTE's bracketed-paste wrapping, so applications that opt in
+        # still see the content framed as a paste rather than as typing.
+        terminal.paste_text(text)
 
     def terminal_copy_paste(self, terminal):
         # Deliberately no copy-screen fallback: pasting a whole screen back into the
         # terminal is never what "Copy and Paste" is asking for.
         self._copy_selection(terminal)
-        terminal.paste_clipboard()
+        self.terminal_paste(terminal)
+
+    def _clipboard_text(self):
+        return Gtk.Clipboard.get_default(Gdk.Display.get_default()).wait_for_text()
 
     def terminal_select_all(self, terminal):
         terminal.select_all()
@@ -2365,6 +2439,9 @@ class Wmain(GladeComponent):
         cp.set("options", "bell-notify", conf.BELL_NOTIFY)
         cp.set("options", "bell-audible", conf.BELL_AUDIBLE)
         cp.set("options", "copy-screen-if-no-selection", conf.COPY_SCREEN_IF_NO_SELECTION)
+        cp.set("options", "paste-strip-trailing-newline", conf.PASTE_STRIP_TRAILING_NEWLINE)
+        cp.set("options", "paste-confirm-lines", conf.PASTE_CONFIRM_LINES)
+        cp.set("options", "paste-confirm-bytes", conf.PASTE_CONFIRM_BYTES)
         cp.set("options", "log-path", conf.LOG_PATH)
         cp.set("options", "version", app_fileversion)
         cp.set("options", "auto-close-tab", conf.AUTO_CLOSE_TAB)
@@ -4060,6 +4137,25 @@ class Wconfig(GladeComponent):
         self.addParam(
             _("Copiar pantalla si no hay selección"), "conf.COPY_SCREEN_IF_NO_SELECTION", bool
         )
+        self.addParam(
+            _("Quitar el salto de línea final al pegar"),
+            "conf.PASTE_STRIP_TRAILING_NEWLINE",
+            bool,
+        )
+        self.addParam(
+            _("Confirmar al pegar más de N líneas (0 desactiva)"),
+            "conf.PASTE_CONFIRM_LINES",
+            int,
+            0,
+            10000,
+        )
+        self.addParam(
+            _("Confirmar al pegar más de N bytes (0 desactiva)"),
+            "conf.PASTE_CONFIRM_BYTES",
+            int,
+            0,
+            10000000,
+        )
         self.addParam(_("Confirmar al cerrar una consola"), "conf.CONFIRM_ON_CLOSE_TAB", bool)
         self.addParam(
             _("Confirmar al cerrar una consola con botón central del mouse"),
@@ -4901,6 +4997,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("copy", self._on_action_copy)
         self._create_action("paste", self._on_action_paste)
         self._create_action("copy-paste", self._on_action_copy_paste)
+        self._create_action("paste-single-line", self._on_action_paste_single_line)
         self._create_action("select-all", self._on_action_select_all)
         self._create_action("copy-all", self._on_action_copy_all)
         self._create_action("split-horizontal", self._on_action_split_horizontal)
@@ -4985,6 +5082,7 @@ class GcmApplication(Gtk.Application):
         clipboard_section = Gio.Menu()
         clipboard_section.append(_("Copy"), "app.copy")
         clipboard_section.append(_("Paste"), "app.paste")
+        clipboard_section.append(_("Paste as One Line"), "app.paste-single-line")
         clipboard_section.append(_("Copy & Paste"), "app.copy-paste")
         edit_menu.append_section(None, clipboard_section)
         select_section = Gio.Menu()
@@ -5154,6 +5252,13 @@ class GcmApplication(Gtk.Application):
             terminal = self._controller.get_target_terminal()
             if terminal:
                 self._controller.terminal_paste(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_paste_single_line(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.terminal_paste(terminal, single_line=True)
             self._controller.clear_context_terminal()
 
     def _on_action_copy_paste(self, action, _param):

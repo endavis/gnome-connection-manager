@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import re
 import types
 from pathlib import Path
@@ -42,9 +43,9 @@ class ControllerStub:
         terminal.copied += 1
         self.calls.append(("copy", terminal))
 
-    def terminal_paste(self, terminal):
+    def terminal_paste(self, terminal, single_line: bool = False):
         terminal.pasted += 1
-        self.calls.append(("paste", terminal))
+        self.calls.append(("paste-single-line" if single_line else "paste", terminal))
 
     def terminal_copy_paste(self, terminal):
         self.calls.append(("copy-paste", terminal))
@@ -162,6 +163,26 @@ def test_application_split_actions(app_module):
     assert ("split-h", None) in controller.calls
     assert ("split-v", None) in controller.calls
     assert ("unsplit", None) in controller.calls
+
+
+def test_application_paste_single_line_action_asks_for_a_join(app_module):
+    """The menu entry is the only way to reach single-line paste (#21)."""
+    app = app_module.GcmApplication()
+    controller = ControllerStub()
+    app._controller = controller
+
+    app._on_action_paste_single_line(None, None)
+
+    assert ("paste-single-line", controller.terminal) in controller.calls
+    assert ("paste", controller.terminal) not in controller.calls
+
+
+def test_controller_stub_paste_matches_the_real_signature(app_module):
+    """A stub that drifts from Wmain.terminal_paste hides real TypeErrors."""
+    real = inspect.signature(app_module.Wmain.terminal_paste).parameters
+    stub = inspect.signature(ControllerStub.terminal_paste).parameters
+
+    assert list(real) == list(stub)
 
 
 def test_application_search_and_donate_actions(app_module):
