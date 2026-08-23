@@ -12,3 +12,7 @@ notebook tab {
     border-right: 1px solid #bcbebf;
     border-left: 1px solid #bcbebf;
 }
+
+notebook > header > tabs > tab box.attention {
+    background-color: #F57900;
+}

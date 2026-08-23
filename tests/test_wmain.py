@@ -931,3 +931,156 @@ def test_terminal_copy_paste_never_falls_back_to_screen(monkeypatch, app_module)
     assert terminal.copied == []
     assert clipboard.text is None
     assert terminal.pasted == 1
+
+
+class BellTabLabel:
+    def __init__(self, text="agy"):
+        self.attention = None
+        self.text = text
+
+    def set_attention(self, value):
+        self.attention = value
+
+    def get_text(self):
+        return f"  {self.text}  "
+
+
+class BellNotebook:
+    def __init__(self, label, current=0, page_index=1):
+        self.label = label
+        self.current = current
+        self.page_index = page_index
+
+    def get_tab_label(self, _page):
+        return self.label
+
+    def get_current_page(self):
+        return self.current
+
+    def page_num(self, _page):
+        return self.page_index
+
+
+class BellWindow:
+    def __init__(self, active=True, application=None):
+        self.active = active
+        self.urgency = False
+        self.application = application
+
+    def is_active(self):
+        return self.active
+
+    def set_urgency_hint(self, value):
+        self.urgency = value
+
+    def get_application(self):
+        return self.application
+
+
+class BellApplication:
+    def __init__(self):
+        self.sent = []
+
+    def send_notification(self, ident, notification):
+        self.sent.append((ident, notification))
+
+
+def _bell_setup(app_module, monkeypatch, *, window_active=True, showing=False, application=None):
+    monkeypatch.setattr(app_module.conf, "BELL_MARK_TAB", 1)
+    monkeypatch.setattr(app_module.conf, "BELL_NOTIFY", 0)
+    label = BellTabLabel()
+    notebook = BellNotebook(label, current=1 if showing else 0, page_index=1)
+    page = types.SimpleNamespace(get_parent=lambda: notebook)
+    terminal = types.SimpleNamespace(get_parent=lambda: page)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = BellWindow(active=window_active, application=application)
+    return wmain, terminal, label, page
+
+
+def test_bell_marks_a_background_tab(app_module, monkeypatch):
+    wmain, terminal, label, _page = _bell_setup(app_module, monkeypatch, showing=False)
+
+    wmain.on_terminal_bell(terminal)
+
+    assert label.attention is True
+
+
+def test_bell_leaves_the_tab_the_user_is_watching_alone(app_module, monkeypatch):
+    wmain, terminal, label, _page = _bell_setup(
+        app_module, monkeypatch, window_active=True, showing=True
+    )
+
+    wmain.on_terminal_bell(terminal)
+
+    assert label.attention is None
+
+
+def test_bell_marks_the_visible_tab_when_the_window_is_not_active(app_module, monkeypatch):
+    wmain, terminal, label, _page = _bell_setup(
+        app_module, monkeypatch, window_active=False, showing=True
+    )
+
+    wmain.on_terminal_bell(terminal)
+
+    assert label.attention is True
+    assert wmain.wMain.urgency is True
+
+
+def test_bell_does_not_raise_the_urgency_hint_while_the_window_is_active(
+    app_module, monkeypatch
+):
+    wmain, terminal, _label, _page = _bell_setup(app_module, monkeypatch, window_active=True)
+
+    wmain.on_terminal_bell(terminal)
+
+    assert wmain.wMain.urgency is False
+
+
+def test_bell_respects_the_mark_tab_preference(app_module, monkeypatch):
+    wmain, terminal, label, _page = _bell_setup(app_module, monkeypatch)
+    monkeypatch.setattr(app_module.conf, "BELL_MARK_TAB", 0)
+
+    wmain.on_terminal_bell(terminal)
+
+    assert label.attention is None
+
+
+def test_bell_notifies_only_when_enabled_and_the_window_is_inactive(app_module, monkeypatch):
+    application = BellApplication()
+
+    wmain, terminal, _label, _page = _bell_setup(
+        app_module, monkeypatch, window_active=False, application=application
+    )
+    wmain.on_terminal_bell(terminal)
+    assert application.sent == []  # preference off
+
+    monkeypatch.setattr(app_module.conf, "BELL_NOTIFY", 1)
+    wmain.on_terminal_bell(terminal)
+    assert len(application.sent) == 1
+    assert application.sent[0][0] == "gcm-bell"
+
+    # window back in front: nothing to notify about
+    wmain.wMain.active = True
+    wmain.on_terminal_bell(terminal)
+    assert len(application.sent) == 1
+
+
+def test_focusing_a_tab_clears_its_attention_mark(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", 0)
+    wmain, _terminal, label, page = _bell_setup(app_module, monkeypatch)
+    label.attention = True
+
+    # notebook switch-page delivers the page widget as `tab`
+    wmain.on_tab_focus(object(), page)
+
+    assert label.attention is False
+
+
+def test_window_becoming_active_clears_the_urgency_hint(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    window = BellWindow(active=True)
+    window.urgency = True
+
+    wmain.on_window_active_changed(window, None)
+
+    assert window.urgency is False

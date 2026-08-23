@@ -319,6 +319,9 @@ class conf:
     HIDE_DONATE = False
     DISABLE_HOSTS_STRIPES = False
     AUTO_COPY_SELECTION = 0
+    BELL_MARK_TAB = 1
+    BELL_NOTIFY = 0
+    BELL_AUDIBLE = 1
     COPY_SCREEN_IF_NO_SELECTION = 0
     LOG_PATH = CONFIG_DIR + "/logs"
     SHOW_TOOLBAR = True
@@ -345,6 +348,9 @@ CONFIG_OPTIONS = (
     ("HIDE_DONATE", "options", "donate", bool),
     ("DISABLE_HOSTS_STRIPES", "options", "disable-hosts-stripes", bool),
     ("AUTO_COPY_SELECTION", "options", "auto-copy-selection", bool),
+    ("BELL_MARK_TAB", "options", "bell-mark-tab", bool),
+    ("BELL_NOTIFY", "options", "bell-notify", bool),
+    ("BELL_AUDIBLE", "options", "bell-audible", bool),
     ("COPY_SCREEN_IF_NO_SELECTION", "options", "copy-screen-if-no-selection", bool),
     ("LOG_PATH", "options", "log-path", str),
     ("LOG_LOCAL", "options", "log-local", bool),
@@ -1752,6 +1758,8 @@ class Wmain(GladeComponent):
                 f"  {host.name}  ", self.nbConsole, scrollPane, self.popupMenuTab
             )
 
+            v.set_audible_bell(bool(conf.BELL_AUDIBLE))
+            v.connect("bell", self.on_terminal_bell)
             v.connect("child-exited", lambda *args: tab.mark_tab_as_closed())
             v.connect("focus", self.on_tab_focus)
             v.connect("button_press_event", self.on_terminal_click)
@@ -1900,6 +1908,7 @@ class Wmain(GladeComponent):
         self.treeServers.set_has_tooltip(True)
         self.treeServers.connect("query-tooltip", self.on_treeServers_tooltip)
         self.treeServers.connect("key-press-event", self.on_treeServers_key_press)
+        self.wMain.connect("notify::is-active", self.on_window_active_changed)
         self.loadConfig()
         self.updateTree()
 
@@ -2137,6 +2146,9 @@ class Wmain(GladeComponent):
         cp.set("options", "donate", conf.HIDE_DONATE)
         cp.set("options", "disable-hosts-stripes", conf.DISABLE_HOSTS_STRIPES)
         cp.set("options", "auto-copy-selection", conf.AUTO_COPY_SELECTION)
+        cp.set("options", "bell-mark-tab", conf.BELL_MARK_TAB)
+        cp.set("options", "bell-notify", conf.BELL_NOTIFY)
+        cp.set("options", "bell-audible", conf.BELL_AUDIBLE)
         cp.set("options", "copy-screen-if-no-selection", conf.COPY_SCREEN_IF_NO_SELECTION)
         cp.set("options", "log-path", conf.LOG_PATH)
         cp.set("options", "version", app_fileversion)
@@ -2221,9 +2233,54 @@ class Wmain(GladeComponent):
             else:
                 notebook.next_page()
 
+    def tab_label_for(self, page):
+        """The NotebookTabLabel owning `page`, or None if it has no notebook yet."""
+        notebook = page.get_parent() if page is not None else None
+        if notebook is None or not hasattr(notebook, "get_tab_label"):
+            return notebook, None
+        return notebook, notebook.get_tab_label(page)
+
+    def on_terminal_bell(self, terminal):
+        """A terminal rang the bell: get the user's attention without stealing focus."""
+        notebook, label = self.tab_label_for(terminal.get_parent())
+        if label is None:
+            return
+        window_active = self.wMain.is_active()
+        showing = notebook.get_current_page() == notebook.page_num(terminal.get_parent())
+        if window_active and showing:
+            # Already being watched; marking it would only need clearing again.
+            return
+        if conf.BELL_MARK_TAB:
+            label.set_attention(True)
+            if not window_active:
+                self.wMain.set_urgency_hint(True)
+        if conf.BELL_NOTIFY and not window_active:
+            self.notify_bell(label)
+
+    def notify_bell(self, label):
+        """Raise a desktop notification. Silently does nothing without a notification service."""
+        application = self.wMain.get_application()
+        if application is None:
+            return
+        notification = Gio.Notification.new(_("La sesion requiere atencion"))
+        notification.set_body(label.get_text().strip())
+        application.send_notification("gcm-bell", notification)
+
+    def clear_tab_attention(self, page):
+        _notebook, label = self.tab_label_for(page)
+        if label is not None:
+            label.set_attention(False)
+
+    def on_window_active_changed(self, window, _param):
+        if window.is_active():
+            window.set_urgency_hint(False)
+
     def on_tab_focus(self, widget, tab=None, *args):
         if isinstance(widget, Vte.Terminal):
             self.current = widget
+            self.clear_tab_attention(widget.get_parent())
+        elif tab is not None:
+            self.clear_tab_attention(tab)
         if conf.UPDATE_TITLE and widget is not None:
             if isinstance(widget, Vte.Terminal):
                 tab_text = (
@@ -3782,6 +3839,9 @@ class Wconfig(GladeComponent):
         self.addParam(_("Log consola local"), "conf.LOG_LOCAL", bool)
         self.addParam(_("Pegar con botón derecho"), "conf.PASTE_ON_RIGHT_CLICK", bool)
         self.addParam(_("Copiar selección al portapapeles"), "conf.AUTO_COPY_SELECTION", bool)
+        self.addParam(_("Marcar pestaña al recibir la campana"), "conf.BELL_MARK_TAB", bool)
+        self.addParam(_("Notificar al recibir la campana"), "conf.BELL_NOTIFY", bool)
+        self.addParam(_("Campana audible"), "conf.BELL_AUDIBLE", bool)
         self.addParam(
             _("Copiar pantalla si no hay selección"), "conf.COPY_SCREEN_IF_NO_SELECTION", bool
         )
@@ -4306,6 +4366,13 @@ class NotebookTabLabel(Gtk.HBox):
             self.get_style_context().add_class("selected")
         else:
             self.get_style_context().remove_class("selected")
+
+    def set_attention(self, needs_attention):
+        """Highlight the tab until the user looks at it."""
+        if needs_attention:
+            self.get_style_context().add_class("attention")
+        else:
+            self.get_style_context().remove_class("attention")
 
     def on_close_tab(self, widget, notebook, *args):
         if (
