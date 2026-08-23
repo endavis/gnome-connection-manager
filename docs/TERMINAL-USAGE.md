@@ -27,6 +27,11 @@ rather than selecting text, and it looks like selection has stopped working.
 **Hold `Shift` while dragging** to force a local selection. `Shift` bypasses mouse
 reporting and hands the drag back to the terminal.
 
+What you get is an ordinary terminal selection, not a special mode: `Ctrl+Shift+C`
+copies it, `auto-copy-selection` picks it up on its own if you have that on, and it
+behaves like any other selection everywhere else. The only unusual part is the `Shift`
+needed to make it.
+
 Not every full-screen application does this — see [What agent CLIs
 do](#what-agent-clis-do) below. If plain dragging already selects, nothing has taken the
 mouse and `Shift` is unnecessary.
