@@ -195,6 +195,16 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 
 ## 7. Security
 
+### Session Recording
+- Raw stream recording, off by default (`raw-session-log`). The relay writes every byte
+  the child produces to `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw`, sharing
+  the text log's identity and layout but numbered independently.
+- Captures what the text log cannot: redraws, in-place updates and attributes. It is a
+  record for replay or post-processing rather than a readable transcript -- a full-screen
+  application's stream is roughly 90% escape sequences.
+- Shares the relay with OSC 52; the relay is used when either preference is on, and the
+  spawn path is unchanged when both are off.
+
 ### OSC 52 Clipboard
 - Off by default (`osc52-clipboard`). When on, sessions are spawned under a relay process
   that observes the child's output for `OSC 52` and forwards clipboard writes to the

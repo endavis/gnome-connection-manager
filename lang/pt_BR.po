@@ -1580,3 +1580,8 @@ msgstr ""
 
 msgid "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
 msgstr ""
+
+# --- added for GCM UI strings that had no catalog entry ---
+
+msgid "Grabar la sesión en crudo (incluye secuencias de escape)"
+msgstr ""

@@ -8,7 +8,8 @@ shape of middle-man.
 
 Run as::
 
-    python -m gnome_connection_manager.relay --clipboard-socket PATH -- COMMAND [ARGS]
+    python -m gnome_connection_manager.relay [--clipboard-socket PATH]
+        [--raw-log PATH] -- COMMAND [ARGS]
 
 Bytes are forwarded unmodified in both directions. The OSC 52 sequence is passed
 through as well: VTE ignores it, so filtering would be extra risk for no gain.
@@ -31,6 +32,7 @@ import struct
 import sys
 import termios
 import tty
+from pathlib import Path
 
 from gnome_connection_manager.utils.osc52 import Osc52Scanner
 
@@ -48,6 +50,39 @@ def set_window_size(fd, size):
         return
     with contextlib.suppress(OSError):
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", *size))
+
+
+class RawRecorder:
+    """Writes the child's output byte for byte.
+
+    Everything the terminal received, escape sequences included, which is the point:
+    the text log records what VTE chose to display, and that loses redraws. A failure
+    here must never disturb the session, so it degrades to doing nothing.
+    """
+
+    def __init__(self, path):
+        self._handle = None
+        if not path:
+            return
+        try:
+            self._handle = Path(path).open("ab", buffering=0)  # noqa: SIM115 - closed below
+        except OSError:
+            self._handle = None
+
+    def write(self, chunk):
+        if self._handle is None:
+            return
+        try:
+            self._handle.write(chunk)
+        except OSError:
+            self.close()
+
+    def close(self):
+        if self._handle is not None:
+            try:
+                self._handle.close()
+            finally:
+                self._handle = None
 
 
 class ClipboardChannel:
@@ -80,7 +115,7 @@ class ClipboardChannel:
             self._socket = None
 
 
-def relay(command, clipboard_socket=None):
+def relay(command, clipboard_socket=None, raw_log=None):
     """Run `command` on its own pty, forwarding bytes to and from this process's tty."""
     child_pid, master_fd = pty.fork()
     if child_pid == 0:
@@ -116,6 +151,7 @@ def relay(command, clipboard_socket=None):
     scanner = Osc52Scanner()
     stdin_open = True
     clipboard = ClipboardChannel(clipboard_socket)
+    recorder = RawRecorder(raw_log)
     try:
         while True:
             if with_winch and resized[0]:
@@ -135,6 +171,7 @@ def relay(command, clipboard_socket=None):
                     break
                 if not chunk:
                     break
+                recorder.write(chunk)
                 for selection, data in scanner.feed(chunk):
                     clipboard.send(selection, data)
                 _write_all(sys.stdout.fileno(), chunk)
@@ -154,6 +191,7 @@ def relay(command, clipboard_socket=None):
             with contextlib.suppress(termios.error, OSError):
                 termios.tcsetattr(stdin_fd, termios.TCSAFLUSH, saved)
         clipboard.close()
+        recorder.close()
         with contextlib.suppress(OSError):
             os.close(master_fd)
 
@@ -177,12 +215,13 @@ def _write_all(fd, data):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="gcm-relay", description=__doc__)
     parser.add_argument("--clipboard-socket", default=None)
+    parser.add_argument("--raw-log", default=None)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("no command given")
-    return relay(command, args.clipboard_socket)
+    return relay(command, args.clipboard_socket, args.raw_log)
 
 
 if __name__ == "__main__":

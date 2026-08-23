@@ -490,6 +490,7 @@ class conf:
     TAB_TITLE_FROM_TERMINAL = 1
     EDITOR_COMMAND = ""
     OSC52_ENABLED = 0
+    RAW_SESSION_LOG = 0
     APP_TITLE = app_name
 
 
@@ -528,6 +529,7 @@ CONFIG_OPTIONS = (
     ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
     ("EDITOR_COMMAND", "options", "editor-command", str),
     ("OSC52_ENABLED", "options", "osc52-clipboard", bool),
+    ("RAW_SESSION_LOG", "options", "raw-session-log", bool),
     ("APP_TITLE", "options", "app-title", str),
     ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
     ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
@@ -794,6 +796,35 @@ def build_log_prefix(log_dir, group, name, user, stamp):
     except OSError:
         return None
     return prefix
+
+
+def next_session_file(prefix, suffix):
+    """First free `<prefix>-NNN<suffix>`, falling back to the last on exhaustion.
+
+    Appending to the final file is deliberate: refusing to log at all because 999
+    sessions happened on one day would be worse than a crowded file.
+    """
+    for index in range(1, 1000):
+        candidate = f"{prefix}-{index:03d}{suffix}"
+        if not Path(candidate).exists():
+            return candidate
+    return f"{prefix}-999{suffix}"
+
+
+def session_file_for(terminal, suffix):
+    """Path for one of a session's files, sharing the text log's identity and layout."""
+    host = getattr(terminal, "host", None)
+    prefix = build_log_prefix(
+        Path(conf.LOG_PATH).expanduser(),
+        getattr(host, "group", "") or "",
+        getattr(host, "name", "") or "",
+        getattr(host, "user", "") or "",
+        time.strftime("%Y%m%d"),
+    )
+    if prefix is None:
+        return None
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    return next_session_file(prefix, suffix)
 
 
 def describe_log_session(host):
@@ -1191,21 +1222,20 @@ def vte_feed(terminal, data):
         terminal.feed_child(data, len(data))
 
 
-def relay_command(args, socket_path):
-    """Wrap a command so it runs under the OSC 52 relay.
+def relay_command(args, socket_path=None, raw_path=None):
+    """Wrap a command so it runs under the relay.
 
-    Only used when the preference is on. With it off the caller spawns `args`
-    untouched, so the default path is exactly what it was before the relay existed.
+    Only used when a feature needs it. With both preferences off the caller spawns
+    `args` untouched, so the default path is exactly what it was before the relay
+    existed. Each destination is passed only when its own feature is on, so the relay
+    does no work nobody asked for.
     """
-    return [
-        sys.executable,
-        "-m",
-        "gnome_connection_manager.relay",
-        "--clipboard-socket",
-        socket_path,
-        "--",
-        *args,
-    ]
+    command = [sys.executable, "-m", "gnome_connection_manager.relay"]
+    if socket_path:
+        command += ["--clipboard-socket", socket_path]
+    if raw_path:
+        command += ["--raw-log", raw_path]
+    return [*command, "--", *args]
 
 
 def vte_run(terminal, command, arg=None):
@@ -1249,10 +1279,11 @@ def vte_run(terminal, command, arg=None):
     socket_path = (
         controller.clipboard_relay_path() if conf.OSC52_ENABLED and controller else None
     )
-    if socket_path:
+    raw_path = session_file_for(terminal, ".raw") if conf.RAW_SESSION_LOG else None
+    if socket_path or raw_path:
         # Spawning is otherwise byte-for-byte what it was; the relay only enters the
-        # path when the preference is on, so the default carries none of its risk.
-        args = relay_command(args, socket_path)
+        # path when a preference asks for it, so the default carries none of its risk.
+        args = relay_command(args, socket_path, raw_path)
 
     if TERMINAL_V048:
         terminal.spawn_async(
@@ -2413,14 +2444,7 @@ class Wmain(GladeComponent):
                 del terminal.log_handler_id
                 return False
             prefix.parent.mkdir(parents=True, exist_ok=True)
-            filename = ""
-            for i in range(1, 1000):
-                if not Path(f"{prefix}-{i:03d}.log").exists():
-                    filename = f"{prefix}-{i:03d}.log"
-                    break
-            if filename == "":
-                # End up appending to the latest log file...
-                filename = f"{prefix}-{i:03d}.log"
+            filename = next_session_file(prefix, ".log")
             try:
                 prepend = ""
                 if Path(filename).exists():
@@ -2935,6 +2959,7 @@ class Wmain(GladeComponent):
         cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
         cp.set("options", "editor-command", conf.EDITOR_COMMAND)
         cp.set("options", "osc52-clipboard", conf.OSC52_ENABLED)
+        cp.set("options", "raw-session-log", conf.RAW_SESSION_LOG)
         cp.set("options", "app-title", conf.APP_TITLE or app_name)
 
         collapsed_folders = ",".join(self.get_collapsed_nodes())
@@ -4698,6 +4723,11 @@ class Wconfig(GladeComponent):
         self.addParam(
             _("Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"),
             "conf.OSC52_ENABLED",
+            bool,
+        )
+        self.addParam(
+            _("Grabar la sesión en crudo (incluye secuencias de escape)"),
+            "conf.RAW_SESSION_LOG",
             bool,
         )
         self.addParam(_("Abrir consola local al inicio"), "conf.STARTUP_LOCAL", bool)
