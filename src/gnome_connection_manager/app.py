@@ -370,6 +370,41 @@ CONFIG_OPTIONS = (
 )
 
 
+# Path separators, the control range and the Windows-reserved set must never reach a
+# log filename. Tab labels can carry any of them -- a host name, a manual rename, or
+# (once tab titles follow the terminal) a string chosen by whatever is running in it.
+_LOG_NAME_UNSAFE = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]+')
+LOG_NAME_FALLBACK = "session"
+LOG_NAME_MAX = 80
+
+
+def sanitize_log_name(title):
+    """Reduce a tab label to something safe to embed in a filename."""
+    name = _LOG_NAME_UNSAFE.sub("_", title or "")
+    name = " ".join(name.split())
+    # Leading dots hide the file or walk up a directory; trailing dots break on Windows.
+    name = name.strip(" ._")
+    if len(name) > LOG_NAME_MAX:
+        name = name[:LOG_NAME_MAX].rstrip(" ._")
+    return name or LOG_NAME_FALLBACK
+
+
+def build_log_prefix(log_dir, title, stamp):
+    """Path prefix for a session log, or None if it would escape `log_dir`.
+
+    sanitize_log_name should make escaping impossible; the containment check is here
+    so that a gap in it cannot put the log somewhere the user did not ask for.
+    """
+    directory = Path(log_dir).expanduser()
+    prefix = directory / f"{sanitize_log_name(title)}-{stamp}"
+    try:
+        if directory.resolve() not in prefix.resolve().parents:
+            return None
+    except OSError:
+        return None
+    return prefix
+
+
 def read_config_option(cp, section, option, kind, default):
     """Read one option, degrading to `default` rather than aborting its neighbours.
 
@@ -1642,11 +1677,17 @@ class Wmain(GladeComponent):
                 return True
             terminal.log_handler_id = terminal.connect("contents-changed", self.on_contents_changed)
             p = terminal.get_parent()
-            title = p.get_parent().get_tab_label(p).get_text().strip()
-            LOG_PATH = str(Path(conf.LOG_PATH).expanduser())
-            prefix = "{}/{}-{}".format(LOG_PATH, title, time.strftime("%Y%m%d"))
-            if not Path(LOG_PATH).exists():
-                Path(LOG_PATH).mkdir(parents=True)
+            title = sanitize_log_name(p.get_parent().get_tab_label(p).get_text())
+            log_dir = Path(conf.LOG_PATH).expanduser()
+            prefix = build_log_prefix(log_dir, title, time.strftime("%Y%m%d"))
+            if prefix is None:
+                logger.error("Refusing to write a log outside %s for tab %r", log_dir, title)
+                msgbox("{}\n{}".format(_("Ruta de log invalida"), log_dir))
+                terminal.disconnect(terminal.log_handler_id)
+                del terminal.log_handler_id
+                return False
+            if not log_dir.exists():
+                log_dir.mkdir(parents=True)
             filename = ""
             for i in range(1, 1000):
                 if not Path(f"{prefix}-{i:03d}.log").exists():

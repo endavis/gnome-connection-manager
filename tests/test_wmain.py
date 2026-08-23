@@ -1084,3 +1084,56 @@ def test_window_becoming_active_clears_the_urgency_hint(app_module):
     wmain.on_window_active_changed(window, None)
 
     assert window.urgency is False
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("router", "router"),
+        ("  local  ", "local"),
+        ("my   host", "my host"),
+        # a title set by whatever runs in the terminal, via OSC 0
+        ("../../../../tmp/pwned", "tmp_pwned"),
+        ("claude - ~/src/app (3 tools)", "claude - ~_src_app (3 tools)"),
+        ('a/b\\c:d*e?f"g<h>i|j', "a_b_c_d_e_f_g_h_i_j"),
+        (".hidden", "hidden"),
+        ("..", "session"),
+        ("", "session"),
+        ("   ", "session"),
+        # BEL and ESC must not survive into a file someone will later cat
+        ("tab\x07\x1b[31mred", "tab_[31mred"),
+    ],
+)
+def test_sanitize_log_name(app_module, title, expected):
+    assert app_module.sanitize_log_name(title) == expected
+
+
+def test_sanitize_log_name_caps_the_length(app_module):
+    name = app_module.sanitize_log_name("x" * 500)
+
+    assert name == "x" * app_module.LOG_NAME_MAX
+
+
+def test_build_log_prefix_keeps_a_traversing_title_inside_the_log_directory(
+    tmp_path, app_module
+):
+    prefix = app_module.build_log_prefix(tmp_path, "../../../../tmp/pwned", "20260823")
+
+    assert prefix is not None
+    assert prefix.parent == tmp_path
+    assert prefix.name == "tmp_pwned-20260823"
+
+
+def test_build_log_prefix_refuses_a_path_that_escapes(tmp_path, app_module, monkeypatch):
+    """The containment check must hold even if sanitising ever lets something through."""
+    monkeypatch.setattr(app_module, "sanitize_log_name", lambda title: title)
+
+    assert app_module.build_log_prefix(tmp_path, "../escaped", "20260823") is None
+
+
+def test_build_log_prefix_expands_a_user_relative_log_dir(app_module, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    prefix = app_module.build_log_prefix("~/logs", "router", "20260823")
+
+    assert prefix == tmp_path / "logs" / "router-20260823"
