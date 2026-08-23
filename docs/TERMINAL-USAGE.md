@@ -1,0 +1,205 @@
+# Using terminals in GCM
+
+Copy, paste, selection and scrollback behave differently depending on what is running
+inside the tab. Most of what looks like broken copy/paste is a full-screen application
+holding the mouse, or the alternate screen having no scrollback of its own. This page
+covers both, plus the shortcut table and how to change it.
+
+## Selecting text
+
+Click and drag selects, as in any terminal. `Ctrl+Shift+C` copies the selection.
+
+Set **`auto-copy-selection`** if you would rather skip that second step — every selection
+goes to the clipboard the moment you finish dragging, and `Ctrl+Shift+C` becomes
+unnecessary. It is off by default:
+
+```ini
+[options]
+auto-copy-selection = true
+```
+
+### When an application has taken the mouse
+
+Full-screen applications can enable mouse reporting, which routes click and drag to the
+application instead of the terminal. Dragging then scrolls a pane or moves a cursor
+rather than selecting text, and it looks like selection has stopped working.
+
+**Hold `Shift` while dragging** to force a local selection. `Shift` bypasses mouse
+reporting and hands the drag back to the terminal.
+
+Not every full-screen application does this — see [What agent CLIs
+do](#what-agent-clis-do) below. If plain dragging already selects, nothing has taken the
+mouse and `Shift` is unnecessary.
+
+### Reaching scrollback
+
+`Shift+PageUp` and `Shift+PageDown` move through the scrollback a page at a time. These
+work while an application is running, which the plain keys may not, because unmodified
+`PageUp`/`PageDown` are usually delivered to the application.
+
+## What Copy All actually copies
+
+**Copy All** (`Ctrl+Shift+A`) copies a different amount depending on which screen is
+active. This is a property of how terminals work, not a limitation of GCM:
+
+| Active screen | Copy All returns |
+|---|---|
+| Primary (a shell, ordinary command output) | The whole scrollback buffer |
+| Alternate (a full-screen application) | The visible screen only |
+
+Full-screen applications run on the *alternate screen*, which has no scrollback of its
+own. There is nothing above the visible rows to copy, so Copy All returns just what you
+can see.
+
+Your primary-screen scrollback is not lost while a full-screen application runs — it is
+only unreachable. Quitting the application switches back and the scrollback is intact.
+
+## What cannot be recovered
+
+Content that scrolls **inside** a full-screen application never reaches the terminal as
+lines. The application redraws its own viewport in place, so the terminal only ever sees
+the current frame. Once the application has drawn over it, that content is gone as far as
+the terminal is concerned, and no terminal emulator can retrieve it.
+
+When you need the full record of a session, use the application's own export — a
+`/export` command, a session transcript, or a `--print` style flag — rather than the
+terminal's scrollback.
+
+GCM's own **session logging** (per host, or `log-local` for local consoles) records what
+the terminal receives, so it captures ordinary command output but is subject to the same
+limitation for full-screen applications.
+
+## Pasting
+
+Paste is `Ctrl+Shift+V`, or right-click if `paste-right-click` is on.
+
+Pasted text that ends in a newline submits itself the moment it lands, which turns a
+prompt you meant to review into a command that already ran. GCM strips trailing newlines
+before delivering a paste. Multi-line content still pastes as multiple lines; only the
+final terminator is removed.
+
+Large or multi-line pastes show a preview first, so a wrong clipboard does not flood the
+session. **Paste as One Line** in the Edit and right-click menus joins the lines instead,
+for when you want a multi-line snippet to arrive as one command.
+
+```ini
+[options]
+paste-strip-trailing-newline = true   ; drop trailing newlines
+paste-confirm-lines = 5               ; preview above this many lines; 0 disables
+paste-confirm-bytes = 8192            ; preview above this many bytes; 0 disables
+```
+
+Applications that support bracketed paste are told the content is a paste rather than
+typing, which stops a shell from executing each line as it arrives. GCM preserves that
+framing.
+
+## Font zoom
+
+`Ctrl+scroll` zooms, as do `Ctrl+=` and `Ctrl+-`. `Ctrl+0` returns to normal size.
+
+Zoom applies to **one terminal**, not the whole application, so a wide log in one tab does
+not shrink the shell in the next. The scale is limited to 0.25x–4.0x and is not saved
+across restarts. To change the font itself, use Preferences.
+
+## Scrollback
+
+The scrollback buffer defaults to 10000 lines and is configurable from 1 to 1,000,000:
+
+```ini
+[options]
+buffer-lines = 10000
+```
+
+Depth costs very little memory — the buffer is paged out to a compressed temporary file
+rather than held in RAM, so raising it further is cheap. It applies to the primary screen
+only, for the reason described above.
+
+## Keyboard shortcuts
+
+Every shortcut below is user-configurable under `[shortcuts]` in `~/.gcm/gcm.conf`, or
+through the shortcut editor in Preferences.
+
+| Default | Command | Also in a menu |
+|---|---|---|
+| `Ctrl+Shift+C` | `copy` | yes |
+| `Ctrl+Shift+V` | `paste` | yes |
+| `Ctrl+Shift+A` | `copy_all` | yes |
+| `Ctrl+S` | `save` | no |
+| `Ctrl+F` | `find` | yes |
+| `Ctrl+G` | `find_next` | yes |
+| `Ctrl+H` | `find_back` | yes |
+| `Ctrl+Tab` | `console_next` | yes |
+| `Ctrl+Shift+Tab` | `console_previous` | yes |
+| `Ctrl+W` | `console_close` | yes |
+| `Ctrl+N` | `console_reconnect` | yes |
+| `Ctrl+Return` | `connect` | yes |
+| `Ctrl+Shift+K` | `reset` | yes |
+| `Ctrl+Shift+D` | `clone` | yes |
+| `Ctrl+Shift+N` | `new_local` | yes |
+| `F11` | `fullscreen` | yes |
+| `Ctrl+=` | `zoom_in` | yes |
+| `Ctrl+-` | `zoom_out` | yes |
+| `Ctrl+0` | `zoom_reset` | yes |
+| `Alt+1`–`Alt+9` | `console_1`–`console_9` | no |
+
+To rebind, set the key against the command name:
+
+```ini
+[shortcuts]
+CTRL+SHIFT+B = copy_all
+```
+
+If a shortcut appears to do nothing, check whether your desktop or OS claims that
+combination first — a global hotkey is consumed before GCM ever sees the key, and
+`Ctrl+Shift+<letter>` combinations are a common source of this. Rebinding to a free
+combination is the fix.
+
+### Terminal shortcuts versus application accelerators
+
+Commands in the table above are *terminal* shortcuts: they are read from your config and,
+where the command also appears in a menu, the menu's accelerator is derived from the same
+value. Rebinding a command therefore moves its menu accelerator too, and the two can never
+disagree.
+
+A few application-level commands carry fixed accelerators that are not part of
+`[shortcuts]`, because they are not terminal commands:
+
+| Accelerator | Command |
+|---|---|
+| `Ctrl+Q` | Quit |
+| `Ctrl+R` | Refresh host list |
+| `Ctrl+E` | Edit host |
+| `Ctrl+Shift+H` | Add host |
+| `Ctrl+,` | Preferences |
+| `Ctrl+Shift+U` | Cluster mode |
+| `Ctrl+Shift+S` | Save buffer |
+| `F1` | About |
+
+Avoid rebinding a terminal shortcut onto one of these. Window accelerators are dispatched
+before the focused terminal sees the key, so the application command would win and the
+terminal binding would never fire.
+
+## What agent CLIs do
+
+Terminal behaviour varies more than it looks, and it decides whether you need `Shift` to
+select. Measured directly from the escape sequences each tool emits at startup:
+
+| | Alternate screen | Mouse tracking | Bracketed paste | OSC 52 |
+|---|---|---|---|---|
+| Claude Code | yes | **yes** | yes | no |
+| `agy` | yes | no | yes | no |
+| `codex` | no | no | yes | no |
+
+What this means in practice:
+
+- **Claude Code** is the one that takes the mouse. Plain dragging goes to the application;
+  hold `Shift` to select. Copy All returns the visible screen only, since it is on the
+  alternate screen.
+- **`agy`** runs full-screen but leaves the mouse alone, so dragging selects normally.
+  Copy All is still limited to the visible screen.
+- **`codex`** stays on the primary screen and leaves the mouse alone. Selection, scrollback
+  and Copy All all behave as they do at a shell prompt.
+
+None of them use OSC 52, so clipboard integration over SSH is not something they rely on.
+All three enable bracketed paste, so multi-line pastes arrive framed rather than being
+executed line by line.

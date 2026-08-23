@@ -87,7 +87,7 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 ### Search
 - Find text in terminal (Ctrl+F)
 - Find next (Ctrl+G / F3)
-- Find previous (Ctrl+Shift+G / Shift+F3)
+- Find previous (Ctrl+H / Shift+F3)
 
 ### URL Detection
 - Regex-based detection and highlighting of:
@@ -203,7 +203,7 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 | Ctrl+Shift+S | Save buffer |
 | Ctrl+F | Find |
 | Ctrl+G | Find next |
-| Ctrl+Shift+G | Find previous |
+| Ctrl+H | Find previous |
 | Ctrl+Tab | Next tab |
 | Ctrl+Shift+Tab | Previous tab |
 | Ctrl+W | Close tab |
