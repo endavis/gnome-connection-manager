@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import re
 import types
 from pathlib import Path
 
@@ -204,3 +205,109 @@ def test_write_config_persists_conf_window_hosts_and_shortcuts(tmp_path, app_mod
     assert cp.get("host 1", "host") == "router.example.com"
     assert cp.get("host 1", "pass") == "secret"
     assert cp.get("host 1", "commands") == "echo hello\\nrun-checks"
+
+
+def _load_with(tmp_path, app_module, monkeypatch, options, window=None):
+    """Run loadConfig against a gcm.conf built from `options`/`window`."""
+    config = configparser.RawConfigParser()
+    config.add_section("options")
+    for key, value in options.items():
+        config.set("options", key, value)
+    config.add_section("window")
+    for key, value in (window or {}).items():
+        config.set("window", key, value)
+
+    config_path = tmp_path / "gcm.conf"
+    with config_path.open("w") as handle:
+        config.write(handle)
+
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_path))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.loadConfig()
+    return app_module.conf
+
+
+def test_load_config_missing_option_still_applies_the_later_ones(
+    tmp_path, app_module, monkeypatch
+):
+    """A key absent from an older gcm.conf must not discard the keys after it."""
+    conf = _load_with(
+        tmp_path,
+        app_module,
+        monkeypatch,
+        # "buffer-lines" deliberately omitted; everything below it is present
+        {
+            "word-separators": "***",
+            "auto-copy-selection": "true",
+            "log-path": "/tmp/custom-logs",
+            "term": "xterm-kitty",
+            "app-title": "Custom App",
+        },
+    )
+
+    assert conf.BUFFER_LINES == 2000  # absent -> default
+    assert conf.AUTO_COPY_SELECTION is True
+    assert conf.LOG_PATH == "/tmp/custom-logs"
+    assert conf.TERM == "xterm-kitty"
+    assert conf.APP_TITLE == "Custom App"
+
+
+def test_load_config_malformed_value_only_affects_its_own_option(
+    tmp_path, app_module, monkeypatch
+):
+    conf = _load_with(
+        tmp_path,
+        app_module,
+        monkeypatch,
+        {
+            "buffer-lines": "not-a-number",
+            "transparency": "also-not-a-number",
+            "term": "xterm-kitty",
+            "app-title": "Custom App",
+        },
+    )
+
+    assert conf.BUFFER_LINES == 2000
+    assert conf.TRANSPARENCY == 0
+    assert conf.TERM == "xterm-kitty"
+    assert conf.APP_TITLE == "Custom App"
+
+
+def test_load_config_without_a_config_file_falls_back_to_defaults(
+    tmp_path, app_module, monkeypatch
+):
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(tmp_path / "absent.conf"))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.loadConfig()
+
+    default_title = app_module.app_name
+    assert app_module.conf.BUFFER_LINES == 2000
+    assert default_title == app_module.conf.APP_TITLE
+
+
+def test_config_options_table_matches_the_conf_defaults(app_module):
+    """Every table entry must name a real conf attribute, and names must be unique."""
+    seen = set()
+    for attr, section, option, kind in app_module.CONFIG_OPTIONS:
+        assert hasattr(app_module.conf, attr), f"conf has no attribute {attr}"
+        assert section in ("options", "window"), f"{attr}: unexpected section {section}"
+        assert kind in (str, int, bool), f"{attr}: unexpected type {kind}"
+        assert (section, option) not in seen, f"duplicate entry for [{section}] {option}"
+        seen.add((section, option))
+
+
+def test_config_options_table_covers_everything_write_config_persists(app_module):
+    """Guards against an option being written but never read back (see #34)."""
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def writeConfig", 1)[1].split("def ", 1)[0]
+    written = set(re.findall(r'cp\.set\(\s*"(options|window)",\s*"([a-z0-9-]+)"', body))
+    known = {(section, option) for _attr, section, option, _kind in app_module.CONFIG_OPTIONS}
+
+    # "version" is written as the running app version rather than from conf
+    assert written - known == set(), f"written but never read: {sorted(written - known)}"
