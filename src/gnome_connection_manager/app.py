@@ -319,6 +319,7 @@ class conf:
     HIDE_DONATE = False
     DISABLE_HOSTS_STRIPES = False
     AUTO_COPY_SELECTION = 0
+    COPY_SCREEN_IF_NO_SELECTION = 0
     LOG_PATH = CONFIG_DIR + "/logs"
     SHOW_TOOLBAR = True
     SHOW_PANEL = True
@@ -1473,18 +1474,27 @@ class Wmain(GladeComponent):
                 menuItem.set_action_name("app.custom-command")
                 menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
 
-    def terminal_copy(self, terminal):
+    def _copy_selection(self, terminal):
         # With an empty selection VTE still takes clipboard ownership and serves an
         # empty string, so an unguarded copy destroys whatever was on the clipboard.
         if not terminal.get_has_selection():
-            return
+            return False
         terminal.copy_clipboard_format(Vte.Format.TEXT)
+        return True
+
+    def terminal_copy(self, terminal):
+        if self._copy_selection(terminal):
+            return
+        if conf.COPY_SCREEN_IF_NO_SELECTION:
+            self._copy_screen(terminal)
 
     def terminal_paste(self, terminal):
         terminal.paste_clipboard()
 
     def terminal_copy_paste(self, terminal):
-        self.terminal_copy(terminal)
+        # Deliberately no copy-screen fallback: pasting a whole screen back into the
+        # terminal is never what "Copy and Paste" is asking for.
+        self._copy_selection(terminal)
         terminal.paste_clipboard()
 
     def terminal_select_all(self, terminal):
@@ -1492,8 +1502,22 @@ class Wmain(GladeComponent):
 
     def terminal_copy_all(self, terminal):
         terminal.select_all()
-        self.terminal_copy(terminal)
+        self._copy_selection(terminal)
         terminal.unselect_all()
+
+    def _copy_screen(self, terminal):
+        # The visible screen is all that is reachable while an application holds the
+        # alternate screen, which has no scrollback of its own. Copy All already covers
+        # this case; this exists so the no-selection fallback does not have to run
+        # select_all(), which would flash and discard any selection the user had.
+        if Vte.get_minor_version() < 72:
+            text, attrs = terminal.get_text(None, None)
+        else:
+            text = terminal.get_text_format(Vte.Format.TEXT)
+        text = (text or "").rstrip()
+        if not text:
+            return
+        Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
 
     def on_menuCopy_activate(self, widget):
         terminal = self.find_active_terminal(self.hpMain)
@@ -1864,6 +1888,9 @@ class Wmain(GladeComponent):
             conf.HIDE_DONATE = cp.getboolean("options", "donate")
             conf.DISABLE_HOSTS_STRIPES = cp.getboolean("options", "disable-hosts-stripes")
             conf.AUTO_COPY_SELECTION = cp.getboolean("options", "auto-copy-selection")
+            conf.COPY_SCREEN_IF_NO_SELECTION = cp.getboolean(
+                "options", "copy-screen-if-no-selection", fallback=conf.COPY_SCREEN_IF_NO_SELECTION
+            )
             conf.LOG_PATH = cp.get("options", "log-path")
             conf.VERSION = cp.get("options", "version")
             conf.AUTO_CLOSE_TAB = cp.getint("options", "auto-close-tab")
@@ -2079,6 +2106,7 @@ class Wmain(GladeComponent):
         cp.set("options", "donate", conf.HIDE_DONATE)
         cp.set("options", "disable-hosts-stripes", conf.DISABLE_HOSTS_STRIPES)
         cp.set("options", "auto-copy-selection", conf.AUTO_COPY_SELECTION)
+        cp.set("options", "copy-screen-if-no-selection", conf.COPY_SCREEN_IF_NO_SELECTION)
         cp.set("options", "log-path", conf.LOG_PATH)
         cp.set("options", "version", app_fileversion)
         cp.set("options", "auto-close-tab", conf.AUTO_CLOSE_TAB)
@@ -3723,6 +3751,9 @@ class Wconfig(GladeComponent):
         self.addParam(_("Log consola local"), "conf.LOG_LOCAL", bool)
         self.addParam(_("Pegar con botón derecho"), "conf.PASTE_ON_RIGHT_CLICK", bool)
         self.addParam(_("Copiar selección al portapapeles"), "conf.AUTO_COPY_SELECTION", bool)
+        self.addParam(
+            _("Copiar pantalla si no hay selección"), "conf.COPY_SCREEN_IF_NO_SELECTION", bool
+        )
         self.addParam(_("Confirmar al cerrar una consola"), "conf.CONFIRM_ON_CLOSE_TAB", bool)
         self.addParam(
             _("Confirmar al cerrar una consola con botón central del mouse"),
