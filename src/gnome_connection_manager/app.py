@@ -2193,7 +2193,10 @@ class Wmain(GladeComponent):
             terminal.match_set_cursor_name(tag, "pointer")
             return tag
         except Exception:
-            pass
+            # Swallowing this is how a pattern that never compiled went unnoticed: the
+            # links simply stopped existing, with nothing to say why (#55).
+            logger.exception("Link pattern failed to compile, matches disabled: %.60s", regex)
+            return None
 
     def addTab(self, notebook, host):
         try:
