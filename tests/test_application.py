@@ -56,6 +56,15 @@ class ControllerStub:
     def terminal_copy_all(self, terminal):
         self.calls.append(("copy-all", terminal))
 
+    def terminal_zoom_in(self, terminal):
+        self.calls.append(("zoom-in", terminal))
+
+    def terminal_zoom_out(self, terminal):
+        self.calls.append(("zoom-out", terminal))
+
+    def terminal_zoom_reset(self, terminal):
+        self.calls.append(("zoom-reset", terminal))
+
     def on_btnHSplit_clicked(self, arg):
         self.calls.append(("split-h", arg))
 
@@ -331,6 +340,30 @@ def test_shortcut_to_accel_tries_capitalised_key_names(app_module, monkeypatch):
 
     assert app_module.shortcut_to_accel("CTRL+TAB") == "1|65289"
     assert app_module.shortcut_to_accel("CTRL+KP_ENTER") == "1|65421"
+
+
+def test_zoom_default_keys_resolve_to_accelerators(app_module, monkeypatch):
+    """Keyvals measured off real GDK: equal=0x3d, minus=0x2d, 0=0x30 (#19)."""
+    _stub_gdk_keys(app_module, monkeypatch, {"equal": 0x3D, "minus": 0x2D, "0": 0x30})
+    defaults = {command: key for command, _token, key in app_module.SHORTCUT_DEFAULTS}
+
+    assert app_module.shortcut_to_accel(defaults["zoom_in"]) == "1|61"
+    assert app_module.shortcut_to_accel(defaults["zoom_out"]) == "1|45"
+    assert app_module.shortcut_to_accel(defaults["zoom_reset"]) == "1|48"
+
+
+def test_application_zoom_actions_reach_the_target_terminal(app_module):
+    app = app_module.GcmApplication()
+    controller = ControllerStub()
+    app._controller = controller
+
+    app._on_action_zoom_in(None, None)
+    app._on_action_zoom_out(None, None)
+    app._on_action_zoom_reset(None, None)
+
+    assert ("zoom-in", controller.terminal) in controller.calls
+    assert ("zoom-out", controller.terminal) in controller.calls
+    assert ("zoom-reset", controller.terminal) in controller.calls
 
 
 def test_shortcut_to_accel_rejects_names_gdk_does_not_know(app_module, monkeypatch):
