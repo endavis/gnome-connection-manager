@@ -205,6 +205,7 @@ _CLONE = ["clone"]
 _ZOOM_IN = ["zoom_in"]
 _ZOOM_OUT = ["zoom_out"]
 _ZOOM_RESET = ["zoom_reset"]
+_VIEW_BUFFER = ["view_buffer"]
 
 # Terminal commands and their default keys, owned by [shortcuts] in gcm.conf.
 SHORTCUT_DEFAULTS = (
@@ -227,6 +228,7 @@ SHORTCUT_DEFAULTS = (
     ("zoom_in", _ZOOM_IN, "CTRL+EQUAL"),
     ("zoom_out", _ZOOM_OUT, "CTRL+MINUS"),
     ("zoom_reset", _ZOOM_RESET, "CTRL+0"),
+    ("view_buffer", _VIEW_BUFFER, "CTRL+SHIFT+F"),
 )
 
 # Commands that also exist as an application action. Their accelerator is derived from
@@ -252,6 +254,7 @@ TERMINAL_ACTIONS = {
     "zoom_in": "zoom-in",
     "zoom_out": "zoom-out",
     "zoom_reset": "zoom-reset",
+    "view_buffer": "view-buffer",
 }
 
 # VTE clamps set_font_scale() to this range itself (measured on 0.76: 0.1 lands on
@@ -616,6 +619,35 @@ def build_editor_command(path, line, col):
     if editor:
         return [*shlex.split(editor), f"+{line}", path]
     return ["xdg-open", path]
+
+
+def terminal_buffer_text(terminal):
+    """The terminal's scrollback as plain text.
+
+    Uses the vertical adjustment for the real row bounds and reads the range directly.
+    The obvious alternative -- select_all() then get_text_selected_full() -- destroys
+    whatever the user had selected; this leaves it untouched. An unbounded range is not
+    an option either: asking for more rows than exist pads the result with thousands of
+    blank lines.
+    """
+    adjustment = terminal.get_vadjustment() if hasattr(terminal, "get_vadjustment") else None
+    if adjustment is not None:
+        try:
+            text = terminal.get_text_range_format(
+                Vte.Format.TEXT, int(adjustment.get_lower()), 0, int(adjustment.get_upper()), 0
+            )
+        except Exception:
+            logger.debug("Range extraction failed, falling back to the visible screen")
+            text = None
+        if isinstance(text, tuple):
+            text = text[0]
+        if text and text.strip():
+            return text.rstrip()
+    # Alternate screen: no scrollback exists, so the visible screen is all there is.
+    text = terminal.get_text_format(Vte.Format.TEXT)
+    if isinstance(text, tuple):
+        text = text[0]
+    return (text or "").rstrip()
 
 
 def uri_to_terminal_text(uri):
@@ -1433,6 +1465,8 @@ class Wmain(GladeComponent):
                     self.terminal_zoom_out(widget)
                 elif cmd == _ZOOM_RESET:
                     self.terminal_zoom_reset(widget)
+                elif cmd == _VIEW_BUFFER:
+                    self.show_buffer_viewer(widget)
                 elif cmd == _CLEAR:
                     widget.reset(True, True)
                 elif cmd == _FIND_BACK:
@@ -1832,6 +1866,11 @@ class Wmain(GladeComponent):
         self.popupMenu.mnuCopyAll = menuItem = Gtk.MenuItem(label=_("Copiar todo"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy-all")
+        menuItem.show()
+
+        self.popupMenu.mnuViewBuffer = menuItem = Gtk.MenuItem(label=_("Ver buffer"))
+        self.popupMenu.append(menuItem)
+        menuItem.set_action_name("app.view-buffer")
         menuItem.show()
 
         self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Guardar buffer en archivo"))
@@ -3024,8 +3063,15 @@ class Wmain(GladeComponent):
             delattr(self, "check_notebook")
 
     def show_save_buffer(self, terminal):
+        """Save Buffer is the same operation as the viewer's Save As, minus the window."""
+        return self.save_text_to_file(terminal_buffer_text(terminal))
+
+    def save_text_to_file(self, text, parent=None):
+        """Ask for a filename and write text to it. Shared by Save Buffer and the viewer."""
         dlg = Gtk.FileChooserDialog(
-            title=_("Guardar como"), parent=self.wMain, action=Gtk.FileChooserAction.SAVE
+            title=_("Guardar como"),
+            parent=parent or self.wMain,
+            action=Gtk.FileChooserAction.SAVE,
         )
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         dlg.add_button("document-save", Gtk.ResponseType.OK)
@@ -3036,28 +3082,30 @@ class Wmain(GladeComponent):
         if not hasattr(self, "lastPath"):
             self.lastPath = USERHOME_DIR
         dlg.set_current_folder(self.lastPath)
-
+        saved = False
         if dlg.run() == Gtk.ResponseType.OK:
             filename = dlg.get_filename()
             self.lastPath = str(Path(filename).parent)
-
             try:
-                buff, b = terminal.get_text_range(
-                    0,
-                    0,
-                    terminal.get_property("scrollback-lines") - 1,
-                    terminal.get_column_count() - 1,
-                    None,
-                    None,
-                )
-                with Path(filename).open("w") as f:
-                    f.write(buff.strip())
+                with Path(filename).open("w") as handle:
+                    handle.write(text)
+                saved = True
             except (OSError, PermissionError) as e:
                 dlg.destroy()
                 msgbox(f"{_('No se puede abrir archivo para escritura')}: {filename} - {e}")
-                return
-
+                return False
         dlg.destroy()
+        return saved
+
+    def show_buffer_viewer(self, terminal):
+        """Open the scrollback in a text window where the keyboard works."""
+        if terminal is None:
+            return None
+        label = self.get_tab_label_for_terminal(terminal)
+        name = label.get_text().strip() if label is not None and hasattr(label, "get_text") else ""
+        viewer = BufferViewer(self, terminal, "{} - {}".format(_("Buffer"), name or _("Consola")))
+        viewer.show_all()
+        return viewer
 
     def set_panel_visible(self, visibility):
         if visibility:
@@ -4958,6 +5006,164 @@ class Wcluster(GladeComponent):
     # -- Wcluster.on_txtCommands_key_press_event }
 
 
+class BufferViewer(Gtk.Window):
+    """A read-only text view of a terminal's scrollback.
+
+    Exists because getting text out of a terminal otherwise means a mouse drag, which an
+    application holding mouse reporting takes, and which is miserable across thousands of
+    lines. In a TextView, ordinary keyboard selection, Ctrl+A, Ctrl+C and search all work
+    with no mouse and no interference from whatever is running.
+    """
+
+    def __init__(self, controller, terminal, title):
+        Gtk.Window.__init__(self, title=title)
+        self.controller = controller
+        self.terminal = terminal
+        self.set_default_size(900, 600)
+        with contextlib.suppress(Exception):
+            self.set_icon_from_file(ICON_PATH)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_border_width(6)
+        self.add(box)
+
+        self.search = Gtk.SearchEntry()
+        self.search.set_placeholder_text(_("Buscar"))
+        self.search.connect("search-changed", self.on_search_changed)
+        self.search.connect("activate", lambda _w: self.find(forward=True))
+        box.pack_start(self.search, False, False, 0)
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.view = Gtk.TextView()
+        self.view.set_editable(False)
+        # Left on so keyboard selection has something to move; the buffer is still
+        # read-only, which is what matters.
+        self.view.set_cursor_visible(True)
+        self.view.set_monospace(True)
+        self.view.set_wrap_mode(Gtk.WrapMode.NONE)
+        scroller.add(self.view)
+        box.pack_start(scroller, True, True, 0)
+
+        self.buffer = self.view.get_buffer()
+        self.match_tag = self.buffer.create_tag("gcm-match", background="#f6d32d")
+
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        for label, handler in (
+            (_("Copiar selección"), self.on_copy_selection),
+            (_("Copiar todo"), self.on_copy_all),
+            (_("Guardar como"), self.on_save_as),
+            (_("Actualizar"), self.on_refresh),
+        ):
+            button = Gtk.Button(label=label)
+            button.connect("clicked", handler)
+            buttons.pack_start(button, False, False, 0)
+        close = Gtk.Button(label=_("Cerrar"))
+        close.connect("clicked", lambda _w: self.destroy())
+        buttons.pack_end(close, False, False, 0)
+        box.pack_start(buttons, False, False, 0)
+
+        self.connect("key-press-event", self.on_key_press)
+        self.refresh()
+
+    # -- content
+
+    def refresh(self):
+        self.buffer.set_text(terminal_buffer_text(self.terminal))
+        self.on_search_changed(self.search)
+
+    def on_refresh(self, _widget):
+        self.refresh()
+
+    def get_all_text(self):
+        start, end = self.buffer.get_bounds()
+        return self.buffer.get_text(start, end, False)
+
+    def get_selected_text(self):
+        bounds = self.buffer.get_selection_bounds()
+        if not bounds:
+            return ""
+        return self.buffer.get_text(bounds[0], bounds[1], False)
+
+    # -- search
+
+    def on_search_changed(self, entry):
+        start, end = self.buffer.get_bounds()
+        self.buffer.remove_tag(self.match_tag, start, end)
+        needle = entry.get_text()
+        if not needle:
+            return 0
+        count = 0
+        cursor = start
+        while True:
+            found = cursor.forward_search(needle, Gtk.TextSearchFlags.CASE_INSENSITIVE, None)
+            if not found:
+                break
+            match_start, match_end = found
+            self.buffer.apply_tag(self.match_tag, match_start, match_end)
+            count += 1
+            cursor = match_end
+        return count
+
+    def find(self, forward=True):
+        needle = self.search.get_text()
+        if not needle:
+            return False
+        flags = Gtk.TextSearchFlags.CASE_INSENSITIVE
+        bounds = self.buffer.get_selection_bounds()
+        if bounds:
+            cursor = bounds[1] if forward else bounds[0]
+        else:
+            cursor = self.buffer.get_start_iter() if forward else self.buffer.get_end_iter()
+        found = (
+            cursor.forward_search(needle, flags, None)
+            if forward
+            else cursor.backward_search(needle, flags, None)
+        )
+        if not found:
+            # Wrap, so repeated presses cycle rather than dead-ending.
+            cursor = self.buffer.get_start_iter() if forward else self.buffer.get_end_iter()
+            found = (
+                cursor.forward_search(needle, flags, None)
+                if forward
+                else cursor.backward_search(needle, flags, None)
+            )
+        if not found:
+            return False
+        match_start, match_end = found
+        self.buffer.select_range(match_start, match_end)
+        self.view.scroll_to_iter(match_start, 0.1, False, 0, 0)
+        return True
+
+    # -- actions
+
+    def on_copy_selection(self, _widget):
+        text = self.get_selected_text() or self.get_all_text()
+        if text:
+            Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
+
+    def on_copy_all(self, _widget):
+        text = self.get_all_text()
+        if text:
+            Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
+
+    def on_save_as(self, _widget):
+        if self.controller is not None:
+            self.controller.save_text_to_file(self.get_all_text(), parent=self)
+
+    def on_key_press(self, _widget, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self.destroy()
+            return True
+        if event.keyval in (Gdk.KEY_F3,) or (
+            event.state & Gdk.ModifierType.CONTROL_MASK and event.keyval == Gdk.KEY_g
+        ):
+            backwards = bool(event.state & Gdk.ModifierType.SHIFT_MASK)
+            self.find(forward=not backwards)
+            return True
+        return False
+
+
 class NotebookTabLabel(Gtk.HBox):
     """Notebook tab label with close button."""
 
@@ -5363,6 +5569,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("zoom-in", self._on_action_zoom_in)
         self._create_action("zoom-out", self._on_action_zoom_out)
         self._create_action("zoom-reset", self._on_action_zoom_reset)
+        self._create_action("view-buffer", self._on_action_view_buffer)
         self._create_action("search-back", self._on_action_search_back)
         self._create_action("find", self._on_action_find)
         self._create_action("fullscreen", self._on_action_fullscreen)
@@ -5448,6 +5655,7 @@ class GcmApplication(Gtk.Application):
         select_section = Gio.Menu()
         select_section.append(_("Select All"), "app.select-all")
         select_section.append(_("Copy All"), "app.copy-all")
+        select_section.append(_("View Buffer"), "app.view-buffer")
         edit_menu.append_section(None, select_section)
         search_section = Gio.Menu()
         search_section.append(_("Find"), "app.find")
@@ -5640,6 +5848,13 @@ class GcmApplication(Gtk.Application):
             terminal = self._controller.get_target_terminal()
             if terminal:
                 apply_zoom(self._controller, terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_view_buffer(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.show_buffer_viewer(terminal)
             self._controller.clear_context_terminal()
 
     def _on_action_copy_paste(self, action, _param):

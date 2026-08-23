@@ -110,6 +110,26 @@ Applications that support bracketed paste are told the content is a paste rather
 typing, which stops a shell from executing each line as it arrives. GCM preserves that
 framing.
 
+## Viewing the buffer without the mouse
+
+`Ctrl+Shift+F`, **Edit → View Buffer**, or **Ver buffer** in the right-click menu opens the
+scrollback in a plain text window.
+
+This is the answer when selection is awkward: an application holding the mouse cannot
+interfere, ordinary keyboard selection works, and `Ctrl+A` / `Ctrl+C` do what you expect.
+Type in the search box to highlight every match; `Enter`, `F3` or `Ctrl+G` step through
+them, `Shift` with either goes backwards, and the search wraps. `Escape` closes the window.
+
+Buttons cover **Copy Selection** (falls back to everything when nothing is selected),
+**Copy All**, **Save As** and **Refresh** — the window is a snapshot, so refresh after new
+output arrives.
+
+Inside a full-screen application it shows the visible screen, for the same reason Copy All
+does: the alternate screen has no scrollback. That is still easier to work with than a
+terminal selection.
+
+Opening the viewer does not disturb any selection you already had in the terminal.
+
 ## Tab titles
 
 Tabs show the host name. When the running program advertises a window title, it is appended:
@@ -224,6 +244,7 @@ through the shortcut editor in Preferences.
 | `Ctrl+Shift+D` | `clone` | yes |
 | `Ctrl+Shift+N` | `new_local` | yes |
 | `F11` | `fullscreen` | yes |
+| `Ctrl+Shift+F` | `view_buffer` | yes |
 | `Ctrl+=` | `zoom_in` | yes |
 | `Ctrl+-` | `zoom_out` | yes |
 | `Ctrl+0` | `zoom_reset` | yes |
