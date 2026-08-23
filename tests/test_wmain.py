@@ -1538,29 +1538,183 @@ def test_sanitize_log_name_caps_the_length(app_module):
     assert name == "x" * app_module.LOG_NAME_MAX
 
 
-def test_build_log_prefix_keeps_a_traversing_title_inside_the_log_directory(
+def test_build_log_prefix_keeps_a_traversing_name_inside_the_log_directory(
     tmp_path, app_module
 ):
-    prefix = app_module.build_log_prefix(tmp_path, "../../../../tmp/pwned", "20260823")
+    prefix = app_module.build_log_prefix(tmp_path, "", "../../../../tmp/pwned", "", "20260823")
 
     assert prefix is not None
-    assert prefix.parent == tmp_path
-    assert prefix.name == "tmp_pwned-20260823"
+    assert prefix.parent.parent == tmp_path
+    assert prefix.parent.name == "tmp_pwned"
+    assert prefix.name == "session-20260823"
 
 
 def test_build_log_prefix_refuses_a_path_that_escapes(tmp_path, app_module, monkeypatch):
     """The containment check must hold even if sanitising ever lets something through."""
     monkeypatch.setattr(app_module, "sanitize_log_name", lambda title: title)
 
-    assert app_module.build_log_prefix(tmp_path, "../escaped", "20260823") is None
+    assert app_module.build_log_prefix(tmp_path, "", "../escaped", "", "20260823") is None
 
 
 def test_build_log_prefix_expands_a_user_relative_log_dir(app_module, monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    prefix = app_module.build_log_prefix("~/logs", "router", "20260823")
+    prefix = app_module.build_log_prefix("~/logs", "", "router", "", "20260823")
 
-    assert prefix == tmp_path / "logs" / "router-20260823"
+    assert prefix == tmp_path / "logs" / "router" / "session-20260823"
+
+
+# -- log paths follow the host entry (#49) ----------------------------------
+
+
+def test_build_log_prefix_mirrors_the_host_tree(tmp_path, app_module):
+    """Nested groups become nested directories, since host.group is already a path."""
+    prefix = app_module.build_log_prefix(
+        tmp_path, "Home Tech/OPNsense/OPNA/endavis", "OPNA-TS", "root", "20260823"
+    )
+
+    assert prefix == (
+        tmp_path / "Home Tech" / "OPNsense" / "OPNA" / "endavis" / "OPNA-TS" / "root-20260823"
+    )
+
+
+def test_build_log_prefix_falls_back_when_no_user_is_set(tmp_path, app_module):
+    prefix = app_module.build_log_prefix(tmp_path, "1. Projects", "tmpl", "", "20260823")
+
+    assert prefix == tmp_path / "1. Projects" / "tmpl" / "session-20260823"
+
+
+def test_build_log_prefix_puts_an_ungrouped_host_at_the_top_level(tmp_path, app_module):
+    """Local consoles arrive as Host("", "local"), so nothing above them moves."""
+    prefix = app_module.build_log_prefix(tmp_path, "", "local", "", "20260823")
+
+    assert prefix == tmp_path / "local" / "session-20260823"
+
+
+@pytest.mark.parametrize(
+    ("group", "expected"),
+    [
+        ("prod/eu-west", ["prod", "eu-west"]),
+        ("a//b/./c", ["a", "b", "c"]),
+        ("../../etc", ["etc"]),
+        ("", []),
+        (None, []),
+        ("...", []),
+    ],
+)
+def test_sanitize_log_segments(app_module, group, expected):
+    """Dots and blanks are dropped before sanitising -- sanitize_log_name would turn
+    ".." into the fallback name and litter the tree with bogus directories."""
+    assert app_module.sanitize_log_segments(group) == expected
+
+
+def test_sanitize_log_segments_does_not_flatten_the_separator(app_module):
+    """Sanitising the whole path at once would collapse it: / is in the unsafe set."""
+    assert app_module.sanitize_log_name("prod/eu-west") == "prod_eu-west"
+    assert app_module.sanitize_log_segments("prod/eu-west") == ["prod", "eu-west"]
+
+
+class LoggingTerminal:
+    """Terminal surface set_terminal_logger touches. Only what Vte.Terminal really has."""
+
+    def __init__(self, host):
+        self.host = host
+        self.connected = []
+
+    def get_cursor_position(self):
+        return (0, 0)
+
+    def connect(self, signal, handler):
+        self.connected.append(signal)
+        return 1
+
+    def disconnect(self, handler_id):
+        self.connected.append(("disconnect", handler_id))
+
+    def get_parent(self):  # must never be reached: the label is not the identity
+        raise AssertionError("set_terminal_logger walked to the tab label")
+
+
+def test_set_terminal_logger_names_the_log_from_the_host_not_the_tab(
+    tmp_path, app_module, monkeypatch
+):
+    """The tab label is presentation; walking to it at all is the bug (#49)."""
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LoggingTerminal(
+        LogHost(group="Home Tech/PVE/PVE1", name="pve1", user="root", host="10.0.0.9", port=22)
+    )
+
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    written = list(tmp_path.rglob("*.log"))
+    assert len(written) == 1
+    assert written[0] == (
+        tmp_path / "Home Tech" / "PVE" / "PVE1" / "pve1" / "root-20260823-001.log"
+    )
+    assert "pve1 (root@10.0.0.9:22)" in written[0].read_text()
+
+
+def test_set_terminal_logger_falls_back_when_the_connection_never_set_a_host(
+    tmp_path, app_module, monkeypatch
+):
+    """v.host is only assigned once addTab gets that far; a failed connect has none."""
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LoggingTerminal(None)
+    del terminal.host
+
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    written = list(tmp_path.rglob("*.log"))
+    assert len(written) == 1
+    assert written[0] == tmp_path / "session" / "session-20260823-001.log"
+
+
+def _clone_blocks(app_module):
+    source = Path(app_module.__file__).read_text()
+    return [
+        source[m : m + 400]
+        for m in (
+            i for i in range(len(source)) if source.startswith("host = term.host.clone()", i)
+        )
+    ]
+
+
+def test_cloning_a_console_keeps_the_host_name(app_module):
+    """Clone used to write the tab label into host.name, which then reached the logs."""
+    blocks = _clone_blocks(app_module)
+
+    assert len(blocks) == 2, f"expected both clone paths, found {len(blocks)}"
+    for block in blocks:
+        assert "host.name = tab.get_text()" not in block
+
+
+class LogHost:
+    def __init__(self, group="", name="web-01", user="", host="", port=""):
+        self.group = group
+        self.name = name
+        self.user = user
+        self.host = host
+        self.port = port
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        (LogHost(name="OPNA-TS", user="root", host="10.0.0.4", port=22), "OPNA-TS (root@10.0.0.4:22)"),
+        (LogHost(name="web-01", user="", host="10.0.0.5", port=22), "web-01 (10.0.0.5:22)"),
+        (LogHost(name="web-01", user="deploy", host="10.0.0.5", port=""), "web-01 (deploy@10.0.0.5)"),
+        (LogHost(name="local", host=""), "local"),
+    ],
+)
+def test_describe_log_session(app_module, host, expected):
+    """Provenance lives inside the file so it survives the log being moved."""
+    assert app_module.describe_log_session(host) == expected
 
 
 class PlainTabLabel:

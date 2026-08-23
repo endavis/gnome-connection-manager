@@ -544,20 +544,63 @@ def sanitize_log_name(title):
     return name or LOG_NAME_FALLBACK
 
 
-def build_log_prefix(log_dir, title, stamp):
+def sanitize_log_segments(group):
+    """Sanitize a group path one segment at a time.
+
+    `/` is in the unsafe set, so sanitising the whole path at once would collapse
+    "prod/eu-west" into "prod_eu-west" and flatten the tree we are trying to mirror.
+    """
+    segments = []
+    for part in (group or "").split("/"):
+        part = part.strip()
+        # Drop "", "." and ".." before sanitising: sanitize_log_name turns them into the
+        # fallback name, which would litter the tree with bogus "session" directories.
+        if not part or set(part) <= {"."}:
+            continue
+        segments.append(sanitize_log_name(part))
+    return segments
+
+
+def build_log_prefix(log_dir, group, name, user, stamp):
     """Path prefix for a session log, or None if it would escape `log_dir`.
+
+    Sessions are laid out as <log_dir>/<group>/<name>/<user>-<stamp> so the log tree
+    mirrors the host tree. The user is a directory segment rather than part of the
+    filename because `name` is free text: no separator character is collision-proof,
+    but a path separator cannot be ambiguous once each segment is sanitised.
 
     sanitize_log_name should make escaping impossible; the containment check is here
     so that a gap in it cannot put the log somewhere the user did not ask for.
     """
-    directory = Path(log_dir).expanduser()
-    prefix = directory / f"{sanitize_log_name(title)}-{stamp}"
+    root = Path(log_dir).expanduser()
+    directory = root
+    for segment in sanitize_log_segments(group):
+        directory = directory / segment
+    directory = directory / sanitize_log_name(name)
+    prefix = directory / f"{sanitize_log_name(user) if user else LOG_NAME_FALLBACK}-{stamp}"
     try:
-        if directory.resolve() not in prefix.resolve().parents:
+        if root.resolve() not in prefix.resolve().parents:
             return None
     except OSError:
         return None
     return prefix
+
+
+def describe_log_session(host):
+    """Identity line for the log header: the name plus where it actually connected.
+
+    Kept inside the file so provenance survives the log being moved or renamed.
+    """
+    name = sanitize_log_name(getattr(host, "name", "") or "")
+    target = getattr(host, "host", "") or ""
+    if not target:
+        return name
+    user = getattr(host, "user", "") or ""
+    detail = f"{user}@{target}" if user else target
+    port = getattr(host, "port", "") or ""
+    if port:
+        detail = f"{detail}:{port}"
+    return f"{name} ({detail})"
 
 
 def read_config_option(cp, section, option, kind, default):
@@ -1282,7 +1325,8 @@ class Wmain(GladeComponent):
                         self.addTab(ntbk, tab.get_text())
                     else:
                         host = term.host.clone()
-                        host.name = tab.get_text()
+                        # Deliberately keeping host.name: overwriting it with the tab
+                        # label put presentation into the Host object and into log paths.
                         host.log = hasattr(term, "log_handler_id") and term.log_handler_id != 0
                         self.addTab(ntbk, host)
                 elif cmd == _CONSOLE_PREV:
@@ -1616,7 +1660,7 @@ class Wmain(GladeComponent):
                 self.addTab(ntbk, tab.get_text())
             else:
                 host = term.host.clone()
-                host.name = tab.get_text()
+                # See the keyboard clone path: the label is not the host's identity.
                 host.log = hasattr(term, "log_handler_id") and term.log_handler_id != 0
                 self.addTab(ntbk, host)
             return True
@@ -2004,18 +2048,26 @@ class Wmain(GladeComponent):
                     )
                 return True
             terminal.log_handler_id = terminal.connect("contents-changed", self.on_contents_changed)
-            p = terminal.get_parent()
-            title = sanitize_log_name(p.get_parent().get_tab_label(p).get_text())
+            # The host entry, not the tab label: a label is presentation, it can be
+            # renamed, and once #18 makes it track window-title-changed it stops being
+            # stable at all. terminal.host is set in addTab before any branching.
+            host = getattr(terminal, "host", None)
+            title = sanitize_log_name(getattr(host, "name", "") or "")
             log_dir = Path(conf.LOG_PATH).expanduser()
-            prefix = build_log_prefix(log_dir, title, time.strftime("%Y%m%d"))
+            prefix = build_log_prefix(
+                log_dir,
+                getattr(host, "group", "") or "",
+                getattr(host, "name", "") or "",
+                getattr(host, "user", "") or "",
+                time.strftime("%Y%m%d"),
+            )
             if prefix is None:
-                logger.error("Refusing to write a log outside %s for tab %r", log_dir, title)
+                logger.error("Refusing to write a log outside %s for host %r", log_dir, title)
                 msgbox("{}\n{}".format(_("Ruta de log invalida"), log_dir))
                 terminal.disconnect(terminal.log_handler_id)
                 del terminal.log_handler_id
                 return False
-            if not log_dir.exists():
-                log_dir.mkdir(parents=True)
+            prefix.parent.mkdir(parents=True, exist_ok=True)
             filename = ""
             for i in range(1, 1000):
                 if not Path(f"{prefix}-{i:03d}.log").exists():
@@ -2031,7 +2083,12 @@ class Wmain(GladeComponent):
                     prepend = "\n\n===== {} =====\n\n".format(_("Fin del registro de sesión anterior"))
                 terminal.log = Path(filename).open("a", 1)
                 terminal.log.write(
-                    "{}Session '{}' opened at {}\n{}\n".format(prepend, title, time.strftime("%Y-%m-%d %H:%M:%S"), "-" * 80)
+                    "{}Session '{}' opened at {}\n{}\n".format(
+                        prepend,
+                        describe_log_session(host),
+                        time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "-" * 80,
+                    )
                 )
             except Exception:
                 logger.exception("Unable to open log file")
