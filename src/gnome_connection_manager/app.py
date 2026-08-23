@@ -101,7 +101,7 @@ def bindtextdomain(app_name, locale_dir=None):
 
 import pyaes
 
-from gnome_connection_manager.utils import urlregex
+from gnome_connection_manager.utils import urlregex, vtehtml
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -624,6 +624,61 @@ def build_editor_command(path, line, col):
     if editor:
         return [*shlex.split(editor), f"+{line}", path]
     return ["xdg-open", path]
+
+
+def contrasting_foreground(rgba):
+    """Black or white, whichever stays legible on `rgba`.
+
+    Only used when no foreground has been configured. VTE has no getter for its default
+    foreground, and guessing wrong is what makes text invisible.
+    """
+    if rgba is None:
+        return "#FFFFFF"
+    # Rec. 601 luma: good enough to pick a side, and it needs no colour science.
+    luma = 0.299 * rgba.red + 0.587 * rgba.green + 0.114 * rgba.blue
+    return "#000000" if luma > 0.5 else "#FFFFFF"
+
+
+def terminal_colors(terminal):
+    """(foreground, background) the buffer view should use to match its terminal.
+
+    The background comes from VTE, which knows it even when GCM configured nothing --
+    its default is black, which is why a viewer on the theme's light background hid
+    light text. There is no foreground getter, so that comes from the same config the
+    terminal was built from.
+    """
+    background_rgba = None
+    if hasattr(terminal, "get_color_background_for_draw"):
+        try:
+            background_rgba = terminal.get_color_background_for_draw()
+        except Exception:
+            background_rgba = None
+    background = background_rgba.to_string() if background_rgba is not None else "#000000"
+
+    host = getattr(terminal, "host", None)
+    foreground = (getattr(host, "font_color", "") or "") or (conf.FONT_COLOR or "")
+    return foreground or contrasting_foreground(background_rgba), background
+
+
+def terminal_buffer_html(terminal):
+    """The terminal's scrollback as VTE's HTML export, or None if unavailable.
+
+    Same rows and same bounds as terminal_buffer_text, so the two agree on content and
+    differ only in whether attributes come along.
+    """
+    adjustment = terminal.get_vadjustment() if hasattr(terminal, "get_vadjustment") else None
+    if adjustment is None:
+        return None
+    try:
+        html = terminal.get_text_range_format(
+            Vte.Format.HTML, int(adjustment.get_lower()), 0, int(adjustment.get_upper()), 0
+        )
+    except Exception:
+        logger.debug("HTML extraction unavailable, falling back to plain text")
+        return None
+    if isinstance(html, tuple):
+        html = html[0]
+    return html or None
 
 
 def terminal_buffer_text(terminal):
@@ -5155,7 +5210,13 @@ class BufferViewer(Gtk.Window):
         box.pack_start(scroller, True, True, 0)
 
         self.buffer = self.view.get_buffer()
-        self.match_tag = self.buffer.create_tag("gcm-match", background="#f6d32d")
+        # An explicit foreground on the highlight: the view's own foreground is usually
+        # light, and light-on-yellow is exactly as unreadable as the bug this fixes.
+        self.match_tag = self.buffer.create_tag(
+            "gcm-match", background="#f6d32d", foreground="#000000"
+        )
+        self._style_tags = {}
+        self.apply_terminal_colors()
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         for label, handler in (
@@ -5177,9 +5238,80 @@ class BufferViewer(Gtk.Window):
 
     # -- content
 
+    def apply_terminal_colors(self):
+        """Match the terminal's background so its colours mean the same thing here."""
+        foreground, background = terminal_colors(self.terminal)
+        css = f"textview, textview text {{ background-color: {background}; color: {foreground}; }}"
+        try:
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css.encode("utf-8"))
+            self.view.get_style_context().add_provider(
+                provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+        except Exception:
+            logger.debug("Could not apply terminal colours to the buffer view")
+            return False
+        return True
+
     def refresh(self):
-        self.buffer.set_text(terminal_buffer_text(self.terminal))
+        self.buffer.set_text("")
+        if not self.render_styled():
+            self.buffer.set_text(terminal_buffer_text(self.terminal))
         self.on_search_changed(self.search)
+
+    def render_styled(self):
+        """Fill the buffer from VTE's HTML export, keeping colour and attributes.
+
+        Returns False when there is nothing to render, so the caller can fall back to
+        plain text -- the viewer opening matters more than it being colourful.
+        """
+        # parse_vte_html copes with None and "", so there is no separate guard here.
+        runs = vtehtml.parse_vte_html(terminal_buffer_html(self.terminal))
+        if not runs:
+            return False
+        for text, style in runs:
+            end = self.buffer.get_end_iter()
+            tag = self.style_tag(style)
+            if tag is None:
+                self.buffer.insert(end, text)
+            else:
+                self.buffer.insert_with_tags(end, text, tag)
+        self.trim_trailing_blank_lines()
+        return True
+
+    def style_tag(self, style):
+        """A Gtk.TextTag for one run's attributes, cached: runs repeat styles heavily."""
+        if not style:
+            return None
+        key = tuple(sorted(style.items()))
+        cached = self._style_tags.get(key)
+        if cached is not None:
+            return cached
+        properties = {}
+        if vtehtml.FOREGROUND in style:
+            properties["foreground"] = style[vtehtml.FOREGROUND]
+        if vtehtml.BACKGROUND in style:
+            properties["background"] = style[vtehtml.BACKGROUND]
+        if style.get(vtehtml.BOLD):
+            properties["weight"] = Pango.Weight.BOLD
+        if style.get(vtehtml.ITALIC):
+            properties["style"] = Pango.Style.ITALIC
+        if style.get(vtehtml.UNDERLINE):
+            properties["underline"] = Pango.Underline.SINGLE
+        if style.get(vtehtml.STRIKETHROUGH):
+            properties["strikethrough"] = True
+        tag = self.buffer.create_tag(None, **properties)
+        self._style_tags[key] = tag
+        return tag
+
+    def trim_trailing_blank_lines(self):
+        """The grid is rectangular, so the export ends in blank rows the viewer should not."""
+        text = self.get_all_text()
+        stripped = text.rstrip("\n")
+        if len(stripped) == len(text):
+            return
+        start = self.buffer.get_iter_at_offset(len(stripped))
+        self.buffer.delete(start, self.buffer.get_end_iter())
 
     def on_refresh(self, _widget):
         self.refresh()
