@@ -342,6 +342,30 @@ combination first — a global hotkey is consumed before GCM ever sees the key, 
 `Ctrl+Shift+<letter>` combinations are a common source of this. Rebinding to a free
 combination is the fix.
 
+### Sending a custom sequence for a key
+
+Terminals encode keys the traditional way, which loses modifiers on some of them. `Shift+Enter`
+reaches a program as exactly the same byte as `Enter`, so an application cannot offer
+"Shift+Enter for a newline, Enter to submit" — the two are indistinguishable.
+
+Bind the combination to the bytes you want instead:
+
+```ini
+[keys]
+SHIFT+RETURN = \n
+ALT+RETURN = \x1b\r
+```
+
+Key names follow `[shortcuts]`. Values may use `\n`, `\r`, `\t` and `\xNN` escapes.
+
+Which sequence an application wants varies, so there is no useful default — `\n` is the
+common choice for "newline rather than submit", but check what yours expects.
+
+A combination already used by a shortcut or by an application accelerator is **refused**,
+with a line in the log saying so. Those keys never reach the terminal, so a binding on one
+would appear to do nothing. A shortcut also wins if you later rebind one onto a key that
+had a custom sequence.
+
 ### Terminal shortcuts versus application accelerators
 
 Commands in the table above are *terminal* shortcuts: they are read from your config and,

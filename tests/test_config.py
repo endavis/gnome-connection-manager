@@ -311,3 +311,61 @@ def test_config_options_table_covers_everything_write_config_persists(app_module
 
     # "version" is written as the running app version rather than from conf
     assert written - known == set(), f"written but never read: {sorted(written - known)}"
+
+
+def _load_with_keys(tmp_path, app_module, monkeypatch, keys, shortcuts=None):
+    config = configparser.RawConfigParser()
+    config.add_section("shortcuts")
+    for command, key in (shortcuts or {"copy": "CTRL+SHIFT+C"}).items():
+        config.set("shortcuts", command, key)
+    if keys is not None:
+        config.add_section("keys")
+        for name, value in keys.items():
+            config.set("keys", name, value)
+
+    config_path = tmp_path / "gcm.conf"
+    with config_path.open("w") as handle:
+        config.write(handle)
+
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_path))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "custom_keys", {})
+    monkeypatch.setattr(app_module, "decrypt", lambda _pwd, value: value)
+
+    object.__new__(app_module.Wmain).loadConfig()
+    return app_module.custom_keys
+
+
+def test_load_config_reads_the_keys_section(tmp_path, app_module, monkeypatch):
+    """Without this the section is silently inert -- the bindings simply never exist."""
+    loaded = _load_with_keys(
+        tmp_path, app_module, monkeypatch, {"SHIFT+RETURN": "\\n", "ALT+RETURN": "\\x1b\\r"}
+    )
+
+    assert loaded == {"SHIFT+RETURN": b"\n", "ALT+RETURN": b"\x1b\r"}
+
+
+def test_load_config_refuses_a_key_a_shortcut_already_claims(tmp_path, app_module, monkeypatch):
+    loaded = _load_with_keys(
+        tmp_path,
+        app_module,
+        monkeypatch,
+        {"CTRL+ALT+C": "\\n", "SHIFT+RETURN": "\\n"},
+        shortcuts={"copy": "CTRL+ALT+C"},
+    )
+
+    assert "CTRL+ALT+C" not in loaded
+    assert loaded == {"SHIFT+RETURN": b"\n"}
+
+
+def test_load_config_refuses_a_key_an_application_accelerator_claims(
+    tmp_path, app_module, monkeypatch
+):
+    loaded = _load_with_keys(tmp_path, app_module, monkeypatch, {"CTRL+Q": "\\n"})
+
+    assert loaded == {}
+
+
+def test_load_config_without_a_keys_section_is_fine(tmp_path, app_module, monkeypatch):
+    assert _load_with_keys(tmp_path, app_module, monkeypatch, None) == {}
