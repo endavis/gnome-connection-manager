@@ -117,6 +117,10 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
   are subject to the same limits as Copy All (see §3 Buffer Management)
 
 ### Buffer Management
+- Buffer viewer window (`view_buffer`): the scrollback in a `Gtk.TextView`, with
+  search-and-highlight, keyboard selection, Copy Selection / Copy All / Save As / Refresh.
+  Reads the buffer through the vertical adjustment's row bounds, which leaves any existing
+  terminal selection intact.
 - Save buffer to text file (Ctrl+Shift+S)
 - Reset terminal
 - Reset and clear terminal

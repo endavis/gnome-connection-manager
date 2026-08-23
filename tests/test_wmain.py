@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import re
 import time
 import types
@@ -2450,3 +2452,192 @@ def test_file_line_pattern_matches_only_real_locations():
         assert matched(row, text) is None, f"{text!r} should not match"
 
     window.destroy()
+
+
+# -- buffer viewer (#24) ----------------------------------------------------
+
+
+class BufferTerminal:
+    def __init__(self, range_text="", screen_text="", lower=0, upper=0):
+        self.range_text = range_text
+        self.screen_text = screen_text
+        self._lower, self._upper = lower, upper
+        self.range_calls = []
+        self.selected = []
+
+    def get_vadjustment(self):
+        return types.SimpleNamespace(
+            get_lower=lambda: self._lower, get_upper=lambda: self._upper
+        )
+
+    def get_text_range_format(self, fmt, srow, scol, erow, ecol):
+        self.range_calls.append((srow, scol, erow, ecol))
+        return self.range_text
+
+    def get_text_format(self, fmt):
+        return self.screen_text
+
+    def select_all(self):
+        self.selected.append("all")
+
+
+def test_buffer_text_reads_the_real_row_bounds(app_module):
+    terminal = BufferTerminal(range_text="a\nb\nc\n", lower=0, upper=401)
+
+    assert app_module.terminal_buffer_text(terminal) == "a\nb\nc"
+    assert terminal.range_calls == [(0, 0, 401, 0)]
+
+
+def test_buffer_text_never_disturbs_the_selection(app_module):
+    """select_all()+get_text_selected_full() would work, but destroys the user's selection."""
+    terminal = BufferTerminal(range_text="a\n", lower=0, upper=10)
+
+    app_module.terminal_buffer_text(terminal)
+
+    assert terminal.selected == []
+
+
+def test_buffer_text_falls_back_to_the_visible_screen(app_module):
+    """The alternate screen has no scrollback, so the range comes back empty."""
+    terminal = BufferTerminal(range_text="   \n  ", screen_text="ALT-0\nALT-1\n", lower=0, upper=7)
+
+    assert app_module.terminal_buffer_text(terminal) == "ALT-0\nALT-1"
+
+
+def test_buffer_text_handles_a_tuple_return(app_module):
+    """Older VTE returns (text, attrs) from the range call."""
+    terminal = BufferTerminal(lower=0, upper=3)
+    terminal.get_text_range_format = lambda *a: ("x\ny\n", None)
+
+    assert app_module.terminal_buffer_text(terminal) == "x\ny"
+
+
+def test_show_buffer_viewer_opens_a_window_for_the_terminal(app_module, monkeypatch):
+    made = []
+
+    class FakeViewer:
+        def __init__(self, controller, terminal, title):
+            made.append((terminal, title))
+
+        def show_all(self):
+            made.append("shown")
+
+    monkeypatch.setattr(app_module, "BufferViewer", FakeViewer)
+    wmain = object.__new__(app_module.Wmain)
+    tab = _tab_label(app_module)
+    terminal = TitleTerminal("t", tab)
+
+    wmain.show_buffer_viewer(terminal)
+
+    assert made[0][0] is terminal
+    assert "prod-web-01" in made[0][1]
+    assert "shown" in made
+
+
+def test_show_buffer_viewer_ignores_a_missing_terminal(app_module):
+    wmain = object.__new__(app_module.Wmain)
+
+    assert wmain.show_buffer_viewer(None) is None
+
+
+def test_view_buffer_is_a_configurable_shortcut_in_a_menu(app_module):
+    defaults = {command: key for command, _token, key in app_module.SHORTCUT_DEFAULTS}
+
+    assert defaults["view_buffer"] == "CTRL+SHIFT+F"
+    assert app_module.TERMINAL_ACTIONS["view_buffer"] == "view-buffer"
+    assert "view-buffer" in _context_menu_actions(app_module)
+
+
+# conftest stubs gi across the whole session, so the real widget cannot be built in
+# process -- BufferViewer would inherit a stub Gtk.Window. This runs in a clean
+# interpreter, which is the only way to exercise the search against a real TextView.
+_VIEWER_SCRIPT = """
+import os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+class Snapshot:
+    def get_vadjustment(self): return None
+    def get_text_format(self, fmt): return "alpha needle\\nbeta\\ngamma needle\\ndelta\\n"
+
+v = app.BufferViewer(None, Snapshot(), "test")
+v.show_all()
+for _ in range(50): Gtk.main_iteration_do(False)
+
+assert v.get_all_text().splitlines() == ["alpha needle", "beta", "gamma needle", "delta"], v.get_all_text()
+assert v.view.get_editable() is False
+assert v.view.get_monospace() is True
+
+v.search.set_text("needle")
+assert v.on_search_changed(v.search) == 2
+# the count is not proof the highlight was applied
+probe = v.buffer.get_start_iter().forward_search("needle", Gtk.TextSearchFlags.CASE_INSENSITIVE, None)
+assert probe is not None
+assert probe[0].has_tag(v.match_tag), "matches must be highlighted, not just counted"
+
+assert v.find(forward=True) is True
+first = v.buffer.get_selection_bounds()[0].get_line()
+assert v.find(forward=True) is True
+second = v.buffer.get_selection_bounds()[0].get_line()
+assert second > first, (first, second)
+assert v.find(forward=True) is True
+assert v.buffer.get_selection_bounds()[0].get_line() == first, "search must wrap"
+assert v.find(forward=False) is True
+
+v.search.set_text("absent")
+assert v.find(forward=True) is False
+assert v.on_search_changed(v.search) == 0
+
+assert v.get_selected_text() != ""
+
+# Copy Selection must copy the selection, not everything
+from gi.repository import Gdk
+clip = Gtk.Clipboard.get_default(Gdk.Display.get_default())
+start = v.buffer.get_iter_at_line(1)
+end = v.buffer.get_iter_at_line(2)
+v.buffer.select_range(start, end)
+v.on_copy_selection(None)
+for _ in range(50): Gtk.main_iteration_do(False)
+copied = clip.wait_for_text() or ""
+assert copied.strip() == "beta", repr(copied)
+assert copied != v.get_all_text()
+
+v.destroy()
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_buffer_viewer_search_and_copy_against_real_gtk():
+    """Search, wrap-around and read-only behaviour against a real Gtk.TextView."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _VIEWER_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+def test_view_buffer_shortcut_opens_the_viewer(app_module, monkeypatch):
+    """The shortcut is the discoverable route; without dispatch it is inert."""
+    opened = []
+    monkeypatch.setattr(
+        app_module.Wmain, "show_buffer_viewer",
+        lambda self, term: opened.append(term), raising=False,
+    )
+    monkeypatch.setattr(app_module, "get_key_name", lambda event: "CTRL+SHIFT+F")
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+F": app_module._VIEW_BUFFER})
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+
+    wmain.on_terminal_keypress(terminal, object())
+
+    assert opened == [terminal]
