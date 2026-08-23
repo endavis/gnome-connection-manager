@@ -328,6 +328,69 @@ class conf:
     APP_TITLE = app_name
 
 
+# Every option stored in gcm.conf: (conf attribute, section, option, type).
+# Keep this in step with the `conf` defaults above and with writeConfig.
+CONFIG_OPTIONS = (
+    ("WORD_SEPARATORS", "options", "word-separators", str),
+    ("BUFFER_LINES", "options", "buffer-lines", int),
+    ("CONFIRM_ON_EXIT", "options", "confirm-exit", bool),
+    ("FONT_COLOR", "options", "font-color", str),
+    ("BACK_COLOR", "options", "back-color", str),
+    ("TRANSPARENCY", "options", "transparency", int),
+    ("PASTE_ON_RIGHT_CLICK", "options", "paste-right-click", bool),
+    ("CONFIRM_ON_CLOSE_TAB", "options", "confirm-close-tab", bool),
+    ("CONFIRM_ON_CLOSE_TAB_MIDDLE", "options", "confirm-close-tab-middle", bool),
+    ("CHECK_UPDATES", "options", "check-updates", bool),
+    ("FONT", "options", "font", str),
+    ("HIDE_DONATE", "options", "donate", bool),
+    ("DISABLE_HOSTS_STRIPES", "options", "disable-hosts-stripes", bool),
+    ("AUTO_COPY_SELECTION", "options", "auto-copy-selection", bool),
+    ("COPY_SCREEN_IF_NO_SELECTION", "options", "copy-screen-if-no-selection", bool),
+    ("LOG_PATH", "options", "log-path", str),
+    ("LOG_LOCAL", "options", "log-local", bool),
+    ("STARTUP_LOCAL", "options", "startup-local", bool),
+    ("VERSION", "options", "version", str),
+    ("AUTO_CLOSE_TAB", "options", "auto-close-tab", int),
+    ("CYCLE_TABS", "options", "cycle-tabs", bool),
+    ("TERM", "options", "term", str),
+    ("UPDATE_TITLE", "options", "update-title", bool),
+    ("APP_TITLE", "options", "app-title", str),
+    ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
+    ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
+    ("WINDOW_WIDTH", "window", "window-width", int),
+    ("WINDOW_HEIGHT", "window", "window-height", int),
+    ("SHOW_PANEL", "window", "show-panel", bool),
+    ("SHOW_TOOLBAR", "window", "show-toolbar", bool),
+)
+
+
+def read_config_option(cp, section, option, kind, default):
+    """Read one option, degrading to `default` rather than aborting its neighbours.
+
+    Options are read individually so that a single absent or malformed entry cannot
+    discard every setting after it, which would then be written back over the user's
+    file on the next save.
+    """
+    try:
+        if kind is bool:
+            return cp.getboolean(section, option)
+        if kind is int:
+            return cp.getint(section, option)
+        return cp.get(section, option)
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        # Absent from a config written by an older version, or no config at all.
+        return default
+    except (configparser.Error, ValueError) as e:
+        logger.error(
+            "%s: [%s] %s: %s",
+            _("Entrada invalida en archivo de configuracion"),
+            section,
+            option,
+            e,
+        )
+        return default
+
+
 def msgbox(text: str, parent: Gtk.Window | None = None) -> None:
     """Show an error message dialog."""
     msgBox = Gtk.MessageDialog(
@@ -1870,41 +1933,9 @@ class Wmain(GladeComponent):
         cp.read(CONFIG_FILE)
 
         # Leer configuracion general
-        try:
-            conf.WORD_SEPARATORS = cp.get("options", "word-separators")
-            conf.BUFFER_LINES = cp.getint("options", "buffer-lines")
-            conf.CONFIRM_ON_EXIT = cp.getboolean("options", "confirm-exit")
-            conf.FONT_COLOR = cp.get("options", "font-color")
-            conf.BACK_COLOR = cp.get("options", "back-color")
-            conf.TRANSPARENCY = cp.getint("options", "transparency")
-            conf.PASTE_ON_RIGHT_CLICK = cp.getboolean("options", "paste-right-click")
-            conf.CONFIRM_ON_CLOSE_TAB = cp.getboolean("options", "confirm-close-tab")
-            conf.CHECK_UPDATES = cp.getboolean("options", "check-updates")
-            conf.COLLAPSED_FOLDERS = cp.get("window", "collapsed-folders")
-            conf.LEFT_PANEL_WIDTH = cp.getint("window", "left-panel-width")
-            conf.WINDOW_WIDTH = cp.getint("window", "window-width")
-            conf.WINDOW_HEIGHT = cp.getint("window", "window-height")
-            conf.FONT = cp.get("options", "font")
-            conf.HIDE_DONATE = cp.getboolean("options", "donate")
-            conf.DISABLE_HOSTS_STRIPES = cp.getboolean("options", "disable-hosts-stripes")
-            conf.AUTO_COPY_SELECTION = cp.getboolean("options", "auto-copy-selection")
-            conf.COPY_SCREEN_IF_NO_SELECTION = cp.getboolean(
-                "options", "copy-screen-if-no-selection", fallback=conf.COPY_SCREEN_IF_NO_SELECTION
-            )
-            conf.LOG_PATH = cp.get("options", "log-path")
-            conf.VERSION = cp.get("options", "version")
-            conf.AUTO_CLOSE_TAB = cp.getint("options", "auto-close-tab")
-            conf.CYCLE_TABS = cp.getboolean("options", "cycle-tabs")
-            conf.SHOW_PANEL = cp.getboolean("window", "show-panel")
-            conf.SHOW_TOOLBAR = cp.getboolean("window", "show-toolbar")
-            conf.STARTUP_LOCAL = cp.getboolean("options", "startup-local")
-            conf.LOG_LOCAL = cp.getboolean("options", "log-local")
-            conf.CONFIRM_ON_CLOSE_TAB_MIDDLE = cp.getboolean("options", "confirm-close-tab-middle")
-            conf.TERM = cp.get("options", "term")
-            conf.UPDATE_TITLE = cp.getboolean("options", "update-title")
-            conf.APP_TITLE = cp.get("options", "app-title") or app_name
-        except (configparser.Error, ValueError) as e:
-            logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
+        for attr, section, option, kind in CONFIG_OPTIONS:
+            setattr(conf, attr, read_config_option(cp, section, option, kind, getattr(conf, attr)))
+        conf.APP_TITLE = conf.APP_TITLE or app_name
 
         # setup shorcuts
         scuts = {}
