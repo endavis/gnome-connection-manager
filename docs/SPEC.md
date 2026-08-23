@@ -100,8 +100,14 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 ### Session Logging
 - Per-terminal toggle
 - Configurable log directory
-- Timestamped log filenames
+- Logs laid out as `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`, mirroring the
+  host tree. Identity comes from the host entry, not the tab label, so a renamed tab does
+  not move its log. The user is a path segment rather than part of the filename because
+  host names are free text and no separator character is collision-proof.
+- Session header records `user@host:port` so provenance survives the file being moved
 - Separate toggle for local shell logging
+- Captures what the terminal receives, so full-screen applications on the alternate screen
+  are subject to the same limits as Copy All (see §3 Buffer Management)
 
 ### Buffer Management
 - Save buffer to text file (Ctrl+Shift+S)

@@ -69,6 +69,23 @@ GCM's own **session logging** (per host, or `log-local` for local consoles) reco
 the terminal receives, so it captures ordinary command output but is subject to the same
 limitation for full-screen applications.
 
+Logs are laid out under `log-path` (default `~/.gcm/logs`) mirroring your host tree:
+
+```
+<log-path>/<group>/<host name>/<user>-<YYYYMMDD>-<NNN>.log
+```
+
+```
+~/.gcm/logs/Home Tech/OPNsense/OPNA/endavis/OPNA-TS/root-20260823-001.log
+~/.gcm/logs/1. Projects/pyproject-template/session-20260823-001.log
+```
+
+The name comes from the **host entry**, never the tab label, so renaming a tab does not
+change where its session is logged. Hosts with no user set use `session` as the filename.
+The `-NNN` counter distinguishes repeated sessions on the same day. Each log opens with a
+header naming the host and where it connected (`user@host:port`), so a file stays
+identifiable after it is moved or renamed.
+
 ## Pasting
 
 Paste is `Ctrl+Shift+V`, or right-click if `paste-right-click` is on.
