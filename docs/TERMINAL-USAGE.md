@@ -127,8 +127,25 @@ Raw recording captures the byte stream instead, exactly as it arrived:
 raw-session-log = true
 ```
 
-It writes `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw`, alongside the text
-log and numbered independently of it.
+It writes two files alongside the text log, numbered independently of it:
+
+```
+<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw      the bytes, exactly as they arrived
+<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.timing   one line per write: <delay> <bytes>
+```
+
+The timing file is what makes the recording replayable. Concatenated bytes lose the
+write boundaries, and those are what separate one frame from the next — without them a
+whole full-screen session reads back as just its final screen. The counts cut the stream
+back into the original writes; the delays replay it at its original speed.
+
+The format matches `script -t`, so `scriptreplay` can play a recording directly. It skips
+the first line of a typescript, which ours does not have, so feed it a blank one:
+
+```sh
+{ printf '\n'; cat session.raw; } > /tmp/replay.raw
+scriptreplay --timing=session.timing --typescript=/tmp/replay.raw
+```
 
 **A raw file is not something you read.** Measured, a full-screen application's stream
 is around 90% escape sequences. It is a faithful record for replaying or post-processing,

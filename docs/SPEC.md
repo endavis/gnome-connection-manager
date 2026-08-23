@@ -199,6 +199,11 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Raw stream recording, off by default (`raw-session-log`). The relay writes every byte
   the child produces to `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw`, sharing
   the text log's identity and layout but numbered independently.
+- A companion `.timing` file records `<delay> <bytes>` per write, matching `script -t`.
+  The stream alone is not replayable: concatenation discards the write boundaries that
+  separate frames, so a full-screen session read back in file-sized blocks collapses to
+  its final screen. The byte counts restore the boundaries; the delays restore the pace.
+  The `.raw` file stays byte-identical to the stream, so it remains greppable.
 - Captures what the text log cannot: redraws, in-place updates and attributes. It is a
   record for replay or post-processing rather than a readable transcript -- a full-screen
   application's stream is roughly 90% escape sequences.

@@ -31,6 +31,7 @@ import socket
 import struct
 import sys
 import termios
+import time
 import tty
 from pathlib import Path
 
@@ -53,31 +54,63 @@ def set_window_size(fd, size):
 
 
 class RawRecorder:
-    """Writes the child's output byte for byte.
+    """Writes the child's output byte for byte, with a companion timing file.
 
-    Everything the terminal received, escape sequences included, which is the point:
-    the text log records what VTE chose to display, and that loses redraws. A failure
-    here must never disturb the session, so it degrades to doing nothing.
+    The bytes alone are not enough. Concatenating them discards the write boundaries,
+    and those are what separate one frame from the next -- replaying a bare stream in
+    file-sized blocks collapses a whole full-screen session to its final screen. The
+    timing file records `<delay> <bytes>` per chunk, the same shape `script -t` writes,
+    so the boundaries can be reproduced.
+
+    The stream itself stays byte-identical to what the child produced, which keeps it
+    greppable and keeps existing recordings valid. A failure here must never disturb
+    the session, so it degrades to doing nothing.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, timing_path=None):
         self._handle = None
+        self._timing = None
+        self._last = None
         if not path:
             return
         try:
             self._handle = Path(path).open("ab", buffering=0)  # noqa: SIM115 - closed below
         except OSError:
             self._handle = None
+            return
+        if timing_path:
+            try:
+                self._timing = Path(timing_path).open("a", buffering=1)  # noqa: SIM115
+            except OSError:
+                self._timing = None
 
     def write(self, chunk):
         if self._handle is None:
             return
+        now = time.monotonic()
+        delay = 0.0 if self._last is None else now - self._last
+        self._last = now
         try:
             self._handle.write(chunk)
         except OSError:
+            # close() drops the timing file too, so the guard below then declines to
+            # record a chunk that never landed. No early return is needed.
             self.close()
+        if self._timing is not None:
+            try:
+                self._timing.write(f"{delay:.6f} {len(chunk)}\n")
+            except OSError:
+                self._close_timing()
+
+    def _close_timing(self):
+        if self._timing is not None:
+            try:
+                self._timing.close()
+            finally:
+                self._timing = None
 
     def close(self):
+        self._close_timing()
         if self._handle is not None:
             try:
                 self._handle.close()
@@ -115,7 +148,7 @@ class ClipboardChannel:
             self._socket = None
 
 
-def relay(command, clipboard_socket=None, raw_log=None):
+def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
     """Run `command` on its own pty, forwarding bytes to and from this process's tty."""
     child_pid, master_fd = pty.fork()
     if child_pid == 0:
@@ -151,7 +184,7 @@ def relay(command, clipboard_socket=None, raw_log=None):
     scanner = Osc52Scanner()
     stdin_open = True
     clipboard = ClipboardChannel(clipboard_socket)
-    recorder = RawRecorder(raw_log)
+    recorder = RawRecorder(raw_log, timing_log)
     try:
         while True:
             if with_winch and resized[0]:
@@ -216,12 +249,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="gcm-relay", description=__doc__)
     parser.add_argument("--clipboard-socket", default=None)
     parser.add_argument("--raw-log", default=None)
+    parser.add_argument("--timing-log", default=None)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("no command given")
-    return relay(command, args.clipboard_socket, args.raw_log)
+    return relay(command, args.clipboard_socket, args.raw_log, args.timing_log)
 
 
 if __name__ == "__main__":

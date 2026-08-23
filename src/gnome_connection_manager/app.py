@@ -1222,6 +1222,11 @@ def vte_feed(terminal, data):
         terminal.feed_child(data, len(data))
 
 
+def timing_path_for(raw_path):
+    """Companion timing file for a recording: `session.raw` -> `session.timing`."""
+    return str(Path(raw_path).with_suffix(".timing"))
+
+
 def relay_command(args, socket_path=None, raw_path=None):
     """Wrap a command so it runs under the relay.
 
@@ -1234,7 +1239,9 @@ def relay_command(args, socket_path=None, raw_path=None):
     if socket_path:
         command += ["--clipboard-socket", socket_path]
     if raw_path:
-        command += ["--raw-log", raw_path]
+        # The timing file sits beside the recording; without it the stream cannot be
+        # replayed frame by frame, only read end to end.
+        command += ["--raw-log", raw_path, "--timing-log", timing_path_for(raw_path)]
     return [*command, "--", *args]
 
 
