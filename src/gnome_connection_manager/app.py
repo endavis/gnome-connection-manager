@@ -2425,7 +2425,9 @@ class Wmain(GladeComponent):
     def on_terminal_bell(self, terminal):
         """A terminal rang the bell: get the user's attention without stealing focus."""
         notebook, label = self.tab_label_for(terminal.get_parent())
-        if label is None:
+        # nbConsole carries placeholder pages from the glade whose tab labels are plain
+        # Gtk.Labels, so a tab label is not necessarily a NotebookTabLabel.
+        if not hasattr(label, "set_attention"):
             return
         window_active = self.wMain.is_active()
         showing = notebook.get_current_page() == notebook.page_num(terminal.get_parent())
@@ -2450,7 +2452,7 @@ class Wmain(GladeComponent):
 
     def clear_tab_attention(self, page):
         _notebook, label = self.tab_label_for(page)
-        if label is not None:
+        if hasattr(label, "set_attention"):
             label.set_attention(False)
 
     def on_window_active_changed(self, window, _param):
