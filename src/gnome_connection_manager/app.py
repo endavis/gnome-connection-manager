@@ -202,6 +202,90 @@ _NEW_LOCAL = ["new_local"]
 _FULLSCREEN = ["fullscreen"]
 _CLONE = ["clone"]
 
+# Terminal commands and their default keys, owned by [shortcuts] in gcm.conf.
+SHORTCUT_DEFAULTS = (
+    ("copy", _COPY, "CTRL+SHIFT+C"),
+    ("paste", _PASTE, "CTRL+SHIFT+V"),
+    ("copy_all", _COPY_ALL, "CTRL+SHIFT+A"),
+    ("save", _SAVE, "CTRL+S"),
+    ("find", _FIND, "CTRL+F"),
+    ("find_next", _FIND_NEXT, "CTRL+G"),
+    ("find_back", _FIND_BACK, "CTRL+H"),
+    ("console_previous", _CONSOLE_PREV, "CTRL+SHIFT+TAB"),
+    ("console_next", _CONSOLE_NEXT, "CTRL+TAB"),
+    ("console_close", _CONSOLE_CLOSE, "CTRL+W"),
+    ("console_reconnect", _CONSOLE_RECONNECT, "CTRL+N"),
+    ("connect", _CONNECT, "CTRL+RETURN"),
+    ("reset", _CLEAR, "CTRL+SHIFT+K"),
+    ("clone", _CLONE, "CTRL+SHIFT+D"),
+    ("new_local", _NEW_LOCAL, "CTRL+SHIFT+N"),
+    ("fullscreen", _FULLSCREEN, "F11"),
+)
+
+# Commands that also exist as an application action. Their accelerator is derived from
+# the configured shortcut rather than hardcoded, so a fixed accelerator can never shadow
+# the user's binding -- GTK dispatches window accelerators before the focused widget
+# sees the key, which is what broke #3 and #15.
+TERMINAL_ACTIONS = {
+    "copy": "copy",
+    "paste": "paste",
+    "copy_all": "copy-all",
+    "new_local": "new-local",
+    "connect": "connect",
+    "console_close": "console-close",
+    "console_reconnect": "console-reconnect",
+    "reset": "console-reset",
+    "clone": "console-clone",
+}
+
+_ACCEL_MODIFIERS = (
+    ("CTRL+", Gdk.ModifierType.CONTROL_MASK),
+    ("SHIFT+", Gdk.ModifierType.SHIFT_MASK),
+    ("ALT+", Gdk.ModifierType.MOD1_MASK),
+    ("SUPER+", Gdk.ModifierType.SUPER_MASK),
+)
+
+
+def shortcut_to_accel(shortcut):
+    """Convert a GCM shortcut string such as CTRL+SHIFT+C to a GTK accelerator.
+
+    Returns None for anything GDK does not recognise, in which case the action simply
+    gets no accelerator and the terminal key handler remains its only route.
+    """
+    rest = (shortcut or "").upper()
+    modifiers = Gdk.ModifierType(0)
+    for token, mask in _ACCEL_MODIFIERS:
+        if token in rest:
+            rest = rest.replace(token, "")
+            modifiers |= mask
+    if not rest:
+        return None
+    candidates = [rest, rest.capitalize(), rest.lower()]
+    if rest.startswith("KP_"):
+        candidates.append("KP_" + rest[3:].capitalize())
+    for candidate in candidates:
+        keyval = Gdk.keyval_from_name(candidate)
+        # keyval_from_name reports VoidSymbol, not 0, for names it does not know.
+        if keyval and keyval != Gdk.KEY_VoidSymbol:
+            return Gtk.accelerator_name(keyval, modifiers)
+    return None
+
+
+def sync_shortcut_accels():
+    """Point every TERMINAL_ACTIONS accelerator at its currently configured shortcut."""
+    get_default = getattr(Gtk.Application, "get_default", None)
+    application = get_default() if callable(get_default) else None
+    if application is None or not hasattr(application, "set_accels_for_action"):
+        return
+    bound = {
+        command[0]: key
+        for key, command in shortcuts.items()
+        if isinstance(command, list) and command
+    }
+    for command, action in TERMINAL_ACTIONS.items():
+        accel = shortcut_to_accel(bound.get(command))
+        application.set_accels_for_action(f"app.{action}", [accel] if accel else [])
+
 ICON_PATH = str(Path(BASE_PATH) / "icon.png")
 
 glade_dir = str(Path(BASE_PATH) / "ui")
@@ -1989,22 +2073,8 @@ class Wmain(GladeComponent):
 
         # setup shorcuts
         scuts = {}
-        self.add_shortcut(cp, scuts, "copy", _COPY, "CTRL+SHIFT+C")
-        self.add_shortcut(cp, scuts, "paste", _PASTE, "CTRL+SHIFT+V")
-        self.add_shortcut(cp, scuts, "copy_all", _COPY_ALL, "CTRL+SHIFT+A")
-        self.add_shortcut(cp, scuts, "save", _SAVE, "CTRL+S")
-        self.add_shortcut(cp, scuts, "find", _FIND, "CTRL+F")
-        self.add_shortcut(cp, scuts, "find_next", _FIND_NEXT, "CTRL+G")
-        self.add_shortcut(cp, scuts, "find_back", _FIND_BACK, "CTRL+H")
-        self.add_shortcut(cp, scuts, "console_previous", _CONSOLE_PREV, "CTRL+SHIFT+TAB")
-        self.add_shortcut(cp, scuts, "console_next", _CONSOLE_NEXT, "CTRL+TAB")
-        self.add_shortcut(cp, scuts, "console_close", _CONSOLE_CLOSE, "CTRL+W")
-        self.add_shortcut(cp, scuts, "console_reconnect", _CONSOLE_RECONNECT, "CTRL+N")
-        self.add_shortcut(cp, scuts, "connect", _CONNECT, "CTRL+RETURN")
-        self.add_shortcut(cp, scuts, "reset", _CLEAR, "CTRL+SHIFT+K")
-        self.add_shortcut(cp, scuts, "clone", _CLONE, "CTRL+SHIFT+D")
-        self.add_shortcut(cp, scuts, "new_local", _NEW_LOCAL, "CTRL+SHIFT+N")
-        self.add_shortcut(cp, scuts, "fullscreen", _FULLSCREEN, "F11")
+        for command, name, default in SHORTCUT_DEFAULTS:
+            self.add_shortcut(cp, scuts, command, name, default)
 
         # shortcuts para cambiar consola1-consola9
         for x in range(1, 10):
@@ -4152,6 +4222,7 @@ class Wconfig(GladeComponent):
                 scuts[x[1]] = x[0]
         global shortcuts
         shortcuts = scuts
+        sync_shortcut_accels()
 
         # Boton donate
         global wMain
@@ -4711,9 +4782,9 @@ class GcmApplication(Gtk.Application):
     def do_startup(self):
         Gtk.Application.do_startup(self)
         self._create_action("quit", self._on_action_quit, ["<Primary>q"])
-        self._create_action("new-local", self._on_action_new_local, ["<Primary><Shift>n"])
-        self._create_action("connect", self._on_action_connect, ["<Primary>Return"])
-        self._create_action("add-host", self._on_action_add_host, ["<Primary>n"])
+        self._create_action("new-local", self._on_action_new_local)
+        self._create_action("connect", self._on_action_connect)
+        self._create_action("add-host", self._on_action_add_host, ["<Primary><Shift>h"])
         self._create_action("edit-host", self._on_action_edit_host, ["<Primary>e"])
         self._create_action("delete", self._on_action_delete_host)
         self._create_action("refresh", self._on_action_refresh, ["<Primary>r"])
@@ -4723,11 +4794,11 @@ class GcmApplication(Gtk.Application):
         self._create_action("save-buffer", self._on_action_save_buffer, ["<Primary><Shift>s"])
         self._create_action("import-hosts", self._on_action_import_hosts)
         self._create_action("export-hosts", self._on_action_export_hosts)
-        self._create_action("copy", self._on_action_copy, ["<Primary><Shift>c"])
-        self._create_action("paste", self._on_action_paste, ["<Primary><Shift>v"])
+        self._create_action("copy", self._on_action_copy)
+        self._create_action("paste", self._on_action_paste)
         self._create_action("copy-paste", self._on_action_copy_paste)
         self._create_action("select-all", self._on_action_select_all)
-        self._create_action("copy-all", self._on_action_copy_all, ["<Primary><Shift>a"])
+        self._create_action("copy-all", self._on_action_copy_all)
         self._create_action("split-horizontal", self._on_action_split_horizontal)
         self._create_action("split-vertical", self._on_action_split_vertical)
         self._create_action("unsplit", self._on_action_unsplit)
@@ -4820,6 +4891,7 @@ class GcmApplication(Gtk.Application):
     def do_activate(self):
         if self._controller is None:
             self._controller = Wmain(application=self)
+        sync_shortcut_accels()
         main_window = self._controller.get_widget("wMain")
         if isinstance(main_window, Gtk.Window):
             main_window.set_application(self)

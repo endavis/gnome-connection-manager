@@ -192,28 +192,39 @@ def test_application_console_actions(app_module):
     assert ("popup", ("R", "R")) in controller.calls
 
 
-def test_copy_all_owns_the_ctrl_shift_a_accelerator(app_module, monkeypatch):
-    """select-all used to shadow copy-all, which made the Copy All shortcut dead."""
-    app = app_module.GcmApplication()
-    registered: dict[str, list[str] | None] = {}
+def test_terminal_actions_carry_no_hardcoded_accelerator(app_module, monkeypatch):
+    """Their key comes from [shortcuts]; a fixed accelerator would shadow it (#3, #15)."""
+    registered = _registered_accels(app_module, monkeypatch)
 
-    def record(name, callback, accels=None, parameter_type=None):
-        registered[name] = accels
+    for command, action in app_module.TERMINAL_ACTIONS.items():
+        assert registered[action] is None, (
+            f"app.{action} hardcodes an accelerator, which would shadow "
+            f"the configurable '{command}' shortcut"
+        )
 
-    def record_stateful(name, initial_state, callback, accels=None):
-        registered[name] = accels
 
-    monkeypatch.setattr(
-        app_module.Gtk.Application, "do_startup", lambda *_args: None, raising=False
-    )
-    monkeypatch.setattr(app, "_create_action", record)
-    monkeypatch.setattr(app, "_create_stateful_action", record_stateful)
-    monkeypatch.setattr(app, "_build_menus", lambda: None)
+def test_no_app_accelerator_collides_with_a_different_terminal_command(
+    app_module, monkeypatch
+):
+    """add-host held <Primary>n while [shortcuts] gave CTRL+N to console_reconnect."""
+    registered = _registered_accels(app_module, monkeypatch)
+    defaults = {key: command for command, _name, key in app_module.SHORTCUT_DEFAULTS}
 
-    app.do_startup()
-
-    assert registered["copy-all"] == ["<Primary><Shift>a"]
-    assert registered["select-all"] is None
+    for action, accels in registered.items():
+        for accel in accels or ():
+            gcm_key = (
+                accel.replace("<Primary>", "CTRL+")
+                .replace("<Shift>", "SHIFT+")
+                .replace("<Alt>", "ALT+")
+                .upper()
+            )
+            command = defaults.get(gcm_key)
+            if command is None:
+                continue
+            assert app_module.TERMINAL_ACTIONS.get(command) == action, (
+                f"app.{action} claims {accel}, which [shortcuts] assigns to "
+                f"'{command}' -- the terminal binding can never fire"
+            )
 
 
 def test_no_two_actions_share_an_accelerator(app_module, monkeypatch):
@@ -241,3 +252,95 @@ def test_no_two_actions_share_an_accelerator(app_module, monkeypatch):
         for accel in accels or ():
             assert accel not in owners, f"{accel} claimed by both {owners[accel]} and {name}"
             owners[accel] = name
+
+
+def _registered_accels(app_module, monkeypatch):
+    """Run do_startup with the action registration recorded instead of performed."""
+    app = app_module.GcmApplication()
+    registered: dict[str, list[str] | None] = {}
+
+    def record(name, callback, accels=None, parameter_type=None):
+        registered[name] = accels
+
+    def record_stateful(name, initial_state, callback, accels=None):
+        registered[name] = accels
+
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "do_startup", lambda *_args: None, raising=False
+    )
+    monkeypatch.setattr(app, "_create_action", record)
+    monkeypatch.setattr(app, "_create_stateful_action", record_stateful)
+    monkeypatch.setattr(app, "_build_menus", lambda: None)
+    app.do_startup()
+    return registered
+
+
+def _stub_gdk_keys(app_module, monkeypatch, known):
+    """Minimal stand-in for the GDK calls shortcut_to_accel makes."""
+
+    class Mods(int):
+        def __or__(self, other):
+            return Mods(int(self) | int(other))
+
+    monkeypatch.setattr(app_module.Gdk, "ModifierType", Mods, raising=False)
+    monkeypatch.setattr(app_module.Gdk, "KEY_VoidSymbol", 0xFFFFFF, raising=False)
+    monkeypatch.setattr(
+        app_module.Gdk, "keyval_from_name", lambda name: known.get(name, 0xFFFFFF), raising=False
+    )
+    monkeypatch.setattr(
+        app_module.Gtk, "accelerator_name", lambda keyval, mods: f"{int(mods)}|{keyval}",
+        raising=False,
+    )
+
+
+def test_shortcut_to_accel_collects_modifiers(app_module, monkeypatch):
+    # conftest gives CTRL=1, SHIFT=2, ALT=4
+    _stub_gdk_keys(app_module, monkeypatch, {"c": 99})
+
+    assert app_module.shortcut_to_accel("CTRL+SHIFT+C") == "3|99"
+    assert app_module.shortcut_to_accel("ctrl+shift+c") == "3|99"
+    assert app_module.shortcut_to_accel("C") == "0|99"
+
+
+def test_shortcut_to_accel_tries_capitalised_key_names(app_module, monkeypatch):
+    """GCM stores key names upper-cased, but GDK knows them as Tab, Return, KP_Enter."""
+    _stub_gdk_keys(app_module, monkeypatch, {"Tab": 65289, "KP_Enter": 65421})
+
+    assert app_module.shortcut_to_accel("CTRL+TAB") == "1|65289"
+    assert app_module.shortcut_to_accel("CTRL+KP_ENTER") == "1|65421"
+
+
+def test_shortcut_to_accel_rejects_names_gdk_does_not_know(app_module, monkeypatch):
+    """keyval_from_name reports VoidSymbol rather than 0, which is easy to miss."""
+    _stub_gdk_keys(app_module, monkeypatch, {"c": 99})
+
+    assert app_module.shortcut_to_accel("BOGUSKEY") is None
+    assert app_module.shortcut_to_accel("") is None
+    assert app_module.shortcut_to_accel(None) is None
+    assert app_module.shortcut_to_accel("CTRL+") is None
+
+
+def test_sync_shortcut_accels_follows_the_configured_shortcut(app_module, monkeypatch):
+    applied = {}
+
+    class ApplicationStub:
+        def set_accels_for_action(self, action, accels):
+            applied[action] = accels
+
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "get_default", lambda: ApplicationStub(), raising=False
+    )
+    monkeypatch.setattr(app_module, "shortcut_to_accel", lambda key: f"<{key}>" if key else None)
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+ALT+Y": app_module._COPY})
+
+    app_module.sync_shortcut_accels()
+
+    assert applied["app.copy"] == ["<CTRL+ALT+Y>"]
+    # unbound commands must be cleared, not left pointing at a stale key
+    assert applied["app.paste"] == []
+
+
+def test_sync_shortcut_accels_is_inert_without_an_application(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
+
+    app_module.sync_shortcut_accels()  # must not raise
