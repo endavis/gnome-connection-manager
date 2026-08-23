@@ -75,6 +75,9 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Terminal type (TERM) configurable globally and per-host
 
 ### Text Operations
+- Drag and drop of files onto a terminal inserts shell-quoted local paths (space-separated
+  for multiple), with no trailing newline. Non-`file://` URIs are inserted as URIs; dropped
+  plain text is inserted verbatim.
 - Copy (Ctrl+Shift+C / Cmd+C on macOS)
 - Paste (Ctrl+Shift+V / Cmd+V on macOS)
 - Copy and paste (combined action)

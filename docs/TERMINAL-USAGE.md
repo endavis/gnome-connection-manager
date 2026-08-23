@@ -140,6 +140,21 @@ whatever runs in the terminal, including a remote host over SSH.
 Note that not every program sets a title: of the agent CLIs measured above, only Claude Code
 does, and it advertises a fixed string rather than per-task status.
 
+## Dropping files onto a terminal
+
+Drag a file from a file manager onto a terminal and its path is inserted at the cursor,
+shell-quoted. Drop several and you get a space-separated list.
+
+```
+/home/you/src/app.py '/home/you/my notes.txt'
+```
+
+Nothing is executed — no newline is appended, so the text sits at the prompt for you to
+review, the same rule paste follows. Handy for `@`-referencing files in an AI CLI.
+
+Non-file URLs are inserted as URLs rather than converted to paths. Dragged plain text goes
+in exactly as it came, without quoting, since it is text rather than a path.
+
 ## Font zoom
 
 `Ctrl+scroll` zooms, as do `Ctrl+=` and `Ctrl+-`. `Ctrl+0` returns to normal size.

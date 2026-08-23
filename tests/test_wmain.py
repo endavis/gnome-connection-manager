@@ -2055,3 +2055,145 @@ def test_a_program_set_title_cannot_reach_the_log_path(tmp_path, app_module, mon
     written = list(tmp_path.rglob("*.log"))
     assert written == [tmp_path / "Work" / "web-01" / "root-20260823-001.log"]
     assert not list(tmp_path.parent.glob("pwned*"))
+
+
+# -- dropping files onto a terminal (#22) -----------------------------------
+
+
+@pytest.fixture
+def _real_uri_decoding(monkeypatch, app_module):
+    """conftest stubs GLib, so filename_from_uri would fall into the except branch."""
+    from urllib.parse import unquote, urlparse
+
+    def filename_from_uri(uri):
+        parsed = urlparse(uri)
+        return unquote(parsed.path), parsed.hostname
+
+    monkeypatch.setattr(app_module.GLib, "filename_from_uri", filename_from_uri, raising=False)
+
+
+@pytest.mark.parametrize(
+    ("uri", "expected"),
+    [
+        ("file:///tmp/a.py", "/tmp/a.py"),
+        ("file:///tmp/my%20notes.txt", "'/tmp/my notes.txt'"),
+        ("file:///tmp/weird%3Bname%26here.txt", "'/tmp/weird;name&here.txt'"),
+        ("https://example.com/x?a=1&b=2", "'https://example.com/x?a=1&b=2'"),
+        ("sftp://host/path", "sftp://host/path"),
+        ("  ", ""),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_uri_to_terminal_text(app_module, _real_uri_decoding, uri, expected):
+    """Quoting matters: an unquoted space or & lands as several broken arguments."""
+    assert app_module.uri_to_terminal_text(uri) == expected
+
+
+def test_uris_to_terminal_text_joins_and_skips_blanks(app_module, _real_uri_decoding):
+    text = app_module.uris_to_terminal_text(
+        ["file:///tmp/a.py", "", "file:///tmp/b%20c.py", None]
+    )
+
+    assert text == "/tmp/a.py '/tmp/b c.py'"
+
+
+def test_glib_really_decodes_file_uris():
+    """The fixture above would pass against a GLib that has no such function."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import GLib
+
+    assert GLib.filename_from_uri("file:///tmp/my%20notes.txt")[0] == "/tmp/my notes.txt"
+
+
+class DropTerminal:
+    """The feed surface vte_feed uses. Vte.Terminal really has feed_child."""
+
+    def __init__(self):
+        self.fed = []
+
+    def feed_child(self, data, *args):
+        self.fed.append(data)
+
+
+class DropData:
+    def __init__(self, uris=None, text=None):
+        self._uris = uris
+        self._text = text
+
+    def get_uris(self):
+        return self._uris
+
+    def get_text(self):
+        return self._text
+
+
+def _drop(app_module, monkeypatch, data):
+    finished = []
+    monkeypatch.setattr(
+        app_module.Gtk, "drag_finish",
+        lambda ctx, success, delete, t: finished.append(success), raising=False,
+    )
+    wmain = object.__new__(app_module.Wmain)
+    terminal = DropTerminal()
+    handled = wmain.on_terminal_drag_data_received(
+        terminal, object(), 0, 0, data, 0, 0
+    )
+    return terminal, finished, handled
+
+
+def test_dropping_files_inserts_quoted_paths(app_module, monkeypatch, _real_uri_decoding):
+    terminal, finished, handled = _drop(
+        app_module, monkeypatch, DropData(uris=["file:///tmp/a.py", "file:///tmp/b%20c.py"])
+    )
+
+    assert terminal.fed == [b"/tmp/a.py '/tmp/b c.py'"]
+    assert finished == [True]
+    assert handled is True
+
+
+def test_dropped_paths_carry_no_trailing_newline(app_module, monkeypatch, _real_uri_decoding):
+    """Same reasoning as paste hygiene: leave it at the prompt for review."""
+    terminal, _finished, _handled = _drop(
+        app_module, monkeypatch, DropData(uris=["file:///tmp/a.py"])
+    )
+
+    assert not terminal.fed[0].endswith(b"\n")
+
+
+def test_dropping_plain_text_inserts_it_verbatim(app_module, monkeypatch):
+    """A text drop is text, not a path, so it must not be shell-quoted."""
+    terminal, finished, _handled = _drop(
+        app_module, monkeypatch, DropData(text="some dragged words")
+    )
+
+    assert terminal.fed == [b"some dragged words"]
+    assert finished == [True]
+
+
+def test_an_empty_drop_feeds_nothing(app_module, monkeypatch):
+    terminal, finished, _handled = _drop(app_module, monkeypatch, DropData())
+
+    assert terminal.fed == []
+    assert finished == [False]
+
+
+def test_uri_drop_wins_over_text_when_both_are_offered(app_module, monkeypatch, _real_uri_decoding):
+    """File managers offer both; the URI is the one that carries a usable path."""
+    terminal, _finished, _handled = _drop(
+        app_module, monkeypatch,
+        DropData(uris=["file:///tmp/a.py"], text="file:///tmp/a.py"),
+    )
+
+    assert terminal.fed == [b"/tmp/a.py"]
+
+
+def test_drag_targets_are_registered_at_creation(app_module):
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def addTab", 1)[1].split("\n    def ", 1)[0]
+
+    assert "drag_dest_add_uri_targets()" in body
+    assert "drag_dest_add_text_targets()" in body
+    connections = _terminal_signal_connections(app_module)
+    assert connections.get("drag-data-received") == "on_terminal_drag_data_received"
