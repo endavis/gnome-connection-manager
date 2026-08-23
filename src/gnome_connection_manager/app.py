@@ -577,6 +577,10 @@ def build_log_prefix(log_dir, group, name, user, stamp):
     for segment in sanitize_log_segments(group):
         directory = directory / segment
     directory = directory / sanitize_log_name(name)
+    # Hosts with no user fall back to LOG_NAME_FALLBACK rather than repeating the host
+    # name: the parent directory already carries the identity, and repeating it would
+    # read as .../infrafoundry/infrafoundry-20260823-001.log. Deliberate -- do not
+    # "fix" this by substituting the name.
     prefix = directory / f"{sanitize_log_name(user) if user else LOG_NAME_FALLBACK}-{stamp}"
     try:
         if root.resolve() not in prefix.resolve().parents:

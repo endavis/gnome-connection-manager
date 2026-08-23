@@ -1579,9 +1579,12 @@ def test_build_log_prefix_mirrors_the_host_tree(tmp_path, app_module):
 
 
 def test_build_log_prefix_falls_back_when_no_user_is_set(tmp_path, app_module):
+    """Deliberately the fallback name, not the host name again: the parent directory
+    already carries the identity, so repeating it would give tmpl/tmpl-20260823."""
     prefix = app_module.build_log_prefix(tmp_path, "1. Projects", "tmpl", "", "20260823")
 
     assert prefix == tmp_path / "1. Projects" / "tmpl" / "session-20260823"
+    assert prefix.name != "tmpl-20260823"
 
 
 def test_build_log_prefix_puts_an_ungrouped_host_at_the_top_level(tmp_path, app_module):
