@@ -585,9 +585,13 @@ class ClipboardTerminal:
 class LogWriter:
     def __init__(self):
         self.entries: list[str] = []
+        self.flushes = 0
 
     def write(self, data: str):
         self.entries.append(data)
+
+    def flush(self):
+        self.flushes += 1
 
 
 class LogTerminal(ClipboardTerminal):
@@ -610,6 +614,9 @@ class LogTerminal(ClipboardTerminal):
     def get_text_range_format(self, *args):
         self.last_call = ("format", args)
         return (self.text, None)
+
+    def flush(self):
+        pass
 
 
 def test_set_panel_visible_updates_conf_and_positions(monkeypatch, app_module):
@@ -2683,3 +2690,99 @@ def test_view_buffer_shortcut_opens_the_viewer(app_module, monkeypatch):
     wmain.on_terminal_keypress(terminal, object())
 
     assert opened == [terminal]
+
+
+# -- a line the session ends on must still be written (#68) ------------------
+
+
+def test_flush_writes_the_line_the_session_ends_on(monkeypatch, app_module):
+    """The row guard means an unfinished line is never written otherwise."""
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("progress: 100%", row=0, col=14)
+
+    assert wmain.flush_terminal_log(terminal) is True
+    assert terminal.log.entries == ["progress: 100%"]
+    assert terminal.log.flushes == 1
+
+
+def test_flush_advances_the_checkpoint_so_it_cannot_double_write(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("progress: 100%", row=0, col=14)
+
+    wmain.flush_terminal_log(terminal)
+
+    assert wmain.flush_terminal_log(terminal) is False
+    assert terminal.log.entries == ["progress: 100%"]
+
+
+def test_flush_writes_nothing_when_the_cursor_has_not_moved(app_module):
+    """A line already logged by on_contents_changed must not be written twice."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("already written", row=0, col=0)
+
+    assert wmain.flush_terminal_log(terminal) is False
+    assert terminal.log.entries == []
+
+
+def test_flush_is_harmless_without_a_log(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("x", row=0, col=3)
+    del terminal.log
+
+    assert wmain.flush_terminal_log(terminal) is False
+
+
+def test_flush_is_harmless_before_logging_ever_started(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("x", row=0, col=3)
+    del terminal.last_logged_row
+
+    assert wmain.flush_terminal_log(terminal) is False
+
+
+def test_flush_writes_nothing_for_an_empty_range(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("", row=0, col=5)
+
+    assert wmain.flush_terminal_log(terminal) is False
+    assert terminal.log.entries == []
+
+
+def test_disabling_logging_flushes_first(monkeypatch, app_module):
+    """Disconnecting the handler without flushing loses the current line."""
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("tail of the session", row=0, col=19)
+    terminal.log_handler_id = 7
+    disconnected = []
+    terminal.disconnect = disconnected.append
+
+    wmain.set_terminal_logger(terminal, False)
+
+    assert terminal.log.entries == ["tail of the session"]
+    assert disconnected == [7]
+
+
+def test_child_exit_flushes_and_marks_the_tab(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("last line", row=0, col=9)
+    marked = []
+
+    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: marked.append(True)))
+
+    assert terminal.log.entries == ["last line"]
+    assert marked == [True]
+
+
+def test_child_exit_is_wired_to_the_flushing_handler(app_module):
+    """Connected through a lambda, since the handler needs the tab as well as the
+    terminal, so the name check the other signals use cannot see it."""
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def addTab", 1)[1].split("\n    def ", 1)[0]
+
+    connect = next(line for line in body.splitlines() if "child-exited" in line)
+    assert "on_terminal_child_exited" in connect, connect
