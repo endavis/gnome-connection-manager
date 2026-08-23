@@ -236,6 +236,12 @@ TERMINAL_ACTIONS = {
     "console_reconnect": "console-reconnect",
     "reset": "console-reset",
     "clone": "console-clone",
+    "find": "find",
+    "find_next": "search-next",
+    "find_back": "search-back",
+    "fullscreen": "fullscreen",
+    "console_next": "console-next",
+    "console_previous": "console-previous",
 }
 
 _ACCEL_MODIFIERS = (
@@ -271,6 +277,37 @@ def shortcut_to_accel(shortcut):
     return None
 
 
+def apply_menu_accels(menu, application=None):
+    """Show each item's accelerator in a hand-built Gtk.Menu.
+
+    Menu-model items get this from GTK for free, but a Gtk.MenuItem carrying only
+    set_action_name() renders an empty AccelLabel, so the binding stays invisible in
+    the context menus.
+    """
+    if application is None:
+        get_default = getattr(Gtk.Application, "get_default", None)
+        application = get_default() if callable(get_default) else None
+    if application is None or menu is None:
+        return
+    for item in menu.get_children():
+        action = item.get_action_name() if hasattr(item, "get_action_name") else None
+        submenu = item.get_submenu() if hasattr(item, "get_submenu") else None
+        if submenu is not None:
+            apply_menu_accels(submenu, application)
+        if not action:
+            continue
+        accels = application.get_accels_for_action(action)
+        children = item.get_children() if hasattr(item, "get_children") else []
+        label = children[0] if children else None
+        if not isinstance(label, Gtk.AccelLabel):
+            continue
+        if accels:
+            keyval, modifiers = Gtk.accelerator_parse(accels[0])
+            label.set_accel(keyval, modifiers)
+        else:
+            label.set_accel(0, 0)
+
+
 def sync_shortcut_accels():
     """Point every TERMINAL_ACTIONS accelerator at its currently configured shortcut."""
     get_default = getattr(Gtk.Application, "get_default", None)
@@ -285,6 +322,12 @@ def sync_shortcut_accels():
     for command, action in TERMINAL_ACTIONS.items():
         accel = shortcut_to_accel(bound.get(command))
         application.set_accels_for_action(f"app.{action}", [accel] if accel else [])
+    # wMain is only bound once Wmain is constructed, and this runs before that on
+    # the first call. Declaring it at module scope would retype it for the fifteen
+    # other places that assume it is never None.
+    controller = globals().get("wMain")
+    if controller is not None and hasattr(controller, "refresh_menu_accels"):
+        controller.refresh_menu_accels()
 
 ICON_PATH = str(Path(BASE_PATH) / "icon.png")
 
@@ -1140,8 +1183,7 @@ class Wmain(GladeComponent):
                 elif cmd == _SAVE:
                     self.show_save_buffer(widget)
                 elif cmd == _FIND:
-                    self.get_widget("txtSearch").select_region(0, -1)
-                    self.get_widget("txtSearch").grab_focus()
+                    self.focus_search()
                 elif cmd == _FIND_NEXT:
                     if hasattr(self, "search"):
                         self.find_word()
@@ -1162,33 +1204,11 @@ class Wmain(GladeComponent):
                         host.log = hasattr(term, "log_handler_id") and term.log_handler_id != 0
                         self.addTab(ntbk, host)
                 elif cmd == _CONSOLE_PREV:
-                    ntbk = widget.get_parent().get_parent()
-                    if ntbk.get_current_page() == 0 and conf.CYCLE_TABS:
-                        ntbk.set_current_page(len(ntbk) - 1)
-                    else:
-                        ntbk.prev_page()
+                    self.console_previous(widget.get_parent().get_parent())
                 elif cmd == _CONSOLE_NEXT:
-                    ntbk = widget.get_parent().get_parent()
-                    if ntbk.get_current_page() == len(ntbk) - 1 and conf.CYCLE_TABS:
-                        ntbk.set_current_page(0)
-                    else:
-                        ntbk.next_page()
+                    self.console_next(widget.get_parent().get_parent())
                 elif cmd == _FULLSCREEN:
-                    if self._current_fullscreen_state:
-                        Gtk.Window.unfullscreen(self.wMainWindow)
-                        self.wMainWindow.set_decorated(True)
-                        self.wMainWindow.set_has_resize_grip(True)
-                        self.get_widget("toolbar1").show()
-                        self.get_widget("contextMenu").show()
-                        self._current_fullscreen_state = False
-                    else:
-                        self.wMainWindow.set_decorated(False)
-                        self.wMainWindow.set_has_resize_grip(False)
-                        Gtk.Window.fullscreen(self.wMainWindow)
-                        self.get_widget("toolbar1").hide()
-                        self.get_widget("contextMenu").hide()
-                        self._current_fullscreen_state = True
-
+                    self.toggle_fullscreen()
                 elif cmd == _CONSOLE_CLOSE:
                     wid = widget.get_parent()
                     page = widget.get_parent().get_parent().page_num(wid)
@@ -1225,6 +1245,57 @@ class Wmain(GladeComponent):
 
             return True
         return False
+
+    def refresh_menu_accels(self):
+        """Re-render the accelerators shown in the hand-built context menus."""
+        for name in ("popupMenu", "popupMenuTab", "popupMenuFolder"):
+            apply_menu_accels(getattr(self, name, None))
+
+    def focus_search(self):
+        self.get_widget("txtSearch").select_region(0, -1)
+        self.get_widget("txtSearch").grab_focus()
+
+    def console_previous(self, notebook=None):
+        notebook = notebook or self.current_notebook()
+        if notebook is None:
+            return
+        if notebook.get_current_page() == 0 and conf.CYCLE_TABS:
+            notebook.set_current_page(len(notebook) - 1)
+        else:
+            notebook.prev_page()
+
+    def console_next(self, notebook=None):
+        notebook = notebook or self.current_notebook()
+        if notebook is None:
+            return
+        if notebook.get_current_page() == len(notebook) - 1 and conf.CYCLE_TABS:
+            notebook.set_current_page(0)
+        else:
+            notebook.next_page()
+
+    def current_notebook(self):
+        """The notebook holding the focused terminal, or the main one."""
+        if self.current is not None:
+            pane = self.current.get_parent()
+            if pane is not None and pane.get_parent() is not None:
+                return pane.get_parent()
+        return self.nbConsole
+
+    def toggle_fullscreen(self):
+        if self._current_fullscreen_state:
+            Gtk.Window.unfullscreen(self.wMainWindow)
+            self.wMainWindow.set_decorated(True)
+            self.wMainWindow.set_has_resize_grip(True)
+            self.get_widget("toolbar1").show()
+            self.get_widget("contextMenu").show()
+            self._current_fullscreen_state = False
+        else:
+            self.wMainWindow.set_decorated(False)
+            self.wMainWindow.set_has_resize_grip(False)
+            Gtk.Window.fullscreen(self.wMainWindow)
+            self.get_widget("toolbar1").hide()
+            self.get_widget("contextMenu").hide()
+            self._current_fullscreen_state = True
 
     def on_terminal_selection(self, widget, *args):
         if conf.AUTO_COPY_SELECTION and widget.get_has_selection():
@@ -4803,6 +4874,10 @@ class GcmApplication(Gtk.Application):
         self._create_action("split-vertical", self._on_action_split_vertical)
         self._create_action("unsplit", self._on_action_unsplit)
         self._create_action("search-back", self._on_action_search_back)
+        self._create_action("find", self._on_action_find)
+        self._create_action("fullscreen", self._on_action_fullscreen)
+        self._create_action("console-next", self._on_action_console_next)
+        self._create_action("console-previous", self._on_action_console_previous)
         self._create_action("search-next", self._on_action_search_next)
         self._create_action("donate", self._on_action_donate)
         self._create_action("console-reset", self._on_action_console_reset)
@@ -4857,33 +4932,95 @@ class GcmApplication(Gtk.Application):
         menubar = Gio.Menu()
 
         file_menu = Gio.Menu()
-        file_menu.append(_("Save Buffer"), "app.save-buffer")
-        file_menu.append(_("Import Hosts"), "app.import-hosts")
-        file_menu.append(_("Export Hosts"), "app.export-hosts")
-        file_menu.append(_("Quit"), "app.quit")
+        file_section = Gio.Menu()
+        file_section.append(_("New Local Console"), "app.new-local")
+        file_section.append(_("Connect"), "app.connect")
+        file_menu.append_section(None, file_section)
+        buffer_section = Gio.Menu()
+        buffer_section.append(_("Save Buffer"), "app.save-buffer")
+        file_menu.append_section(None, buffer_section)
+        hosts_section = Gio.Menu()
+        hosts_section.append(_("Import Hosts"), "app.import-hosts")
+        hosts_section.append(_("Export Hosts"), "app.export-hosts")
+        file_menu.append_section(None, hosts_section)
+        quit_section = Gio.Menu()
+        quit_section.append(_("Quit"), "app.quit")
+        file_menu.append_section(None, quit_section)
         menubar.append_submenu(_("_File"), file_menu)
 
         edit_menu = Gio.Menu()
-        edit_menu.append(_("Copy"), "app.copy")
-        edit_menu.append(_("Paste"), "app.paste")
-        edit_menu.append(_("Copy & Paste"), "app.copy-paste")
-        edit_menu.append(_("Select All"), "app.select-all")
-        edit_menu.append(_("Copy All"), "app.copy-all")
-        edit_menu.append(_("Preferences"), "app.preferences")
+        clipboard_section = Gio.Menu()
+        clipboard_section.append(_("Copy"), "app.copy")
+        clipboard_section.append(_("Paste"), "app.paste")
+        clipboard_section.append(_("Copy & Paste"), "app.copy-paste")
+        edit_menu.append_section(None, clipboard_section)
+        select_section = Gio.Menu()
+        select_section.append(_("Select All"), "app.select-all")
+        select_section.append(_("Copy All"), "app.copy-all")
+        edit_menu.append_section(None, select_section)
+        search_section = Gio.Menu()
+        search_section.append(_("Find"), "app.find")
+        search_section.append(_("Find Next"), "app.search-next")
+        search_section.append(_("Find Previous"), "app.search-back")
+        edit_menu.append_section(None, search_section)
+        prefs_section = Gio.Menu()
+        prefs_section.append(_("Preferences"), "app.preferences")
+        edit_menu.append_section(None, prefs_section)
         menubar.append_submenu(_("_Edit"), edit_menu)
 
         view_menu = Gio.Menu()
-        view_menu.append(_("Show Toolbar"), "app.toggle-toolbar")
-        view_menu.append(_("Show Panel"), "app.toggle-panel")
+        chrome_section = Gio.Menu()
+        chrome_section.append(_("Show Toolbar"), "app.toggle-toolbar")
+        chrome_section.append(_("Show Panel"), "app.toggle-panel")
+        chrome_section.append(_("Fullscreen"), "app.fullscreen")
+        view_menu.append_section(None, chrome_section)
+        split_section = Gio.Menu()
+        split_section.append(_("Split Horizontal"), "app.split-horizontal")
+        split_section.append(_("Split Vertical"), "app.split-vertical")
+        split_section.append(_("Unsplit"), "app.unsplit")
+        view_menu.append_section(None, split_section)
         menubar.append_submenu(_("_View"), view_menu)
 
+        terminal_menu = Gio.Menu()
+        session_section = Gio.Menu()
+        session_section.append(_("Reconnect"), "app.console-reconnect")
+        session_section.append(_("Clone"), "app.console-clone")
+        session_section.append(_("Rename"), "app.console-rename")
+        terminal_menu.append_section(None, session_section)
+        reset_section = Gio.Menu()
+        reset_section.append(_("Reset"), "app.console-reset")
+        reset_section.append(_("Reset and Clear"), "app.console-reset-clear")
+        terminal_menu.append_section(None, reset_section)
+        log_section = Gio.Menu()
+        log_section.append(_("Log Session"), "app.console-log")
+        terminal_menu.append_section(None, log_section)
+        nav_section = Gio.Menu()
+        nav_section.append(_("Previous Console"), "app.console-previous")
+        nav_section.append(_("Next Console"), "app.console-next")
+        terminal_menu.append_section(None, nav_section)
+        close_section = Gio.Menu()
+        close_section.append(_("Close Console"), "app.console-close")
+        terminal_menu.append_section(None, close_section)
+        menubar.append_submenu(_("_Terminal"), terminal_menu)
+
         servers_menu = Gio.Menu()
-        servers_menu.append(_("New Local Console"), "app.new-local")
-        servers_menu.append(_("Connect"), "app.connect")
-        servers_menu.append(_("Add Host"), "app.add-host")
-        servers_menu.append(_("Edit Host"), "app.edit-host")
-        servers_menu.append(_("Delete Host"), "app.delete")
-        servers_menu.append(_("Cluster"), "app.cluster")
+        host_section = Gio.Menu()
+        host_section.append(_("Add Host"), "app.add-host")
+        host_section.append(_("Edit Host"), "app.edit-host")
+        host_section.append(_("Delete Host"), "app.delete")
+        host_section.append(_("Duplicate Host"), "app.duplicate-host")
+        servers_menu.append_section(None, host_section)
+        address_section = Gio.Menu()
+        address_section.append(_("Copy Address"), "app.copy-address")
+        servers_menu.append_section(None, address_section)
+        tree_section = Gio.Menu()
+        tree_section.append(_("Expand All Groups"), "app.expand-groups")
+        tree_section.append(_("Collapse All Groups"), "app.collapse-groups")
+        tree_section.append(_("Refresh"), "app.refresh")
+        servers_menu.append_section(None, tree_section)
+        cluster_section = Gio.Menu()
+        cluster_section.append(_("Cluster"), "app.cluster")
+        servers_menu.append_section(None, cluster_section)
         menubar.append_submenu(_("_Servers"), servers_menu)
 
         self.set_menubar(menubar)
@@ -5010,6 +5147,22 @@ class GcmApplication(Gtk.Application):
     def _on_action_unsplit(self, action, _param):
         if self._controller is not None:
             self._controller.on_btnUnsplit_clicked(None)
+
+    def _on_action_find(self, action, _param):
+        if self._controller is not None:
+            self._controller.focus_search()
+
+    def _on_action_fullscreen(self, action, _param):
+        if self._controller is not None:
+            self._controller.toggle_fullscreen()
+
+    def _on_action_console_next(self, action, _param):
+        if self._controller is not None:
+            self._controller.console_next()
+
+    def _on_action_console_previous(self, action, _param):
+        if self._controller is not None:
+            self._controller.console_previous()
 
     def _on_action_search_back(self, action, _param):
         if self._controller is not None:

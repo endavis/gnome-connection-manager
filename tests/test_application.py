@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import types
+from pathlib import Path
 
 
 class TerminalStub:
@@ -344,3 +346,83 @@ def test_sync_shortcut_accels_is_inert_without_an_application(app_module, monkey
     monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
 
     app_module.sync_shortcut_accels()  # must not raise
+
+
+def _menu_sources(app_module):
+    source = Path(app_module.__file__).read_text()
+    startup = source.split("def do_startup", 1)[1].split("def _create_action", 1)[0]
+    actions = set(re.findall(r'_create_(?:stateful_)?action\(\s*\n?\s*"([a-z-]+)"', startup))
+    menus = source.split("def _build_menus", 1)[1].split("\n    def ", 1)[0]
+    reachable = set(re.findall(r'"app\.([a-z-]+)"', menus))
+    return actions, reachable
+
+
+def test_every_action_is_reachable_from_a_menu(app_module):
+    """Menus are the discoverable surface; a command only on a key is invisible (#36)."""
+    actions, reachable = _menu_sources(app_module)
+
+    unreachable = actions - reachable
+    assert unreachable == {"donate", "custom-command"}, (
+        f"unexpected actions missing from the menus: {sorted(unreachable - {'donate', 'custom-command'})}"
+    )
+
+
+def test_donate_stays_out_of_the_menus(app_module):
+    """Deliberately absent. Do not reintroduce it while completing the menus (#36)."""
+    _actions, reachable = _menu_sources(app_module)
+
+    assert "donate" not in reachable
+
+
+def test_apply_menu_accels_labels_items_from_the_action_map(app_module, monkeypatch):
+    class AccelLabel:
+        def __init__(self):
+            self.accel = None
+
+        def set_accel(self, keyval, modifiers):
+            self.accel = (keyval, modifiers)
+
+    class MenuItem:
+        def __init__(self, action, label):
+            self._action = action
+            self._label = label
+
+        def get_action_name(self):
+            return self._action
+
+        def get_submenu(self):
+            return None
+
+        def get_children(self):
+            return [self._label]
+
+    class Menu:
+        def __init__(self, items):
+            self._items = items
+
+        def get_children(self):
+            return self._items
+
+    class ApplicationStub:
+        def get_accels_for_action(self, action):
+            return {"app.copy": ["<Primary><Shift>c"]}.get(action, [])
+
+    monkeypatch.setattr(app_module.Gtk, "AccelLabel", AccelLabel, raising=False)
+    monkeypatch.setattr(
+        app_module.Gtk, "accelerator_parse", lambda accel: (99, 3), raising=False
+    )
+
+    bound, unbound = AccelLabel(), AccelLabel()
+    menu = Menu([MenuItem("app.copy", bound), MenuItem("app.console-rename", unbound)])
+
+    app_module.apply_menu_accels(menu, ApplicationStub())
+
+    assert bound.accel == (99, 3)
+    # an unbound action must be cleared, not left showing a stale key
+    assert unbound.accel == (0, 0)
+
+
+def test_apply_menu_accels_is_inert_without_an_application(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
+
+    app_module.apply_menu_accels(object())  # must not raise
