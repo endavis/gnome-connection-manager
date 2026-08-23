@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import types
 import configparser
 from pathlib import Path
@@ -515,10 +516,13 @@ class ToolbarStub:
 
 
 class ClipboardStub:
-    def __init__(self):
-        self.text = None
+    def __init__(self, text=None):
+        self.text = text
         self.length = None
         self.stored = False
+
+    def wait_for_text(self):
+        return self.text
 
     def set_text(self, text, length):
         self.text = text
@@ -534,6 +538,7 @@ class ClipboardTerminal:
     def __init__(self, has_selection: bool = True, screen_text: str = "visible screen\n"):
         self.copied = []
         self.pasted = 0
+        self.pasted_text = []
         self.selected = []
         self._has_selection = has_selection
         self.screen_text = screen_text
@@ -546,6 +551,9 @@ class ClipboardTerminal:
 
     def paste_clipboard(self):
         self.pasted += 1
+
+    def paste_text(self, text):
+        self.pasted_text.append(text)
 
     def select_all(self):
         self.selected.append("all")
@@ -696,16 +704,17 @@ def test_update_tree_rebuilds_structure(monkeypatch, app_module):
 def test_terminal_copy_helpers(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, "hello")
 
     wmain.terminal_copy(terminal)
     assert terminal.copied == [app_module.Vte.Format.TEXT]
 
     wmain.terminal_paste(terminal)
-    assert terminal.pasted == 1
+    assert terminal.pasted_text == ["hello"]
 
     wmain.terminal_copy_paste(terminal)
     assert terminal.copied[-1] == app_module.Vte.Format.TEXT
-    assert terminal.pasted == 2
+    assert terminal.pasted_text == ["hello", "hello"]
 
     wmain.terminal_copy_all(terminal)
     assert terminal.selected == ["all", "none"]
@@ -721,14 +730,15 @@ def test_terminal_copy_without_selection_leaves_clipboard_alone(app_module):
     assert terminal.copied == []
 
 
-def test_terminal_copy_paste_without_selection_still_pastes(app_module):
+def test_terminal_copy_paste_without_selection_still_pastes(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal(has_selection=False)
+    _clipboard(monkeypatch, app_module, "hello")
 
     wmain.terminal_copy_paste(terminal)
 
     assert terminal.copied == []
-    assert terminal.pasted == 1
+    assert terminal.pasted_text == ["hello"]
 
 
 def test_terminal_copy_all_deselects_after_copying(app_module):
@@ -752,6 +762,7 @@ def test_clipboard_terminal_fake_matches_real_vte_api():
         "get_has_selection",
         "copy_clipboard_format",
         "paste_clipboard",
+        "paste_text",
         "select_all",
         "unselect_all",
     ):
@@ -759,11 +770,23 @@ def test_clipboard_terminal_fake_matches_real_vte_api():
         assert hasattr(Vte.Terminal, name), f"Vte.Terminal has no {name}"
 
 
-def test_terminal_menu_actions_use_active_terminal(app_module):
+def test_clipboard_stub_matches_real_gtk_clipboard_api():
+    """wait_for_text is the sync read terminal_paste relies on; prove GTK really has it."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("wait_for_text", "set_text", "store"):
+        assert hasattr(ClipboardStub, name), f"fake is missing {name}"
+        assert hasattr(Gtk.Clipboard, name), f"Gtk.Clipboard has no {name}"
+
+
+def test_terminal_menu_actions_use_active_terminal(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal()
     wmain.hpMain = object()
     wmain.find_active_terminal = lambda widget: terminal
+    _clipboard(monkeypatch, app_module, "hello")
 
     wmain.on_menuCopy_activate(None)
     wmain.on_menuPaste_activate(None)
@@ -772,7 +795,7 @@ def test_terminal_menu_actions_use_active_terminal(app_module):
     wmain.on_menuCopyAll_activate(None)
 
     assert terminal.copied.count(app_module.Vte.Format.TEXT) == 3
-    assert terminal.pasted == 2
+    assert terminal.pasted_text == ["hello", "hello"]
     assert terminal.selected == ["all", "all", "none"]
 
 
@@ -873,8 +896,8 @@ class DummyTreeNode:
         return self.children
 
 
-def _clipboard(monkeypatch, app_module):
-    clipboard = ClipboardStub()
+def _clipboard(monkeypatch, app_module, text=None):
+    clipboard = ClipboardStub(text)
     monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: object())
     monkeypatch.setattr(app_module.Gtk.Clipboard, "get_default", lambda *_args: clipboard)
     return clipboard
@@ -955,6 +978,219 @@ def test_terminal_copy_paste_never_falls_back_to_screen(monkeypatch, app_module)
     assert terminal.copied == []
     assert clipboard.text is None
     assert terminal.pasted == 1
+
+
+# -- paste hygiene (#21) ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("clipboard_text", "expected"),
+    [
+        ("echo hi\n", "echo hi"),
+        ("echo hi\r\n", "echo hi"),
+        ("echo hi\r", "echo hi"),
+        ("echo hi", "echo hi"),
+        ("line one\nline two\n", "line one\nline two"),
+        ("trailing blank\n\n", "trailing blank"),
+        ("crlf pair\r\n\r\n", "crlf pair"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_paste_transform_strips_trailing_terminators(app_module, clipboard_text, expected):
+    """A trailing newline is what turns a pasted prompt into a submitted one.
+
+    Every terminator goes, not just one: VTE copies a line selection as "text\\n\\n",
+    so a single-newline strip would still auto-submit the most common paste there is.
+    """
+    assert app_module.paste_transform(clipboard_text) == expected
+
+
+def test_paste_transform_respects_disabled_option(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_STRIP_TRAILING_NEWLINE", 0)
+
+    assert app_module.paste_transform("echo hi\n") == "echo hi\n"
+
+
+def test_paste_transform_single_line_joins_and_drops_blanks(app_module):
+    text = "  first  \n\n   second\nthird   \n"
+
+    assert app_module.paste_transform(text, single_line=True) == "first second third"
+
+
+def test_paste_transform_single_line_ignores_strip_option(monkeypatch, app_module):
+    """Joining already removes every newline, so the strip toggle cannot change it."""
+    monkeypatch.setattr(app_module.conf, "PASTE_STRIP_TRAILING_NEWLINE", 0)
+
+    assert app_module.paste_transform("a\nb\n", single_line=True) == "a b"
+
+
+def test_paste_needs_confirmation_on_line_count(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 3)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
+
+    assert app_module.paste_needs_confirmation("a\nb\nc") is False
+    assert app_module.paste_needs_confirmation("a\nb\nc\nd") is True
+
+
+def test_paste_needs_confirmation_on_byte_count(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 8)
+
+    assert app_module.paste_needs_confirmation("12345678") is False
+    assert app_module.paste_needs_confirmation("123456789") is True
+    # Multi-byte characters count as the bytes they occupy on the wire.
+    assert app_module.paste_needs_confirmation("ñññññ") is True
+
+
+def test_paste_needs_confirmation_thresholds_of_zero_disable_it(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
+
+    assert app_module.paste_needs_confirmation("a\n" * 5000) is False
+
+
+def test_paste_preview_summarises_and_truncates(app_module):
+    preview = app_module.paste_preview("\n".join(f"line {n}" for n in range(50)), max_lines=3)
+
+    assert "50" in preview
+    assert "line 0" in preview and "line 2" in preview
+    assert "line 3" not in preview
+    assert preview.endswith("…")
+
+
+def test_terminal_paste_delivers_transformed_text(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, "echo hi\n")
+
+    wmain.terminal_paste(terminal)
+
+    assert terminal.pasted_text == ["echo hi"]
+    assert terminal.pasted == 0
+
+
+def test_terminal_paste_single_line_joins(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, "one\ntwo\n")
+
+    wmain.terminal_paste(terminal, single_line=True)
+
+    assert terminal.pasted_text == ["one two"]
+
+
+def test_terminal_paste_confirms_large_paste_and_delivers_on_ok(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 2)
+    prompts = []
+    monkeypatch.setattr(
+        app_module, "msgconfirm", lambda text: prompts.append(text) or app_module.Gtk.ResponseType.OK
+    )
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, "a\nb\nc\n")
+
+    wmain.terminal_paste(terminal)
+
+    assert len(prompts) == 1
+    assert terminal.pasted_text == ["a\nb\nc"]
+
+
+def test_terminal_paste_cancelled_confirmation_delivers_nothing(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 2)
+    monkeypatch.setattr(app_module, "msgconfirm", lambda _text: app_module.Gtk.ResponseType.CANCEL)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, "a\nb\nc\n")
+
+    wmain.terminal_paste(terminal)
+
+    assert terminal.pasted_text == []
+    assert terminal.pasted == 0
+
+
+def test_terminal_paste_without_text_falls_back_to_vte(monkeypatch, app_module):
+    """Non-text clipboard contents stay VTE's problem rather than being swallowed."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, None)
+
+    wmain.terminal_paste(terminal)
+
+    assert terminal.pasted == 1
+    assert terminal.pasted_text == []
+
+
+def test_terminal_paste_of_only_a_newline_delivers_nothing(monkeypatch, app_module):
+    """Stripping must not turn a lone newline into an unguarded paste_clipboard fallback."""
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    _clipboard(monkeypatch, app_module, "\n")
+
+    wmain.terminal_paste(terminal)
+
+    assert terminal.pasted == 0
+    assert terminal.pasted_text == []
+
+
+class NotebookAncestor:
+    """terminal.get_parent().get_parent() is the notebook that owns the tabs."""
+
+    def __init__(self, pages: int = 1):
+        self.pages = pages
+
+    def get_parent(self):
+        return self
+
+    def get_n_pages(self):
+        return self.pages
+
+
+def _context_menu_actions(app_module):
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def createMenu", 1)[1].split("\n    def ", 1)[0]
+    return set(re.findall(r'"app\.([a-z-]+)"', body))
+
+
+def test_terminal_context_menu_offers_the_clipboard_actions(app_module):
+    """Right-click is where paste is actually reached from, so it carries the same set."""
+    actions = _context_menu_actions(app_module)
+
+    assert {
+        "copy",
+        "paste",
+        "paste-single-line",
+        "copy-paste",
+        "select-all",
+        "copy-all",
+    } <= actions
+
+
+def test_right_click_paste_goes_through_the_policy(monkeypatch, app_module):
+    """PASTE_ON_RIGHT_CLICK used to call paste_clipboard() and bypass every rule."""
+    monkeypatch.setattr(app_module.conf, "PASTE_ON_RIGHT_CLICK", 1)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.popupMenu = types.SimpleNamespace(
+        mnuSplitH=types.SimpleNamespace(set_sensitive=lambda _v: None),
+        mnuSplitV=types.SimpleNamespace(set_sensitive=lambda _v: None),
+    )
+    terminal = ClipboardTerminal()
+    terminal.get_parent = NotebookAncestor
+    _clipboard(monkeypatch, app_module, "echo hi\n")
+    event = types.SimpleNamespace(
+        type=app_module.Gdk.EventType.BUTTON_PRESS, button=3, x=0, y=0
+    )
+
+    wmain.on_terminal_click(terminal, event)
+
+    assert terminal.pasted_text == ["echo hi"]
+    assert terminal.pasted == 0
 
 
 class BellTabLabel:
