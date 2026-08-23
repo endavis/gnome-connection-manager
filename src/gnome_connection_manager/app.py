@@ -549,6 +549,31 @@ def sanitize_log_name(title):
 TAB_TITLE_MAX = 40
 
 
+def uri_to_terminal_text(uri):
+    """One dropped URI as text safe to leave at a shell prompt.
+
+    file:// URIs become local paths, because a path is what you want to type. Anything
+    else is kept as a URI. Both are shell-quoted: a dropped name containing a space, or a
+    query string full of & and ?, would otherwise land as several broken arguments.
+    """
+    uri = (uri or "").strip()
+    if not uri:
+        return ""
+    if uri.startswith("file://"):
+        try:
+            path, _host = GLib.filename_from_uri(uri)
+        except Exception:
+            logger.debug("Undecodable file URI dropped on a terminal: %r", uri)
+            path = uri
+        return shlex.quote(path)
+    return shlex.quote(uri)
+
+
+def uris_to_terminal_text(uris):
+    """Several dropped URIs as one space-separated argument list."""
+    return " ".join(text for text in (uri_to_terminal_text(u) for u in (uris or [])) if text)
+
+
 def sanitize_tab_title(title):
     """Reduce a program-set window title to something safe to show in a tab.
 
@@ -1976,6 +2001,21 @@ class Wmain(GladeComponent):
         terminal.set_font_scale(1.0)
         return 1.0
 
+    def on_terminal_drag_data_received(self, widget, context, x, y, data, info, drop_time):
+        """Insert dropped paths at the prompt.
+
+        No trailing newline: the text is left for the user to review and run, the same
+        reasoning as the paste policy.
+        """
+        uris = data.get_uris() if hasattr(data, "get_uris") else None
+        # A URI drop carries a usable path. A plain-text drop is text, not a path, so it
+        # goes in exactly as it came -- quoting dragged prose would be wrong.
+        text = uris_to_terminal_text(uris) if uris else (data.get_text() or "")
+        if text:
+            vte_feed(widget, text)
+        Gtk.drag_finish(context, bool(text), False, drop_time)
+        return True
+
     def on_terminal_title_changed(self, terminal, *args):
         """Show what the running program advertises, without letting it become identity."""
         label = self.get_tab_label_for_terminal(terminal)
@@ -2230,6 +2270,11 @@ class Wmain(GladeComponent):
             v.connect("selection-changed", self.on_terminal_selection)
             v.connect("scroll-event", self.on_terminal_scroll)
             v.connect("window-title-changed", self.on_terminal_title_changed)
+            # VTE registers no drag targets of its own, so a drop does nothing until now.
+            v.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+            v.drag_dest_add_uri_targets()
+            v.drag_dest_add_text_targets()
+            v.connect("drag-data-received", self.on_terminal_drag_data_received)
             # VTE never raises these on its own in 0.76, but they are the documented
             # way to ask for a zoom, so honour them if anything ever does.
             v.connect("increase-font-size", self.terminal_zoom_in)
