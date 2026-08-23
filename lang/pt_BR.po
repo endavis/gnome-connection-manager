@@ -1585,3 +1585,53 @@ msgstr ""
 
 msgid "Grabar la sesión en crudo (incluye secuencias de escape)"
 msgstr ""
+
+# --- glade strings that had no catalog entry ---
+
+msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN para historial</span>"
+msgstr ""
+
+msgid "<span size='smaller'>Usar ##D=milisegundos para introducir un delay.\nEj: ##D=1000</span>"
+msgstr ""
+
+msgid "A simple ssh connection manager for gnome"
+msgstr ""
+
+msgid "ASCII Backspace \t[Ctrl+H 0x08]"
+msgstr ""
+
+msgid "ASCII Delete    \t[Ctrl+? 0x7F]"
+msgstr ""
+
+msgid "Automatic"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Delete Sequence \t[@7]"
+msgstr ""
+
+msgid "Gnome Connection Manager"
+msgstr ""
+
+msgid "Ingrese el texto a enviar a las consolas:"
+msgstr ""
+
+msgid "Nivel de compresión: \nblanco: por defecto\n1: min\n9: max"
+msgstr ""
+
+msgid "OK"
+msgstr ""
+
+msgid "Project's Homepage"
+msgstr ""
+
+msgid "TTY Erase"
+msgstr ""
+
+msgid "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
+msgstr ""
