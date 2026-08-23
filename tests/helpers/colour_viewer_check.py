@@ -116,3 +116,24 @@ assert first is second, "a repeated style must reuse its cached tag"
 assert len(repeat._style_tags) == 1, repeat._style_tags
 repeat.destroy()
 print("REUSE-OK")
+
+# The view must not sit on the theme background: light text on it is invisible.
+import gi.repository.Gdk as Gdk  # noqa: E402
+
+
+class Dark(Snapshot):
+    def get_color_background_for_draw(self):
+        colour = Gdk.RGBA()
+        colour.parse("#1C1C1C")
+        return colour
+
+
+dark = app.BufferViewer(None, Dark(), "dark")
+dark.show_all()
+settle()
+context = dark.view.get_style_context()
+assert context.get_background_color(Gtk.StateFlags.NORMAL).to_string() == "rgb(28,28,28)"
+assert context.get_color(Gtk.StateFlags.NORMAL).to_string() == "rgb(255,255,255)"
+assert dark.match_tag.get_property("foreground-set"), "highlight needs a readable foreground"
+dark.destroy()
+print("COLOURS-OK")

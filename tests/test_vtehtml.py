@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -130,3 +131,79 @@ def test_the_viewer_applies_colour_and_falls_back_cleanly():
     assert result.returncode == 0, result.stderr[-2500:]
     assert "OK" in result.stdout
     assert "REUSE-OK" in result.stdout
+    assert "COLOURS-OK" in result.stdout
+
+
+# -- the view must follow the terminal's colours ----------------------------
+
+
+class FakeRGBA:
+    def __init__(self, red, green, blue, text):
+        self.red, self.green, self.blue = red, green, blue
+        self._text = text
+
+    def to_string(self):
+        return self._text
+
+
+class ColourTerminal:
+    def __init__(self, background=None, host=None, raises=False):
+        self._background = background
+        self._raises = raises
+        if host is not None:
+            self.host = host
+
+    def get_color_background_for_draw(self):
+        if self._raises:
+            raise RuntimeError("no colour here")
+        return self._background
+
+
+@pytest.mark.parametrize(
+    ("rgb", "expected"),
+    [
+        ((0.0, 0.0, 0.0), "#FFFFFF"),
+        ((0.11, 0.11, 0.11), "#FFFFFF"),
+        ((1.0, 1.0, 1.0), "#000000"),
+        ((0.93, 0.93, 0.92), "#000000"),
+    ],
+)
+def test_contrasting_foreground(app_module, rgb, expected):
+    """Picked by luma, because VTE has no getter for its default foreground."""
+    assert app_module.contrasting_foreground(FakeRGBA(*rgb, "x")) == expected
+
+
+def test_contrasting_foreground_without_a_colour(app_module):
+    assert app_module.contrasting_foreground(None) == "#FFFFFF"
+
+
+def test_terminal_colors_take_the_background_from_vte(app_module, monkeypatch):
+    """VTE knows its background even when GCM configured none -- its default is black."""
+    monkeypatch.setattr(app_module.conf, "FONT_COLOR", "")
+    terminal = ColourTerminal(FakeRGBA(0.0, 0.0, 0.0, "rgb(0,0,0)"))
+
+    assert app_module.terminal_colors(terminal) == ("#FFFFFF", "rgb(0,0,0)")
+
+
+def test_terminal_colors_prefer_the_host_font_colour(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "FONT_COLOR", "#111111")
+    host = types.SimpleNamespace(font_color="#ABCDEF")
+    terminal = ColourTerminal(FakeRGBA(0.0, 0.0, 0.0, "rgb(0,0,0)"), host=host)
+
+    assert app_module.terminal_colors(terminal)[0] == "#ABCDEF"
+
+
+def test_terminal_colors_fall_back_to_the_global_font_colour(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "FONT_COLOR", "#123456")
+    host = types.SimpleNamespace(font_color="")
+    terminal = ColourTerminal(FakeRGBA(0.0, 0.0, 0.0, "rgb(0,0,0)"), host=host)
+
+    assert app_module.terminal_colors(terminal)[0] == "#123456"
+
+
+def test_terminal_colors_default_to_black_when_vte_will_not_say(app_module, monkeypatch):
+    """Never leave the view on the theme background: that is what hid light text."""
+    monkeypatch.setattr(app_module.conf, "FONT_COLOR", "")
+    terminal = ColourTerminal(raises=True)
+
+    assert app_module.terminal_colors(terminal) == ("#FFFFFF", "#000000")

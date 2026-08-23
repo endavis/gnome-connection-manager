@@ -126,6 +126,11 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
   Copy and Save stay plain text. Falls back to plain text if the HTML export is
   unavailable. No preference gates it: measured at the default 10000-line scrollback,
   colour costs about 8 ms on top of ~296 ms, which is dominated by inserting the lines.
+- The view takes its background from the terminal (VTE reports one even when GCM
+  configured none; its default is black) and its default foreground from the same host or
+  global setting the terminal was built from, falling back to whichever of black or white
+  contrasts with the background. Otherwise light text is invisible on the theme's pale
+  window.
 - Save buffer to text file (Ctrl+Shift+S)
 - Reset terminal
 - Reset and clear terminal

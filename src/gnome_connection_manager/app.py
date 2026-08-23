@@ -626,6 +626,40 @@ def build_editor_command(path, line, col):
     return ["xdg-open", path]
 
 
+def contrasting_foreground(rgba):
+    """Black or white, whichever stays legible on `rgba`.
+
+    Only used when no foreground has been configured. VTE has no getter for its default
+    foreground, and guessing wrong is what makes text invisible.
+    """
+    if rgba is None:
+        return "#FFFFFF"
+    # Rec. 601 luma: good enough to pick a side, and it needs no colour science.
+    luma = 0.299 * rgba.red + 0.587 * rgba.green + 0.114 * rgba.blue
+    return "#000000" if luma > 0.5 else "#FFFFFF"
+
+
+def terminal_colors(terminal):
+    """(foreground, background) the buffer view should use to match its terminal.
+
+    The background comes from VTE, which knows it even when GCM configured nothing --
+    its default is black, which is why a viewer on the theme's light background hid
+    light text. There is no foreground getter, so that comes from the same config the
+    terminal was built from.
+    """
+    background_rgba = None
+    if hasattr(terminal, "get_color_background_for_draw"):
+        try:
+            background_rgba = terminal.get_color_background_for_draw()
+        except Exception:
+            background_rgba = None
+    background = background_rgba.to_string() if background_rgba is not None else "#000000"
+
+    host = getattr(terminal, "host", None)
+    foreground = (getattr(host, "font_color", "") or "") or (conf.FONT_COLOR or "")
+    return foreground or contrasting_foreground(background_rgba), background
+
+
 def terminal_buffer_html(terminal):
     """The terminal's scrollback as VTE's HTML export, or None if unavailable.
 
@@ -5176,8 +5210,13 @@ class BufferViewer(Gtk.Window):
         box.pack_start(scroller, True, True, 0)
 
         self.buffer = self.view.get_buffer()
-        self.match_tag = self.buffer.create_tag("gcm-match", background="#f6d32d")
+        # An explicit foreground on the highlight: the view's own foreground is usually
+        # light, and light-on-yellow is exactly as unreadable as the bug this fixes.
+        self.match_tag = self.buffer.create_tag(
+            "gcm-match", background="#f6d32d", foreground="#000000"
+        )
         self._style_tags = {}
+        self.apply_terminal_colors()
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         for label, handler in (
@@ -5198,6 +5237,21 @@ class BufferViewer(Gtk.Window):
         self.refresh()
 
     # -- content
+
+    def apply_terminal_colors(self):
+        """Match the terminal's background so its colours mean the same thing here."""
+        foreground, background = terminal_colors(self.terminal)
+        css = f"textview, textview text {{ background-color: {background}; color: {foreground}; }}"
+        try:
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css.encode("utf-8"))
+            self.view.get_style_context().add_provider(
+                provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+        except Exception:
+            logger.debug("Could not apply terminal colours to the buffer view")
+            return False
+        return True
 
     def refresh(self):
         self.buffer.set_text("")

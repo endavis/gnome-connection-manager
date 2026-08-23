@@ -159,7 +159,8 @@ terminal selection.
 
 The viewer keeps colour, bold, italic, underline and strikethrough, so output where
 colour carries meaning — test results, diffs, log levels — reads the same as it did in
-the terminal. Copying and saving still produce plain text: colour belongs on screen, not
+the terminal. It uses the terminal's own background, so light text stays legible instead
+of vanishing against a pale window. Copying and saving still produce plain text: colour belongs on screen, not
 in your clipboard or a file.
 
 Opening the viewer does not disturb any selection you already had in the terminal.
