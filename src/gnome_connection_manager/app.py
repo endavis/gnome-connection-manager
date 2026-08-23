@@ -2247,6 +2247,11 @@ class Wmain(GladeComponent):
         Gtk.drag_finish(context, bool(text), False, drop_time)
         return True
 
+    def on_terminal_child_exited(self, terminal, tab):
+        """A session ending is the last chance to write the line it ended on."""
+        self.flush_terminal_log(terminal)
+        tab.mark_tab_as_closed()
+
     def on_terminal_title_changed(self, terminal, *args):
         """Show what the running program advertises, without letting it become identity."""
         label = self.get_tab_label_for_terminal(terminal)
@@ -2349,6 +2354,35 @@ class Wmain(GladeComponent):
             # row boundary and a real character when it ended mid-line.
             terminal.log.write(text or "")
 
+    def flush_terminal_log(self, terminal):
+        """Write whatever is still pending on the line the cursor is on.
+
+        on_contents_changed only writes once the cursor leaves a row, which is what stops
+        a typed prompt logging once per keystroke. The cost is that a line the session
+        ends on is never written at all; this closes that hole without touching the guard.
+        """
+        log = getattr(terminal, "log", None)
+        if log is None or not hasattr(terminal, "last_logged_row"):
+            return False
+        col, row = terminal.get_cursor_position()
+        if (row, col) == (terminal.last_logged_row, terminal.last_logged_col):
+            return False
+        if Vte.get_minor_version() < 72:
+            text, _attrs = terminal.get_text_range(
+                terminal.last_logged_row, terminal.last_logged_col, row, col, None, None
+            )
+        else:
+            text, _attrs = terminal.get_text_range_format(
+                Vte.Format.TEXT, terminal.last_logged_row, terminal.last_logged_col, row, col
+            )
+        terminal.last_logged_row = row
+        terminal.last_logged_col = col
+        if not text:
+            return False
+        log.write(text)
+        log.flush()
+        return True
+
     def set_terminal_logger(self, terminal, enable_logging=True):
         if enable_logging:
             terminal.last_logged_col, terminal.last_logged_row = terminal.get_cursor_position()
@@ -2411,6 +2445,8 @@ class Wmain(GladeComponent):
                 return False
         else:
             if hasattr(terminal, "log_handler_id") and terminal.log_handler_id != 0:
+                # Before disconnecting, or the current line is lost.
+                self.flush_terminal_log(terminal)
                 terminal.disconnect(terminal.log_handler_id)
                 terminal.log_handler_id = 0
         return True
@@ -2501,7 +2537,7 @@ class Wmain(GladeComponent):
 
             v.set_audible_bell(bool(conf.BELL_AUDIBLE))
             v.connect("bell", self.on_terminal_bell)
-            v.connect("child-exited", lambda *args: tab.mark_tab_as_closed())
+            v.connect("child-exited", lambda *args: self.on_terminal_child_exited(v, tab))
             v.connect("focus", self.on_tab_focus)
             v.connect("button_press_event", self.on_terminal_click)
             v.connect("key_press_event", self.on_terminal_keypress)
