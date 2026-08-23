@@ -110,6 +110,35 @@ Applications that support bracketed paste are told the content is a paste rather
 typing, which stops a shell from executing each line as it arrives. GCM preserves that
 framing.
 
+## Letting applications set the clipboard (OSC 52)
+
+Applications ask a terminal to set the system clipboard with an escape sequence called
+OSC 52. `tmux` (with `set-clipboard on`), neovim, helix and lazygit all use it — it is
+how a copy inside a full-screen application reaches your desktop clipboard, including
+over SSH.
+
+VTE does not implement OSC 52, so this is **off by default**:
+
+```ini
+[options]
+osc52-clipboard = true
+```
+
+With it on, sessions run under a small relay process that watches the output for the
+sequence and hands the payload to GCM. With it off, sessions are spawned exactly as
+before — the relay is not involved at all.
+
+Two deliberate restrictions, because the sequence is written by whatever runs in the
+terminal, **including a remote host**:
+
+- **The read direction is ignored.** `OSC 52` can also ask the terminal to send the
+  clipboard *back* to the application. GCM never answers, as most terminals do not — a
+  remote host must not be able to read your clipboard.
+- **Only the clipboard and primary selections are honoured.** Cut buffers are ignored.
+
+Turning the preference off stops clipboard writes immediately, including from sessions
+that were already running when it was on.
+
 ## Viewing the buffer without the mouse
 
 `Ctrl+Shift+F`, **Edit → View Buffer**, or **Ver buffer** in the right-click menu opens the

@@ -185,6 +185,16 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 
 ## 7. Security
 
+### OSC 52 Clipboard
+- Off by default (`osc52-clipboard`). When on, sessions are spawned under a relay process
+  that observes the child's output for `OSC 52` and forwards clipboard writes to the
+  application over a Unix socket; when off the spawn path is unchanged.
+- VTE implements no OSC 52 and exposes no hook for unhandled OSC sequences, so seeing the
+  bytes before VTE does is the only option. A separate process keeps VTE's read path in C
+  and prevents a stall there from reaching the interface.
+- The read direction (`OSC 52 ... ;?`) is never answered, and only the clipboard and
+  primary selections are honoured. Payloads are size-capped and strictly base64-validated.
+
 ### Credential Storage
 - Platform keyring via `keyring` library:
   - Linux: Secret Service (GNOME Keyring / KWallet)

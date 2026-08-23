@@ -1728,3 +1728,8 @@ msgstr ""
 
 msgid "_View"
 msgstr ""
+
+# --- added for GCM UI strings that had no catalog entry ---
+
+msgid "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
+msgstr ""

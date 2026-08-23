@@ -39,15 +39,18 @@
 # - Option to disable shortcuts
 
 import base64
+import binascii
 import builtins
 import configparser
 import contextlib
 import hashlib
+import json
 import logging
 import operator
 import os
 import re
 import shlex
+import socket
 import subprocess
 import sys
 import tempfile
@@ -486,6 +489,7 @@ class conf:
     UPDATE_TITLE = 0
     TAB_TITLE_FROM_TERMINAL = 1
     EDITOR_COMMAND = ""
+    OSC52_ENABLED = 0
     APP_TITLE = app_name
 
 
@@ -523,6 +527,7 @@ CONFIG_OPTIONS = (
     ("UPDATE_TITLE", "options", "update-title", bool),
     ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
     ("EDITOR_COMMAND", "options", "editor-command", str),
+    ("OSC52_ENABLED", "options", "osc52-clipboard", bool),
     ("APP_TITLE", "options", "app-title", str),
     ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
     ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
@@ -1131,6 +1136,23 @@ def vte_feed(terminal, data):
         terminal.feed_child(data, len(data))
 
 
+def relay_command(args, socket_path):
+    """Wrap a command so it runs under the OSC 52 relay.
+
+    Only used when the preference is on. With it off the caller spawns `args`
+    untouched, so the default path is exactly what it was before the relay existed.
+    """
+    return [
+        sys.executable,
+        "-m",
+        "gnome_connection_manager.relay",
+        "--clipboard-socket",
+        socket_path,
+        "--",
+        *args,
+    ]
+
+
 def vte_run(terminal, command, arg=None):
     term_type = (
         terminal.host.term
@@ -1166,6 +1188,17 @@ def vte_run(terminal, command, arg=None):
 
     if arg:
         args += arg
+    # wMain the same way sync_shortcut_accels reaches it: the global is bound late, and
+    # declaring it at module scope would retype it for every other user.
+    controller = globals().get("wMain")
+    socket_path = (
+        controller.clipboard_relay_path() if conf.OSC52_ENABLED and controller else None
+    )
+    if socket_path:
+        # Spawning is otherwise byte-for-byte what it was; the relay only enters the
+        # path when the preference is on, so the default carries none of its risk.
+        args = relay_command(args, socket_path)
+
     if TERMINAL_V048:
         terminal.spawn_async(
             Vte.PtyFlags.DEFAULT,
@@ -2807,6 +2840,7 @@ class Wmain(GladeComponent):
         cp.set("options", "update-title", conf.UPDATE_TITLE)
         cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
         cp.set("options", "editor-command", conf.EDITOR_COMMAND)
+        cp.set("options", "osc52-clipboard", conf.OSC52_ENABLED)
         cp.set("options", "app-title", conf.APP_TITLE or app_name)
 
         collapsed_folders = ",".join(self.get_collapsed_nodes())
@@ -3065,6 +3099,76 @@ class Wmain(GladeComponent):
     def show_save_buffer(self, terminal):
         """Save Buffer is the same operation as the viewer's Save As, minus the window."""
         return self.save_text_to_file(terminal_buffer_text(terminal))
+
+    def clipboard_relay_path(self):
+        """Path of the socket relays report clipboard writes to, created on first use."""
+        existing = getattr(self, "_clipboard_socket_path", None)
+        if existing:
+            return existing
+        directory = tempfile.mkdtemp(prefix="gcm-clip-")
+        path = str(Path(directory) / "clipboard.sock")
+        try:
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(path)
+            server.listen(8)
+            server.setblocking(False)
+        except OSError:
+            logger.exception("Could not open the OSC 52 relay socket")
+            return None
+        self._clipboard_socket = server
+        self._clipboard_socket_path = path
+        GLib.io_add_watch(server.fileno(), GLib.IO_IN, self._on_clipboard_connection)
+        return path
+
+    def _on_clipboard_connection(self, _source, _condition):
+        try:
+            connection, _ = self._clipboard_socket.accept()
+        except OSError:
+            return True
+        connection.setblocking(False)
+        buffer = bytearray()
+        GLib.io_add_watch(
+            connection.fileno(),
+            GLib.IO_IN | GLib.IO_HUP,
+            lambda source, condition: self._on_clipboard_data(connection, buffer, condition),
+        )
+        return True
+
+    def _on_clipboard_data(self, connection, buffer, condition):
+        try:
+            chunk = connection.recv(65536)
+        except OSError:
+            chunk = b""
+        if not chunk:
+            connection.close()
+            return False
+        buffer.extend(chunk)
+        while b"\n" in buffer:
+            line, _, rest = bytes(buffer).partition(b"\n")
+            buffer.clear()
+            buffer.extend(rest)
+            self._apply_clipboard_message(line)
+        return not (condition & GLib.IO_HUP)
+
+    def _apply_clipboard_message(self, line):
+        """Put a relayed OSC 52 payload on the clipboard.
+
+        Re-checks the preference: a session started while it was on must stop being
+        able to write here the moment it is turned off.
+        """
+        if not conf.OSC52_ENABLED:
+            return False
+        try:
+            message = json.loads(line.decode("utf-8"))
+            data = base64.b64decode(message["data"], validate=True)
+        except (ValueError, KeyError, TypeError, AttributeError, binascii.Error):
+            logger.debug("Discarding a malformed clipboard message from a relay")
+            return False
+        text = data.decode("utf-8", "replace")
+        if not text:
+            return False
+        Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
+        return True
 
     def save_text_to_file(self, text, parent=None):
         """Ask for a filename and write text to it. Shared by Save Buffer and the viewer."""
@@ -4497,6 +4601,11 @@ class Wconfig(GladeComponent):
         self.addParam(_("TERM"), "conf.TERM", str)
         self.addParam(_("Ruta de logs"), "conf.LOG_PATH", str)
         self.addParam(_("Comando del editor"), "conf.EDITOR_COMMAND", str)
+        self.addParam(
+            _("Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"),
+            "conf.OSC52_ENABLED",
+            bool,
+        )
         self.addParam(_("Abrir consola local al inicio"), "conf.STARTUP_LOCAL", bool)
         self.addParam(_("Log consola local"), "conf.LOG_LOCAL", bool)
         self.addParam(_("Pegar con botón derecho"), "conf.PASTE_ON_RIGHT_CLICK", bool)
