@@ -3,65 +3,136 @@
 Notes for future coding agents working on Gnome Connection Manager (GCM).
 
 ## Mission & Primary Entry Points
-- GCM is a GTK 3 + VTE based SSH/telnet tabbed terminal manager written in Python (`gnome_connection_manager.py`).
-- UI layout and signal wiring live in `gnome-connection-manager.glade`; widgets are loaded through `Gtk.Builder` (`GladeComponent` helper inside `app.py`).
-- Terminal behavior is customized through `style.css`, `urlregex.py` (link detection patterns), and helpers such as `ssh.expect` and the external `pyaes` library.
+- GCM is a GTK 3 + VTE based SSH/telnet tabbed terminal manager written in Python.
+- Core application logic lives in `src/gnome_connection_manager/app.py`; `main.py` and
+  `__main__.py` are thin entry points.
+- UI layout and signal wiring live in `data/ui/gnome-connection-manager.glade`; widgets are
+  loaded through `Gtk.Builder` (the `GladeComponent` helper inside `app.py`).
+- Terminal behavior is customized through `data/style.css`,
+  `src/gnome_connection_manager/utils/urlregex.py` (link detection patterns), and helpers
+  such as `data/scripts/ssh.expect` and the external `pyaes` library.
 
 ## Repository Map
-- `gnome_connection_manager.py` – core application logic: configuration (class `conf`), window/controller classes (`Wmain`, `Whost`, `Wconfig`, etc.), `Host`/`HostUtils` models, encryption helpers, and VTE management.
-- `gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget names/signals aligned with handler names in `gnome_connection_manager.py`.
-- `GladeComponent` (in `gnome_connection_manager/app.py`) – lightweight builder wrapper that loads the glade file, binds translations, and dispatches signal callbacks.
-- `pyaes` – PyPI dependency used for AES-256 encryption; installed via the Python package manager.
-- `ssh.expect` – Expect script that wraps `/usr/bin/ssh` and `/usr/bin/telnet` to feed stored credentials, propagate terminal resize events, and hand control back to the VTE widget.
-- `urlregex.py` – prebuilt PCRE2-compatible regex strings for hyperlink detection inside terminals.
-- `lang/` – gettext `.po` sources and compiled `.mo` files under `<lang>/LC_MESSAGES/gcm-lang.mo`.
-- `style.css`, `icon.png`, `donate.gif`, `.desktop`, `postinst`, and packaging plumbing (Makefile).
+- `src/gnome_connection_manager/app.py` – configuration (class `conf`), window/controller
+  classes (`Wmain`, `Whost`, `Wconfig`, `GcmApplication`), `Host`/`HostUtils` models,
+  encryption helpers, and VTE management. It is a single large module by design.
+- `src/gnome_connection_manager/main.py` and `src/gnome_connection_manager/__main__.py` –
+  entry points (`just run` uses these).
+- `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
+  for hyperlink detection inside terminals.
+- `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget
+  names/signals aligned with handler names in `app.py`.
+- `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet` to feed stored
+  credentials, propagate terminal resize events, and hand control back to the VTE widget.
+- `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
+- `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
+- `lang/` – gettext `.po` sources and compiled `.mo` files under
+  `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, en, fr, it, ko, pl, pt, ru.
+- `docs/` – see [Documentation](#documentation).
+- `gnome-connection-manager.desktop`, `postinst`, `Makefile`, `justfile`, `pyproject.toml`.
+
+## Documentation
+- `docs/TERMINAL-USAGE.md` – user-facing: selection when an application has taken the mouse,
+  what Copy All copies, pasting, font zoom, session log layout, the shortcut table.
+- `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
+- `docs/SPEC.md` – feature specification. §14 holds a measured analysis of a possible
+  Qt/PySide6 port (conclusion: don't, for terminal ergonomics).
 
 ## Dependencies & Environment
-- Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91` (or `python3-gobject` on Fedora), and `expect`. VTE terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
-- Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip, desktop-file utilities (`xdg-desktop-menu` invoked in `postinst`).
-- Paths assume a desktop install (`/usr/share/gnome-connection-manager`). When running from the repo use `./gnome_connection_manager.py` so relative paths resolve for assets, CSS, expect scripts, and translations.
-- Preferred tooling: use the recipes in `justfile` (`just run`, `just check`, `just test`, etc.) for day-to-day work. When you need a command without a recipe, run it through `uv run …` so the repo’s environment is honored.
+- Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91`, and `expect`. VTE
+  terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
+- Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip,
+  desktop-file utilities (`xdg-desktop-menu`, invoked in `postinst`).
+- Preferred tooling: the recipes in `justfile` — `just run`, `just test`, `just lint`,
+  `just typecheck`, `just check`, `just translate`. For anything without a recipe, use
+  `uv run …` so the repo's environment is honored.
 
-## Running & Manual Verification
-- Launch locally with `just run` (preferred) or `uv run python -m gnome_connection_manager` after ensuring `python3-gi`, `Vte`, and `expect` are installed.
-- GUI/manual tests: open the app, add/edit hosts, connect via SSH/telnet, split notebooks, test clipboard shortcuts, run cluster commands, and verify preferences persist in `~/.gcm/gcm.conf`.
-- Override language as needed via `LANG=en_US.UTF-8 ./gnome_connection_manager.py` (mirrors README instructions).
-- When touching terminal behavior confirm `ssh.expect` still runs (`chmod +x` if needed) and that resizing, password prompts, and keyboard shortcuts behave.
+## Testing & Verification
+
+**Tests are automated.** `just test` runs the suite; `just test-cov` adds coverage. Add
+tests with behavior changes rather than documenting a manual test surface.
+
+Practices below have each caught real bugs in this repo. They are worth the time:
+
+- **Measure, don't assume.** Write throwaway probes against real GTK/VTE — `DISPLAY=:0`
+  works under WSLg. Assumptions about VTE behavior have been wrong far more often than right:
+  VTE 0.76 does not emit `increase-font-size` on Ctrl+scroll, it clamps `set_font_scale()` to
+  0.25–4.0 itself, and a line selection reaches the clipboard as `text\n\n`.
+- **Mutation-test new tests.** Revert the fix and confirm the test fails. This has caught
+  several tests that passed against broken code.
+- **Verify what is rendered, not what the model says.** A menubar was once "verified" by
+  walking its `Gio.Menu` when it had never been rendered at all (#43). Walk the widget tree.
+- **Test fakes must mirror the real widget API.** `tests/conftest.py` stubs all of `gi`, so a
+  fake can define methods the real class lacks and nothing complains — this caused #30
+  (`select_none()` on `Vte.Terminal`) and #41 (`set_attention()` on `Gtk.Label`). Several
+  tests now assert the real class has each method the fake offers; extend that pattern.
+- **Baseline the linters.** The repo carries pre-existing lint and typecheck drift, so
+  compare against a `git stash` baseline instead of reading absolute counts. Never run a
+  formatter over the tree (see Coding Conventions).
+- **The glade file is a shared namespace.** Deleting a block can remove widgets referenced
+  elsewhere. Sweep every `get_widget("...")` id in the source against the glade.
+- **Run the app for tracebacks** with a throwaway HOME:
+  `HOME=<tmpdir> timeout 12 uv run python -m gnome_connection_manager`. Never point it at a
+  real `~/.gcm`.
 
 ## Configuration & Data Flow
-- User data lives in `~/.gcm/`:
-  - `gcm.conf` (INI) holds options, window state, shortcuts, and serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
-- `.gcm.key` stores the per-user passphrase used by `pyaes`. `load_encryption_key` + `initialise_encyption_key` manage it; respect permissions (0600).
-- Configuration defaults reside in the `conf` class (`gnome_connection_manager.py:246`) and must be updated alongside `loadConfig` and `writeConfig` when introducing new settings.
-- Host attributes include group/name/description, connection info, tunnels, terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep `Host.clone`, `HostUtils.save_host_to_ini`, dialogs in `Whost`, and import/export features in sync.
-- Password handling flows through `encrypt`/`decrypt` (PyPI `pyaes` with fallback to legacy XOR). Any changes must maintain backward compatibility by honoring `conf.VERSION`.
-- Logging goes to stderr via Python's logging module. Set `GCM_LOG_LEVEL` (e.g., `DEBUG`, `INFO`) to adjust verbosity during troubleshooting.
+- User data lives in `~/.gcm/`: `gcm.conf` (INI) holds options, window state, shortcuts, and
+  serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
+- `.gcm.key` stores the per-user passphrase used by `pyaes`. `load_encryption_key` and
+  `initialise_encyption_key` manage it; respect permissions (0600).
+- Configuration defaults live in the `conf` class in `app.py`. Every stored option is
+  listed in `CONFIG_OPTIONS`; keep it in step with the defaults and with `writeConfig`,
+  which has structural tests enforcing both directions.
+- Terminal commands and their default keys live in `SHORTCUT_DEFAULTS`, and
+  `TERMINAL_ACTIONS` maps them to application actions. Accelerators are derived
+  from the user's config rather than hardcoded — a fixed accelerator shadows the configured
+  key, which is what broke #3 and #15. Tests enforce this.
+- Host attributes include group/name/description, connection info, tunnels, terminal
+  overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep
+  `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in sync.
+- Session logs are named from the host entry, never the tab label:
+  `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`.
+- Password handling flows through `encrypt`/`decrypt` (`pyaes`, with a legacy XOR fallback).
+  Changes must stay backward compatible by honoring `conf.VERSION`.
+- Diagnostic logging goes to stderr via Python's `logging`. Set `GCM_LOG_LEVEL` (e.g. `DEBUG`)
+  to adjust verbosity.
 
 ## UI, Theming & Localization
-- Modify UI in `gnome-connection-manager.glade` and ensure widget IDs still match the handler names (e.g., `on_btnConnect_clicked`). `GladeComponent` auto-normalizes names, so keep consistent prefixes if you rely on `self.widget_name`.
-- CSS tweaks go into `style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3 to verify selectors.
-- Translations live in `.po` files; compile MO files with `make translate` (invokes `msgfmt`). Add new locales by copying an existing `.po`, updating headers, and adding a matching directory hierarchy (e.g., `lang/es/LC_MESSAGES/gcm-lang.mo`).
-- Visible strings in Python/Glade should be wrapped with `_()` so gettext picks them up.
+- Modify UI in `data/ui/gnome-connection-manager.glade` and ensure widget IDs still match the
+  handler names (e.g. `on_btnConnect_clicked`). `GladeComponent` normalizes names.
+- CSS tweaks go in `data/style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3.
+- Translations live in `.po` files; compile with `just translate`. Add a locale by copying an
+  existing `.po`, updating headers, and adding the matching directory hierarchy.
+- Visible strings in Python and glade should be wrapped with `_()` so gettext picks them up.
 
 ## Packaging & Release Flow
-- `uv run make`, `uv run make deb`, and `uv run make rpm` rely on `fpm` packaging: build translations, stage files under `/usr/share/gnome-connection-manager`, and produce artifacts in the repo root.
-- `postinst` registers the desktop entry through `xdg-desktop-menu`; update it if install paths change.
-- `Makefile check` / `make style-strip-trailing-whitespace` enforce newline cleanliness; run these before contributing patches meant for release.
-- Desktop integration metadata is defined in `gnome-connection-manager.desktop` (Exec path, categories, icon). Update both the desktop file and packaging copy steps together.
+- `uv run make`, `uv run make deb`, `uv run make rpm` use `fpm`: build translations, stage
+  files under `/usr/share/gnome-connection-manager`, and produce artifacts in the repo root.
+- `postinst` registers the desktop entry through `xdg-desktop-menu`; update it if install
+  paths change, along with `gnome-connection-manager.desktop`.
+- `make check` and `make style-strip-trailing-whitespace` enforce newline cleanliness.
 
 ## Coding Conventions & Tips
-- Codebase predates modern formatting: lots of globals, manual signal hookups, custom dialog helpers, and Python 2 idioms (`xrange`, old-style prints). Match the existing style and avoid sweeping refactors or auto-formatters unless explicitly tasked.
-- Favor the provided helpers (`msgbox`, `inputbox`, `vte_feed`, `HostUtils`, etc.) instead of duplicating behavior, since they already handle edge cases (VTE versions, encoding, config compatibility).
-- Tests are manual. When changing behavior, document the manual test surface (e.g., “open local console, run cluster command, export hosts”).
-- When adding UI controls or config fields, keep these in sync: defaults (`conf`), glade widgets, load/write logic, export/import, command-line interactions, and translations/tooltips.
-- Expect script assumes `/usr/bin/{ssh,telnet}`; if touching authentication flows, check the expect regexes (`ssh.expect`) and resize trap.
-- Use `rg`/`msgfmt`/`make check` for quick validation; repository intentionally keeps ASCII assets under version control—avoid re-encoding binary files unless needed.
+- This file deliberately names symbols rather than line numbers. The previous version
+  pointed at a line number in a root-level module that no longer exists, so the reference
+  was wrong twice over. `tests/test_docs.py` checks every path and symbol named here
+  against the tree, including bare filenames that have since moved.
+- The codebase predates modern formatting: globals, manual signal hookups, custom dialog
+  helpers. Match the surrounding style and avoid sweeping refactors or auto-formatters unless
+  explicitly asked. Matching a neighbor's idiom beats being locally correct.
+- Favor the existing helpers (`msgbox`, `inputbox`, `vte_feed`, `HostUtils`, `sanitize_log_name`)
+  instead of duplicating behavior — they already handle edge cases across VTE versions.
+- When adding UI controls or config fields, keep these in sync: defaults (`conf`),
+  `CONFIG_OPTIONS`, `writeConfig`, glade widgets, the preferences dialog, menus, export/import,
+  and translations.
+- The expect script assumes `/usr/bin/ssh` and `/usr/bin/telnet`; if touching authentication,
+  check the regexes and resize trap in `data/scripts/ssh.expect`.
 
 ## Agent Checklist
-1. Understand which component you're touching (core app, expect script, packaging, translations) and review its neighbor files before editing.
-2. Update configs, dialogs, translations, and docs together when introducing user-facing options.
-3. Run the app (or at minimum sanity-check `python3 gnome_connection_manager.py --help`) before/after code changes; describe any unverified areas in your final summary.
-4. Rebuild translations (`make translate`) if `.po` files change, and mention this in your response.
-5. For packaging changes, run the relevant `make` target when possible and summarize the outcome (artifacts, issues).
-6. Keep `~/.gcm` backups handy when testing to avoid clobbering user data; include migration notes if you modify file formats.
+1. Understand which component you're touching and read its neighbors before editing.
+2. Update config, dialogs, menus, translations, and docs together for user-facing options.
+3. Add tests, then mutation-test them by reverting the fix.
+4. Run `just test`, `just lint`, `just typecheck` — compare the last two against a baseline.
+5. Launch the app with a throwaway HOME and confirm no tracebacks.
+6. Rebuild translations (`just translate`) if `.po` files change, and say so in your summary.
+7. State plainly what you did not verify.
