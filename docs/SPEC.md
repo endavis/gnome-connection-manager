@@ -93,6 +93,10 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Find previous (Ctrl+H / Shift+F3)
 
 ### URL Detection
+- `file:line[:col]` locations are matched and opened in an editor on Ctrl+click
+  (`editor-command`, else `$VISUAL`/`$EDITOR` with `+LINE`, else `xdg-open`). Local sessions
+  only; relative paths resolve against the terminal's working directory, from OSC 7 when the
+  shell emits it and otherwise from the pty's foreground process.
 - Regex-based detection and highlighting of:
   - HTTP/HTTPS/FTP/SFTP URLs
   - www.* addresses
