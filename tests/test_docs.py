@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 DOC = Path(__file__).resolve().parents[1] / "docs" / "TERMINAL-USAGE.md"
 
 # Symbols the doc spells the way a user reads them, mapped to GDK's key names.
@@ -100,7 +102,7 @@ _FILE_SUFFIXES = (".py", ".md", ".glade", ".css", ".png", ".gif", ".expect", ".t
 _REPO_DIRS = ("src/", "data/", "tests/", "docs/", "lang/")
 
 # Bare filenames allowed as shorthand, but only where the full path is also given.
-_SHORTHAND = {"app.py", "main.py", "__main__.py", "conftest.py"}
+_SHORTHAND = {"app.py", "main.py", "__main__.py", "conftest.py", "relay.py"}
 
 
 def _agents_file_refs():
@@ -172,3 +174,83 @@ def test_agents_md_lists_the_locales_that_exist():
 
     for locale in locales:
         assert re.search(rf"\b{locale}\b", text), f"AGENTS.md omits the {locale} locale"
+
+
+# Modules AGENTS.md is expected to describe. Package markers carry nothing to say, and
+# entry points are covered by the one prose line about them.
+_UNDOCUMENTED_BY_DESIGN = {"__init__.py"}
+
+
+def source_modules():
+    roots = [REPO / "src" / "gnome_connection_manager", REPO / "tools"]
+    return sorted(
+        path
+        for root in roots
+        if root.is_dir()
+        for path in root.rglob("*.py")
+        if path.name not in _UNDOCUMENTED_BY_DESIGN and "__pycache__" not in path.parts
+    )
+
+
+def test_agents_md_describes_every_module():
+    """The existing path check is one-directional.
+
+    It verifies that everything AGENTS.md names exists, which says nothing about modules
+    it has never heard of. That asymmetry let the file go stale twice -- relay.py, osc52.py
+    and vtehtml.py all landed without it noticing.
+    """
+    text = AGENTS.read_text()
+    modules = source_modules()
+
+    assert len(modules) >= 5, f"module discovery looks broken: {modules}"
+    missing = [
+        str(path.relative_to(REPO))
+        for path in modules
+        if path.name not in text
+    ]
+
+    assert not missing, f"AGENTS.md does not mention: {missing}"
+
+
+SPEC = REPO / "docs" / "SPEC.md"
+
+# The figures are approximate by intent ("measured from the current tree"), so this
+# allows drift and objects only when they stop being true enough to quote. They were
+# 30% and 169% out before anyone noticed.
+_FIGURE_TOLERANCE = 0.20
+
+
+def _documented_figure(pattern):
+    found = re.search(pattern, SPEC.read_text())
+    assert found, f"SPEC.md no longer states a figure matching {pattern!r}"
+    return int(found.group(1).replace(",", ""))
+
+
+def _line_count(relative):
+    return len((REPO / relative).read_text(encoding="utf-8", errors="replace").splitlines())
+
+
+@pytest.mark.parametrize(
+    ("pattern", "measure"),
+    [
+        (r"`app\.py` is ([\d,]+) lines", lambda: _line_count("src/gnome_connection_manager/app.py")),
+        (
+            r"([\d,]+) lines of Glade",
+            lambda: _line_count("data/ui/gnome-connection-manager.glade"),
+        ),
+        (
+            r"([\d,]+) lines of tests",
+            lambda: sum(_line_count(p.relative_to(REPO)) for p in (REPO / "tests").rglob("*.py")),
+        ),
+    ],
+)
+def test_spec_effort_figures_are_still_roughly_true(pattern, measure):
+    """§14's port estimate rests on these, so a reader may well check them."""
+    documented = _documented_figure(pattern)
+    actual = measure()
+
+    drift = abs(actual - documented) / max(actual, 1)
+    assert drift <= _FIGURE_TOLERANCE, (
+        f"SPEC.md says {documented:,} but the tree has {actual:,} "
+        f"({drift:.0%} out); re-measure §14"
+    )

@@ -18,8 +18,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   encryption helpers, and VTE management. It is a single large module by design.
 - `src/gnome_connection_manager/main.py` and `src/gnome_connection_manager/__main__.py` –
   entry points (`just run` uses these).
+- `src/gnome_connection_manager/relay.py` – a PTY relay run as its own process. When OSC 52
+  or raw recording is enabled, sessions are spawned *under this* rather than directly, so it
+  sits in the byte path between the child and VTE. It forwards bytes unmodified, watches for
+  OSC 52, and can tee the stream to disk. VTE keeps its C read path and a stall here cannot
+  freeze the interface.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
-  for hyperlink detection inside terminals.
+  for hyperlink detection inside terminals, including `file:line` locations.
+- `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
+  a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
+  without a terminal, a display or a pty.
+- `src/gnome_connection_manager/utils/vtehtml.py` – parses VTE's HTML grid export into styled
+  runs for the buffer viewer.
+- `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `just translate` is the
+  canonical path; this exists because `msgfmt` is not installed everywhere.
 - `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget
   names/signals aligned with handler names in `app.py`.
 - `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet` to feed stored
@@ -91,7 +103,12 @@ Practices below have each caught real bugs in this repo. They are worth the time
   overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep
   `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in sync.
 - Session logs are named from the host entry, never the tab label:
-  `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`.
+  `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. Raw recording adds `.raw` beside
+  it plus a `.timing` sidecar; the stream alone is not replayable, because concatenation
+  discards the write boundaries that separate frames.
+- Spawning changes shape when `osc52-clipboard` or `raw-session-log` is on: the command is
+  wrapped so it runs under `relay.py`. With both off the spawn path is byte-for-byte what it
+  was, which is the property that keeps the default safe. There are tests asserting it.
 - Password handling flows through `encrypt`/`decrypt` (`pyaes`, with a legacy XOR fallback).
   Changes must stay backward compatible by honoring `conf.VERSION`.
 - Diagnostic logging goes to stderr via Python's `logging`. Set `GCM_LOG_LEVEL` (e.g. `DEBUG`)
