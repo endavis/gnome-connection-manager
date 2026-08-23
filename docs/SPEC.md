@@ -119,6 +119,13 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 ## 4. Tab & Pane Management
 
 ### Tabs (QTabWidget)
+- Tab labels show the host name, with the program's window title (OSC 0/2) appended when set
+  and `tab-title-from-terminal` is on. An explicit rename pins the label against later titles.
+- The label's *identity* (host name, or an explicit rename) is kept separate from what it
+  renders. Clone, cluster-console selection, notebook moves and session logging all read the
+  identity, so a program-set title -- which a remote host controls -- cannot influence them.
+- Titles are sanitised (non-printable characters removed, whitespace collapsed, truncated) and
+  markup-escaped before reaching any `set_markup` path.
 - Multiple concurrent connections as tabs
 - Drag-and-drop tab reordering
 - Detachable tabs

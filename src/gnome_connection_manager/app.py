@@ -480,6 +480,7 @@ class conf:
     SHOW_PANEL = True
     VERSION = 0
     UPDATE_TITLE = 0
+    TAB_TITLE_FROM_TERMINAL = 1
     APP_TITLE = app_name
 
 
@@ -515,6 +516,7 @@ CONFIG_OPTIONS = (
     ("CYCLE_TABS", "options", "cycle-tabs", bool),
     ("TERM", "options", "term", str),
     ("UPDATE_TITLE", "options", "update-title", bool),
+    ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
     ("APP_TITLE", "options", "app-title", str),
     ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
     ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
@@ -542,6 +544,24 @@ def sanitize_log_name(title):
     if len(name) > LOG_NAME_MAX:
         name = name[:LOG_NAME_MAX].rstrip(" ._")
     return name or LOG_NAME_FALLBACK
+
+
+TAB_TITLE_MAX = 40
+
+
+def sanitize_tab_title(title):
+    """Reduce a program-set window title to something safe to show in a tab.
+
+    Titles arrive over OSC 0/2 from whatever runs in the terminal, including a remote
+    host, so this is untrusted input on a path that ends in set_markup. Control
+    characters, markup and unbounded length all have to go. Distinct from
+    sanitize_log_name: that one guards a filesystem path, this one guards a widget.
+    """
+    text = "".join(ch for ch in (title or "") if ch.isprintable())
+    text = " ".join(text.split())
+    if len(text) > TAB_TITLE_MAX:
+        text = text[: TAB_TITLE_MAX - 1].rstrip() + "\u2026"
+    return text
 
 
 def sanitize_log_segments(group):
@@ -1612,7 +1632,7 @@ class Wmain(GladeComponent):
                 parent=self.window,
             )
             if text is not None and text != "":
-                self.popupMenuTab.label.set_text(f"  {text}  ")
+                self.popupMenuTab.label.get_parent().get_parent().rename(text)
                 nb = self.popupMenuTab.label.get_parent().get_parent().get_parent()
                 nb.emit(
                     "switch-page", nb.get_nth_page(nb.get_current_page()), nb.get_current_page()
@@ -1956,6 +1976,19 @@ class Wmain(GladeComponent):
         terminal.set_font_scale(1.0)
         return 1.0
 
+    def on_terminal_title_changed(self, terminal, *args):
+        """Show what the running program advertises, without letting it become identity."""
+        label = self.get_tab_label_for_terminal(terminal)
+        if label is not None and hasattr(label, "set_terminal_title"):
+            label.set_terminal_title(terminal.get_window_title())
+
+    def get_tab_label_for_terminal(self, terminal):
+        pane = terminal.get_parent()
+        notebook = pane.get_parent() if pane is not None else None
+        if notebook is None or not hasattr(notebook, "get_tab_label"):
+            return None
+        return notebook.get_tab_label(pane)
+
     def on_terminal_scroll(self, widget, event, *args):
         """Ctrl+scroll zooms. VTE 0.76 does not do this itself -- measured: neither
         Ctrl+scroll nor Ctrl+plus emits increase-font-size -- so the wheel is ours to
@@ -2196,6 +2229,7 @@ class Wmain(GladeComponent):
             v.connect("key_press_event", self.on_terminal_keypress)
             v.connect("selection-changed", self.on_terminal_selection)
             v.connect("scroll-event", self.on_terminal_scroll)
+            v.connect("window-title-changed", self.on_terminal_title_changed)
             # VTE never raises these on its own in 0.76, but they are the documented
             # way to ask for a zoom, so honour them if anything ever does.
             v.connect("increase-font-size", self.terminal_zoom_in)
@@ -2579,6 +2613,7 @@ class Wmain(GladeComponent):
         cp.set("options", "auto-close-tab", conf.AUTO_CLOSE_TAB)
         cp.set("options", "cycle-tabs", conf.CYCLE_TABS)
         cp.set("options", "update-title", conf.UPDATE_TITLE)
+        cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
         cp.set("options", "app-title", conf.APP_TITLE or app_name)
 
         collapsed_folders = ",".join(self.get_collapsed_nodes())
@@ -4312,6 +4347,11 @@ class Wconfig(GladeComponent):
             bool,
         )
         self.addParam(_("Título dinámico"), "conf.UPDATE_TITLE", bool)
+        self.addParam(
+            _("Mostrar el título del programa en la pestaña"),
+            "conf.TAB_TITLE_FROM_TERMINAL",
+            bool,
+        )
         self.addParam(_("Título"), "conf.APP_TITLE", str)
 
         if len(conf.FONT_COLOR) == 0:
@@ -4770,6 +4810,12 @@ class NotebookTabLabel(Gtk.HBox):
         Gtk.HBox.__init__(self, homogeneous=False, spacing=0)
 
         self.title = title
+        # What the running program last advertised via OSC 0/2. Display only: get_text()
+        # keeps returning the identity, because callers use it to clone tabs, name cluster
+        # consoles and move pages between notebooks.
+        self.terminal_title = ""
+        # A deliberate rename outranks anything a program sets afterwards.
+        self.renamed = False
         self.owner = owner_
         self.eb = Gtk.EventBox()
         label = self.label = Gtk.Label()
@@ -4839,7 +4885,8 @@ class NotebookTabLabel(Gtk.HBox):
 
     def mark_tab_as_closed(self):
         self.label.set_markup(
-            f"<span color='darkgray' strikethrough='true'>{self.label.get_text()}</span>"
+            "<span color='darkgray' strikethrough='true'>"
+            f"{GLib.markup_escape_text(self.label.get_text())}</span>"
         )
         self.is_active = False
         if conf.AUTO_CLOSE_TAB != 0:
@@ -4854,11 +4901,34 @@ class NotebookTabLabel(Gtk.HBox):
             self.close_tab(self.widget_)
 
     def mark_tab_as_active(self):
-        self.label.set_markup(f"{self.label.get_text()}")
+        self.label.set_markup(GLib.markup_escape_text(self.label.get_text()))
         self.is_active = True
 
     def get_text(self):
-        return self.label.get_text()
+        """The tab's identity, not what it currently renders.
+
+        Clone, cluster-console selection and notebook moves all read this. Returning the
+        rendered text would let a program-set window title decide what a cloned tab
+        connects to.
+        """
+        return self.title
+
+    def rename(self, title):
+        """Manual rename. Becomes the identity and pins the label against later titles."""
+        self.title = f"  {title}  "
+        self.renamed = True
+        self.render_label()
+
+    def set_terminal_title(self, title):
+        self.terminal_title = sanitize_tab_title(title)
+        self.render_label()
+
+    def render_label(self):
+        text = self.title
+        if conf.TAB_TITLE_FROM_TERMINAL and not self.renamed and self.terminal_title:
+            text = f"  {self.title.strip()}: {self.terminal_title}  "
+        self.label.set_text(text)
+        self.set_tooltip_text(text.strip())
 
     def popupmenu(self, widget, event, label):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
