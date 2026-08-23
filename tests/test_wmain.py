@@ -821,7 +821,7 @@ def test_on_contents_changed_uses_text_range_pre72(monkeypatch, app_module):
     wmain.on_contents_changed(terminal)
 
     assert terminal.last_call[0] == "range"
-    assert terminal.log.entries == ["output"]
+    assert terminal.log.entries == ["output\n"]
     assert terminal.last_logged_row == terminal.cursor[1]
     assert terminal.last_logged_col == terminal.cursor[0]
 
@@ -834,7 +834,49 @@ def test_on_contents_changed_uses_format_api(monkeypatch, app_module):
     wmain.on_contents_changed(terminal)
 
     assert terminal.last_call[0] == "format"
-    assert terminal.log.entries == ["formatted"]
+    assert terminal.log.entries == ["formatted\n"]
+
+
+def test_logging_keeps_the_trailing_newline(monkeypatch, app_module):
+    """These two tests previously asserted "output" for input "output\n".
+
+    They pinned the truncation rather than catching it, which is why a bug that ate a
+    newline from every write survived with the logger under test.
+    """
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("one\ntwo\n")
+
+    wmain.on_contents_changed(terminal)
+
+    assert terminal.log.entries == ["one\ntwo\n"]
+    assert "".join(terminal.log.entries).endswith("\n")
+
+
+def test_logging_a_range_that_ends_mid_line_keeps_its_last_character(monkeypatch, app_module):
+    """A chunk ending at a prompt has no trailing newline, so [:-1] ate real content.
+
+    Measured against VTE: a range of "aaa\nbbb\n$ some-command" was logged as
+    "aaa\nbbb\n$ some-comman".
+    """
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LogTerminal("aaa\nbbb\n$ some-command")
+
+    wmain.on_contents_changed(terminal)
+
+    assert terminal.log.entries == ["aaa\nbbb\n$ some-command"]
+
+
+def test_logging_an_empty_range_writes_nothing(monkeypatch, app_module):
+    """A backwards range returns "" from VTE, and None from the pre-0.72 call."""
+    monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+
+    for empty in ("", None):
+        terminal = LogTerminal(empty)
+        wmain.on_contents_changed(terminal)
+        assert terminal.log.entries == [""], f"for {empty!r}"
 
 
 def test_importar_servidores_loads_hosts(monkeypatch, tmp_path, app_module):

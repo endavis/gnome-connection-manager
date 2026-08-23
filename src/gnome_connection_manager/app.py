@@ -2344,7 +2344,10 @@ class Wmain(GladeComponent):
                 )
             terminal.last_logged_row = row
             terminal.last_logged_col = col
-            terminal.log.write(text[:-1])
+            # The whole range, not text[:-1]. VTE returns the grid text as it stands, so
+            # dropping the last character removed the newline when the range ended at a
+            # row boundary and a real character when it ended mid-line.
+            terminal.log.write(text or "")
 
     def set_terminal_logger(self, terminal, enable_logging=True):
         if enable_logging:
