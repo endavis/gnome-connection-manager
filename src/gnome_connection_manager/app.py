@@ -424,7 +424,7 @@ class GladeComponent:
 # Variables de configuracion
 class conf:
     WORD_SEPARATORS = "-A-Za-z0-9,./?%&#:_=+@~"
-    BUFFER_LINES = 2000
+    BUFFER_LINES = 10000
     STARTUP_LOCAL = True
     LOG_LOCAL = False
     CONFIRM_ON_EXIT = True

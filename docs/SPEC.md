@@ -68,7 +68,7 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Configurable font (default: monospace)
 - Configurable foreground and background colors (global default + per-host override)
 - Transparency (where supported by platform)
-- Configurable scrollback buffer (1-1,000,000 lines, default 2000)
+- Configurable scrollback buffer (1-1,000,000 lines, default 10000)
 - Terminal type (TERM) configurable globally and per-host
 
 ### Text Operations
