@@ -1137,3 +1137,50 @@ def test_build_log_prefix_expands_a_user_relative_log_dir(app_module, monkeypatc
     prefix = app_module.build_log_prefix("~/logs", "router", "20260823")
 
     assert prefix == tmp_path / "logs" / "router-20260823"
+
+
+class PlainTabLabel:
+    """A tab label that is not a NotebookTabLabel, as the glade placeholders are."""
+
+    def get_text(self):
+        return "page 1"
+
+
+def test_clearing_attention_tolerates_a_plain_tab_label(app_module, monkeypatch):
+    """nbConsole ships placeholder pages whose labels are plain Gtk.Labels (#41)."""
+    monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", 0)
+    notebook = BellNotebook(PlainTabLabel())
+    page = types.SimpleNamespace(get_parent=lambda: notebook)
+    wmain = object.__new__(app_module.Wmain)
+
+    wmain.clear_tab_attention(page)  # must not raise
+
+
+def test_bell_tolerates_a_plain_tab_label(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "BELL_MARK_TAB", 1)
+    monkeypatch.setattr(app_module.conf, "BELL_NOTIFY", 0)
+    notebook = BellNotebook(PlainTabLabel())
+    page = types.SimpleNamespace(get_parent=lambda: notebook)
+    terminal = types.SimpleNamespace(get_parent=lambda: page)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = BellWindow(active=False)
+
+    wmain.on_terminal_bell(terminal)  # must not raise
+
+    assert wmain.wMain.urgency is False
+
+
+def test_tab_focus_still_updates_the_title_after_a_plain_label(app_module, monkeypatch):
+    """The crash aborted on_tab_focus before it reached the title update."""
+    monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", 1)
+    monkeypatch.setattr(app_module.conf, "APP_TITLE", "GCM")
+    titles = []
+    notebook = BellNotebook(PlainTabLabel())
+    page = types.SimpleNamespace(get_parent=lambda: notebook)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = types.SimpleNamespace(set_title=titles.append)
+    notebook.get_tab_label = lambda _p: PlainTabLabel()
+
+    wmain.on_tab_focus(notebook, page)
+
+    assert titles == ["GCM - page 1"]
