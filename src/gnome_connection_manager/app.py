@@ -1083,8 +1083,11 @@ class Wmain(GladeComponent):
         self.wMainWindow = self.builder.get_object("wMain")
         self.nbConsole = self.get_widget("nbConsole")
         self.treeServers = self.get_widget("treeServers")
-        self.menuServers = self.get_widget("menuServers")
-        self.menuCustomCommands = self.get_widget("menuCustomCommands")
+        # The host list is a nested widget menu rebuilt by updateTree, so it stays a
+        # real Gtk.Menu rather than moving into the menu model.
+        self.menuServers = Gtk.Menu()
+        self.menubar = None
+        self.install_menubar()
         self.current = None
         self.count = 0
         self.row_activated = False
@@ -1246,6 +1249,28 @@ class Wmain(GladeComponent):
             return True
         return False
 
+    def install_menubar(self):
+        """Render the application's menu model as a real widget.
+
+        set_menubar() only reaches the screen through GtkApplicationWindow's
+        show-menubar machinery, and wMain is a plain GtkWindow, so the model has to
+        be turned into a GtkMenuBar by hand and packed into the layout.
+        """
+        application = Gtk.Application.get_default()
+        model = application.get_menubar() if application is not None else None
+        box = self.get_widget("mainBox")
+        if model is None or box is None:
+            return
+        self.menubar = Gtk.MenuBar.new_from_model(model)
+        hosts_item = Gtk.MenuItem(label=_("_Hosts"))
+        hosts_item.set_use_underline(True)
+        hosts_item.set_submenu(self.menuServers)
+        # before Help, which the model appends last
+        self.menubar.insert(hosts_item, max(len(self.menubar.get_children()) - 1, 0))
+        box.pack_start(self.menubar, False, False, 0)
+        box.reorder_child(self.menubar, 0)
+        self.menubar.show_all()
+
     def refresh_menu_accels(self):
         """Re-render the accelerators shown in the hand-built context menus."""
         for name in ("popupMenu", "popupMenuTab", "popupMenuFolder"):
@@ -1287,14 +1312,16 @@ class Wmain(GladeComponent):
             self.wMainWindow.set_decorated(True)
             self.wMainWindow.set_has_resize_grip(True)
             self.get_widget("toolbar1").show()
-            self.get_widget("contextMenu").show()
+            if self.menubar is not None:
+                self.menubar.show()
             self._current_fullscreen_state = False
         else:
             self.wMainWindow.set_decorated(False)
             self.wMainWindow.set_has_resize_grip(False)
             Gtk.Window.fullscreen(self.wMainWindow)
             self.get_widget("toolbar1").hide()
-            self.get_widget("contextMenu").hide()
+            if self.menubar is not None:
+                self.menubar.hide()
             self._current_fullscreen_state = True
 
     def on_terminal_selection(self, widget, *args):
@@ -1720,7 +1747,10 @@ class Wmain(GladeComponent):
 
     def populateCommandsMenu(self):
         self.popupMenu.mnuCommands.foreach(lambda x: self.popupMenu.mnuCommands.remove(x))
-        self.menuCustomCommands.foreach(lambda x: self.menuCustomCommands.remove(x))
+        application = Gtk.Application.get_default()
+        commands_menu = getattr(application, "commands_menu", None)
+        if commands_menu is not None:
+            commands_menu.remove_all()
         for x in shortcuts:
             if not isinstance(shortcuts[x], list):
                 menuItem = self.createMenuItem(x, shortcuts[x][0:30])
@@ -1728,10 +1758,13 @@ class Wmain(GladeComponent):
                 menuItem.set_action_name("app.custom-command")
                 menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
 
-                menuItem = self.createMenuItem(x, shortcuts[x][0:30])
-                self.menuCustomCommands.append(menuItem)
-                menuItem.set_action_name("app.custom-command")
-                menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
+                if commands_menu is not None:
+                    # The menubar is built from this model, so it follows the edits.
+                    item = Gio.MenuItem.new(f"[{x}] {shortcuts[x][0:30]}", None)
+                    item.set_action_and_target_value(
+                        "app.custom-command", GLib.Variant("s", shortcuts[x])
+                    )
+                    commands_menu.append_item(item)
 
     def _copy_selection(self, terminal):
         # With an empty selection VTE still takes clipboard ownership and serves an
@@ -2639,7 +2672,6 @@ class Wmain(GladeComponent):
         else:
             self.hpMain.previous_position = self.hpMain.get_position()
             GLib.timeout_add(200, lambda: self.hpMain.set_position(0))
-        self.get_widget("show_panel").set_active(visibility)
         conf.SHOW_PANEL = visibility
         self._update_toggle_action("toggle-panel", visibility)
 
@@ -2649,7 +2681,6 @@ class Wmain(GladeComponent):
             self.get_widget("toolbar1").show()
         else:
             self.get_widget("toolbar1").hide()
-        self.get_widget("show_toolbar").set_active(visibility)
         conf.SHOW_TOOLBAR = visibility
         self._update_toggle_action("toggle-toolbar", visibility)
 
@@ -4965,6 +4996,10 @@ class GcmApplication(Gtk.Application):
         search_section.append(_("Find Next"), "app.search-next")
         search_section.append(_("Find Previous"), "app.search-back")
         edit_menu.append_section(None, search_section)
+        self.commands_menu = Gio.Menu()
+        commands_section = Gio.Menu()
+        commands_section.append_submenu(_("Custom Commands"), self.commands_menu)
+        edit_menu.append_section(None, commands_section)
         prefs_section = Gio.Menu()
         prefs_section.append(_("Preferences"), "app.preferences")
         edit_menu.append_section(None, prefs_section)
@@ -5024,6 +5059,10 @@ class GcmApplication(Gtk.Application):
         cluster_section.append(_("Cluster"), "app.cluster")
         servers_menu.append_section(None, cluster_section)
         menubar.append_submenu(_("_Servers"), servers_menu)
+
+        help_menu = Gio.Menu()
+        help_menu.append(_("About"), "app.about")
+        menubar.append_submenu(_("_Help"), help_menu)
 
         self.set_menubar(menubar)
 
