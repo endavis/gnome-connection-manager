@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import types
 import configparser
+from pathlib import Path
 
 import pytest
 
@@ -308,8 +309,27 @@ def test_copy_selected_address_sets_clipboard(monkeypatch, app_module):
 def test_populate_commands_menu_adds_custom_entries(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     wmain.popupMenu = types.SimpleNamespace(mnuCommands=DummyMenu())
-    wmain.menuCustomCommands = DummyMenu()
     created_items = []
+
+    class CommandsModel:
+        def __init__(self):
+            self.items = []
+            self.cleared = 0
+
+        def remove_all(self):
+            self.cleared += 1
+            self.items = []
+
+        def append_item(self, item):
+            self.items.append(item)
+
+    commands_model = CommandsModel()
+    monkeypatch.setattr(
+        app_module.Gtk.Application,
+        "get_default",
+        lambda: types.SimpleNamespace(commands_menu=commands_model),
+        raising=False,
+    )
 
     def fake_create(shortcut, label):
         item = MenuItemStub(shortcut, label)
@@ -328,13 +348,29 @@ def test_populate_commands_menu_adds_custom_entries(monkeypatch, app_module):
 
     wmain.populateCommandsMenu()
 
-    assert len(created_items) == 2
+    # only the non-list entry is a user command; _COPY is a built-in
+    assert len(created_items) == 1
     assert len(wmain.popupMenu.mnuCommands.children) == 1
     item = wmain.popupMenu.mnuCommands.children[0]
     assert item.shortcut == "ALT+R"
     assert item.action_name == "app.custom-command"
-    assert len(wmain.menuCustomCommands.children) == 1
+    assert commands_model.cleared == 1
+    assert len(commands_model.items) == 1
 
+
+def test_populate_commands_menu_without_an_application(monkeypatch, app_module):
+    """The popup menu must still fill in even if the menu model is unavailable."""
+    wmain = object.__new__(app_module.Wmain)
+    wmain.popupMenu = types.SimpleNamespace(mnuCommands=DummyMenu())
+    wmain.createMenuItem = lambda shortcut, label: MenuItemStub(shortcut, label)
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "get_default", lambda: None, raising=False
+    )
+    monkeypatch.setattr(app_module, "shortcuts", {"ALT+R": "run reboot now"})
+
+    wmain.populateCommandsMenu()
+
+    assert len(wmain.popupMenu.mnuCommands.children) == 1
 
 def test_get_context_tree_iter_prefers_context_path(app_module):
     host = make_host(app_module)
@@ -467,14 +503,6 @@ class PaneStub:
         return self._position
 
 
-class ToggleStub:
-    def __init__(self):
-        self.value = None
-
-    def set_active(self, state):
-        self.value = state
-
-
 class ToolbarStub:
     def __init__(self):
         self.visible = False
@@ -569,28 +597,27 @@ def test_set_panel_visible_updates_conf_and_positions(monkeypatch, app_module):
     pane = PaneStub(position=250)
     pane.previous_position = 30
     wmain.hpMain = pane
-    toggle = ToggleStub()
-    calls = {"toggle": 0}
-    wmain.get_widget = lambda name: toggle if name == "show_panel" else None
-    wmain._update_toggle_action = lambda name, state: calls.__setitem__("toggle", calls["toggle"] + 1)
+    toggled = []
+    wmain.get_widget = lambda name: None
+    wmain._update_toggle_action = lambda name, state: toggled.append((name, state))
     monkeypatch.setattr(app_module.GLib, "timeout_add", lambda delay, func: func())
     app_module.conf.SHOW_PANEL = False
 
     wmain.set_panel_visible(True)
 
     assert pane.positions[-1] == 30
-    assert toggle.value is True
     assert app_module.conf.SHOW_PANEL is True
-    assert calls["toggle"] == 1
+    # the menu check item is driven by the action state, not by a glade widget
+    assert toggled == [("toggle-panel", True)]
 
 
 def test_set_panel_visible_false_saves_position(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     pane = PaneStub(position=120)
     wmain.hpMain = pane
-    toggle = ToggleStub()
-    wmain.get_widget = lambda name: toggle if name == "show_panel" else None
-    wmain._update_toggle_action = lambda *args: None
+    toggled = []
+    wmain.get_widget = lambda name: None
+    wmain._update_toggle_action = lambda name, state: toggled.append((name, state))
     monkeypatch.setattr(app_module.GLib, "timeout_add", lambda delay, func: func())
     app_module.conf.SHOW_PANEL = True
 
@@ -598,32 +625,29 @@ def test_set_panel_visible_false_saves_position(monkeypatch, app_module):
 
     assert pane.previous_position == 120
     assert pane.positions[-1] == 0
-    assert toggle.value is False
     assert app_module.conf.SHOW_PANEL is False
+    assert toggled == [("toggle-panel", False)]
 
 
 def test_set_toolbar_visible_toggles_widgets(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     toolbar = ToolbarStub()
-    toggle = ToggleStub()
-    calls = {"toggle": 0}
-    wmain.get_widget = lambda name: toolbar if name == "toolbar1" else toggle
-    wmain._update_toggle_action = lambda *args: calls.__setitem__("toggle", calls["toggle"] + 1)
+    toggled = []
+    wmain.get_widget = lambda name: toolbar if name == "toolbar1" else None
+    wmain._update_toggle_action = lambda name, state: toggled.append((name, state))
     app_module.conf.SHOW_TOOLBAR = False
 
     wmain.set_toolbar_visible(True)
 
     assert toolbar.visible is True
-    assert toggle.value is True
     assert app_module.conf.SHOW_TOOLBAR is True
-    assert calls["toggle"] == 1
+    assert toggled == [("toggle-toolbar", True)]
 
     wmain.set_toolbar_visible(False)
 
     assert toolbar.visible is False
-    assert toggle.value is False
     assert app_module.conf.SHOW_TOOLBAR is False
-    assert calls["toggle"] == 2
+    assert toggled[-1] == ("toggle-toolbar", False)
 
 
 def test_update_tree_rebuilds_structure(monkeypatch, app_module):
@@ -1184,3 +1208,84 @@ def test_tab_focus_still_updates_the_title_after_a_plain_label(app_module, monke
     wmain.on_tab_focus(notebook, page)
 
     assert titles == ["GCM - page 1"]
+
+
+def test_install_menubar_renders_the_model_into_the_layout(app_module, monkeypatch):
+    """set_menubar() is inert for a plain GtkWindow, so the model must be rendered (#43)."""
+    packed = {}
+
+    class MenuBarStub:
+        def __init__(self):
+            self.children = []
+            self.shown = False
+
+        def get_children(self):
+            return self.children
+
+        def insert(self, item, position):
+            self.children.insert(position, item)
+
+        def show_all(self):
+            self.shown = True
+
+    class BoxStub:
+        def pack_start(self, child, expand, fill, padding):
+            packed["child"] = child
+
+        def reorder_child(self, child, position):
+            packed["position"] = position
+
+    class MenuItemStubGtk:
+        def __init__(self, label=None):
+            self.label = label
+            self.submenu = None
+
+        def set_use_underline(self, value):
+            pass
+
+        def set_submenu(self, submenu):
+            self.submenu = submenu
+
+    menubar_widget = MenuBarStub()
+    menubar_widget.children = [object(), object()]  # model items, Help last
+    monkeypatch.setattr(
+        app_module.Gtk, "MenuBar",
+        types.SimpleNamespace(new_from_model=lambda model: menubar_widget), raising=False,
+    )
+    monkeypatch.setattr(app_module.Gtk, "MenuItem", MenuItemStubGtk, raising=False)
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "get_default",
+        lambda: types.SimpleNamespace(get_menubar=lambda: object()), raising=False,
+    )
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.menuServers = object()
+    wmain.get_widget = lambda name: BoxStub() if name == "mainBox" else None
+
+    wmain.install_menubar()
+
+    assert wmain.menubar is menubar_widget
+    assert packed["child"] is menubar_widget
+    assert packed["position"] == 0
+    assert menubar_widget.shown is True
+    # the host list is inserted before Help, which the model appends last
+    hosts = menubar_widget.children[-2]
+    assert isinstance(hosts, MenuItemStubGtk)
+    assert hosts.submenu is wmain.menuServers
+
+
+def test_install_menubar_is_inert_without_an_application(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.menubar = None
+    wmain.get_widget = lambda name: None
+
+    wmain.install_menubar()
+
+    assert wmain.menubar is None
+
+
+def test_glade_no_longer_defines_a_menubar(app_module):
+    """One menubar definition only; a second would silently shadow the model (#43)."""
+    glade = Path(app_module.glade_dir) / "gnome-connection-manager.glade"
+    assert "GtkMenuBar" not in glade.read_text()
