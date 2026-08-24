@@ -592,3 +592,104 @@ def test_delays_reflect_the_gap_between_chunks(tmp_path):
     assert delays[0] == 0.0, "nothing precedes the first chunk"
     # generous bounds: this asserts the delay is measured, not that the clock is precise
     assert 0.02 < delays[1] < 5.0, delays
+
+
+# -- relayed ssh/telnet sessions must still spawn (#91) -----------------------
+
+
+def test_plain_argv_undoes_the_argv_zero_repeat(app_module):
+    """FILE_AND_ARGV_ZERO repeats the command; an ordinary argv must not."""
+    args = ["/path/ssh.expect", "/path/ssh.expect", "ssh", "-l", "me"]
+
+    assert app_module.plain_argv(args, True) == ["/path/ssh.expect", "ssh", "-l", "me"]
+
+
+def test_plain_argv_leaves_an_ordinary_argv_alone(app_module):
+    """A local shell is spawned with DEFAULT, so nothing there is repeated."""
+    args = ["env", "-u", "VIRTUAL_ENV", "/bin/bash"]
+
+    assert app_module.plain_argv(args, False) == args
+
+
+def test_plain_argv_survives_an_argv_with_nothing_to_drop(app_module):
+    assert app_module.plain_argv(["/bin/telnet"], True) == ["/bin/telnet"]
+
+
+def spawn_an_ssh_session(app_module, monkeypatch, tmp_path, recording=1):
+    """Run vte_run for an ssh host and return the argv and flags it spawns with."""
+    captured = {}
+
+    class Terminal:
+        def __init__(self):
+            self.host = type("Host", (), {"term": ""})()
+
+        def spawn_async(self, *args, **_kwargs):
+            captured["argv"], captured["flags"] = args[2], args[4]
+
+        def spawn_sync(self, *args, **_kwargs):
+            captured["argv"], captured["flags"] = args[2], args[4]
+
+    # The real flags are an IntFlag; the stub's are opaque, so give them values that
+    # survive the `|` and can be told apart.
+    monkeypatch.setattr(app_module.GLib.SpawnFlags, "DEFAULT", 1)
+    monkeypatch.setattr(app_module.GLib.SpawnFlags, "FILE_AND_ARGV_ZERO", 2)
+    monkeypatch.setattr(app_module.GLib.SpawnFlags, "SEARCH_PATH", 4)
+    for name in ("MAJOR_VERSION", "MINOR_VERSION", "MICRO_VERSION"):
+        monkeypatch.setattr(app_module.Vte, name, 0)
+    monkeypatch.setattr(app_module.conf, "RAW_SESSION_LOG", recording)
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 0)
+    monkeypatch.setattr(app_module, "session_file_for", lambda _t, s: str(tmp_path / ("s" + s)))
+
+    # Exactly what the ssh path passes: the command, then an arg list repeating it.
+    app_module.vte_run(Terminal(), "/path/ssh.expect", ["/path/ssh.expect", "ssh", "-l", "me"])
+    return captured
+
+
+def test_a_relayed_ssh_session_is_spawned_with_a_literal_argv(app_module, monkeypatch, tmp_path):
+    """FILE_AND_ARGV_ZERO would eat the relay's `-m` as the child's argv[0].
+
+    Python then reads the module name as a script path, relative to the spawn
+    directory, and the session dies with "can't open file '$HOME/...relay'" (#91).
+    """
+    spawned = spawn_an_ssh_session(app_module, monkeypatch, tmp_path)
+
+    assert spawned["flags"] & 2 == 0, "FILE_AND_ARGV_ZERO would swallow the relay's -m"
+    assert spawned["argv"][1] == "-m", "the relay's own argv must survive intact"
+
+
+def test_a_relayed_ssh_session_hands_the_relay_an_ordinary_inner_argv(
+    app_module, monkeypatch, tmp_path
+):
+    """The relay execs the inner command itself, so the argv-zero repeat must go.
+
+    Left in, `ssh.expect` reads its own path where it expects the connection type.
+    """
+    spawned = spawn_an_ssh_session(app_module, monkeypatch, tmp_path)
+    inner = spawned["argv"][spawned["argv"].index("--") + 1 :]
+
+    assert inner == ["/path/ssh.expect", "ssh", "-l", "me"]
+
+
+def test_an_unrelayed_ssh_session_still_gets_the_argv_zero_convention(
+    app_module, monkeypatch, tmp_path
+):
+    """With no preference on, the spawn must be exactly what it always was."""
+    spawned = spawn_an_ssh_session(app_module, monkeypatch, tmp_path, recording=0)
+
+    assert spawned["flags"] & 2, "FILE_AND_ARGV_ZERO carries the child's argv[0]"
+    assert spawned["argv"] == ["/path/ssh.expect", "/path/ssh.expect", "ssh", "-l", "me"]
+
+
+def test_the_relay_hands_on_the_argv_the_child_would_have_had():
+    """End to end on a real pty: the relay must be transparent to the inner argv."""
+    check = Path(__file__).resolve().parent / "helpers" / "relay_argv_check.py"
+    result = subprocess.run(
+        [sys.executable, str(check)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr[-2000:]
+    assert "RELAY-ARGV-OK" in result.stdout
