@@ -123,8 +123,13 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Modify UI in `data/ui/gnome-connection-manager.glade` and ensure widget IDs still match the
   handler names (e.g. `on_btnConnect_clicked`). `GladeComponent` normalizes names.
 - CSS tweaks go in `data/style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3.
-- Translations live in `.po` files; compile with `just translate`. Add a locale by copying an
-  existing `.po`, updating headers, and adding the matching directory hierarchy.
+- Translation sources are the `.po` files directly under `lang/`, one per locale
+  (`lang/en_US.po`); the catalogs the application loads are compiled beside them
+  (`lang/en/LC_MESSAGES/gcm-lang.mo`). `just translate` compiles every source, creating
+  the directory it writes into. It uses `msgfmt` where that exists and `tools/build_mo.py`
+  otherwise, and fails rather than reporting success when it finds nothing to compile.
+  Add a locale by copying an existing `.po` and updating its headers; the Makefile still
+  names each language, so add it there too.
 - Visible strings in Python and glade should be wrapped with `_()` so gettext picks them up.
 
 ## Packaging & Release Flow

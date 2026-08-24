@@ -49,14 +49,29 @@ clean:
     find . -type d -name __pycache__ -exec rm -rf {} +
     find . -type f -name '*.pyc' -delete
 
-# Compile translations
+# Compile translations. Sources are lang/<lang>_<REGION>.po; the catalogs the
+# application loads are lang/<lang>/LC_MESSAGES/gcm-lang.mo.
 translate:
-    @for po in lang/*/LC_MESSAGES/*.po; do \
-        dir=$$(dirname $$po); \
-        name=$$(basename $$po .po); \
-        msgfmt -o $$dir/$$name.mo $$po; \
-    done
-    @echo "Translations compiled"
+    @set -e; \
+    count=0; \
+    for po in lang/*.po; do \
+        [ -e "$po" ] || continue; \
+        lang=$(basename "$po" .po | cut -d_ -f1); \
+        mo="lang/$lang/LC_MESSAGES/gcm-lang.mo"; \
+        mkdir -p "$(dirname "$mo")"; \
+        if command -v msgfmt >/dev/null 2>&1; then \
+            msgfmt -o "$mo" "$po"; \
+        else \
+            python3 tools/build_mo.py "$po" "$mo" >/dev/null; \
+        fi; \
+        echo "  $po -> $mo"; \
+        count=$((count + 1)); \
+    done; \
+    if [ "$count" -eq 0 ]; then \
+        echo "no .po files in lang/ -- nothing was compiled" >&2; \
+        exit 1; \
+    fi; \
+    echo "Translations compiled ($count)"
 
 # Create a development environment
 setup:
