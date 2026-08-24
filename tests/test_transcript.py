@@ -8,6 +8,7 @@ The numbers quoted here were measured by replaying real recordings -- made throu
 from __future__ import annotations
 
 import inspect
+import re
 
 import pytest
 
@@ -396,12 +397,61 @@ def test_saving_a_transcript_refuses_a_session_that_was_never_recorded(app_modul
     terminal = type("T", (), {"raw_path": None})()
 
     assert controller.save_session_transcript(terminal) is None
-    assert said == [app_module._("Esta sesión no tiene grabación")]
+    assert said, "refusing silently reads as the feature being broken"
 
 
-def test_saving_a_transcript_is_reachable_from_the_menus(app_module):
-    """A feature with no way in is not shipped."""
-    source = inspect.getsource(app_module)
+def test_the_refusal_says_what_to_do_about_it(app_module):
+    """`raw-session-log` is off by default, has no preference UI, and is read at spawn.
 
-    assert 'self._create_action("save-transcript"' in source
-    assert source.count('"app.save-transcript"') == 2, "menubar and context menu"
+    A reader who is told only that there is no recording has no way to get one: the
+    preference lives in gcm.conf, and turning it on does nothing for a session that is
+    already running.
+    """
+    source = inspect.getsource(app_module.Wmain.save_session_transcript)
+    message = [s for s in re.findall(r'_\("([^"]+)"\)', source) if "grabación" in s]
+
+    assert message, "the refusal must be a translatable string"
+    assert "raw-session-log" in message[0], "say which preference"
+    assert "gcm.conf" in message[0], "say where it lives"
+    assert "nueva" in message[0], "say that it takes a new session"
+
+
+def test_an_empty_recording_says_so_instead_of_doing_nothing(app_module, monkeypatch, tmp_path):
+    """A recording with nothing in it yet is ordinary right after a session starts.
+
+    Closing the progress dialog and doing nothing else reads as a broken feature, and
+    it is what the first cut did: the save was guarded on the text being truthy, so an
+    empty transcript fell through both branches and the click did nothing at all.
+    """
+    said, saved = [], []
+    monkeypatch.setattr(app_module, "msgbox", lambda text, *a, **k: said.append(text))
+    raw = tmp_path / "s.raw"
+    raw.write_bytes(b"")
+    (tmp_path / "s.timing").write_text("")
+
+    controller = app_module.Wmain.__new__(app_module.Wmain)
+    controller.wMain = None
+    controller.save_text_to_file = lambda text, *a, **k: saved.append(text)
+    terminal = type(
+        "T", (), {"raw_path": str(raw), "get_column_count": lambda s: 80,
+                  "get_row_count": lambda s: 24}
+    )()
+
+    controller.save_session_transcript(terminal)
+
+    assert saved == [], "there is nothing to offer as a file"
+    assert said, "the click must say something rather than appear to do nothing"
+
+
+def test_the_progress_dialog_fake_matches_real_gtk():
+    """conftest stubs all of gi, so the fake could offer methods GTK does not have."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("set_icon_from_file", "add_button", "get_content_area", "show_all",
+                 "connect", "destroy"):
+        assert hasattr(Gtk.Dialog, name), f"Gtk.Dialog has no {name}"
+    for name in ("set_fraction", "set_show_text", "set_text"):
+        assert hasattr(Gtk.ProgressBar, name), f"Gtk.ProgressBar has no {name}"
+    assert hasattr(Gtk.Box, "pack_start"), "the content area is a Gtk.Box"

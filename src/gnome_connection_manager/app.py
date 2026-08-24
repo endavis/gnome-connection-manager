@@ -3837,10 +3837,15 @@ class Wmain(GladeComponent):
             return None
         raw_path = getattr(terminal, "raw_path", None)
         if not raw_path or not Path(raw_path).exists():
-            msgbox(_("Esta sesión no tiene grabación"), self.wMain)
+            # `raw-session-log` is off by default and has no preference UI, and the
+            # recording is opened when the session spawns -- so turning it on does
+            # nothing for sessions already running. Say both, or the message reads as
+            # a failure rather than as something the reader can act on.
+            # One string literal, not two joined: the i18n guard matches a single
+            # quoted argument, so a concatenated msgid silently escapes the check.
+            msgbox(_("Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."), self.wMain)
             return None
-        dialog = Gtk.Dialog(title=_("Reconstruyendo transcripción"), parent=self.wMain)
-        dialog.set_modal(True)
+        dialog = Gtk.Dialog(title=_("Reconstruyendo transcripción"), parent=self.wMain, modal=True)
         dialog.set_icon_from_file(ICON_PATH)
         dialog.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         bar = Gtk.ProgressBar()
@@ -3858,8 +3863,13 @@ class Wmain(GladeComponent):
 
         def on_finished(text):
             dialog.destroy()
-            if text:
-                self.save_text_to_file(
+            if not text:
+                # Closing the dialog and doing nothing else reads as the feature being
+                # broken. A recording with nothing in it yet is the ordinary case right
+                # after a session starts.
+                msgbox(_("Esta grabación todavía no contiene texto"), self.wMain)
+                return
+            self.save_text_to_file(
                     text,
                     self.wMain,
                     name=Path(raw_path).with_suffix(".txt").name,
