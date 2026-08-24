@@ -1674,6 +1674,7 @@ class Wmain(GladeComponent):
 
         if conf.LEFT_PANEL_WIDTH != 0:
             self.set_panel_visible(conf.SHOW_PANEL)
+        self.fit_toolbar_items()
         self.set_toolbar_visible(conf.SHOW_TOOLBAR)
 
         # a veces no se posiciona correctamente con 400 ms, asi que se repite el llamado
@@ -3833,6 +3834,28 @@ class Wmain(GladeComponent):
             GLib.timeout_add(200, lambda: self.hpMain.set_position(0))
         conf.SHOW_PANEL = visibility
         self._update_toggle_action("toggle-panel", visibility)
+
+    def fit_toolbar_items(self):
+        """Let each toolbar item ask for its own width instead of the widest one's.
+
+        GtkToolItems are homogeneous by default, so every item is padded out to match
+        the widest -- Connect, at 183px. That inflates a toolbar whose items need
+        1,503px into a 2,333px request, wider than a 1920px screen, and GtkToolbar
+        moves whatever no longer fits into its overflow menu.
+
+        That menu is not a usable fallback (#86). GTK anchors its left edge to the
+        arrow at the right end of the toolbar, so it opens off the screen, and the
+        search box and Donate button have no proxy menu item, so they do not appear in
+        it at all -- they just vanish. Keeping the items on the toolbar avoids all of
+        it, and stops five buttons being padded to four times the width they need.
+        """
+        toolbar = self.get_widget("toolbar1")
+        if toolbar is None:
+            return
+        for index in range(toolbar.get_n_items()):
+            item = toolbar.get_nth_item(index)
+            if item is not None:
+                item.set_homogeneous(False)
 
     def set_toolbar_visible(self, visibility):
         # self.get_widget("toolbar1").set_visible(visibility)
