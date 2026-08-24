@@ -160,6 +160,15 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Reconnect to same host (Ctrl+N)
 - Quick tab access: Alt+1 through Alt+9
 - Next tab (Ctrl+Tab), previous tab (Ctrl+Shift+Tab)
+- Open-console list, reachable two ways: a dropdown button at the end of the tab strip
+  (packed outside the overflow arrows, so it stays put once the tabs stop fitting) and
+  Terminal > Open Consoles in the menu bar. It lists every console in the window in tab
+  order, grouped by pane once a split exists, and choosing one raises it and hands it the
+  keyboard whichever pane it is in. A row shows what the tab renders rather than its
+  identity -- so a program-set title is included -- with the configured Alt+N key, the
+  current console marked, a finished session struck through and a tab wanting attention
+  in bold. Filled on the way open rather than kept live, because one of the inputs is a
+  window title that a running program rewrites continuously.
 - Cycle tabs at boundaries (configurable)
 - Tab label shows connection name with visual state indicator
 
@@ -469,8 +478,8 @@ those improvements "in the rewrite instead" means building the substrate first.
 
 #### Effort
 
-Measured from the current tree: `app.py` is 6,323 lines with ~399 direct toolkit calls
-(271 `Gtk.`, 95 `Gdk.`, 33 `Vte.`), plus 2,401 lines of Glade and 5,669 lines of tests.
+Measured from the current tree: `app.py` is 6,801 lines with ~429 direct toolkit calls
+(297 `Gtk.`, 98 `Gdk.`, 34 `Vte.`), plus 2,401 lines of Glade and 7,271 lines of tests.
 Toolkit-free logic (`conf`, `Host`, `HostUtils`, encryption, and the `utils` package) is
 roughly 800 lines, so about 85% of the application is rewritten, before the new scope this
 spec adds.
