@@ -1021,16 +1021,62 @@ WINDOW_FRAME_ALLOWANCE = 96
 UNPLACED_WINDOW_COORD = -30000
 
 
+def overlap_area(first, second):
+    """Area two `(x, y, width, height)` rectangles share, or 0 when they do not meet."""
+    first_x, first_y, first_width, first_height = first
+    second_x, second_y, second_width, second_height = second
+    width = min(first_x + first_width, second_x + second_width) - max(first_x, second_x)
+    height = min(first_y + first_height, second_y + second_height) - max(first_y, second_y)
+    return width * height if width > 0 and height > 0 else 0
+
+
+def monitor_showing(display, window):
+    """The monitor holding most of `window`, or None while it is nowhere yet.
+
+    `Gdk.Display.get_monitor_at_window` cannot say "nowhere": when a window
+    overlaps no monitor it answers with the *first* one. That is what an unplaced
+    window looks like, and -- measured on a three-monitor WSLg display whose
+    monitors start at y=3 -- it is also what the main window at (0, 0) looks like.
+    The answer was a 2880x1920 screen at (606, 1083) that the application is not
+    on, and with no primary monitor set nothing further down corrected it (#94).
+
+    Working the overlap out here means "nowhere" is an answer the caller can have,
+    and a window that really is on a monitor is matched by area rather than by
+    whichever monitor happens to be first.
+    """
+    if window is None:
+        return None
+    if window.get_window() is None:
+        return None
+    # A window the manager has not placed sits at a large negative sentinel, which
+    # overlaps no monitor -- so the arithmetic below already answers "nowhere" for
+    # it, and a guard on the sentinel would only restate that.
+    x, y = window.get_position()
+    width, height = window.get_size()
+    bounds = (x, y, width, height)
+    best, best_area = None, 0
+    for index in range(display.get_n_monitors()):
+        monitor = display.get_monitor(index)
+        geometry = monitor.get_geometry()
+        area = overlap_area(
+            bounds, (geometry.x, geometry.y, geometry.width, geometry.height)
+        )
+        if area > best_area:
+            best, best_area = monitor, area
+    return best
+
+
 def monitor_workarea(window=None):
     """Usable area of the monitor showing `window`, or of the primary one."""
     display = Gdk.Display.get_default()
     if display is None:
         return None
-    monitor = None
-    if window is not None:
-        gdk_window = window.get_window()
-        if gdk_window is not None:
-            monitor = display.get_monitor_at_window(gdk_window)
+    monitor = monitor_showing(display, window)
+    if monitor is None and window is not None:
+        # A dialog measured on the idle after it is shown is often not placed yet.
+        # It opens on its parent's monitor, and the parent is placed, so ask that
+        # rather than let the guesses below pick an arbitrary screen.
+        monitor = monitor_showing(display, window.get_transient_for())
     if monitor is None:
         monitor = display.get_primary_monitor()
     if monitor is None and display.get_n_monitors() > 0:

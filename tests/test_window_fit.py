@@ -399,3 +399,191 @@ def test_wrapping_pages_leaves_the_selected_tab_alone_against_real_gtk():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "TABS-OK" in result.stdout
+
+# -- the dialog must be measured against the monitor it is really on (#94) ----
+
+
+class MonitorStub:
+    def __init__(self, x, y, width, height):
+        self.rect = workarea(width, height, x, y)
+
+    def get_geometry(self):
+        return self.rect
+
+    def get_workarea(self):
+        return self.rect
+
+
+class DisplayStub:
+    def __init__(self, *monitors):
+        self.monitors = list(monitors)
+
+    def get_n_monitors(self):
+        return len(self.monitors)
+
+    def get_monitor(self, index):
+        return self.monitors[index]
+
+
+class PlacedWindow:
+    """Only what monitor_showing asks of a window."""
+
+    def __init__(self, x, y, width=800, height=600, realised=True):
+        self.position = (x, y)
+        self.size = (width, height)
+        self.realised = realised
+
+    def get_window(self):
+        return object() if self.realised else None
+
+    def get_position(self):
+        return self.position
+
+    def get_size(self):
+        return self.size
+
+
+def test_overlap_of_two_rectangles(app_module):
+    assert app_module.overlap_area((0, 0, 100, 100), (50, 50, 100, 100)) == 2500
+
+
+def test_rectangles_that_only_touch_do_not_overlap(app_module):
+    assert app_module.overlap_area((0, 0, 100, 100), (100, 0, 100, 100)) == 0
+
+
+def test_rectangles_apart_do_not_overlap(app_module):
+    assert app_module.overlap_area((0, 0, 10, 10), (500, 500, 10, 10)) == 0
+
+
+def test_the_monitor_showing_a_window_is_the_one_holding_most_of_it(app_module):
+    left = MonitorStub(0, 0, 1000, 1000)
+    right = MonitorStub(1000, 0, 1000, 1000)
+    display = DisplayStub(left, right)
+
+    # 900 of its 1000 px sit on the right-hand monitor
+    window = PlacedWindow(900, 0, width=1000, height=500)
+
+    assert app_module.monitor_showing(display, window) is right
+
+
+def test_a_window_touching_no_monitor_is_on_none_of_them(app_module):
+    """GDK answers this case with its *first* monitor, which is what caused #94.
+
+    The main window sits at (0, 0) on a display whose monitors start at y = 3, so
+    it overlaps nothing -- and the arbitrary answer was a screen the application
+    was not on, 2880x1920 at (606, 1083).
+    """
+    display = DisplayStub(MonitorStub(606, 1083, 2880, 1920), MonitorStub(0, 3, 1920, 1080))
+
+    assert app_module.monitor_showing(display, PlacedWindow(-40000, -40000)) is None
+
+
+def test_a_window_the_manager_has_not_placed_is_on_no_monitor(app_module):
+    display = DisplayStub(MonitorStub(0, 0, 1920, 1080))
+    unplaced = PlacedWindow(app_module.UNPLACED_WINDOW_COORD, 0)
+
+    assert app_module.monitor_showing(display, unplaced) is None
+
+
+def test_an_unrealised_window_is_on_no_monitor(app_module):
+    display = DisplayStub(MonitorStub(0, 0, 1920, 1080))
+
+    assert app_module.monitor_showing(display, PlacedWindow(10, 10, realised=False)) is None
+
+
+def test_monitor_showing_nothing_is_on_no_monitor(app_module):
+    assert app_module.monitor_showing(DisplayStub(MonitorStub(0, 0, 800, 600)), None) is None
+
+
+def test_a_dialog_falls_back_to_the_monitor_its_parent_is_on(app_module, monkeypatch):
+    """A dialog is measured on the idle after it is shown, often before placement.
+
+    Guessing at that point picked an arbitrary screen. The dialog opens on its
+    parent's monitor, and the parent is placed, so that is the answer to use.
+    """
+    wrong = MonitorStub(606, 1083, 2880, 1920)
+    right = MonitorStub(0, 3, 1920, 1080)
+    display = DisplayStub(wrong, right)
+    parent = PlacedWindow(20, 20, width=900, height=600)
+    dialog = PlacedWindow(0, 0, realised=False)
+    dialog.get_transient_for = lambda: parent
+
+    monkeypatch.setattr(app_module.Gdk.Display, "get_default", staticmethod(lambda: display))
+    display.get_primary_monitor = lambda: None
+
+    assert app_module.monitor_workarea(dialog) is right.rect
+
+# The checks above fake the work area small, which is what makes them repeatable --
+# but it also means they never exercise *which* monitor is chosen, and that is where
+# #94 lived. This one deliberately uses the real display.
+_REAL_MONITOR_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91"); gi.require_version("Gdk", "3.0")
+from gi.repository import Gtk, Gdk
+from gnome_connection_manager import app
+
+def settle(seconds=2.0):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+app.wMain = app.Wmain(application=None)
+settle()
+config = app.Wconfig()
+settle()
+window = config.get_widget("wConfig")
+
+width, height = window.get_size()
+x, y = window.get_position()
+
+# the monitor the dialog is really on, worked out from its own rectangle
+display = Gdk.Display.get_default()
+best, best_area = None, 0
+for index in range(display.get_n_monitors()):
+    g = display.get_monitor(index).get_geometry()
+    area = app.overlap_area((x, y, width, height), (g.x, g.y, g.width, g.height))
+    if area > best_area:
+        best, best_area = g, area
+assert best is not None, "the dialog is on no monitor at all: %r" % ((x, y, width, height),)
+
+assert height <= best.height, (
+    "dialog is %dpx tall on a %dpx screen -- measured against the wrong monitor"
+    % (height, best.height))
+assert width <= best.width, "dialog is %dpx wide on a %dpx screen" % (width, best.width)
+assert y + height <= best.y + best.height, (
+    "the dialog runs %dpx past the bottom of its screen"
+    % (y + height - best.y - best.height))
+
+window.destroy()
+print("REAL-MONITOR-OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real window",
+)
+def test_the_dialog_fits_the_monitor_it_is_really_on():
+    """Against the attached display, with nothing faked.
+
+    `Gdk.Display.get_monitor_at_window` cannot report "no monitor" -- it answers
+    with its first one -- so a dialog that is not placed yet, or a main window at
+    (0, 0) on a display whose monitors start at y = 3, was measured against
+    whichever monitor happened to be first. Measured before the fix, on three
+    monitors with no primary set: the preferences dialog opened 1617px tall on a
+    1080px screen, with OK and Cancel 633px below the bottom edge (#94).
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _REAL_MONITOR_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "REAL-MONITOR-OK" in result.stdout
