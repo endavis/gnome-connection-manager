@@ -47,6 +47,12 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Display name and description
 - Hostname/IP and port (validated 1-65535)
 - Connection type selector (SSH / Telnet / Local)
+- The dialog carries four tabs -- Properties, Port forwarding, Commands, Colors and Keys
+  -- and **Port forwarding is shown only for SSH**. Tunnelling is an SSH feature, so for
+  a Telnet or Local host the tab is not there at all; a new host shows it until a type is
+  chosen. This is deliberate, and it is the only control that is hidden rather than
+  disabled: the other SSH-only fields on the Properties tab -- keep-alive, X11, agent
+  forwarding, compression, private key -- stay visible and go insensitive instead.
 - Per-host terminal colors (font color, background color)
 - Per-host terminal type override
 - Backspace/delete key behavior selection

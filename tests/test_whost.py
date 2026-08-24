@@ -160,3 +160,110 @@ def test_whost_on_okbutton_validates_port(monkeypatch, app_module):
     assert messages["msg"] == app_module._("Puerto invalido")
     assert app_module.groups["ops"] == []
     assert destroy_stub.destroyed is False
+
+
+# -- the dialog changes shape by connection type, on purpose (#103) -----------
+
+
+def test_only_ssh_hosts_get_a_port_forwarding_tab(app_module):
+    """Documented in SPEC.md and AGENTS.md; this keeps the documentation true.
+
+    Hiding the page takes its tab with it, so a Telnet host's dialog has three tabs
+    where an SSH host's has four. That reads as a glitch unless you know it is meant,
+    which is why it is written down -- and why this holds it to what is written.
+    """
+    hidden = []
+    shown = []
+
+    class Grid:
+        def hide(self):
+            hidden.append(True)
+
+        def show(self):
+            shown.append(True)
+
+    class Toggle:
+        def __init__(self):
+            self.sensitive = None
+            self.active = False
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def get_active(self):
+            return self.active
+
+        def set_text(self, _text):
+            pass
+
+    dialog = app_module.Whost.__new__(app_module.Whost)
+    controls = {
+        name: Toggle()
+        for name in (
+            "txtKeepAlive",
+            "chkKeepAlive",
+            "chkX11",
+            "chkAgent",
+            "chkCompression",
+            "txtCompressionLevel",
+            "txtPrivateKey",
+            "btnBrowse",
+            "txtPort",
+            "txtUser",
+            "txtPassword",
+            "txtHost",
+            "txtExtraParams",
+        )
+    }
+    for name, widget in controls.items():
+        setattr(dialog, name, widget)
+    dialog.get_widget = lambda name: Grid() if name == "tunnelGrid" else controls.get(name)
+
+    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "ssh"))
+    assert shown and not hidden, "SSH must keep the Port forwarding tab"
+
+    shown.clear()
+    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "telnet"))
+    assert hidden and not shown, "Telnet must not offer port forwarding"
+
+
+def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module):
+    """The tunnel page is the only thing that disappears; everything else greys out.
+
+    That asymmetry is what makes the vanishing tab look like a fault, so it is worth
+    holding in place: if these ever start hiding too, the documentation is wrong.
+    """
+
+    class Control:
+        def __init__(self):
+            self.sensitive = None
+
+        def set_sensitive(self, value):
+            self.sensitive = value
+
+        def get_active(self):
+            return False
+
+        def set_text(self, _text):
+            pass
+
+    class Grid:
+        def hide(self):
+            pass
+
+        def show(self):
+            pass
+
+    dialog = app_module.Whost.__new__(app_module.Whost)
+    ssh_only = ("txtKeepAlive", "chkKeepAlive", "chkX11", "chkAgent", "chkCompression",
+                "txtCompressionLevel", "txtPrivateKey", "btnBrowse")
+    controls = {name: Control() for name in (*ssh_only, "txtPort", "txtUser",
+                                             "txtPassword", "txtHost", "txtExtraParams")}
+    for name, widget in controls.items():
+        setattr(dialog, name, widget)
+    dialog.get_widget = lambda name: Grid() if name == "tunnelGrid" else controls.get(name)
+
+    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "telnet"))
+
+    still_there = [n for n in ssh_only if controls[n].sensitive is not False]
+    assert not still_there, f"these should be insensitive for telnet: {still_there}"
