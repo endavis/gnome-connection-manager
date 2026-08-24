@@ -83,7 +83,7 @@ class ControllerStub:
     def on_btnDonate_clicked(self, arg):
         self.calls.append(("donate", arg))
 
-    def trigger_popup_action(self, terminal_code, tab_code):
+    def trigger_popup_action(self, terminal_code, tab_code=None):
         self.calls.append(("popup", (terminal_code, tab_code)))
 
 
@@ -613,3 +613,42 @@ def test_an_unbound_key_is_left_alone(app_module, monkeypatch):
 
     assert terminal.fed == []
     assert result is not True, "VTE must keep handling keys GCM has no binding for"
+
+
+# -- closing a console must reach the branch that sets the terminal (#95) -----
+
+
+def test_closing_a_console_asks_for_no_tab_action(app_module):
+    """There is no tab-scoped close to ask for: the tab menu has no Close item."""
+    app = app_module.GcmApplication()
+    controller = ControllerStub()
+    app._controller = controller
+
+    app._on_action_console_close(None, None)
+
+    assert ("popup", ("X", None)) in controller.calls
+
+
+def test_closing_a_console_leaves_the_terminal_set_for_the_handler(app_module):
+    """The real wiring, not just the call shape.
+
+    "X" reads `popupMenu.terminal`, and only the terminal branch of
+    trigger_popup_action sets it. Sending it down the tab branch left it unset, so
+    Ctrl+W raised AttributeError and the console stayed open (#95).
+    """
+    controller = app_module.Wmain.__new__(app_module.Wmain)
+    controller._context_tab_widget = None
+    controller.nbConsole = types.SimpleNamespace(get_n_pages=lambda: 1)
+    controller.popupMenu = types.SimpleNamespace()
+    terminal = object()
+    controller.get_target_terminal = lambda: terminal
+    dispatched = []
+    controller.on_popupmenu = lambda _widget, item, *_args: dispatched.append(
+        (item, getattr(controller.popupMenu, "terminal", None))
+    )
+
+    app = app_module.GcmApplication()
+    app._controller = controller
+    app._on_action_console_close(None, None)
+
+    assert dispatched == [("X", terminal)], "the close handler was given no terminal"

@@ -7098,7 +7098,11 @@ class GcmApplication(Gtk.Application):
 
     def _on_action_console_close(self, action, _param):
         if self._controller is not None:
-            self._controller.trigger_popup_action("X", "X")
+            # No tab code: "X" is a terminal code, and only the terminal branch sets
+            # the terminal it reads. Passing it as a tab code too sent it down the tab
+            # branch, which leaves that unset, so Ctrl+W raised instead of closing (#95).
+            # There is no tab-scoped close to route to -- the tab menu has no Close.
+            self._controller.trigger_popup_action("X")
 
     def _on_action_console_log(self, action, state):
         if self._controller is None:
