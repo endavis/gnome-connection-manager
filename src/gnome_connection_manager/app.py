@@ -1091,8 +1091,16 @@ def scroll_oversized_content(window, workarea):
     for child in window.get_content_area().get_children():
         if not isinstance(child, Gtk.Notebook):
             continue
+        # Wrapping a page means removing and reinserting it, and removing the selected
+        # page moves the selection on. Doing that down the whole notebook walks it off
+        # the first tab, and past the second, because each removal pushes it beyond the
+        # page going back in -- Edit Host opened on Commands and Settings on Shortcuts,
+        # never on the tab between (#89). Put the selection back where it was.
+        selected = child.get_current_page()
         for page in list(child.get_children()):
             wrapped = scroll_notebook_page(child, page) is not None or wrapped
+        if selected >= 0:
+            child.set_current_page(selected)
     return wrapped
 
 

@@ -304,3 +304,98 @@ def test_a_dialog_left_below_the_screen_is_brought_back_against_real_gtk():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "OK" in result.stdout
+
+# -- wrapping the pages must not move the selected tab (#89) ------------------
+
+# Same shape as the script above: a real GtkNotebook is the only thing that shows
+# this, because remove_page() moving the selection is GTK's behaviour, not ours.
+_TAB_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+real_workarea = app.monitor_workarea
+def small(window=None):
+    area = real_workarea(window)
+    if area is None:
+        sys.exit("no monitor")
+    area.x = area.y = 0
+    area.width, area.height = 1024, 600
+    return area
+app.monitor_workarea = small
+
+def settle(seconds=1.5):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+def notebook_of(component):
+    return [w for w in component.get_widgets() if isinstance(w, Gtk.Notebook)][0]
+
+def labels(nb):
+    return [nb.get_tab_label_text(nb.get_nth_page(i)) for i in range(nb.get_n_pages())]
+
+app.wMain = app.Wmain(application=None)
+settle()
+
+# The dialog has already been through fit_window_to_monitor by the time this runs:
+# its constructor queues that on idle and settle() has run it, so this is the state
+# the user is actually shown rather than a reconstruction of it.
+def check(name, component, window_id, expected_first):
+    nb = notebook_of(component)
+    tabs = labels(nb)
+    assert tabs[0] == expected_first, "%s: first tab is %r" % (name, tabs[0])
+    scrolled = [i for i in range(nb.get_n_pages())
+                if isinstance(nb.get_nth_page(i), Gtk.ScrolledWindow)]
+    assert scrolled, "%s: no page was wrapped, so this proves nothing" % name
+    current = nb.get_current_page()
+    assert current == 0, "%s: opened on %r, not %r" % (name, tabs[current], expected_first)
+    component.get_widget(window_id).destroy()
+
+config = app.Wconfig()
+settle()
+check("Settings", config, "wConfig", "General")
+
+host = app.Host("g", "n", "", "example.test", "u", "", "", "22", "", "ssh")
+# Host defaults some fields to ints; init() feeds them straight to set_text().
+host.keep_alive = "0"
+host.commands = ""
+host.font_color = host.back_color = ""
+host.term = ""
+edit = app.Whost()
+edit.init("g", host)
+settle()
+check("Edit Host", edit, "wHost", "Properties")
+
+print("TABS-OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real window",
+)
+def test_wrapping_pages_leaves_the_selected_tab_alone_against_real_gtk():
+    """Making a dialog scrollable must not change which tab it opens on.
+
+    Wrapping removes and reinserts every page, and GTK moves the selection off a
+    page it removes -- so down a whole notebook the selection walks past the first
+    tab and the second. Edit Host opened on Commands and Settings on Shortcuts,
+    never on the tab between them, and only on a screen small enough to trigger the
+    wrapping at all (#89).
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _TAB_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "TABS-OK" in result.stdout
