@@ -2128,10 +2128,15 @@ class Wmain(GladeComponent):
     def on_console_button_clicked(self, button, menu):
         self.build_console_menu(menu)
         if hasattr(menu, "popup_at_widget"):
+            # East, not west: the button sits at the right end of the tab strip, so a
+            # menu whose left edge starts there runs off the screen -- measured 800px
+            # off with a full-width window. Anchoring the menu's right edge to the
+            # button's makes it open leftwards, which is correct by construction rather
+            # than relying on GTK sliding it back, which does not always happen.
             menu.popup_at_widget(
                 button,
-                Gdk.Gravity.SOUTH_WEST,
-                Gdk.Gravity.NORTH_WEST,
+                Gdk.Gravity.SOUTH_EAST,
+                Gdk.Gravity.NORTH_EAST,
                 Gtk.get_current_event(),
             )
         else:

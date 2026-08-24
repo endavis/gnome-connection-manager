@@ -31,11 +31,12 @@ class FakeTerminal:
 
 
 class FakePage:
-    def __init__(self, terminal=None):
+    def __init__(self, terminal=None, extra=None):
         self.terminal = terminal or FakeTerminal()
+        self.extra = extra or []
 
     def get_children(self):
-        return [self.terminal]
+        return [self.terminal, *self.extra]
 
 
 class FakeNotebook:
@@ -324,11 +325,13 @@ def test_collect_notebooks_finds_every_pane_in_order(console_env):
 
 
 def test_collect_notebooks_does_not_descend_into_a_notebook(console_env):
-    """Pages are not panes; descending would list a terminal's children as notebooks."""
-    inner = FakeNotebook([FakeTabLabel("a")])
-    wmain = make_wmain(console_env, FakePaned(inner))
+    """A notebook ends the descent: whatever a page contains is not another pane."""
+    buried = FakeNotebook([FakeTabLabel("buried")])
+    outer = FakeNotebook([FakeTabLabel("a")])
+    outer.pages[0].extra = [buried]
+    wmain = make_wmain(console_env, FakePaned(outer))
 
-    assert wmain.collect_notebooks(wmain.hpMain) == [inner]
+    assert wmain.collect_notebooks(wmain.hpMain) == [outer]
 
 
 def test_open_console_groups_keeps_panes_apart(console_env, monkeypatch):
@@ -563,26 +566,48 @@ def test_the_button_is_not_installed_twice(button_env):
     assert notebook.get_action_widget("end") is first
 
 
-def test_clicking_the_button_fills_its_menu(button_env, monkeypatch):
-    monkeypatch.setattr(button_env, "shortcuts", {})
-    notebook = FakeNotebook([FakeTabLabel("a"), FakeTabLabel("b")])
-    wmain = make_wmain(button_env, FakePaned(notebook))
+GRAVITY = types.SimpleNamespace(
+    SOUTH_WEST="south-west", NORTH_WEST="north-west",
+    SOUTH_EAST="south-east", NORTH_EAST="north-east",
+)
+
+
+def click_button(button_env, monkeypatch, wmain, notebook):
+    """Click the dropdown and report (menu, widget_anchor, menu_anchor)."""
     button = wmain.install_console_button(notebook)
     popped = []
-    monkeypatch.setattr(
-        button_env.Gtk, "get_current_event", lambda: object(), raising=False
-    )
-    monkeypatch.setattr(
-        button_env.Gdk, "Gravity",
-        types.SimpleNamespace(SOUTH_WEST=0, NORTH_WEST=1), raising=False,
-    )
-    FakeMenu.popup_at_widget = lambda self, *args: popped.append(self)
+    monkeypatch.setattr(button_env.Gtk, "get_current_event", lambda: object(), raising=False)
+    monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
+    FakeMenu.popup_at_widget = lambda self, _w, ra, ma, _e: popped.append((self, ra, ma))
     try:
         button.click()
     finally:
         del FakeMenu.popup_at_widget
+    assert popped, "the button never popped its menu"
+    return popped[0]
 
-    assert popped and [item.markup for item in popped[0].items] == ["a", "b"]
+
+def test_clicking_the_button_fills_its_menu(button_env, monkeypatch):
+    monkeypatch.setattr(button_env, "shortcuts", {})
+    notebook = FakeNotebook([FakeTabLabel("a"), FakeTabLabel("b")])
+    wmain = make_wmain(button_env, FakePaned(notebook))
+
+    menu, _widget_anchor, _menu_anchor = click_button(button_env, monkeypatch, wmain, notebook)
+
+    assert [item.markup for item in menu.items] == ["a", "b"]
+
+
+def test_the_menu_opens_leftwards_from_the_button(button_env, monkeypatch):
+    """The button is at the right end of the strip, so a west-anchored menu runs off
+    the screen -- measured ~800px off before this. Anchoring east opens it inwards."""
+    monkeypatch.setattr(button_env, "shortcuts", {})
+    notebook = FakeNotebook([FakeTabLabel("a")])
+    wmain = make_wmain(button_env, FakePaned(notebook))
+
+    _menu, widget_anchor, menu_anchor = click_button(button_env, monkeypatch, wmain, notebook)
+
+    assert widget_anchor == GRAVITY.SOUTH_EAST
+    assert menu_anchor == GRAVITY.NORTH_EAST
 
 
 class FakeMenuBar:
