@@ -219,6 +219,33 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Shares the relay with OSC 52; the relay is used when either preference is on, and the
   spawn path is unchanged when both are off.
 
+### Session Transcripts
+- **Save Transcript** rebuilds a readable, linear log from a recording, in the Edit menu
+  and the terminal's context menu. Off the same recording the session is already writing,
+  so it needs `raw-session-log`; a session that was never recorded has nothing to rebuild.
+- Replayed through a hidden `Vte.Terminal` -- the emulator this project already depends
+  on. It needs a display and a window shown once, after which it can be hidden and driven
+  by `feed()`; unlike the offline emulators it saves and restores the primary screen
+  correctly across `?1049h`/`?1049l`.
+- The two screens are not the same problem. On the primary screen VTE keeps scrollback,
+  which already *is* the transcript, so a whole primary run is fed at once and read back
+  -- exact, and free. Only the alternate screen, which has no scrollback, needs frames
+  compared one against the next.
+- Frames come from the recording's own pacing rather than its write boundaries. A frame is
+  a burst of writes followed by a pause; measured across three sessions the gaps within a
+  burst were 0.06-1.65ms against 50ms and up between frames. Coalescing the burst is what
+  stops a sample landing on a half-drawn screen.
+- Deduplication is a heuristic, and deliberately a conservative one. A frame is compared
+  with the last to find the band of rows that shifted -- a *band*, because a title stays
+  put at the top and a status line at the bottom, and taking the whole screen emits the
+  title once per frame. Only what fell off the top of that band is emitted. A screen with
+  no overlap at all is a page turn, and the outgoing screen is emitted whole; anything
+  else emits nothing. Over-emitting is the failure that makes a transcript useless: the
+  first spike produced 96 lines for 20 lines of content.
+- Replay is not instant. VTE parses on a ~60Hz tick -- measured 16.6ms per frame over
+  1,000 -- and feeding frames faster only makes it coalesce them and lose the ones in
+  between, so a long session takes a while and the dialog can cancel it.
+
 ### OSC 52 Clipboard
 - Off by default (`osc52-clipboard`). When on, sessions are spawned under a relay process
   that observes the child's output for `OSC 52` and forwards clipboard writes to the

@@ -80,6 +80,27 @@ def make_gtk_class(name: str):
         def present(self):
             pass
 
+        # The dialog surface save_session_transcript drives. Every method here is
+        # asserted against the real Gtk.Dialog in test_transcript.py -- a fake that
+        # offers something GTK lacks is how #30 and #41 shipped.
+        def set_icon_from_file(self, *_args, **_kwargs):
+            pass
+
+        def add_button(self, *_args, **_kwargs):
+            pass
+
+        def get_content_area(self):
+            return _Widget()
+
+        def pack_start(self, *_args, **_kwargs):
+            pass
+
+        def connect(self, *_args, **_kwargs):
+            return 0
+
+        def destroy(self):
+            pass
+
     _Widget.__name__ = name
     return _Widget
 

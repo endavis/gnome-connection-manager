@@ -1800,3 +1800,18 @@ msgstr ""
 
 msgid "Pane {}"
 msgstr ""
+
+msgid "Guardar transcripción"
+msgstr ""
+
+msgid "Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."
+msgstr ""
+
+msgid "Reconstruyendo transcripción"
+msgstr ""
+
+msgid "Save Transcript"
+msgstr ""
+
+msgid "Esta grabación todavía no contiene texto"
+msgstr ""

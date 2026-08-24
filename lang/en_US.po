@@ -1804,3 +1804,18 @@ msgstr "Open Consoles"
 
 msgid "Pane {}"
 msgstr "Pane {}"
+
+msgid "Guardar transcripción"
+msgstr "Save transcript"
+
+msgid "Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."
+msgstr "This session has no recording. Turn on `raw-session-log` in gcm.conf and open a new session."
+
+msgid "Reconstruyendo transcripción"
+msgstr "Rebuilding transcript"
+
+msgid "Save Transcript"
+msgstr "Save Transcript"
+
+msgid "Esta grabación todavía no contiene texto"
+msgstr "This recording has no text in it yet"
