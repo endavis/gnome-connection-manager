@@ -1736,7 +1736,7 @@ msgstr "_View"
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
-msgstr "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
+msgstr "Let applications write to the clipboard (OSC 52)"
 
 # --- added for GCM UI strings that had no catalog entry ---
 

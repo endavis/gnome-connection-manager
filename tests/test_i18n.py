@@ -21,6 +21,22 @@ EN_PO = PO_DIR / "en_US.po"
 EN_MO = PO_DIR / "en" / "LC_MESSAGES" / "gcm-lang.mo"
 
 _GETTEXT_CALL = re.compile(r'_\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
+
+# Whether a msgid is Spanish, and so needs an English translation before it is shown
+# to an English user. Accents alone do not answer that: "Permitir que las aplicaciones
+# escriban en el portapapeles (OSC 52)" carries none, so it reached the preferences
+# dialog untranslated with these checks passing (#90). The glade half of this file had
+# already learned the same lesson on "para historial" and "Ingrese el texto...".
+#
+# Function words settle it, but only ones that are not also ordinary English: `no`,
+# `con`, `sin`, `de`, `un` and `al` all appear in English UI text, and including `no`
+# flagged "No open consoles". Measured over the strings in app.py, the list below
+# leaves all 38 translated Spanish msgids alone and still catches the one from #90.
+_SPANISH = re.compile(
+    r"[áéíóúñü¿¡]"
+    r"|\b(el|los|las|una|del|para|por|que|su|desde|hasta|todos|esta|este)\b",
+    re.I,
+)
 _MSGID = re.compile(r'^msgid "(.*)"$', re.M)
 _ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
 
@@ -80,10 +96,9 @@ def test_extraction_finds_a_realistic_number_of_strings():
 
 def test_every_string_has_an_english_translation():
     catalog = gettext.GNUTranslations(EN_MO.open("rb"))
-    spanish = re.compile(r"[áéíóúñü¿¡]")
 
     untranslated = sorted(
-        s for s in translatable_strings() if catalog.gettext(s) == s and spanish.search(s)
+        s for s in translatable_strings() if catalog.gettext(s) == s and _SPANISH.search(s)
     )
 
     assert not untranslated, (
@@ -173,12 +188,11 @@ def catalog_entries(po):
 def test_the_english_source_catalog_has_no_blank_translations():
     """The .mo is what loads, so a blanked .po hides until the next rebuild."""
     entries = catalog_entries(EN_PO)
-    spanish = re.compile(r"[áéíóúñü¿¡]")
 
     blank = sorted(
         s
         for s in translatable_strings()
-        if spanish.search(s) and not entries.get(s, "")
+        if _SPANISH.search(s) and not entries.get(s, "")
     )
 
     assert not blank, f"lang/en_US.po has no translation for: {blank}"
