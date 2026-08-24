@@ -1634,3 +1634,15 @@ msgstr ""
 
 msgid "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
 msgstr ""
+
+msgid "List open consoles"
+msgstr ""
+
+msgid "No open consoles"
+msgstr ""
+
+msgid "Open Consoles"
+msgstr ""
+
+msgid "Pane {}"
+msgstr ""

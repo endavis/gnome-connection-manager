@@ -1792,3 +1792,15 @@ msgstr "TTY Erase"
 
 msgid "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
 msgstr "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
+
+msgid "List open consoles"
+msgstr "List open consoles"
+
+msgid "No open consoles"
+msgstr "No open consoles"
+
+msgid "Open Consoles"
+msgstr "Open Consoles"
+
+msgid "Pane {}"
+msgstr "Pane {}"

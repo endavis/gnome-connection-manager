@@ -240,6 +240,41 @@ whatever runs in the terminal, including a remote host over SSH.
 Note that not every program sets a title: of the agent CLIs measured above, only Claude Code
 does, and it advertises a fixed string rather than per-task status.
 
+## Finding a console among many
+
+Once the tabs stop fitting, the tab strip grows arrows and most of your sessions are off
+screen. The **▾ button at the far right of the tab strip** lists all of them. It sits outside
+the arrows, so it does not scroll away with the tabs. The same list is in the menu bar under
+**Terminal → Open Consoles**.
+
+```
+◀ │ web-01 │ db-02: htop │ claude: gcm │ ▶ │ ▾
+                                              │
+   ┌──────────────────────────────────────────┘
+   │ ● [ALT+1] web-01
+   │   [ALT+2] db-02: htop
+   │   [ALT+3] claude: gcm
+   │   [ALT+4] deploy-runner        ← struck through: the session has exited
+```
+
+Each row shows what the tab shows, including any title the program set — which is what tells
+several sessions of the same tool apart. Choosing a row raises that console and gives it the
+keyboard.
+
+The list also carries state you would otherwise have to go looking for:
+
+| Row | Means |
+| --- | --- |
+| Marked with a dot | The console that currently has the keyboard |
+| **Bold** | Rang the bell and you have not looked at it yet |
+| ~~Struck through~~ | The session behind it has exited |
+| `[ALT+1]` … `[ALT+9]` | The key that jumps straight there, as you have it configured |
+
+The keys are read from your `[shortcuts]` config, not hardcoded, so a rebound key shows the
+key you actually use. They address a position *within one pane*, which is why the numbering
+restarts under each heading once you have split the window — with a split, the list groups
+consoles by pane and tells you which pane each one is in.
+
 ## Dropping files onto a terminal
 
 Drag a file from a file manager onto a terminal and its path is inserted at the cursor,

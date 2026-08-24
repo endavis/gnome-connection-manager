@@ -1515,6 +1515,103 @@ def vte_run(terminal, command, arg=None):
             del os.environ[var]
 
 
+# -- the open-console list, shared by the tab-strip dropdown and the menubar (#84) ------
+
+
+class ConsoleEntry:
+    """One row of the open-console list: what to render, and what to raise."""
+
+    def __init__(self, notebook, page, label, position, accel=None, current=False):
+        self.notebook = notebook
+        self.page = page
+        self.label = label
+        self.position = position
+        self.accel = accel
+        self.current = current
+
+    @property
+    def text(self):
+        """What the tab strip renders, not the tab's identity.
+
+        get_text() deliberately returns the identity so a program-set title cannot
+        decide what a clone connects to. Here the opposite is wanted: the title is
+        the half that tells two sessions of the same program apart, which is the
+        whole point of listing them.
+        """
+        if hasattr(self.label, "get_display_text"):
+            return self.label.get_display_text().strip()
+        if hasattr(self.label, "get_text"):
+            return (self.label.get_text() or "").strip()
+        return ""
+
+    @property
+    def active(self):
+        """False once the session behind the tab has exited."""
+        return bool(getattr(self.label, "is_active", True))
+
+    @property
+    def attention(self):
+        """True while the tab is flagged for a bell the user has not looked at."""
+        return bool(getattr(self.label, "needs_attention", False))
+
+
+def console_shortcut_hints(bound=None):
+    """The configured key for consoles 1-9, by position, or None where unbound.
+
+    Read from the shortcuts table rather than hardcoded: a fixed Alt+N here would
+    drift from whatever the user actually has bound, which is the shape of #3 and
+    #15. The keys address a position inside one notebook, so the same nine repeat
+    in every pane.
+    """
+    if bound is None:
+        bound = {
+            command[0]: key
+            for key, command in shortcuts.items()
+            if isinstance(command, list) and command
+        }
+    return [bound.get(f"console_{n}") for n in range(1, 10)]
+
+
+def console_entries(notebook, focused_page=None, hints=None):
+    """The consoles open in `notebook`, in tab order."""
+    if hints is None:
+        hints = console_shortcut_hints()
+    entries = []
+    for position in range(notebook.get_n_pages()):
+        page = notebook.get_nth_page(position)
+        entries.append(
+            ConsoleEntry(
+                notebook,
+                page,
+                notebook.get_tab_label(page),
+                position,
+                hints[position] if position < len(hints) else None,
+                page is not None and page is focused_page,
+            )
+        )
+    return entries
+
+
+def console_item_markup(entry):
+    """Pango markup for one console row.
+
+    Mirrors what the tab strip already says: a finished session is struck through
+    the way mark_tab_as_closed renders it, and the key is shown with the small blue
+    prefix the custom-commands menu uses.
+    """
+    text = GLib.markup_escape_text(entry.text)
+    if not entry.active:
+        text = f"<span color='darkgray' strikethrough='true'>{text}</span>"
+    elif entry.attention:
+        text = f"<b>{text}</b>"
+    if entry.accel:
+        text = (
+            "<span foreground='blue' size='x-small'>"
+            f"[{GLib.markup_escape_text(entry.accel)}]</span> {text}"
+        )
+    return text
+
+
 class Wmain(GladeComponent):
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
@@ -1566,6 +1663,7 @@ class Wmain(GladeComponent):
         for x in self.nbConsole.get_children():
             self.nbConsole.remove(x)
         self.nbConsole.set_scrollable(True)
+        self.install_console_button(self.nbConsole)
         self.nbConsole.set_group_name("11")
         self.nbConsole.connect("page_removed", self.on_page_removed)
         self.nbConsole.connect("page-added", self.on_page_added)
@@ -1671,6 +1769,9 @@ class Wmain(GladeComponent):
         # The host list is a nested widget menu rebuilt by updateTree, so it stays a
         # real Gtk.Menu rather than moving into the menu model.
         self.menuServers = Gtk.Menu()
+        # Filled on the way open rather than kept live: see build_console_menu.
+        self.menuConsoles = Gtk.Menu()
+        self.menuConsoles.connect("show", self.build_console_menu)
         self.menubar = None
         self.install_menubar()
         self.current = None
@@ -1871,14 +1972,188 @@ class Wmain(GladeComponent):
         hosts_item.set_submenu(self.menuServers)
         # before Help, which the model appends last
         self.menubar.insert(hosts_item, max(len(self.menubar.get_children()) - 1, 0))
+        self.install_console_menu()
         box.pack_start(self.menubar, False, False, 0)
         box.reorder_child(self.menubar, 0)
         self.menubar.show_all()
+
+    def find_menubar_item(self, label):
+        """The menu GTK built for the model's `label`, or None."""
+        if self.menubar is None:
+            return None
+        for item in self.menubar.get_children():
+            if hasattr(item, "get_label") and item.get_label() == label:
+                return item
+        return None
+
+    def install_console_menu(self):
+        """Hang the open-console list off the bottom of the Terminal menu.
+
+        Appending a hand-built item to a menu GTK built from the model is what the
+        Hosts entry already does, and model items keep their own positions, so this
+        stays below Close Console however the model is edited later. It has to be a
+        real Gtk.Menu rather than another model section: the rows carry markup for
+        the struck-through and flagged states, which a menu model cannot express.
+        """
+        terminal_item = self.find_menubar_item(_("_Terminal"))
+        submenu = terminal_item.get_submenu() if terminal_item is not None else None
+        if submenu is None:
+            return None
+        separator = Gtk.SeparatorMenuItem()
+        separator.show()
+        submenu.append(separator)
+        consoles_item = Gtk.MenuItem(label=_("Open Consoles"))
+        consoles_item.set_submenu(self.menuConsoles)
+        consoles_item.show()
+        submenu.append(consoles_item)
+        return consoles_item
 
     def refresh_menu_accels(self):
         """Re-render the accelerators shown in the hand-built context menus."""
         for name in ("popupMenu", "popupMenuTab", "popupMenuFolder"):
             apply_menu_accels(getattr(self, name, None))
+
+    def collect_notebooks(self, widget, found=None):
+        """Every console notebook under `widget`, in on-screen order.
+
+        Splitting nests notebooks inside a Gtk.Paned, so a depth-first walk visits
+        them the way they are laid out: left to right for a horizontal split, top to
+        bottom for a vertical one. Terminals live inside notebooks, so a notebook
+        ends the descent.
+        """
+        if found is None:
+            found = []
+        if isinstance(widget, Gtk.Notebook):
+            found.append(widget)
+            return found
+        if hasattr(widget, "get_children"):
+            for child in widget.get_children():
+                self.collect_notebooks(child, found)
+        return found
+
+    def open_console_groups(self):
+        """Every open console, grouped by the pane it lives in."""
+        focused = self.current.get_parent() if self.current is not None else None
+        hints = console_shortcut_hints()
+        return [
+            (notebook, console_entries(notebook, focused, hints))
+            for notebook in self.collect_notebooks(self.hpMain)
+        ]
+
+    def create_console_menu_item(self, entry):
+        """One console's row, marked when it is the console holding the keyboard."""
+        item = Gtk.CheckMenuItem(label="")
+        item.set_draw_as_radio(True)
+        # set_active() emits activate, so the state goes on before the handler does.
+        item.set_active(entry.current)
+        item.get_children()[0].set_markup(console_item_markup(entry))
+        item.connect("activate", self.on_console_menu_item_activate, entry)
+        item.show()
+        return item
+
+    def build_console_menu(self, menu):
+        """Fill `menu` with one item per open console, grouped by pane.
+
+        Rebuilt from scratch on every open. Keeping it live instead would mean
+        invalidating on eight signals, one of which is the window title an agent
+        CLI rewrites continuously; the list is small enough that rebuilding is
+        cheaper than tracking.
+        """
+        menu.foreach(menu.remove)
+        pane_groups = self.open_console_groups()
+        # Pane numbers only mean something once there is more than one pane.
+        headings = sum(1 for _notebook, entries in pane_groups if entries) > 1
+        listed = 0
+        for index, (_notebook, entries) in enumerate(pane_groups, 1):
+            if not entries:
+                continue
+            if headings:
+                if listed:
+                    separator = Gtk.SeparatorMenuItem()
+                    separator.show()
+                    menu.append(separator)
+                heading = Gtk.MenuItem(label=_("Pane {}").format(index))
+                heading.set_sensitive(False)
+                heading.show()
+                menu.append(heading)
+            for entry in entries:
+                menu.append(self.create_console_menu_item(entry))
+                listed += 1
+        if not listed:
+            empty = Gtk.MenuItem(label=_("No open consoles"))
+            empty.set_sensitive(False)
+            empty.show()
+            menu.append(empty)
+        return menu
+
+    def on_console_menu_item_activate(self, _item, entry):
+        self.focus_console(entry.notebook, entry.page)
+
+    def focus_console(self, notebook, page):
+        """Raise `page` and put the keyboard in its terminal, whichever pane it is in."""
+        position = notebook.page_num(page) if page is not None else -1
+        if position < 0:
+            return False
+        notebook.set_current_page(position)
+        children = page.get_children() if hasattr(page, "get_children") else []
+        terminal = children[0] if children else None
+        if isinstance(terminal, Vte.Terminal):
+            self.wMain.set_focus(terminal)
+            self.on_tab_focus(terminal)
+        return True
+
+    def install_console_button(self, notebook):
+        """Put the open-console dropdown at the end of a notebook's tab strip.
+
+        GTK packs an END action widget outside the overflow arrows rather than among
+        the tabs, so the button lands to the right of the arrows and never scrolls
+        out of reach -- which is the point, since that is when a tab list is wanted.
+        """
+        if not hasattr(notebook, "set_action_widget"):
+            return None
+        if notebook.get_action_widget(Gtk.PackType.END) is not None:
+            return None
+        button = Gtk.Button()
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        button.set_focus_on_click(False)
+        button.add(Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.MENU))
+        button.set_tooltip_text(_("List open consoles"))
+        menu = Gtk.Menu()
+        menu.attach_to_widget(self.window, None)
+        # On the press, with the event in hand, the way every other menu here opens.
+        # Opening from "clicked" runs on the release and leaves GTK to dig the event
+        # out of Gtk.get_current_event(), which is not always there: GTK's own toolbar
+        # overflow menu passes nothing and warns "no trigger event for menu popup",
+        # and a popup mapped without one is unreliable under Wayland.
+        button.connect("button-press-event", self.on_console_button_pressed, menu)
+        # The press is consumed, so "clicked" only reaches here from the keyboard.
+        button.connect("clicked", self.on_console_button_clicked, menu)
+        notebook.set_action_widget(button, Gtk.PackType.END)
+        button.show_all()
+        return button
+
+    def on_console_button_pressed(self, button, event, menu):
+        if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 1:
+            return False
+        self.show_console_menu(button, menu, event)
+        return True
+
+    def on_console_button_clicked(self, button, menu):
+        self.show_console_menu(button, menu, Gtk.get_current_event())
+
+    def show_console_menu(self, button, menu, event):
+        self.build_console_menu(menu)
+        if hasattr(menu, "popup_at_widget"):
+            # East, not west: the button sits at the right end of the tab strip, so a
+            # menu whose left edge starts there runs off the screen -- measured 800px
+            # off with a full-width window. Anchoring the menu's right edge to the
+            # button's makes it open leftwards, which is correct by construction rather
+            # than relying on GTK sliding it back, which does not always happen.
+            menu.popup_at_widget(
+                button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, event
+            )
+        else:
+            menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
 
     def focus_search(self):
         self.get_widget("txtSearch").select_region(0, -1)
@@ -3335,6 +3610,7 @@ class Wmain(GladeComponent):
             nb.connect("scroll-event", self.on_tab_scroll)
 
             nb.set_property("scrollable", True)
+            self.install_console_button(nb)
             cp = cnb.get_parent()
 
             if direction == HSPLIT:
@@ -5728,6 +6004,7 @@ class NotebookTabLabel(Gtk.HBox):
         self.eb2.show()
         close_btn.show_all()
         self.is_active = True
+        self.needs_attention = False
         self.eb.add_events(
             Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK
         )  # let the scroll-event pass through
@@ -5744,6 +6021,9 @@ class NotebookTabLabel(Gtk.HBox):
 
     def set_attention(self, needs_attention):
         """Highlight the tab until the user looks at it."""
+        # Kept as a plain attribute as well: the open-console list has to read this
+        # back, and a style class is only answerable on a realized widget.
+        self.needs_attention = bool(needs_attention)
         if needs_attention:
             self.get_style_context().add_class("attention")
         else:
@@ -5797,6 +6077,10 @@ class NotebookTabLabel(Gtk.HBox):
         connects to.
         """
         return self.title
+
+    def get_display_text(self):
+        """What the tab currently renders, as opposed to get_text()'s identity."""
+        return self.label.get_text()
 
     def rename(self, title):
         """Manual rename. Becomes the identity and pins the label against later titles."""
