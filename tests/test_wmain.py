@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
 import sys
@@ -519,6 +520,36 @@ class ToolbarStub:
         self.visible = False
 
 
+class ToolItemStub:
+    def __init__(self, width, homogeneous=True):
+        self.width = width
+        self.homogeneous = homogeneous
+
+    def set_homogeneous(self, value):
+        self.homogeneous = value
+
+    def get_homogeneous(self):
+        return self.homogeneous
+
+
+class ItemToolbarStub(ToolbarStub):
+    """A toolbar that pads homogeneous items out to the widest, the way GTK does."""
+
+    def __init__(self, items):
+        super().__init__()
+        self.items = list(items)
+
+    def get_n_items(self):
+        return len(self.items)
+
+    def get_nth_item(self, index):
+        return self.items[index]
+
+    def natural_width(self):
+        widest = max((i.width for i in self.items), default=0)
+        return sum(widest if i.homogeneous else i.width for i in self.items)
+
+
 class ClipboardStub:
     def __init__(self, text=None):
         self.text = text
@@ -675,6 +706,78 @@ def test_set_toolbar_visible_toggles_widgets(monkeypatch, app_module):
     assert toolbar.visible is False
     assert app_module.conf.SHOW_TOOLBAR is False
     assert toggled[-1] == ("toggle-toolbar", False)
+
+
+def test_fit_toolbar_items_stops_gtk_padding_every_item(app_module):
+    """Homogeneous items are padded to the widest, which is what pushed the toolbar
+    past the screen and hid buttons in an unusable overflow menu (#86)."""
+    wmain = object.__new__(app_module.Wmain)
+    toolbar = ItemToolbarStub([ToolItemStub(183), ToolItemStub(43), ToolItemStub(43)])
+    wmain.get_widget = lambda name: toolbar if name == "toolbar1" else None
+
+    assert toolbar.natural_width() == 183 * 3
+
+    wmain.fit_toolbar_items()
+
+    assert all(not item.homogeneous for item in toolbar.items)
+    assert toolbar.natural_width() == 183 + 43 + 43
+
+
+def test_fit_toolbar_items_survives_a_missing_toolbar(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    wmain.get_widget = lambda _name: None
+
+    wmain.fit_toolbar_items()  # must not raise
+
+
+def test_fit_toolbar_items_skips_an_absent_item(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    toolbar = ItemToolbarStub([ToolItemStub(43), None, ToolItemStub(43)])
+    wmain.get_widget = lambda name: toolbar if name == "toolbar1" else None
+
+    wmain.fit_toolbar_items()
+
+    assert [i.homogeneous for i in toolbar.items if i is not None] == [False, False]
+
+
+def test_the_toolbar_fit_runs_at_startup(app_module):
+    """The fix is inert unless __init__ calls it, and __init__ needs a real GTK to run.
+
+    Asserted against the source for the same reason the menu coverage check is
+    (test_application.py): there is no way to construct a Wmain under the gi stubs.
+    """
+    source = inspect.getsource(app_module.Wmain.__init__)
+
+    assert "self.fit_toolbar_items()" in source, (
+        "Wmain.__init__ no longer fits the toolbar; its items go back to being padded "
+        "to the widest and the last buttons fall into the unusable overflow menu (#86)"
+    )
+
+
+def test_tool_items_really_are_homogeneous_by_default():
+    """The fix is only load-bearing if GTK really defaults this on."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    item = Gtk.ToolButton()
+
+    assert item.get_homogeneous() is True, "GTK no longer pads items; the fix is moot"
+    item.set_homogeneous(False)
+    assert item.get_homogeneous() is False
+
+
+def test_toolbar_stub_matches_the_real_gtk_toolbar_api():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("get_n_items", "get_nth_item"):
+        assert hasattr(ItemToolbarStub, name), f"fake is missing {name}"
+        assert hasattr(Gtk.Toolbar, name), f"Gtk.Toolbar has no {name}"
+    for name in ("set_homogeneous", "get_homogeneous"):
+        assert hasattr(ToolItemStub, name), f"fake is missing {name}"
+        assert hasattr(Gtk.ToolItem, name), f"Gtk.ToolItem has no {name}"
 
 
 def test_update_tree_rebuilds_structure(monkeypatch, app_module):

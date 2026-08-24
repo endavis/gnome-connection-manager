@@ -316,6 +316,13 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 ## 9. Menus & Toolbar
 
 ### Toolbar
+- Each item is sized to its own content rather than to the widest one. GtkToolItems are
+  homogeneous by default, which padded every icon-only button out to the width of
+  "Connect" and turned a 1,503px toolbar into a 2,333px request -- wider than a 1920px
+  screen, so GtkToolbar moved the last buttons into its overflow menu. That menu is not
+  a usable fallback: GTK anchors it to the left of the arrow at the right end of the
+  toolbar, so it opens off the screen, and items with no proxy menu item (the search box
+  and Donate) do not appear in it at all. Keep the items non-homogeneous (#86).
 - New local terminal
 - Connect to selected host
 - Add / Edit / Delete host
