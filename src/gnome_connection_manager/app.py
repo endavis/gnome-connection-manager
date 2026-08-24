@@ -2699,6 +2699,16 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.console-log")
         menuItem.show()
 
+        # Next to the log switch, because that is what it reads back. The action needs
+        # no tab-specific wiring: right-clicking a tab sets the context terminal from
+        # that tab, and the action asks for the target terminal, which prefers it.
+        self.popupMenuTab.mnuTranscript = menuItem = Gtk.MenuItem(
+            label=_("Guardar transcripción")
+        )
+        self.popupMenuTab.append(menuItem)
+        menuItem.set_action_name("app.save-transcript")
+        menuItem.show()
+
         self.popupMenuTab.mnuSplitH = menuItem = Gtk.MenuItem(label=_("Split H"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.split-horizontal")
