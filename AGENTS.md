@@ -107,6 +107,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Host attributes include group/name/description, connection info, tunnels, terminal
   overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep
   `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in sync.
+- `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
+  hides the Port forwarding page for anything that is not SSH, so a Telnet host's dialog has
+  three tabs and an SSH host's has four. It looks like a bug from the outside -- a whole tab
+  vanishing -- and it is not. Every other SSH-only control in that branch is made insensitive
+  instead, which is the inconsistency behind the confusion, not the hiding itself.
 - Session logs are named from the host entry, never the tab label:
   `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. Raw recording adds `.raw` beside
   it plus a `.timing` sidecar; the stream alone is not replayable, because concatenation
