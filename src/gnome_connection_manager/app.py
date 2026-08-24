@@ -6585,14 +6585,14 @@ class EntryDialog(Gtk.Dialog):
         box.pack_start(self.entry, True, True, 0)
         self.entry.show()
         self.entry.grab_focus()
-        button = Gtk.Button(_label="_OK")
+        button = Gtk.Button(label="OK")
         button.connect("clicked", self.click)
         self.entry.connect("activate", self.click)
         button.set_can_default(True)
         self.action_area.pack_start(button, True, True, 0)
         button.show()
         button.grab_default()
-        button = Gtk.Button(_label="_Cancel")
+        button = Gtk.Button(label="Cancel")
         button.connect("clicked", self.quit)
         button.set_can_default(True)
         self.action_area.pack_start(button, True, True, 0)
@@ -7014,11 +7014,31 @@ class GcmApplication(Gtk.Application):
 
     def _on_action_import_hosts(self, action, _param):
         if self._controller is not None:
-            self._controller.on_importar_servidores1_activate(None)
+            try:
+                self._controller.on_importar_servidores1_activate(None)
+            except Exception as exc:
+                logger.exception("Error during import hosts")
+                self._show_error_dialog("Import failed", str(exc))
 
     def _on_action_export_hosts(self, action, _param):
         if self._controller is not None:
-            self._controller.on_exportar_servidores1_activate(None)
+            try:
+                self._controller.on_exportar_servidores1_activate(None)
+            except Exception as exc:
+                logger.exception("Error during export hosts")
+                self._show_error_dialog("Export failed", str(exc))
+
+    def _show_error_dialog(self, title, message):
+        dialog = Gtk.MessageDialog(
+            transient_for=self.get_active_window(),
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+        )
+        dialog.format_secondary_text(message)
+        dialog.run()
+        dialog.destroy()
 
     def _on_action_copy(self, action, _param):
         if self._controller is not None:
