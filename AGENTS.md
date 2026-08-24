@@ -30,6 +30,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   without a terminal, a display or a pty.
 - `src/gnome_connection_manager/utils/vtehtml.py` – parses VTE's HTML grid export into styled
   runs for the buffer viewer.
+- `src/gnome_connection_manager/utils/transcript.py` – rebuilds a readable transcript from a
+  raw recording: restores the write boundaries from the `.timing` sidecar, coalesces each
+  burst of writes back into the frame it drew, tracks which screen the stream is on, and
+  decides what a new alternate-screen frame actually added. Pure, so the heuristics are
+  testable without a display; the emulator driving it is `TranscriptReplayer` in `app.py`.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `just translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget

@@ -155,6 +155,38 @@ contain everything the terminal received.
 Like OSC 52, this runs sessions under a small relay process. With both preferences off,
 sessions are spawned exactly as before.
 
+### Turning a recording into a transcript
+
+A recording is faithful but not readable. **Save Transcript**, in the Edit menu and the
+terminal's right-click menu, rebuilds a linear log of what was actually displayed —
+what you usually want after a session with a full-screen application in it.
+
+It replays the recording through a hidden terminal, so it only works on a session that
+was recorded: turn on `raw-session-log` before the session, not after. The transcript is
+offered as a text file beside the recording.
+
+It is worth knowing what it can and cannot recover:
+
+- **Anything outside a full-screen application is exact.** Ordinary shell output is
+  reconstructed line for line from the terminal's own scrollback, with no guessing.
+- **Inside a full-screen application it is a best effort.** There is no scrollback on the
+  alternate screen, so the only record of what scrolled past is the difference between
+  one frame and the next. Content that scrolled, and pages that were turned, come back;
+  a screen that was replaced by a wholly different one *and* redrawn from blank in
+  between can lose a page. It errs towards missing a line rather than repeating one — a
+  transcript that repeats a status bar every frame is worse than one with a gap.
+- **The last screen is included**, because it was never scrolled past. Titles and status
+  bars that were on it appear in the transcript; they were on the screen.
+- **The terminal's current size is used.** A session that was resized part-way through
+  replays at today's size, and long lines may wrap differently than they did.
+
+Replay takes a while on a long session. The terminal parses about 60 frames a second and
+feeding it faster just makes it skip frames, so the progress dialog can cancel — you get
+a transcript of everything replayed so far.
+
+`scriptreplay` remains the way to watch a recording play back at its original speed; the
+transcript is for reading and grepping afterwards.
+
 ## Letting applications set the clipboard (OSC 52)
 
 Applications ask a terminal to set the system clipboard with an escape sequence called

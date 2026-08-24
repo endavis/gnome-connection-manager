@@ -1648,3 +1648,15 @@ msgstr ""
 
 msgid "Pane {}"
 msgstr ""
+
+msgid "Guardar transcripción"
+msgstr ""
+
+msgid "Esta sesión no tiene grabación"
+msgstr ""
+
+msgid "Reconstruyendo transcripción"
+msgstr ""
+
+msgid "Save Transcript"
+msgstr ""

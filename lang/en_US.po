@@ -1804,3 +1804,15 @@ msgstr "Open Consoles"
 
 msgid "Pane {}"
 msgstr "Pane {}"
+
+msgid "Guardar transcripción"
+msgstr "Save transcript"
+
+msgid "Esta sesión no tiene grabación"
+msgstr "This session has no recording"
+
+msgid "Reconstruyendo transcripción"
+msgstr "Rebuilding transcript"
+
+msgid "Save Transcript"
+msgstr "Save Transcript"

@@ -101,7 +101,7 @@ def bindtextdomain(app_name, locale_dir=None):
 
 import pyaes
 
-from gnome_connection_manager.utils import urlregex, vtehtml
+from gnome_connection_manager.utils import transcript, urlregex, vtehtml
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -1477,6 +1477,9 @@ def vte_run(terminal, command, arg=None):
         controller.clipboard_relay_path() if conf.OSC52_ENABLED and controller else None
     )
     raw_path = session_file_for(terminal, ".raw") if conf.RAW_SESSION_LOG else None
+    # Kept on the terminal so Save Transcript can find this session's recording; the
+    # path is otherwise built here and forgotten.
+    terminal.raw_path = raw_path
     if socket_path or raw_path:
         # Spawning is otherwise byte-for-byte what it was; the relay only enters the
         # path when a preference asks for it, so the default carries none of its risk.
@@ -2473,6 +2476,13 @@ class Wmain(GladeComponent):
         self.popupMenu.mnuViewBuffer = menuItem = Gtk.MenuItem(label=_("Ver buffer"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.view-buffer")
+        menuItem.show()
+
+        self.popupMenu.mnuTranscript = menuItem = Gtk.MenuItem(
+            label=_("Guardar transcripción")
+        )
+        self.popupMenu.append(menuItem)
+        menuItem.set_action_name("app.save-transcript")
         menuItem.show()
 
         self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Guardar buffer en archivo"))
@@ -3780,7 +3790,7 @@ class Wmain(GladeComponent):
         Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
         return True
 
-    def save_text_to_file(self, text, parent=None):
+    def save_text_to_file(self, text, parent=None, name=None, folder=None):
         """Ask for a filename and write text to it. Shared by Save Buffer and the viewer."""
         dlg = Gtk.FileChooserDialog(
             title=_("Guardar como"),
@@ -3791,11 +3801,11 @@ class Wmain(GladeComponent):
         dlg.add_button("document-save", Gtk.ResponseType.OK)
         dlg.set_do_overwrite_confirmation(True)
         dlg.set_current_name(
-            Path("gcm-buffer-{}.txt".format(time.strftime("%Y%m%d%H%M%S"))).name
+            name or Path("gcm-buffer-{}.txt".format(time.strftime("%Y%m%d%H%M%S"))).name
         )
         if not hasattr(self, "lastPath"):
             self.lastPath = USERHOME_DIR
-        dlg.set_current_folder(self.lastPath)
+        dlg.set_current_folder(folder or self.lastPath)
         saved = False
         if dlg.run() == Gtk.ResponseType.OK:
             filename = dlg.get_filename()
@@ -3810,6 +3820,66 @@ class Wmain(GladeComponent):
                 return False
         dlg.destroy()
         return saved
+
+    def save_session_transcript(self, terminal):
+        """Rebuild a readable transcript of this session's recording and save it.
+
+        Only sessions recorded with `raw-session-log` have anything to rebuild from --
+        the text log is already linear, and a session that was never recorded has no
+        record of the frames a full-screen application drew.
+
+        Replay is shown as it runs rather than done behind a spinner, because it is not
+        instant: the alternate screen has to go through the terminal one frame at a
+        time, at VTE's own ~60Hz parsing tick, so a long session takes a while and the
+        user needs to be able to stop.
+        """
+        if terminal is None:
+            return None
+        raw_path = getattr(terminal, "raw_path", None)
+        if not raw_path or not Path(raw_path).exists():
+            msgbox(_("Esta sesión no tiene grabación"), self.wMain)
+            return None
+        dialog = Gtk.Dialog(title=_("Reconstruyendo transcripción"), parent=self.wMain)
+        dialog.set_modal(True)
+        dialog.set_icon_from_file(ICON_PATH)
+        dialog.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        bar = Gtk.ProgressBar()
+        bar.set_show_text(True)
+        bar.set_margin_start(12)
+        bar.set_margin_end(12)
+        bar.set_margin_top(12)
+        bar.set_margin_bottom(6)
+        dialog.get_content_area().pack_start(bar, True, True, 0)
+        dialog.show_all()
+
+        def on_progress(done, total):
+            bar.set_fraction(done / total if total else 1.0)
+            bar.set_text(f"{done} / {total}")
+
+        def on_finished(text):
+            dialog.destroy()
+            if text:
+                self.save_text_to_file(
+                    text,
+                    self.wMain,
+                    name=Path(raw_path).with_suffix(".txt").name,
+                    folder=str(Path(raw_path).parent),
+                )
+
+        replayer = TranscriptReplayer(
+            raw_path,
+            timing_path_for(raw_path),
+            terminal.get_column_count(),
+            terminal.get_row_count(),
+            on_finished,
+            on_progress,
+        )
+        # The dialog is the only way to stop a long replay, so any response -- the
+        # button or the window manager's close -- has to reach the replayer.
+        dialog.connect("response", lambda *_args: replayer.cancel())
+        dialog.connect("delete-event", lambda *_args: replayer.cancel())
+        replayer.start()
+        return replayer
 
     def show_buffer_viewer(self, terminal):
         """Open the scrollback in a text window where the keyboard works."""
@@ -5752,6 +5822,215 @@ class Wcluster(GladeComponent):
     # -- Wcluster.on_txtCommands_key_press_event }
 
 
+class TranscriptReplayer:
+    """Replays a raw recording through a hidden terminal into a readable transcript.
+
+    A recording is faithful but unreadable -- measured at 7% printable bytes for a
+    full-screen application, because it is a redrawn viewport rather than a stream of
+    lines. Turning it back into a transcript means interpreting it the way a terminal
+    would, and the terminal to use is the one this application is already built on.
+    Measured, VTE needs a display and a window shown once; after that it can be hidden
+    and driven purely by `feed()`, and unlike the offline emulators it saves and
+    restores the primary screen correctly across `?1049h`/`?1049l`.
+
+    The two screens are handled differently, because only one of them is hard:
+
+    * On the **primary screen** VTE keeps scrollback, and scrollback already is the
+      transcript. A whole primary run is fed in one go and read back afterwards --
+      measured lossless, 30 of 30 lines from a single bulk feed -- so it costs nothing.
+    * On the **alternate screen** there is no scrollback and every frame overwrites the
+      last, so frames must go in one at a time and be compared. That is what costs, and
+      it is why replay is not instant: VTE parses on a ~60Hz tick, measured at 16.6ms
+      per frame over 1,000 frames, and feeding frames faster only makes it coalesce
+      them and lose the ones in between.
+
+    Each frame is followed by a private OSC title sequence. VTE reports the title only
+    once it has parsed that far, so the frame is known to be complete rather than
+    assumed complete after a guessed delay -- measured, the frame was on screen every
+    time in 1,200 samples. Replay is driven entirely by that signal: polling for it in
+    an idle callback starves the main loop VTE needs, and nothing finishes at all.
+    """
+
+    # The marker has to differ from the last one: VTE reports a title *change*, so
+    # repeating it leaves the signal silent and the replay waiting for ever.
+    _SENTINEL = "gcm-transcript-{}"
+    _STALL_MS = 2000
+
+    def __init__(self, raw_path, timing_path, columns, rows, on_finished, on_progress=None):
+        self._columns = max(int(columns), 1)
+        self._rows = max(int(rows), 1)
+        self._on_finished = on_finished
+        self._on_progress = on_progress
+        self._transcript = transcript.Transcript()
+        self._tracker = None
+        self._alternate = False
+        self._harvested = 0
+        self._index = 0
+        self._cancelled = False
+        self._window = None
+        self._terminal = None
+        self._handler = None
+        self._watchdog = None
+        self._runs = self._plan(raw_path, timing_path)
+
+    @staticmethod
+    def _plan(raw_path, timing_path):
+        """The recording as `(bytes, alternate)` runs, one per frame on the alt screen.
+
+        Frames are recovered from the recording's own pacing rather than from its write
+        boundaries. A frame arrives as a burst of writes, so sampling per write catches
+        screens half drawn; coalescing the burst is what makes each sample a screen the
+        user actually saw.
+        """
+        scanner = transcript.AltScreenScanner()
+        runs = []
+        for frame in transcript.coalesce(transcript.read_writes(raw_path, timing_path)):
+            runs += scanner.split(frame)
+        runs += scanner.close()
+        # Consecutive primary-screen runs need no sampling between them, so they are
+        # merged into one feed. Alternate-screen frames must stay separate.
+        merged: list[tuple[bytes, bool]] = []
+        for data, alternate in runs:
+            if merged and not alternate and not merged[-1][1]:
+                merged[-1] = (merged[-1][0] + data, False)
+            else:
+                merged.append((data, alternate))
+        return merged
+
+    @property
+    def total(self):
+        return len(self._runs)
+
+    def start(self):
+        """Begin replaying. `on_finished` is called with the transcript text, or None."""
+        if not self._runs:
+            self._finish()
+            return
+        self._window = Gtk.Window()
+        self._terminal = Vte.Terminal()
+        self._terminal.set_size(self._columns, self._rows)
+        # The primary-screen transcript *is* this scrollback, so nothing may fall off
+        # the top. Measured: -1 is unlimited, and 0 -- the value that reads as "no
+        # limit" -- keeps nothing at all, silently emptying the result.
+        self._terminal.set_scrollback_lines(-1)
+        self._window.add(self._terminal)
+        # Measured: an unrealised terminal, `realize()` alone and a Gtk.OffscreenWindow
+        # all extract nothing on the alternate screen. Shown once, then hidden, works.
+        self._window.show_all()
+        self._window.hide()
+        self._handler = self._terminal.connect("window-title-changed", self._on_title)
+        GLib.idle_add(self._step)
+
+    def cancel(self):
+        """Stop after the frame in flight; `on_finished` still reports what was read."""
+        self._cancelled = True
+
+    def _on_title(self, terminal):
+        if terminal.get_window_title() == self._SENTINEL.format(self._index):
+            self._disarm()
+            self._sample()
+            self._step()
+
+    def _arm(self):
+        """Give up on a frame whose marker never arrives.
+
+        Replay is driven by a signal, so a stream that somehow swallows the marker
+        would otherwise wait for ever and take the interface's patience with it. The
+        wait is generous next to the 16.6ms a frame measures at.
+        """
+        self._disarm()
+        self._watchdog = GLib.timeout_add(self._STALL_MS, self._on_stall)
+
+    def _disarm(self):
+        if self._watchdog is not None:
+            GLib.source_remove(self._watchdog)
+            self._watchdog = None
+
+    def _on_stall(self):
+        self._watchdog = None
+        self._sample()
+        self._step()
+        return False
+
+    def _screen(self):
+        text = self._terminal.get_text_format(Vte.Format.TEXT)
+        return [line.rstrip() for line in text.split("\n")[: self._rows]]
+
+    def _harvest(self, final=False):
+        """New primary-screen scrollback since the last harvest.
+
+        Rows are absolute and both ends are inclusive, and the last row is the one the
+        cursor is still on -- so it is left for the final harvest rather than emitted
+        half written.
+        """
+        adjustment = self._terminal.get_vadjustment()
+        lower, upper = int(adjustment.get_lower()), int(adjustment.get_upper())
+        start = max(self._harvested, lower)
+        end = upper if final else upper - 1
+        if end <= start:
+            return []
+        text, _ = self._terminal.get_text_range_format(
+            Vte.Format.TEXT, start, 0, end - 1, self._columns
+        )
+        self._harvested = end
+        return [line.rstrip() for line in text.split("\n")[: end - start]]
+
+    def _sample(self):
+        if self._alternate and self._tracker is not None:
+            self._transcript.extend(self._tracker.feed(self._screen()))
+
+    def _switch(self, alternate):
+        """Change screens, taking what the outgoing one holds before it is replaced.
+
+        Order matters: leaving the alternate screen destroys everything on it, so the
+        last frame has to be taken first. Measured, taking it afterwards lost the final
+        10 of 20 content lines.
+        """
+        if self._alternate:
+            self._transcript.extend(self._tracker.flush())
+            self._tracker = None
+        else:
+            self._transcript.extend(self._harvest())
+        self._alternate = alternate
+        if alternate:
+            self._tracker = transcript.ScreenTracker()
+
+    def _step(self):
+        if self._cancelled or self._index >= len(self._runs):
+            self._transcript.extend(
+                self._tracker.flush() if self._alternate else self._harvest(final=True)
+            )
+            self._finish()
+            return False
+        data, alternate = self._runs[self._index]
+        self._index += 1
+        if alternate != self._alternate:
+            self._switch(alternate)
+        if self._on_progress is not None:
+            self._on_progress(self._index, len(self._runs))
+        self._terminal.feed(data)
+        # Parsed in order, so the title arriving means this frame is fully drawn.
+        self._terminal.feed(f"\x1b]0;{self._SENTINEL.format(self._index)}\x07".encode())
+        self._arm()
+        return False
+
+    def _finish(self):
+        text = self._transcript.text()
+        self._disarm()
+        window, terminal = self._window, self._terminal
+        self._window = self._terminal = None
+        if terminal is not None and self._handler is not None:
+            terminal.disconnect(self._handler)
+            self._handler = None
+        if window is not None:
+            # `_finish` runs inside the terminal's own signal emission, and destroying
+            # a widget mid-emission uses it after it is gone -- GTK reports a failed
+            # G_IS_OBJECT assertion. Let the emission end first.
+            GLib.idle_add(window.destroy)
+        if self._on_finished is not None:
+            self._on_finished(text)
+
+
 class BufferViewer(Gtk.Window):
     """A read-only text view of a terminal's scrollback.
 
@@ -6401,6 +6680,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("zoom-out", self._on_action_zoom_out)
         self._create_action("zoom-reset", self._on_action_zoom_reset)
         self._create_action("view-buffer", self._on_action_view_buffer)
+        self._create_action("save-transcript", self._on_action_save_transcript)
         self._create_action("search-back", self._on_action_search_back)
         self._create_action("find", self._on_action_find)
         self._create_action("fullscreen", self._on_action_fullscreen)
@@ -6487,6 +6767,7 @@ class GcmApplication(Gtk.Application):
         select_section.append(_("Select All"), "app.select-all")
         select_section.append(_("Copy All"), "app.copy-all")
         select_section.append(_("View Buffer"), "app.view-buffer")
+        select_section.append(_("Save Transcript"), "app.save-transcript")
         edit_menu.append_section(None, select_section)
         search_section = Gio.Menu()
         search_section.append(_("Find"), "app.find")
@@ -6679,6 +6960,13 @@ class GcmApplication(Gtk.Application):
             terminal = self._controller.get_target_terminal()
             if terminal:
                 apply_zoom(self._controller, terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_save_transcript(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.save_session_transcript(terminal)
             self._controller.clear_context_terminal()
 
     def _on_action_view_buffer(self, action, _param):
