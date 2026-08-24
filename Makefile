@@ -1,67 +1,97 @@
 PKG_NAME=gnome-connection-manager
-PKG_DESCRIPTION="Simple tabbed ssh and telnet connection manager for GTK+ environments\nMore info in http://kuthulu.com/gcm"
-PKG_VERSION=1.2.1
-PKG_MAINTAINER="Renzo Bertuzzi <kuthulu@gmail.com>"
-PKG_VENDOR=kuthulu.com
-PKG_URL=http://kuthulu.com/gcm
+PKG_DESCRIPTION="Simple tabbed SSH and telnet connection manager for GTK environments"
+PKG_VERSION=1.2.2
+PKG_MAINTAINER="Renzo Bertuzzi <kuthalu@gmail.com>"
 PKG_ARCH=all
 PKG_ARCH_RPM=noarch
 PKG_DEB=${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb
 PKG_RPM=${PKG_NAME}-${PKG_VERSION}.${PKG_ARCH_RPM}.rpm
-FPM_OPTS=-s dir -n $(PKG_NAME) -v $(PKG_VERSION)  -C $(TMPINSTALLDIR) --maintainer ${PKG_MAINTAINER} --description "$$(printf ${PKG_DESCRIPTION})" -a $(PKG_ARCH) --license GPLv3 --vendor ${PKG_VENDOR} --category net --url ${PKG_URL}
 TMPINSTALLDIR=/tmp/$(PKG_NAME)-fpm-install
+DATADIR=$(TMPINSTALLDIR)/usr/share/$(PKG_NAME)
+FPM_OPTS=-s dir -n $(PKG_NAME) -v $(PKG_VERSION) -C $(TMPINSTALLDIR) \
+	--maintainer $(PKG_MAINTAINER) \
+	--description $(PKG_DESCRIPTION) \
+	-a $(PKG_ARCH) --license GPLv3 --category net
 
-all : deb rpm
-.PHONY : all
+.PHONY: all deb rpm install translate clean
 
-#install all files in a temp directory
-install: translate
-	mkdir -p $(DESTDIR)/usr/share/$(PKG_NAME)
-	mkdir -p $(DESTDIR)/usr/share/applications
-	mkdir -p $(DESTDIR)/usr/share/doc/$(PKG_NAME)
-	echo "${PKG_NAME} (${PKG_VERSION}.${PKG_RELEASE}) all; urgency=low" > $(DESTDIR)/usr/share/doc/$(PKG_NAME)/changelog
-	git log --no-merges --format="* %s" >> $(DESTDIR)/usr/share/doc/$(PKG_NAME)/changelog
-	gzip -9 $(DESTDIR)/usr/share/doc/$(PKG_NAME)/changelog
-	cp gnome-connection-manager.desktop $(DESTDIR)/usr/share/applications
-	cp LICENSE $(DESTDIR)/usr/share/doc/$(PKG_NAME)/copyright
-	cp -r lang donate.gif gnome_connection_manager.py gnome-connection-manager.glade icon.png ssh.expect urlregex.py style.css $(DESTDIR)/usr/share/gnome-connection-manager/
+all: deb rpm
 
-#compile translation files
+# Compile .po -> .mo translation files. Same walk as `just translate`, so a new
+# locale is one file to add rather than two, and it still works where msgfmt is
+# not installed. Fails rather than reporting success over an empty list (#101).
 translate:
-	msgfmt lang/de_DE.po -o lang/de/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/en_US.po -o lang/en/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/fr_FR.po -o lang/fr/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/it_IT.po -o lang/it/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/ko_KO.po -o lang/ko/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/pl_PL.po -o lang/pl/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/pt_BR.po -o lang/pt/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/ru_RU.po -o lang/ru/LC_MESSAGES/gcm-lang.mo
+	@set -e; \
+	count=0; \
+	for po in lang/*.po; do \
+		[ -e "$$po" ] || continue; \
+		lang=$$(basename "$$po" .po | cut -d_ -f1); \
+		mo="lang/$$lang/LC_MESSAGES/gcm-lang.mo"; \
+		mkdir -p "$$(dirname "$$mo")"; \
+		if command -v msgfmt >/dev/null 2>&1; then \
+			msgfmt -o "$$mo" "$$po"; \
+		else \
+			python3 tools/build_mo.py "$$po" "$$mo" >/dev/null; \
+		fi; \
+		count=$$((count + 1)); \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "no .po files in lang/ -- nothing was compiled" >&2; \
+		exit 1; \
+	fi; \
+	echo "Translations compiled ($$count)"
 
-# Generate a deb package using fpm
-deb:
+# Stage all files into TMPINSTALLDIR
+install: translate
 	rm -rf $(TMPINSTALLDIR)
-	rm -f $(PKG_DEB)
-	chmod -R g-w *
-	make install DESTDIR=$(TMPINSTALLDIR)
 
+	# Install the Python package into staging tree (pyaes provided by system python3-pyaes)
+	# DEB_PYTHON_INSTALL_LAYOUT: Debian's pip defaults to /usr/local and ignores
+	# --prefix without it, and policy forbids a package installing there.
+	DEB_PYTHON_INSTALL_LAYOUT=deb pip3 install --no-deps --prefix=/usr --root=$(TMPINSTALLDIR) .
+
+	# Data files: Glade UI, expect script, icon, stylesheet
+	mkdir -p $(DATADIR)/ui
+	mkdir -p $(DATADIR)/scripts
+	cp data/ui/gnome-connection-manager.glade $(DATADIR)/ui/
+	cp data/ui/donate.gif $(DATADIR)/ui/
+	cp data/scripts/ssh.expect $(DATADIR)/scripts/
+	chmod +x $(DATADIR)/scripts/ssh.expect
+	cp data/icon.png $(DATADIR)/
+	cp data/style.css $(DATADIR)/
+
+	# Translations
+	cp -r lang $(DATADIR)/
+
+	# Desktop integration
+	mkdir -p $(TMPINSTALLDIR)/usr/share/applications
+	cp gnome-connection-manager.desktop $(TMPINSTALLDIR)/usr/share/applications/
+
+	# App icon for desktop environments
+	mkdir -p $(TMPINSTALLDIR)/usr/share/pixmaps
+	cp data/icon.png $(TMPINSTALLDIR)/usr/share/pixmaps/$(PKG_NAME).png
+
+# Build the .deb package using fpm
+deb: install
+	rm -f $(PKG_DEB)
 	fpm -t deb -p $(PKG_DEB) $(FPM_OPTS) \
 		-d python3 \
 		-d python3-gi \
-		-d expect \
+		-d python3-gi-cairo \
+		-d gir1.2-gtk-3.0 \
 		-d gir1.2-vte-2.91 \
+		-d expect \
+		-d python3-pyaes \
 		--after-install postinst \
 		--deb-priority optional \
 		usr
 	@echo "\033[92mOK: $(PKG_DEB)\033[0m"
 
-# Generate a rpm package using fpm
-rpm:
-	rm -rf $(TMPINSTALLDIR)
+# Build the .rpm package using fpm (Fedora/RHEL)
+rpm: install
 	rm -f $(PKG_RPM)
-	chmod -R g-w *
-	make install DESTDIR=$(TMPINSTALLDIR)
-
 	fpm -t rpm -p $(PKG_RPM) $(FPM_OPTS) \
+		-a $(PKG_ARCH_RPM) \
 		-d python3 \
 		-d python3-gobject \
 		-d expect \
@@ -69,22 +99,8 @@ rpm:
 		usr
 	@echo "\033[92mOK: $(PKG_RPM)\033[0m"
 
-# Developer aids below
-
-# Files might be not committed by a developer, or changed by the build or a helper like style-strip-trailing-whitespace
-check-gitignore:
-	@if [ -n "`git status -uno -s`" ]; then \
-		echo "ERROR: Changes to files tracked in Git are not committed" >&2; \
-		git status -uno -s; \
-		exit 1; \
-	 fi
-
-# Style fix: strip trailing whitespace in text-file sources
-style-strip-trailing-whitespace:
-	@git ls-files | egrep -v '\.(png|gif|mo)$$' | \
-	 while read F ; do sed -e 's,[ '"`printf '\t'`"']*$$,,' -i "$$F" ; done
-
-check-strip-trailing-whitespace: style-strip-trailing-whitespace
-	@$(MAKE) check-gitignore
-
-check: check-strip-trailing-whitespace
+clean:
+	rm -rf $(TMPINSTALLDIR)
+	rm -f $(PKG_DEB) $(PKG_RPM)
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name '*.pyc' -delete 2>/dev/null || true

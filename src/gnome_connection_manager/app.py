@@ -6585,14 +6585,14 @@ class EntryDialog(Gtk.Dialog):
         box.pack_start(self.entry, True, True, 0)
         self.entry.show()
         self.entry.grab_focus()
-        button = Gtk.Button(_label="_OK")
+        button = Gtk.Button.new_with_mnemonic("_OK")
         button.connect("clicked", self.click)
         self.entry.connect("activate", self.click)
         button.set_can_default(True)
         self.action_area.pack_start(button, True, True, 0)
         button.show()
         button.grab_default()
-        button = Gtk.Button(_label="_Cancel")
+        button = Gtk.Button.new_with_mnemonic("_Cancel")
         button.connect("clicked", self.quit)
         button.set_can_default(True)
         self.action_area.pack_start(button, True, True, 0)
@@ -7014,11 +7014,19 @@ class GcmApplication(Gtk.Application):
 
     def _on_action_import_hosts(self, action, _param):
         if self._controller is not None:
-            self._controller.on_importar_servidores1_activate(None)
+            try:
+                self._controller.on_importar_servidores1_activate(None)
+            except Exception as exc:
+                logger.exception("Error during import hosts")
+                msgbox("{}: {}".format(_("Error al importar servidores"), exc))
 
     def _on_action_export_hosts(self, action, _param):
         if self._controller is not None:
-            self._controller.on_exportar_servidores1_activate(None)
+            try:
+                self._controller.on_exportar_servidores1_activate(None)
+            except Exception as exc:
+                logger.exception("Error during export hosts")
+                msgbox("{}: {}".format(_("Error al exportar servidores"), exc))
 
     def _on_action_copy(self, action, _param):
         if self._controller is not None:

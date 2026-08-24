@@ -1663,3 +1663,9 @@ msgstr ""
 
 msgid "Esta grabación todavía no contiene texto"
 msgstr ""
+
+msgid "Error al importar servidores"
+msgstr ""
+
+msgid "Error al exportar servidores"
+msgstr ""
