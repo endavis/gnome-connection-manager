@@ -1819,3 +1819,9 @@ msgstr "Save Transcript"
 
 msgid "Esta grabación todavía no contiene texto"
 msgstr "This recording has no text in it yet"
+
+msgid "Error al importar servidores"
+msgstr "Error importing hosts"
+
+msgid "Error al exportar servidores"
+msgstr "Error exporting hosts"

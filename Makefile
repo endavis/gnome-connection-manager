@@ -17,28 +17,44 @@ FPM_OPTS=-s dir -n $(PKG_NAME) -v $(PKG_VERSION) -C $(TMPINSTALLDIR) \
 
 all: deb rpm
 
-# Compile .po → .mo translation files
+# Compile .po -> .mo translation files. Same walk as `just translate`, so a new
+# locale is one file to add rather than two, and it still works where msgfmt is
+# not installed. Fails rather than reporting success over an empty list (#101).
 translate:
-	msgfmt lang/de_DE.po -o lang/de/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/en_US.po -o lang/en/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/fr_FR.po -o lang/fr/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/it_IT.po -o lang/it/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/ko_KO.po -o lang/ko/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/pl_PL.po -o lang/pl/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/pt_BR.po -o lang/pt/LC_MESSAGES/gcm-lang.mo
-	msgfmt lang/ru_RU.po -o lang/ru/LC_MESSAGES/gcm-lang.mo
+	@set -e; \
+	count=0; \
+	for po in lang/*.po; do \
+		[ -e "$$po" ] || continue; \
+		lang=$$(basename "$$po" .po | cut -d_ -f1); \
+		mo="lang/$$lang/LC_MESSAGES/gcm-lang.mo"; \
+		mkdir -p "$$(dirname "$$mo")"; \
+		if command -v msgfmt >/dev/null 2>&1; then \
+			msgfmt -o "$$mo" "$$po"; \
+		else \
+			python3 tools/build_mo.py "$$po" "$$mo" >/dev/null; \
+		fi; \
+		count=$$((count + 1)); \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "no .po files in lang/ -- nothing was compiled" >&2; \
+		exit 1; \
+	fi; \
+	echo "Translations compiled ($$count)"
 
 # Stage all files into TMPINSTALLDIR
 install: translate
 	rm -rf $(TMPINSTALLDIR)
 
 	# Install the Python package into staging tree (pyaes provided by system python3-pyaes)
-	pip3 install --no-deps --prefix=/usr --root=$(TMPINSTALLDIR) .
+	# DEB_PYTHON_INSTALL_LAYOUT: Debian's pip defaults to /usr/local and ignores
+	# --prefix without it, and policy forbids a package installing there.
+	DEB_PYTHON_INSTALL_LAYOUT=deb pip3 install --no-deps --prefix=/usr --root=$(TMPINSTALLDIR) .
 
 	# Data files: Glade UI, expect script, icon, stylesheet
 	mkdir -p $(DATADIR)/ui
 	mkdir -p $(DATADIR)/scripts
 	cp data/ui/gnome-connection-manager.glade $(DATADIR)/ui/
+	cp data/ui/donate.gif $(DATADIR)/ui/
 	cp data/scripts/ssh.expect $(DATADIR)/scripts/
 	chmod +x $(DATADIR)/scripts/ssh.expect
 	cp data/icon.png $(DATADIR)/
