@@ -1417,6 +1417,20 @@ def timing_path_for(raw_path):
     return str(Path(raw_path).with_suffix(".timing"))
 
 
+def plain_argv(args, argv_zero):
+    """`args` as an ordinary argv, undoing GLib's FILE_AND_ARGV_ZERO repeat.
+
+    That flag means "args[0] is the file to run, args[1] is the child's argv[0]", which
+    is why the ssh and telnet paths repeat the command. The relay execs the inner
+    command itself, taking argv[0] from it the ordinary way, so the repeat has to come
+    back out -- left in, it arrives as a real argument, and `ssh.expect` reads its own
+    path where it expects the connection type.
+    """
+    if not argv_zero or len(args) < 2:
+        return list(args)
+    return [args[0], *args[2:]]
+
+
 def relay_command(args, socket_path=None, raw_path=None):
     """Wrap a command so it runs under the relay.
 
@@ -1483,7 +1497,14 @@ def vte_run(terminal, command, arg=None):
     if socket_path or raw_path:
         # Spawning is otherwise byte-for-byte what it was; the relay only enters the
         # path when a preference asks for it, so the default carries none of its risk.
-        args = relay_command(args, socket_path, raw_path)
+        #
+        # The relay's own argv is an ordinary one, so asking GLib for FILE_AND_ARGV_ZERO
+        # here makes it swallow `-m` as the child's argv[0] and python then looks for a
+        # script named after the module, in $HOME (#91). Hand the relay a plain argv and
+        # let GLib take ours literally; the relay reproduces the same child argv when it
+        # execs the inner command.
+        args = relay_command(plain_argv(args, not is_local_shell), socket_path, raw_path)
+        flag_spawn = GLib.SpawnFlags.DEFAULT
 
     if TERMINAL_V048:
         terminal.spawn_async(
