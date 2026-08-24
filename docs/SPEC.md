@@ -220,8 +220,10 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
   spawn path is unchanged when both are off.
 
 ### Session Transcripts
-- **Save Transcript** rebuilds a readable, linear log from a recording, in the Edit menu
-  and the terminal's context menu. Off the same recording the session is already writing,
+- **Save Transcript** rebuilds a readable, linear log from a recording, in the Edit menu,
+  the terminal's context menu and a tab's context menu. From a tab it transcribes that
+  tab's session rather than whichever console is on screen: opening the tab menu sets the
+  context terminal from the tab, and the action prefers it. Off the same recording the session is already writing,
   so it needs `raw-session-log`; a session that was never recorded has nothing to rebuild.
 - Replayed through a hidden `Vte.Terminal` -- the emulator this project already depends
   on. It needs a display and a window shown once, after which it can be hidden and driven

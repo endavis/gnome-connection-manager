@@ -157,9 +157,11 @@ sessions are spawned exactly as before.
 
 ### Turning a recording into a transcript
 
-A recording is faithful but not readable. **Save Transcript**, in the Edit menu and the
-terminal's right-click menu, rebuilds a linear log of what was actually displayed —
-what you usually want after a session with a full-screen application in it.
+A recording is faithful but not readable. **Save Transcript** rebuilds a linear log of
+what was actually displayed — what you usually want after a session with a full-screen
+application in it. It is in the Edit menu, in the terminal's right-click menu, and in a
+tab's right-click menu; from a tab it transcribes *that* tab's session, so you do not
+have to switch to a console first.
 
 It replays the recording through a hidden terminal, so it only works on a session that
 was recorded: turn on `raw-session-log` before the session, not after. The transcript is

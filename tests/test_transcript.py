@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import re
+import types
 
 import pytest
 
@@ -455,3 +456,56 @@ def test_the_progress_dialog_fake_matches_real_gtk():
     for name in ("set_fraction", "set_show_text", "set_text"):
         assert hasattr(Gtk.ProgressBar, name), f"Gtk.ProgressBar has no {name}"
     assert hasattr(Gtk.Box, "pack_start"), "the content area is a Gtk.Box"
+
+
+# -- reachable from the tab menu too, on that tab's session (#93) -------------
+
+
+def test_saving_a_transcript_is_reachable_from_every_menu(app_module):
+    """A feature with no way in is not shipped.
+
+    Restored after being dropped in an edit: the count was 2 and the suite stayed
+    green with one test fewer, which is exactly how it went unnoticed.
+    """
+    source = inspect.getsource(app_module)
+
+    assert 'self._create_action("save-transcript"' in source
+    assert source.count('"app.save-transcript"') == 3, "menubar, terminal menu, tab menu"
+
+
+def test_a_tab_menu_transcript_uses_that_tabs_terminal(app_module):
+    """Right-clicking a tab must transcribe that tab, not whichever is on screen.
+
+    The tab menu and the terminal menu reach their session by different routes, and
+    getting that wrong is what broke Ctrl+W (#95). Here nothing new was needed:
+    opening the tab menu sets the context terminal from the tab, and the action asks
+    for the target terminal, which prefers it -- this holds that true.
+    """
+    controller = app_module.Wmain.__new__(app_module.Wmain)
+    controller._context_terminal = None
+    controller._context_tab_widget = None
+    on_screen, in_the_tab = object(), object()
+    controller.current = on_screen
+    page = types.SimpleNamespace(get_children=lambda: [in_the_tab])
+
+    controller.set_context_tab_widget(page)
+
+    assert controller.get_target_terminal() is in_the_tab, "took the visible console"
+
+
+def test_the_transcript_action_hands_on_the_context_terminal(app_module):
+    """The whole path: tab context -> action -> the terminal that gets transcribed."""
+    controller = app_module.Wmain.__new__(app_module.Wmain)
+    controller._context_terminal = None
+    controller._context_tab_widget = None
+    controller.current = object()
+    in_the_tab = object()
+    controller.set_context_tab_widget(types.SimpleNamespace(get_children=lambda: [in_the_tab]))
+    asked = []
+    controller.save_session_transcript = lambda terminal: asked.append(terminal)
+
+    app = app_module.GcmApplication()
+    app._controller = controller
+    app._on_action_save_transcript(None, None)
+
+    assert asked == [in_the_tab]
