@@ -2119,13 +2119,29 @@ class Wmain(GladeComponent):
         button.add(Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.MENU))
         button.set_tooltip_text(_("List open consoles"))
         menu = Gtk.Menu()
-        menu.attach_to_widget(button, None)
+        menu.attach_to_widget(self.window, None)
+        # On the press, with the event in hand, the way every other menu here opens.
+        # Opening from "clicked" runs on the release and leaves GTK to dig the event
+        # out of Gtk.get_current_event(), which is not always there: GTK's own toolbar
+        # overflow menu passes nothing and warns "no trigger event for menu popup",
+        # and a popup mapped without one is unreliable under Wayland.
+        button.connect("button-press-event", self.on_console_button_pressed, menu)
+        # The press is consumed, so "clicked" only reaches here from the keyboard.
         button.connect("clicked", self.on_console_button_clicked, menu)
         notebook.set_action_widget(button, Gtk.PackType.END)
         button.show_all()
         return button
 
+    def on_console_button_pressed(self, button, event, menu):
+        if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 1:
+            return False
+        self.show_console_menu(button, menu, event)
+        return True
+
     def on_console_button_clicked(self, button, menu):
+        self.show_console_menu(button, menu, Gtk.get_current_event())
+
+    def show_console_menu(self, button, menu, event):
         self.build_console_menu(menu)
         if hasattr(menu, "popup_at_widget"):
             # East, not west: the button sits at the right end of the tab strip, so a
@@ -2134,10 +2150,7 @@ class Wmain(GladeComponent):
             # button's makes it open leftwards, which is correct by construction rather
             # than relying on GTK sliding it back, which does not always happen.
             menu.popup_at_widget(
-                button,
-                Gdk.Gravity.SOUTH_EAST,
-                Gdk.Gravity.NORTH_EAST,
-                Gtk.get_current_event(),
+                button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, event
             )
         else:
             menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
