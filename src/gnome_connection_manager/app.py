@@ -716,54 +716,61 @@ def terminal_colors(terminal):
     return foreground or contrasting_foreground(background_rgba), background
 
 
-def terminal_buffer_html(terminal):
-    """The terminal's scrollback as VTE's HTML export, or None if unavailable.
+def _buffer_range(terminal, fmt):
+    """The scrollback rows in one format, or None when the range cannot be read.
 
-    Same rows and same bounds as terminal_buffer_text, so the two agree on content and
-    differ only in whether attributes come along.
+    Uses the vertical adjustment for the real row bounds. The obvious alternative --
+    select_all() then get_text_selected_full() -- destroys whatever the user had
+    selected; this leaves it untouched. An unbounded range is not an option either:
+    asking for more rows than exist pads the result with thousands of blank lines.
     """
     adjustment = terminal.get_vadjustment() if hasattr(terminal, "get_vadjustment") else None
     if adjustment is None:
         return None
     try:
-        html = terminal.get_text_range_format(
-            Vte.Format.HTML, int(adjustment.get_lower()), 0, int(adjustment.get_upper()), 0
+        result = terminal.get_text_range_format(
+            fmt, int(adjustment.get_lower()), 0, int(adjustment.get_upper()), 0
         )
     except Exception:
-        logger.debug("HTML extraction unavailable, falling back to plain text")
+        logger.debug("Range extraction failed, falling back to the visible screen")
         return None
-    if isinstance(html, tuple):
-        html = html[0]
+    return result[0] if isinstance(result, tuple) else result
+
+
+def _buffer_screen(terminal, fmt):
+    """The visible screen in one format -- all an alternate-screen application has."""
+    try:
+        result = terminal.get_text_format(fmt)
+    except Exception:
+        logger.debug("Screen extraction unavailable")
+        return None
+    return result[0] if isinstance(result, tuple) else result
+
+
+def terminal_buffer_html(terminal):
+    """The terminal's scrollback as VTE's HTML export, or None if unavailable.
+
+    Same rows and same bounds as terminal_buffer_text, including its fall through to the
+    visible screen, so the two agree on content and differ only in whether attributes
+    come along. Without that fall through the viewer showed a full-screen application as
+    a page of empty rows (#107): on the alternate screen the adjustment still describes
+    rows the range export cannot read back, and it answers with newlines and nothing
+    else. Blankness has to be judged on the text the export carries, not on its length --
+    the empty answer is 23 bytes of markup wrapping 12 newlines.
+    """
+    html = _buffer_range(terminal, Vte.Format.HTML)
+    if not vtehtml.plain_text(vtehtml.parse_vte_html(html)).strip():
+        html = _buffer_screen(terminal, Vte.Format.HTML)
     return html or None
 
 
 def terminal_buffer_text(terminal):
-    """The terminal's scrollback as plain text.
-
-    Uses the vertical adjustment for the real row bounds and reads the range directly.
-    The obvious alternative -- select_all() then get_text_selected_full() -- destroys
-    whatever the user had selected; this leaves it untouched. An unbounded range is not
-    an option either: asking for more rows than exist pads the result with thousands of
-    blank lines.
-    """
-    adjustment = terminal.get_vadjustment() if hasattr(terminal, "get_vadjustment") else None
-    if adjustment is not None:
-        try:
-            text = terminal.get_text_range_format(
-                Vte.Format.TEXT, int(adjustment.get_lower()), 0, int(adjustment.get_upper()), 0
-            )
-        except Exception:
-            logger.debug("Range extraction failed, falling back to the visible screen")
-            text = None
-        if isinstance(text, tuple):
-            text = text[0]
-        if text and text.strip():
-            return text.rstrip()
+    """The terminal's scrollback as plain text."""
+    text = _buffer_range(terminal, Vte.Format.TEXT)
+    if text and text.strip():
+        return text.rstrip()
     # Alternate screen: no scrollback exists, so the visible screen is all there is.
-    text = terminal.get_text_format(Vte.Format.TEXT)
-    if isinstance(text, tuple):
-        text = text[0]
-    return (text or "").rstrip()
+    return (_buffer_screen(terminal, Vte.Format.TEXT) or "").rstrip()
 
 
 def uri_to_terminal_text(uri):
@@ -6220,10 +6227,15 @@ class BufferViewer(Gtk.Window):
 
         Returns False when there is nothing to render, so the caller can fall back to
         plain text -- the viewer opening matters more than it being colourful.
+
+        "Nothing" means no text, not an empty run list. A grid of blank rows parses into
+        one whitespace run, which is truthy, so an emptiness test on the list alone
+        reported success and rendered a blank window while the plain-text fallback sat
+        unused (#107).
         """
         # parse_vte_html copes with None and "", so there is no separate guard here.
         runs = vtehtml.parse_vte_html(terminal_buffer_html(self.terminal))
-        if not runs:
+        if not vtehtml.plain_text(runs).strip():
             return False
         for text, style in runs:
             end = self.buffer.get_end_iter()

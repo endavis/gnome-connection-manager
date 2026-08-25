@@ -2664,6 +2664,170 @@ def test_buffer_text_handles_a_tuple_return(app_module):
     assert app_module.terminal_buffer_text(terminal) == "x\ny"
 
 
+# -- the viewer must not go blank on the alternate screen (#107) -------------
+
+
+class FormatTerminal:
+    """A terminal that answers each format separately, the way VTE does.
+
+    The alternate screen is the case that matters. The vertical adjustment still
+    describes rows there, but the range export cannot read them back -- measured on VTE
+    0.76, it answers with newlines and nothing else -- so only get_text_format() holds
+    the content a full-screen application put on screen.
+    """
+
+    def __init__(self, app_module, ranges=None, screens=None, lower=0, upper=0):
+        self._formats = app_module.Vte.Format
+        self.ranges = ranges or {}
+        self.screens = screens or {}
+        self._lower, self._upper = lower, upper
+        self.screen_calls = []
+        self.range_calls = []
+
+    def _name(self, fmt):
+        return "html" if fmt == self._formats.HTML else "text"
+
+    def get_vadjustment(self):
+        return types.SimpleNamespace(
+            get_lower=lambda: self._lower, get_upper=lambda: self._upper
+        )
+
+    def get_text_range_format(self, fmt, srow, scol, erow, ecol):
+        self.range_calls.append((self._name(fmt), srow, scol, erow, ecol))
+        return self.ranges.get(self._name(fmt), "")
+
+    def get_text_format(self, fmt):
+        self.screen_calls.append(self._name(fmt))
+        return self.screens.get(self._name(fmt), "")
+
+
+# What VTE hands back for a range of empty rows: markup around nothing but newlines.
+BLANK_ROWS_HTML = "<pre>\n\n\n\n</pre>"
+ALT_SCREEN_HTML = '<pre><font color="#00C000">ALT row</font>\n</pre>'
+
+
+def test_buffer_html_falls_back_to_the_visible_screen(app_module):
+    """Its text twin already falls through here; without the same fall through the
+    viewer rendered a full-screen application as a page of empty rows."""
+    terminal = FormatTerminal(
+        app_module,
+        ranges={"html": BLANK_ROWS_HTML},
+        screens={"html": ALT_SCREEN_HTML},
+        lower=0,
+        upper=12,
+    )
+
+    assert app_module.terminal_buffer_html(terminal) == ALT_SCREEN_HTML
+
+
+def test_buffer_html_keeps_the_range_when_it_carries_text(app_module):
+    """The scrollback is the point of the viewer; the screen is only the fallback."""
+    scrollback = "<pre>scrollback line\n</pre>"
+    terminal = FormatTerminal(
+        app_module,
+        ranges={"html": scrollback},
+        screens={"html": ALT_SCREEN_HTML},
+        lower=0,
+        upper=401,
+    )
+
+    assert app_module.terminal_buffer_html(terminal) == scrollback
+    assert terminal.range_calls == [("html", 0, 0, 401, 0)]
+    assert terminal.screen_calls == [], "the screen must not be read when rows exist"
+
+
+def test_buffer_html_and_text_agree_on_the_alternate_screen(app_module):
+    """The two exports promise the same rows and differ only in attributes."""
+    terminal = FormatTerminal(
+        app_module,
+        ranges={"html": BLANK_ROWS_HTML, "text": "\n\n\n\n"},
+        screens={"html": ALT_SCREEN_HTML, "text": "ALT row\n"},
+        lower=0,
+        upper=12,
+    )
+
+    html = app_module.terminal_buffer_html(terminal)
+    runs = app_module.vtehtml.parse_vte_html(html)
+
+    assert app_module.vtehtml.plain_text(runs).strip() == (
+        app_module.terminal_buffer_text(terminal).strip()
+    )
+
+
+def test_buffer_html_returns_none_when_nothing_has_text(app_module):
+    """A genuinely empty terminal must still let the caller fall back to plain text."""
+    terminal = FormatTerminal(
+        app_module, ranges={"html": BLANK_ROWS_HTML}, screens={"html": ""}, lower=0, upper=4
+    )
+
+    assert app_module.terminal_buffer_html(terminal) is None
+
+
+def test_buffer_html_handles_a_tuple_return(app_module):
+    """Older VTE returns (text, attrs) from the range call."""
+    terminal = FormatTerminal(app_module, lower=0, upper=3)
+    terminal.get_text_range_format = lambda *a: ("<pre>x\n</pre>", None)
+
+    assert app_module.terminal_buffer_html(terminal) == "<pre>x\n</pre>"
+
+
+class FakeTextBuffer:
+    """Enough Gtk.TextBuffer for render_styled and trim_trailing_blank_lines."""
+
+    def __init__(self):
+        self.text = ""
+
+    def get_end_iter(self):
+        return len(self.text)
+
+    def insert(self, _end, text):
+        self.text += text
+
+    def insert_with_tags(self, _end, text, _tag):
+        self.text += text
+
+    def get_bounds(self):
+        return 0, len(self.text)
+
+    def get_text(self, start, end, _include_hidden):
+        return self.text[start:end]
+
+    def get_iter_at_offset(self, offset):
+        return offset
+
+    def delete(self, start, _end):
+        self.text = self.text[:start]
+
+    def create_tag(self, *_args, **_kwargs):
+        return object()
+
+
+def _viewer_for(app_module, html):
+    viewer = object.__new__(app_module.BufferViewer)
+    viewer.terminal = object()
+    viewer.buffer = FakeTextBuffer()
+    viewer._style_tags = {}
+    return viewer
+
+
+def test_render_styled_reports_failure_for_rows_with_no_text(app_module, monkeypatch):
+    """A grid of blank rows parses into one whitespace run, and a run list is truthy --
+    so testing the list instead of its text let a blank render shadow the fallback."""
+    monkeypatch.setattr(app_module, "terminal_buffer_html", lambda _t: BLANK_ROWS_HTML)
+    viewer = _viewer_for(app_module, BLANK_ROWS_HTML)
+
+    assert viewer.render_styled() is False
+    assert viewer.buffer.text == "", "a failed render must leave nothing behind"
+
+
+def test_render_styled_renders_an_export_that_has_text(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "terminal_buffer_html", lambda _t: ALT_SCREEN_HTML)
+    viewer = _viewer_for(app_module, ALT_SCREEN_HTML)
+
+    assert viewer.render_styled() is True
+    assert viewer.buffer.text == "ALT row"
+
+
 def test_show_buffer_viewer_opens_a_window_for_the_terminal(app_module, monkeypatch):
     made = []
 
@@ -2768,6 +2932,68 @@ def test_buffer_viewer_search_and_copy_against_real_gtk():
     pytest.importorskip("gi", reason="PyGObject not available")
     result = subprocess.run(
         [sys.executable, "-c", _VIEWER_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+# The whole point of #107 is a viewer built on a terminal a full-screen application
+# holds. Only a real Vte.Terminal has an alternate screen at all, so this is the check
+# that would have caught it -- the in-process tests can only assert the shape of the
+# fix, not that VTE behaves the way the fix assumes.
+_ALT_SCREEN_SCRIPT = """
+import os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, GLib, Vte
+from gnome_connection_manager import app
+
+term = Vte.Terminal(); term.set_scrollback_lines(1000); term.set_size(80, 24)
+win = Gtk.Window(); win.set_default_size(700, 400); win.add(term); win.show_all()
+
+def pump(ms=400):
+    loop = GLib.MainLoop(); GLib.timeout_add(ms, lambda: (loop.quit(), False)[1]); loop.run()
+
+pump(500)
+for i in range(30):
+    term.feed(("scrollback %d\\r\\n" % i).encode())
+pump()
+# Exactly what GitHub Copilot CLI sends on startup: alternate screen, then a clear.
+term.feed(b"\\x1b[?1049h\\x1b[H\\x1b[2J")
+term.feed(b"\\x1b[1;32mALT green row\\x1b[m\\r\\nALT plain row\\r\\n")
+pump(500)
+
+html = app.terminal_buffer_html(term)
+assert html and "ALT green row" in html, repr(html)
+v = app.BufferViewer(None, term, "alt")
+v.show_all()
+for _ in range(50): Gtk.main_iteration_do(False)
+
+shown = v.get_all_text()
+assert shown.strip(), "the viewer must not be blank on the alternate screen"
+assert "ALT green row" in shown, repr(shown)
+assert "ALT plain row" in shown, repr(shown)
+# Colour survives the fallback, so the viewer stays styled rather than dropping to
+# plain text -- get_text_format(HTML) carries attributes just as the range export does.
+assert v._style_tags, "the styled path must have run, not the plain-text fallback"
+
+v.destroy(); win.destroy()
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_buffer_viewer_shows_the_alternate_screen_against_real_vte():
+    """A full-screen application leaves the range export blank; the viewer must not be."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _ALT_SCREEN_SCRIPT],
         capture_output=True,
         text=True,
         cwd=Path(__file__).resolve().parents[1],
