@@ -463,11 +463,13 @@ terminal binding would never fire.
 ## What agent CLIs do
 
 Terminal behaviour varies more than it looks, and it decides whether you need `Shift` to
-select. Measured directly from the escape sequences each tool emits at startup:
+select. Measured directly from the escape sequences each tool emits — the first three
+columns at startup, OSC 52 when the tool is asked to copy:
 
 | | Alternate screen | Mouse tracking | Bracketed paste | OSC 52 |
 |---|---|---|---|---|
 | Claude Code | yes | **yes** | yes | no |
+| `copilot` | yes | **yes** | yes | **yes** |
 | `agy` | yes | no | yes | no |
 | `codex` | no | no | yes | no |
 
@@ -476,11 +478,47 @@ What this means in practice:
 - **Claude Code** is the one that takes the mouse. Plain dragging goes to the application;
   hold `Shift` to select. Copy All returns the visible screen only, since it is on the
   alternate screen.
+- **`copilot`** takes the mouse the same way, and more of it — any-event tracking, so even
+  moving the pointer across the window is reported. `Shift` to select. It is also the only
+  one of the four that uses OSC 52, on its `/copy` command, so it is the case the
+  [OSC 52 preference](#letting-applications-set-the-clipboard-osc-52) exists for.
 - **`agy`** runs full-screen but leaves the mouse alone, so dragging selects normally.
   Copy All is still limited to the visible screen.
 - **`codex`** stays on the primary screen and leaves the mouse alone. Selection, scrollback
   and Copy All all behave as they do at a shell prompt.
 
-None of them use OSC 52, so clipboard integration over SSH is not something they rely on.
-All three enable bracketed paste, so multi-line pastes arrive framed rather than being
+All four enable bracketed paste, so multi-line pastes arrive framed rather than being
 executed line by line.
+
+### When `copilot /copy` reports a clipboard failure
+
+Under WSLg, `/copy` prints an error that names a Wayland protocol and looks like a
+terminal fault:
+
+```
+✗ Failed to copy to clipboard: Error: Failed to set text: Failed to write clipboard
+  content: A required Wayland protocol (ext-data-control, or wlr-data-control version 1)
+  is not supported by the compositor
+```
+
+**Turn on `osc52-clipboard` and the copy works anyway.** Copilot tries several backends in
+order — OSC 52, `clip.exe` on WSL, `wl-copy`, `xclip`, then a native module — and the OSC
+52 write is the *first* of them, gated only on stdout being a terminal. It has already
+happened by the time the message appears. What failed is the last attempt in the chain,
+and the message is about that one.
+
+The reason the last attempt cannot succeed is that copilot only reaches for `xclip` when
+`DISPLAY` is set and `WAYLAND_DISPLAY` is not. WSLg sets both, so it skips the one backend
+that works there and commits to Wayland's data-control protocol — which WSLg's compositor
+does not implement. Neither `ext_data_control_manager_v1` nor `zwlr_data_control_manager_v1`
+appears among the globals it advertises.
+
+To silence the error as well as work around it, hide the Wayland display from copilot
+alone:
+
+```sh
+env -u WAYLAND_DISPLAY copilot
+```
+
+It then uses X11 through XWayland and the native write succeeds. Do not unset the variable
+globally — other applications need it.

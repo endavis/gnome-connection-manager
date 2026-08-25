@@ -87,6 +87,31 @@ def test_doc_is_linked_from_the_readme():
     assert "docs/TERMINAL-USAGE.md" in readme
 
 
+# -- internal links must land on a heading that exists ----------------------
+
+_MARKDOWN_DOCS = ["docs/TERMINAL-USAGE.md", "docs/SPEC.md", "docs/DEVELOPING.md",
+                  "docs/PROJECT_STRUCTURE.md", "AGENTS.md", "README.md"]
+
+
+def _heading_slug(heading: str) -> str:
+    """GitHub's anchor for a heading: lowercased, punctuation dropped, spaces hyphenated."""
+    text = re.sub(r"[^\w\s-]", "", heading.strip().lstrip("#").strip().lower())
+    return re.sub(r"\s+", "-", text)
+
+
+@pytest.mark.parametrize("relative", _MARKDOWN_DOCS)
+def test_internal_links_resolve_to_a_heading(relative):
+    """A cross-reference that goes nowhere is worse than no cross-reference: the reader
+    is told the answer exists somewhere and then cannot find it."""
+    path = Path(__file__).resolve().parents[1] / relative
+    body = path.read_text(encoding="utf-8")
+    slugs = {_heading_slug(line) for line in body.splitlines() if line.startswith("#")}
+
+    broken = sorted({a for a in re.findall(r"\]\(#([^)]+)\)", body) if a not in slugs})
+
+    assert not broken, f"{relative} links to headings that do not exist: {broken}"
+
+
 # -- AGENTS.md must describe the tree that exists (#51) ---------------------
 
 AGENTS = Path(__file__).resolve().parents[1] / "AGENTS.md"
