@@ -203,7 +203,7 @@ def app_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     vte_module.MAJOR_VERSION = 0
     vte_module.MINOR_VERSION = 60
     vte_module.PtyFlags = types.SimpleNamespace(DEFAULT=0)
-    vte_module.Format = types.SimpleNamespace(TEXT=0)
+    vte_module.Format = types.SimpleNamespace(TEXT=0, HTML=1)
     vte_module.EraseBinding = types.SimpleNamespace(AUTO=0, BS=1, DEL=2)
 
     class DummyRegex:

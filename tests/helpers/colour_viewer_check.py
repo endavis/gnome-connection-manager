@@ -41,10 +41,23 @@ class Snapshot:
 
 
 class NoHtml(Snapshot):
+    """A terminal with no HTML export at all -- not from the range, not from the screen.
+
+    Both routes have to refuse. Since #107 the HTML export falls through to the visible
+    screen when the range comes back without text, so a fake that answers the screen
+    call with plain text would feed that text to the HTML parser and never reach the
+    fallback this is here to check.
+    """
+
     def get_text_range_format(self, fmt, *args):
         if fmt == app.Vte.Format.HTML:
             raise RuntimeError("no html here")
         return "fallback text\n"
+
+    def get_text_format(self, fmt):
+        if fmt == app.Vte.Format.HTML:
+            raise RuntimeError("no html here")
+        return "ignored"
 
 
 def settle():
