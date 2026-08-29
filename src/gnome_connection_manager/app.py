@@ -3096,6 +3096,12 @@ class Wmain(GladeComponent):
                     # print ("D: Local session logging set to: %s\n" % (conf.LOG_LOCAL))
                     host.log = conf.LOG_LOCAL
 
+            # Before anything reads it. set_terminal_logger builds the log path from
+            # terminal.host, so assigning this later -- as it used to be -- silently sent
+            # every text log to <logs>/session/session-*.log instead of the host's own
+            # directory. Keep this the first thing done with the normalised host.
+            v.host = host
+
             fcolor = host.font_color
             bcolor = host.back_color
             if fcolor == "" or fcolor is None or bcolor == "" or bcolor is None:
@@ -3192,8 +3198,6 @@ class Wmain(GladeComponent):
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
-            v.host = host
-
             if host.host == "" or host.host is None:
                 vte_run(v, SHELL)
             else:
@@ -3268,9 +3272,6 @@ class Wmain(GladeComponent):
                 if len(lines):
                     GLib.timeout_add(basetime, self.send_data, v, "\r".join(lines))
             v.queue_draw()
-
-            # guardar datos de consola para clonar consola
-            v.host = host
         except Exception:
             logger.exception("Error connecting to host")
             msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
