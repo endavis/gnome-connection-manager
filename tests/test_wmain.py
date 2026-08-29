@@ -1819,7 +1819,8 @@ def test_set_terminal_logger_names_the_log_from_the_host_not_the_tab(
 def test_set_terminal_logger_falls_back_when_the_connection_never_set_a_host(
     tmp_path, app_module, monkeypatch
 ):
-    """v.host is only assigned once addTab gets that far; a failed connect has none."""
+    """addTab now assigns v.host up front, but set_terminal_logger is reachable from the
+    logging toggle too, so it still has to cope with a terminal that never got one."""
     monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
     monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
     wmain = object.__new__(app_module.Wmain)
@@ -1832,6 +1833,17 @@ def test_set_terminal_logger_falls_back_when_the_connection_never_set_a_host(
     written = list(tmp_path.rglob("*.log"))
     assert len(written) == 1
     assert written[0] == tmp_path / "session" / "session-20260823-001.log"
+
+
+def test_addtab_sets_the_host_before_it_starts_logging(app_module):
+    """set_terminal_logger reads terminal.host to build the log path, so assigning
+    v.host after the call sent every text log to <logs>/session/session-*.log --
+    a real ssh session to a grouped host logged under the fallback name."""
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def addTab", 1)[1].split("\n    def ", 1)[0]
+
+    assert "v.host = host" in body
+    assert body.index("v.host = host") < body.index("set_terminal_logger(v")
 
 
 def _clone_blocks(app_module):
