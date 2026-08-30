@@ -53,9 +53,7 @@ def test_hostutils_save_and_load_round_trip(app_module, monkeypatch):
     section = "host:primary"
     config.add_section(section)
 
-    monkeypatch.setattr(
-        app_module, "encrypt", lambda pwd, text: f"{pwd}:{text}" if text else ""
-    )
+    monkeypatch.setattr(app_module, "encrypt", lambda pwd, text: f"{pwd}:{text}" if text else "")
     monkeypatch.setattr(
         app_module,
         "decrypt",

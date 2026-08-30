@@ -86,8 +86,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   (`select_none()` on `Vte.Terminal`) and #41 (`set_attention()` on `Gtk.Label`). Several
   tests now assert the real class has each method the fake offers; extend that pattern.
 - **Baseline the linters.** The repo carries pre-existing lint and typecheck drift, so
-  compare against a `git stash` baseline instead of reading absolute counts. Never run a
-  formatter over the tree (see Coding Conventions).
+  compare against a `git stash` baseline instead of reading absolute counts. Formatting is
+  not drift: the tree is ruff-formatted and `doit check` enforces it, so `doit format`
+  should be a no-op on a clean checkout.
 - **The glade file is a shared namespace.** Deleting a block can remove widgets referenced
   elsewhere. Sweep every `get_widget("...")` id in the source against the glade.
 - **Run the app for tracebacks** with a throwaway HOME:
@@ -151,9 +152,14 @@ Practices below have each caught real bugs in this repo. They are worth the time
   pointed at a line number in a root-level module that no longer exists, so the reference
   was wrong twice over. `tests/test_docs.py` checks every path and symbol named here
   against the tree, including bare filenames that have since moved.
-- The codebase predates modern formatting: globals, manual signal hookups, custom dialog
-  helpers. Match the surrounding style and avoid sweeping refactors or auto-formatters unless
-  explicitly asked. Matching a neighbor's idiom beats being locally correct.
+- The codebase predates modern idioms: globals, manual signal hookups, custom dialog
+  helpers. Match the surrounding style and avoid sweeping refactors unless explicitly
+  asked. Matching a neighbor's idiom beats being locally correct.
+- **Layout is ruff's, not yours.** The tree is `ruff format`-clean and `doit check`
+  enforces it (#115), so run `doit format` rather than hand-aligning. One caveat learned
+  when the tree was first formatted: a test that regexes source for `_("...")` must allow
+  whitespace inside the parentheses, because the formatter is free to wrap a long call
+  across lines. `tests/test_i18n.py` gets this right; copy its pattern.
 - Favor the existing helpers (`msgbox`, `inputbox`, `vte_feed`, `HostUtils`, `sanitize_log_name`)
   instead of duplicating behavior — they already handle edge cases across VTE versions.
 - When adding UI controls or config fields, keep these in sync: defaults (`conf`),

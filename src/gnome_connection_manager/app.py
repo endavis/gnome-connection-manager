@@ -64,9 +64,7 @@ from threading import Thread
 def _configure_logging():
     level_name = os.getenv("GCM_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
-    logging.basicConfig(
-        level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     return logging.getLogger("gnome_connection_manager")
 
 
@@ -98,6 +96,7 @@ def bindtextdomain(app_name, locale_dir=None):
         gettext.install(app_name, locale_dir)
     except (OSError, locale.Error):
         builtins.__dict__["_"] = lambda x: x
+
 
 import pyaes
 
@@ -142,7 +141,7 @@ if not Path(BASE_PATH).exists():
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
 SHELL = os.environ["SHELL"]
-#SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
+# SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
 DEFAULT_TERM_TYPE = "xterm-256color"
 
 SSH_COMMAND = str(Path(BASE_PATH) / "scripts" / "ssh.expect")
@@ -406,6 +405,7 @@ def sync_shortcut_accels():
     if controller is not None and hasattr(controller, "refresh_menu_accels"):
         controller.refresh_menu_accels()
 
+
 ICON_PATH = str(Path(BASE_PATH) / "icon.png")
 
 glade_dir = str(Path(BASE_PATH) / "ui")
@@ -503,6 +503,7 @@ class GladeComponent:
 
     def get_widgets(self):
         return self.builder.get_objects()
+
 
 # Variables de configuracion
 class conf:
@@ -650,7 +651,11 @@ def terminal_working_directory(terminal):
     the pty's foreground process group, which needs no shell cooperation -- measured on
     this platform, bash emits no OSC 7 at all, so that fallback is the path that runs.
     """
-    uri = terminal.get_current_directory_uri() if hasattr(terminal, "get_current_directory_uri") else None
+    uri = (
+        terminal.get_current_directory_uri()
+        if hasattr(terminal, "get_current_directory_uri")
+        else None
+    )
     if uri:
         try:
             path, _host = GLib.filename_from_uri(uri)
@@ -962,7 +967,11 @@ def msgconfirm(text: str) -> int:
 
 
 def inputbox(
-    title: str, text: str, default: str = "", password: bool = False, parent: Gtk.Window | None = None
+    title: str,
+    text: str,
+    default: str = "",
+    password: bool = False,
+    parent: Gtk.Window | None = None,
 ) -> str | None:
     msgBox = EntryDialog(title, text, default, mask=password, parent=parent)
     msgBox.set_icon_from_file(ICON_PATH)
@@ -1065,9 +1074,7 @@ def monitor_showing(display, window):
     for index in range(display.get_n_monitors()):
         monitor = display.get_monitor(index)
         geometry = monitor.get_geometry()
-        area = overlap_area(
-            bounds, (geometry.x, geometry.y, geometry.width, geometry.height)
-        )
+        area = overlap_area(bounds, (geometry.x, geometry.y, geometry.width, geometry.height))
         if area > best_area:
             best, best_area = monitor, area
     return best
@@ -1524,14 +1531,17 @@ def vte_run(terminal, command, arg=None):
     for var, val in [
         ("TERM", term_type),
         ("COLORTERM", "truecolor"),
-        ("VTE_VERSION", f"{Vte.MAJOR_VERSION * 10000 + Vte.MINOR_VERSION * 100 + Vte.MICRO_VERSION}"),
+        (
+            "VTE_VERSION",
+            f"{Vte.MAJOR_VERSION * 10000 + Vte.MINOR_VERSION * 100 + Vte.MICRO_VERSION}",
+        ),
     ]:
         saved_env[var] = os.environ.get(var)
         os.environ[var] = val
     args = []
 
     # Check if this is a local shell before modifying args
-    is_local_shell = (command == SHELL)
+    is_local_shell = command == SHELL
     flag_spawn = GLib.SpawnFlags.DEFAULT if is_local_shell else GLib.SpawnFlags.FILE_AND_ARGV_ZERO
 
     # For local shells, unset VIRTUAL_ENV
@@ -1548,9 +1558,7 @@ def vte_run(terminal, command, arg=None):
     # wMain the same way sync_shortcut_accels reaches it: the global is bound late, and
     # declaring it at module scope would retype it for every other user.
     controller = globals().get("wMain")
-    socket_path = (
-        controller.clipboard_relay_path() if conf.OSC52_ENABLED and controller else None
-    )
+    socket_path = controller.clipboard_relay_path() if conf.OSC52_ENABLED and controller else None
     raw_path = session_file_for(terminal, ".raw") if conf.RAW_SESSION_LOG else None
     # Kept on the terminal so Save Transcript can find this session's recording; the
     # path is otherwise built here and forgotten.
@@ -2235,9 +2243,7 @@ class Wmain(GladeComponent):
             # off with a full-width window. Anchoring the menu's right edge to the
             # button's makes it open leftwards, which is correct by construction rather
             # than relying on GTK sliding it back, which does not always happen.
-            menu.popup_at_widget(
-                button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, event
-            )
+            menu.popup_at_widget(button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, event)
         else:
             menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
 
@@ -2318,7 +2324,9 @@ class Wmain(GladeComponent):
             if pos != -1:
                 self.search["index"] = i if backwards else i + 1
                 # print('found at line %d column %d, index=%d, line: %s' % (i, pos, self.search['index'], self.search['lines'][i]))
-                GLib.timeout_add(0, lambda line=i: self.search["terminal"].get_vadjustment().set_value(line))
+                GLib.timeout_add(
+                    0, lambda line=i: self.search["terminal"].get_vadjustment().set_value(line)
+                )
                 # self.search['terminal'].get_vadjustment().set_value(i)
                 self.search["terminal"].queue_draw()
                 break
@@ -2533,9 +2541,7 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.paste")
         menuItem.show()
 
-        self.popupMenu.mnuPasteSingleLine = menuItem = Gtk.MenuItem(
-            label=_("Pegar en una línea")
-        )
+        self.popupMenu.mnuPasteSingleLine = menuItem = Gtk.MenuItem(label=_("Pegar en una línea"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.paste-single-line")
         menuItem.show()
@@ -2560,9 +2566,7 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.view-buffer")
         menuItem.show()
 
-        self.popupMenu.mnuTranscript = menuItem = Gtk.MenuItem(
-            label=_("Guardar transcripción")
-        )
+        self.popupMenu.mnuTranscript = menuItem = Gtk.MenuItem(label=_("Guardar transcripción"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.save-transcript")
         menuItem.show()
@@ -2709,9 +2713,7 @@ class Wmain(GladeComponent):
         # Next to the log switch, because that is what it reads back. The action needs
         # no tab-specific wiring: right-clicking a tab sets the context terminal from
         # that tab, and the action asks for the target terminal, which prefers it.
-        self.popupMenuTab.mnuTranscript = menuItem = Gtk.MenuItem(
-            label=_("Guardar transcripción")
-        )
+        self.popupMenuTab.mnuTranscript = menuItem = Gtk.MenuItem(label=_("Guardar transcripción"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.save-transcript")
         menuItem.show()
@@ -2784,7 +2786,10 @@ class Wmain(GladeComponent):
         text = paste_transform(text, single_line=single_line)
         if not text:
             return
-        if paste_needs_confirmation(text) and msgconfirm(paste_preview(text)) != Gtk.ResponseType.OK:
+        if (
+            paste_needs_confirmation(text)
+            and msgconfirm(paste_preview(text)) != Gtk.ResponseType.OK
+        ):
             return
         # paste_text() keeps VTE's bracketed-paste wrapping, so applications that opt in
         # still see the content framed as a paste rather than as typing.
@@ -3034,7 +3039,9 @@ class Wmain(GladeComponent):
                 prepend = ""
                 if Path(filename).exists():
                     msgbox("{}\n{}".format(_("Anexar el archivo de log existente"), filename))
-                    prepend = "\n\n===== {} =====\n\n".format(_("Fin del registro de sesión anterior"))
+                    prepend = "\n\n===== {} =====\n\n".format(
+                        _("Fin del registro de sesión anterior")
+                    )
                 terminal.log = Path(filename).open("a", 1)
                 terminal.log.write(
                     "{}Session '{}' opened at {}\n{}\n".format(
@@ -3047,7 +3054,9 @@ class Wmain(GladeComponent):
             except Exception:
                 logger.exception("Unable to open log file")
                 msgbox(
-                    "{}\n{}".format(_("No se puede abrir el archivo de log para escritura"), filename)
+                    "{}\n{}".format(
+                        _("No se puede abrir el archivo de log para escritura"), filename
+                    )
                 )
                 terminal.disconnect(terminal.log_handler_id)
                 del terminal.log_handler_id
@@ -3936,7 +3945,12 @@ class Wmain(GladeComponent):
             # a failure rather than as something the reader can act on.
             # One string literal, not two joined: the i18n guard matches a single
             # quoted argument, so a concatenated msgid silently escapes the check.
-            msgbox(_("Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."), self.wMain)
+            msgbox(
+                _(
+                    "Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."
+                ),
+                self.wMain,
+            )
             return None
         dialog = Gtk.Dialog(title=_("Reconstruyendo transcripción"), parent=self.wMain, modal=True)
         dialog.set_icon_from_file(ICON_PATH)
@@ -3963,11 +3977,11 @@ class Wmain(GladeComponent):
                 msgbox(_("Esta grabación todavía no contiene texto"), self.wMain)
                 return
             self.save_text_to_file(
-                    text,
-                    self.wMain,
-                    name=Path(raw_path).with_suffix(".txt").name,
-                    folder=str(Path(raw_path).parent),
-                )
+                text,
+                self.wMain,
+                name=Path(raw_path).with_suffix(".txt").name,
+                folder=str(Path(raw_path).parent),
+            )
 
         replayer = TranscriptReplayer(
             raw_path,
@@ -4469,7 +4483,9 @@ class Wmain(GladeComponent):
                 )
                 if (
                     msgconfirm(
-                        "{} [{}]?".format(_("Confirma que desea eliminar todos los hosts del grupo"), group)
+                        "{} [{}]?".format(
+                            _("Confirma que desea eliminar todos los hosts del grupo"), group
+                        )
                     )
                     == Gtk.ResponseType.OK
                 ):
@@ -4792,7 +4808,11 @@ class HostUtils:
     @staticmethod
     def get_val(cp, section, name, default):
         try:
-            return cp.get(section, name) if not isinstance(default, bool) else cp.getboolean(section, name)
+            return (
+                cp.get(section, name)
+                if not isinstance(default, bool)
+                else cp.getboolean(section, name)
+            )
         except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
             return default
 
@@ -5168,7 +5188,9 @@ class Whost(GladeComponent):
                 for h in groups[group]:
                     if h.name == name:
                         msgbox(
-                            "{} [{}] {} [{}]".format(_("El nombre"), name, _("ya existe para el grupo"), group)
+                            "{} [{}] {} [{}]".format(
+                                _("El nombre"), name, _("ya existe para el grupo"), group
+                            )
                         )
                         return
                 # agregar host a grupo
@@ -5182,7 +5204,9 @@ class Whost(GladeComponent):
                         for h in groups[group]:
                             if h.name == name:
                                 msgbox(
-                                    "{} [{}] {} [{}]".format(_("El nombre"), name, _("ya existe para el grupo"), group)
+                                    "{} [{}] {} [{}]".format(
+                                        _("El nombre"), name, _("ya existe para el grupo"), group
+                                    )
                                 )
                                 return
                         groups[group].append(host)
@@ -5195,7 +5219,9 @@ class Whost(GladeComponent):
                         for h in groups[self.oldGroup]:
                             if h.name == name:
                                 msgbox(
-                                    "{} [{}] {} [{}]".format(_("El nombre"), name, _("ya existe para el grupo"), group)
+                                    "{} [{}] {} [{}]".format(
+                                        _("El nombre"), name, _("ya existe para el grupo"), group
+                                    )
                                 )
                                 return
                         for h in groups[self.oldGroup]:
@@ -6569,7 +6595,9 @@ class NotebookTabLabel(Gtk.HBox):
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 2:
             if (
                 conf.CONFIRM_ON_CLOSE_TAB_MIDDLE
-                and msgconfirm("{} [{}]?".format(_("Cerrar consola"), self.label.get_text().strip()))
+                and msgconfirm(
+                    "{} [{}]?".format(_("Cerrar consola"), self.label.get_text().strip())
+                )
                 != Gtk.ResponseType.OK
             ):
                 return True
@@ -6812,9 +6840,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("duplicate-host", self._on_action_duplicate_host)
         self._create_action("expand-groups", self._on_action_expand_groups)
         self._create_action("collapse-groups", self._on_action_collapse_groups)
-        self._create_stateful_action(
-            "toggle-panel", conf.SHOW_PANEL, self._on_toggle_panel, ["F9"]
-        )
+        self._create_stateful_action("toggle-panel", conf.SHOW_PANEL, self._on_toggle_panel, ["F9"])
         self._create_stateful_action(
             "toggle-toolbar", conf.SHOW_TOOLBAR, self._on_toggle_toolbar, ["<Shift>F9"]
         )

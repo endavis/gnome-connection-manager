@@ -75,9 +75,7 @@ def test_doit_reports_the_empty_case_as_a_failure(tmp_path):
     tree.mkdir()
     (tree / "lang").mkdir()
     shutil.copy(REPO / "dodo.py", tree / "dodo.py")
-    shutil.copytree(
-        REPO / "tools", tree / "tools", ignore=shutil.ignore_patterns("__pycache__")
-    )
+    shutil.copytree(REPO / "tools", tree / "tools", ignore=shutil.ignore_patterns("__pycache__"))
 
     result = subprocess.run(
         [sys.executable, "-m", "doit", "translate"],

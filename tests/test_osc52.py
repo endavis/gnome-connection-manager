@@ -167,7 +167,8 @@ def test_a_relayed_write_reaches_the_clipboard(app_module, monkeypatch):
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
     captured = {}
     monkeypatch.setattr(
-        app_module.Gtk.Clipboard, "get_default",
+        app_module.Gtk.Clipboard,
+        "get_default",
         lambda *_a: types.SimpleNamespace(set_text=lambda t, n: captured.setdefault("text", t)),
         raising=False,
     )
@@ -183,7 +184,8 @@ def test_a_relayed_write_is_refused_when_the_preference_is_off(app_module, monke
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 0)
     calls = []
     monkeypatch.setattr(
-        app_module.Gtk.Clipboard, "get_default",
+        app_module.Gtk.Clipboard,
+        "get_default",
         lambda *_a: types.SimpleNamespace(set_text=lambda t, n: calls.append(t)),
         raising=False,
     )
@@ -211,7 +213,8 @@ def test_malformed_relay_messages_are_discarded(app_module, monkeypatch, line):
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
     calls = []
     monkeypatch.setattr(
-        app_module.Gtk.Clipboard, "get_default",
+        app_module.Gtk.Clipboard,
+        "get_default",
         lambda *_a: types.SimpleNamespace(set_text=lambda t, n: calls.append(t)),
         raising=False,
     )
@@ -345,9 +348,7 @@ def test_next_session_file_keeps_raw_and_text_numbering_independent(tmp_path, ap
 def test_next_session_file_appends_to_the_last_when_exhausted(tmp_path, app_module, monkeypatch):
     """Refusing to log because 999 sessions happened today would be worse."""
     prefix = tmp_path / "busy-20260823"
-    monkeypatch.setattr(
-        app_module.Path, "exists", lambda self: True, raising=False
-    )
+    monkeypatch.setattr(app_module.Path, "exists", lambda self: True, raising=False)
 
     assert app_module.next_session_file(prefix, ".raw").endswith("-999.raw")
 

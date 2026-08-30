@@ -58,6 +58,8 @@ def unescape(text):
         out.append(char)
         index += 1
     return "".join(out)
+
+
 _CONTINUATION = re.compile(r'^"(.*)"$', re.M)
 
 
@@ -129,11 +131,7 @@ def assert_mo_matches_po(strings, label):
     catalog = gettext.GNUTranslations(EN_MO.open("rb"))
     entries = catalog_entries(EN_PO)
 
-    stale = sorted(
-        s
-        for s in strings
-        if entries.get(s) and catalog.gettext(s) != entries[s]
-    )
+    stale = sorted(s for s in strings if entries.get(s) and catalog.gettext(s) != entries[s])
 
     assert not stale, (
         f"lang/en/LC_MESSAGES/gcm-lang.mo is behind lang/en_US.po for {label}: "
@@ -190,9 +188,7 @@ def test_the_english_source_catalog_has_no_blank_translations():
     entries = catalog_entries(EN_PO)
 
     blank = sorted(
-        s
-        for s in translatable_strings()
-        if _SPANISH.search(s) and not entries.get(s, "")
+        s for s in translatable_strings() if _SPANISH.search(s) and not entries.get(s, "")
     )
 
     assert not blank, f"lang/en_US.po has no translation for: {blank}"

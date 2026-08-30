@@ -255,10 +255,20 @@ def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module)
             pass
 
     dialog = app_module.Whost.__new__(app_module.Whost)
-    ssh_only = ("txtKeepAlive", "chkKeepAlive", "chkX11", "chkAgent", "chkCompression",
-                "txtCompressionLevel", "txtPrivateKey", "btnBrowse")
-    controls = {name: Control() for name in (*ssh_only, "txtPort", "txtUser",
-                                             "txtPassword", "txtHost", "txtExtraParams")}
+    ssh_only = (
+        "txtKeepAlive",
+        "chkKeepAlive",
+        "chkX11",
+        "chkAgent",
+        "chkCompression",
+        "txtCompressionLevel",
+        "txtPrivateKey",
+        "btnBrowse",
+    )
+    controls = {
+        name: Control()
+        for name in (*ssh_only, "txtPort", "txtUser", "txtPassword", "txtHost", "txtExtraParams")
+    }
     for name, widget in controls.items():
         setattr(dialog, name, widget)
     dialog.get_widget = lambda name: Grid() if name == "tunnelGrid" else controls.get(name)

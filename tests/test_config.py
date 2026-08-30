@@ -230,9 +230,7 @@ def _load_with(tmp_path, app_module, monkeypatch, options, window=None):
     return app_module.conf
 
 
-def test_load_config_missing_option_still_applies_the_later_ones(
-    tmp_path, app_module, monkeypatch
-):
+def test_load_config_missing_option_still_applies_the_later_ones(tmp_path, app_module, monkeypatch):
     """A key absent from an older gcm.conf must not discard the keys after it."""
     conf = _load_with(
         tmp_path,
@@ -255,9 +253,7 @@ def test_load_config_missing_option_still_applies_the_later_ones(
     assert conf.APP_TITLE == "Custom App"
 
 
-def test_load_config_malformed_value_only_affects_its_own_option(
-    tmp_path, app_module, monkeypatch
-):
+def test_load_config_malformed_value_only_affects_its_own_option(tmp_path, app_module, monkeypatch):
     conf = _load_with(
         tmp_path,
         app_module,

@@ -234,6 +234,7 @@ def test_preferences_buttons_land_on_screen_against_real_gtk(backend):
     assert result.returncode == 0, result.stderr[-2000:]
     assert "OK" in result.stdout
 
+
 # Where the window manager leaves a dialog is its own business and varies with
 # timing, so put one in the bad place deliberately: X11 keeps the position the
 # dialog was given while it was still empty, which is how the button row ends up
@@ -304,6 +305,7 @@ def test_a_dialog_left_below_the_screen_is_brought_back_against_real_gtk():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "OK" in result.stdout
+
 
 # -- wrapping the pages must not move the selected tab (#89) ------------------
 
@@ -399,6 +401,7 @@ def test_wrapping_pages_leaves_the_selected_tab_alone_against_real_gtk():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "TABS-OK" in result.stdout
+
 
 # -- the dialog must be measured against the monitor it is really on (#94) ----
 
@@ -512,6 +515,7 @@ def test_a_dialog_falls_back_to_the_monitor_its_parent_is_on(app_module, monkeyp
     display.get_primary_monitor = lambda: None
 
     assert app_module.monitor_workarea(dialog) is right.rect
+
 
 # The checks above fake the work area small, which is what makes them repeatable --
 # but it also means they never exercise *which* monitor is chosen, and that is where

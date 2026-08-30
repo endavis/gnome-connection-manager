@@ -305,9 +305,7 @@ def app_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     gdk_module.ModifierType = types.SimpleNamespace(
         CONTROL_MASK=1, SHIFT_MASK=2, MOD1_MASK=4, SUPER_MASK=8
     )
-    gdk_module.ScrollDirection = types.SimpleNamespace(
-        UP=0, DOWN=1, LEFT=2, RIGHT=3, SMOOTH=4
-    )
+    gdk_module.ScrollDirection = types.SimpleNamespace(UP=0, DOWN=1, LEFT=2, RIGHT=3, SMOOTH=4)
     gdk_module.RGBA = DummyRGBA
     gdk_module.Color = object
     gdk_module.keyval_name = lambda *_args, **_kwargs: "KEY"

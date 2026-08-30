@@ -29,6 +29,7 @@ def dummy_app(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     module = sys.modules.get("gnome_connection_manager.app")
     if module is None:
         import gnome_connection_manager.app as module  # noqa: F401
+
         module = sys.modules["gnome_connection_manager.app"]
 
     monkeypatch.setattr(module, "main", fake_main)

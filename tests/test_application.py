@@ -235,9 +235,7 @@ def test_terminal_actions_carry_no_hardcoded_accelerator(app_module, monkeypatch
         )
 
 
-def test_no_app_accelerator_collides_with_a_different_terminal_command(
-    app_module, monkeypatch
-):
+def test_no_app_accelerator_collides_with_a_different_terminal_command(app_module, monkeypatch):
     """add-host held <Primary>n while [shortcuts] gave CTRL+N to console_reconnect."""
     registered = _registered_accels(app_module, monkeypatch)
     defaults = {key: command for command, _name, key in app_module.SHORTCUT_DEFAULTS}
@@ -320,7 +318,9 @@ def _stub_gdk_keys(app_module, monkeypatch, known):
         app_module.Gdk, "keyval_from_name", lambda name: known.get(name, 0xFFFFFF), raising=False
     )
     monkeypatch.setattr(
-        app_module.Gtk, "accelerator_name", lambda keyval, mods: f"{int(mods)}|{keyval}",
+        app_module.Gtk,
+        "accelerator_name",
+        lambda keyval, mods: f"{int(mods)}|{keyval}",
         raising=False,
     )
 
@@ -462,9 +462,7 @@ def test_apply_menu_accels_labels_items_from_the_action_map(app_module, monkeypa
             return {"app.copy": ["<Primary><Shift>c"]}.get(action, [])
 
     monkeypatch.setattr(app_module.Gtk, "AccelLabel", AccelLabel, raising=False)
-    monkeypatch.setattr(
-        app_module.Gtk, "accelerator_parse", lambda accel: (99, 3), raising=False
-    )
+    monkeypatch.setattr(app_module.Gtk, "accelerator_parse", lambda accel: (99, 3), raising=False)
 
     bound, unbound = AccelLabel(), AccelLabel()
     menu = Menu([MenuItem("app.copy", bound), MenuItem("app.console-rename", unbound)])
@@ -497,7 +495,10 @@ def test_reserved_accelerators_match_what_do_startup_registers(app_module):
     registered = set(re.findall(r'_create_action\([^)]*?\["([^"]+)"\]', startup, re.S))
 
     as_gcm_keys = {
-        accel.replace("<Primary>", "CTRL+").replace("<Shift>", "SHIFT+").replace("<Alt>", "ALT+").upper()
+        accel.replace("<Primary>", "CTRL+")
+        .replace("<Shift>", "SHIFT+")
+        .replace("<Alt>", "ALT+")
+        .upper()
         for accel in registered
     }
 
@@ -607,9 +608,7 @@ def test_an_unbound_key_is_left_alone(app_module, monkeypatch):
     wmain = object.__new__(app_module.Wmain)
     terminal = KeypressTerminal()
 
-    result = wmain.on_terminal_keypress(
-        terminal, _key_event("SHIFT+TAB", app_module, monkeypatch)
-    )
+    result = wmain.on_terminal_keypress(terminal, _key_event("SHIFT+TAB", app_module, monkeypatch))
 
     assert terminal.fed == []
     assert result is not True, "VTE must keep handling keys GCM has no binding for"

@@ -181,15 +181,38 @@ and replaced wholesale on a sync.
 - **`msgfmt` is not installed here**, so `build_mo.py` has been doing all the work. Add
   `gettext` to the Phase 7 apt list or the fallback-versus-reference test skips forever.
 
-### Blocked: `doit check` fails on `format_check`
+### Resolved: the tree is now ruff-formatted
 
-`ruff format --check` would reformat **19 files**, including `app.py`. GCM's `AGENTS.md`
-says to *"avoid sweeping refactors or auto-formatters"*. This is a genuine policy conflict
-between the two projects and needs a decision before Phase 6:
+Decision (a) — reformat once, drop the prohibition. `format_check` passes.
 
-- **(a)** Reformat once, accept the churn, drop the prohibition from `AGENTS.md`
-- **(b)** Drop `format_check` from `check` and from pre-commit, keep the policy
-- **(c)** Reformat everything except `app.py` via ruff's `exclude`
+The format settings already matched the template exactly (line-length 100, py312, double
+quotes), so no vendored file changed and no sync drift was created. `line-ending = "lf"`
+added for full parity.
+
+Churn was far smaller than feared: 19 files, 252 insertions, 189 deletions. `app.py` took
+116 lines out of 4,600. **Verified semantically neutral by comparing the AST of every
+reformatted file before and after — zero differences.**
+
+`AGENTS.md` loses the "never run a formatter" rule and gains the opposite: layout is
+ruff's, run `doit format`.
+
+### But the prohibition had a real reason, and it bit
+
+`save_session_transcript` carried a deliberately long single line with a comment saying
+why. The formatter wrapped it, and
+`test_transcript.py::test_the_refusal_says_what_to_do_about_it` broke: its regex matched
+only `_("...")` on one line, so it silently started reading a *different* message.
+
+`tests/test_i18n.py` already had the robust form, `_\(\s*"..."\s*\)`. The transcript test
+now matches it. Mutation tested: a message that drops the preference name still fails.
+
+Worth keeping in mind for later phases — any test that regexes source is exposed to the
+formatter.
+
+### Still blocked: `doit check` fails on `lint`
+
+The 10 pre-existing findings (7 `src/`, 3 `tests/`), including the three py312 ones from
+Phase 2. They have to be resolved before CI in Phase 7.
 
 ## Phase 4 — Dependencies
 

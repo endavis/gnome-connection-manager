@@ -64,9 +64,7 @@ def write_mo(entries: dict[str, str], path: Path) -> None:
         strs += vb + b"\x00"
     keystart = 7 * 4 + 16 * len(items)
     valuestart = keystart + len(ids)
-    output = struct.pack(
-        "Iiiiiii", 0x950412DE, 0, len(items), 7 * 4, 7 * 4 + len(items) * 8, 0, 0
-    )
+    output = struct.pack("Iiiiiii", 0x950412DE, 0, len(items), 7 * 4, 7 * 4 + len(items) * 8, 0, 0)
     output += b"".join(struct.pack("ii", length, off + keystart) for length, off in koffsets)
     output += b"".join(struct.pack("ii", length, off + valuestart) for length, off in voffsets)
     output += ids + strs

@@ -89,8 +89,14 @@ def test_doc_is_linked_from_the_readme():
 
 # -- internal links must land on a heading that exists ----------------------
 
-_MARKDOWN_DOCS = ["docs/TERMINAL-USAGE.md", "docs/SPEC.md", "docs/DEVELOPING.md",
-                  "docs/PROJECT_STRUCTURE.md", "AGENTS.md", "README.md"]
+_MARKDOWN_DOCS = [
+    "docs/TERMINAL-USAGE.md",
+    "docs/SPEC.md",
+    "docs/DEVELOPING.md",
+    "docs/PROJECT_STRUCTURE.md",
+    "AGENTS.md",
+    "README.md",
+]
 
 
 def _heading_slug(heading: str) -> str:
@@ -116,6 +122,7 @@ def test_internal_links_resolve_to_a_heading(relative):
 
 AGENTS = Path(__file__).resolve().parents[1] / "AGENTS.md"
 REPO = AGENTS.parent
+
 
 def _agents_references():
     return sorted(set(re.findall(r"`([^`]+)`", AGENTS.read_text())))
@@ -236,11 +243,7 @@ def test_agents_md_describes_every_module():
     modules = source_modules()
 
     assert len(modules) >= 5, f"module discovery looks broken: {modules}"
-    missing = [
-        str(path.relative_to(REPO))
-        for path in modules
-        if path.name not in text
-    ]
+    missing = [str(path.relative_to(REPO)) for path in modules if path.name not in text]
 
     assert not missing, f"AGENTS.md does not mention: {missing}"
 
@@ -266,7 +269,10 @@ def _line_count(relative):
 @pytest.mark.parametrize(
     ("pattern", "measure"),
     [
-        (r"`app\.py` is ([\d,]+) lines", lambda: _line_count("src/gnome_connection_manager/app.py")),
+        (
+            r"`app\.py` is ([\d,]+) lines",
+            lambda: _line_count("src/gnome_connection_manager/app.py"),
+        ),
         (
             r"([\d,]+) lines of Glade",
             lambda: _line_count("data/ui/gnome-connection-manager.glade"),
@@ -284,6 +290,5 @@ def test_spec_effort_figures_are_still_roughly_true(pattern, measure):
 
     drift = abs(actual - documented) / max(actual, 1)
     assert drift <= _FIGURE_TOLERANCE, (
-        f"SPEC.md says {documented:,} but the tree has {actual:,} "
-        f"({drift:.0%} out); re-measure §14"
+        f"SPEC.md says {documented:,} but the tree has {actual:,} ({drift:.0%} out); re-measure §14"
     )

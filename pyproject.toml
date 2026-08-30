@@ -117,6 +117,7 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+line-ending = "lf"
 
 # Mypy - Static type checker
 [tool.mypy]

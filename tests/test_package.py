@@ -34,6 +34,7 @@ def test_main_dunder_module_invokes_run(monkeypatch: pytest.MonkeyPatch) -> None
 
 # -- one version, four places it is written down ----------------------------
 
+
 def _declared_versions() -> dict[str, str]:
     """Every place the release version is spelled out, and what it currently says."""
     import re
@@ -42,9 +43,9 @@ def _declared_versions() -> dict[str, str]:
 
     repo = Path(__file__).resolve().parents[1]
     found = {
-        "pyproject.toml": tomllib.loads(
-            (repo / "pyproject.toml").read_text()
-        )["project"]["version"],
+        "pyproject.toml": tomllib.loads((repo / "pyproject.toml").read_text())["project"][
+            "version"
+        ],
         "__init__.py": gnome_connection_manager.__version__,
     }
     app_source = (repo / "src/gnome_connection_manager/app.py").read_text()
