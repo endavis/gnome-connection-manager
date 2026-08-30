@@ -23,7 +23,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo \
-            gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb gettext
+            gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb gettext expect
 
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1

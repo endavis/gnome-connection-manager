@@ -34,6 +34,11 @@ env:
   UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
   # gettext for msgfmt, which the catalog tests compare their fallback against;
   # xvfb for the tests that drive real Gtk/Vte windows (#113).
+  #
+  # expect is not optional here. app.py checks for it at *import* time and, if it is
+  # missing, opens a modal Gtk.MessageDialog and calls run() on it -- which blocks
+  # forever with nobody to click OK. Every test that imports the real module then sits
+  # there until its own 90s subprocess timeout, several times over. See #118.
   SYSTEM_PACKAGES: >-
     python3-gi
     python3-gi-cairo
@@ -41,6 +46,7 @@ env:
     gir1.2-vte-2.91
     xvfb
     gettext
+    expect
 
 jobs:
   test:
