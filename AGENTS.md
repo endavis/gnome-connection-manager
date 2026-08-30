@@ -40,6 +40,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `conf.VERSION` check that selects the legacy path stay in `app.py`, which keeps a thin
   `encrypt` / `decrypt` pair wrapping this. Tested directly rather than through the `gi`
   stub, which is the point: the stub hid the XOR path failing outright on Python 3 (#141).
+- `src/gnome_connection_manager/utils/logpaths.py` – naming and layout for session logs:
+  `<log_dir>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`, plus the containment check that
+  keeps a free-text group from escaping the log root. Two sanitizers on purpose —
+  `sanitize_log_name` guards a filesystem path, `sanitize_tab_title` guards a widget that
+  ends at `set_markup`. Pure of GTK and of configuration: the log root is an argument, and
+  `app.py` keeps a `session_file_for` wrapper that supplies `conf.LOG_PATH`.
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
   without a terminal, a display or a pty.
@@ -154,7 +160,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   vanishing -- and it is not. Every other SSH-only control in that branch is made insensitive
   instead, which is the inconsistency behind the confusion, not the hiding itself.
 - Session logs are named from the host entry, never the tab label:
-  `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. Raw recording adds `.raw` beside
+  `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. The naming lives in
+  `src/gnome_connection_manager/utils/logpaths.py`. Raw recording adds `.raw` beside
   it plus a `.timing` sidecar; the stream alone is not replayable, because concatenation
   discards the write boundaries that separate frames.
 - Spawning changes shape when `osc52-clipboard` or `raw-session-log` is on: the command is

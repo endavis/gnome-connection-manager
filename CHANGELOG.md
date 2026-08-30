@@ -20,6 +20,8 @@ the git log.
   the developer's desktop
 
 ### Changed
+- Session-log naming moved out of `app.py` into `utils/logpaths.py`, with the log root
+  passed in rather than read from `conf`
 - `Host` and `HostUtils` moved out of `app.py` into `utils/hosts.py`; their passphrase
   and legacy-format flag are now arguments rather than defaults read from globals
 - Password encryption moved out of `app.py` into `utils/crypto.py`, where it is tested

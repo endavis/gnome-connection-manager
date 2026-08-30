@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from gnome_connection_manager.utils import logpaths
+
 
 class FakeIter:
     def __init__(self, label: str, host=None, has_child: bool = False):
@@ -1663,109 +1665,47 @@ def test_window_becoming_active_clears_the_urgency_hint(app_module):
     assert window.urgency is False
 
 
-@pytest.mark.parametrize(
-    ("title", "expected"),
-    [
-        ("router", "router"),
-        ("  local  ", "local"),
-        ("my   host", "my host"),
-        # a title set by whatever runs in the terminal, via OSC 0
-        ("../../../../tmp/pwned", "tmp_pwned"),
-        ("claude - ~/src/app (3 tools)", "claude - ~_src_app (3 tools)"),
-        ('a/b\\c:d*e?f"g<h>i|j', "a_b_c_d_e_f_g_h_i_j"),
-        (".hidden", "hidden"),
-        ("..", "session"),
-        ("", "session"),
-        ("   ", "session"),
-        # BEL and ESC must not survive into a file someone will later cat
-        ("tab\x07\x1b[31mred", "tab_[31mred"),
-    ],
-)
-def test_sanitize_log_name(app_module, title, expected):
-    assert app_module.sanitize_log_name(title) == expected
+class LogHost:
+    def __init__(self, group="", name="web-01", user="", host="", port=""):
+        self.group = group
+        self.name = name
+        self.user = user
+        self.host = host
+        self.port = port
 
 
-def test_sanitize_log_name_caps_the_length(app_module):
-    name = app_module.sanitize_log_name("x" * 500)
+def test_session_file_for_wrapper_supplies_the_configured_log_path(
+    app_module, monkeypatch, tmp_path
+):
+    """The wrapper's whole job after #139: turn conf.LOG_PATH into an argument.
 
-    assert name == "x" * app_module.LOG_NAME_MAX
+    Asserted directly rather than inferred from a path, because the failure mode is the
+    wrapper passing a stale or default root and the log landing somewhere else.
+    """
+    seen: dict[str, object] = {}
 
+    def fake(terminal, suffix, log_path):
+        seen.update(suffix=suffix, log_path=log_path)
+        return "sentinel"
 
-def test_build_log_prefix_keeps_a_traversing_name_inside_the_log_directory(tmp_path, app_module):
-    prefix = app_module.build_log_prefix(tmp_path, "", "../../../../tmp/pwned", "", "20260823")
+    monkeypatch.setattr(app_module.logpaths, "session_file_for", fake)
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path / "logs"))
 
-    assert prefix is not None
-    assert prefix.parent.parent == tmp_path
-    assert prefix.parent.name == "tmp_pwned"
-    assert prefix.name == "session-20260823"
-
-
-def test_build_log_prefix_refuses_a_path_that_escapes(tmp_path, app_module, monkeypatch):
-    """The containment check must hold even if sanitising ever lets something through."""
-    monkeypatch.setattr(app_module, "sanitize_log_name", lambda title: title)
-
-    assert app_module.build_log_prefix(tmp_path, "", "../escaped", "", "20260823") is None
-
-
-def test_build_log_prefix_expands_a_user_relative_log_dir(app_module, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path))
-
-    prefix = app_module.build_log_prefix("~/logs", "", "router", "", "20260823")
-
-    assert prefix == tmp_path / "logs" / "router" / "session-20260823"
+    assert app_module.session_file_for(object(), ".raw") == "sentinel"
+    assert seen == {"suffix": ".raw", "log_path": str(tmp_path / "logs")}
 
 
-# -- log paths follow the host entry (#49) ----------------------------------
+def test_session_file_for_lands_under_the_configured_root(app_module, monkeypatch, tmp_path):
+    """End to end through the wrapper, with no logpaths function patched out."""
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    terminal = type("T", (), {"host": LogHost(group="prod", name="web-01", user="deploy")})()
 
+    path = app_module.session_file_for(terminal, ".log")
 
-def test_build_log_prefix_mirrors_the_host_tree(tmp_path, app_module):
-    """Nested groups become nested directories, since host.group is already a path."""
-    prefix = app_module.build_log_prefix(
-        tmp_path, "Home Tech/OPNsense/OPNA/endavis", "OPNA-TS", "root", "20260823"
-    )
-
-    assert prefix == (
-        tmp_path / "Home Tech" / "OPNsense" / "OPNA" / "endavis" / "OPNA-TS" / "root-20260823"
-    )
-
-
-def test_build_log_prefix_falls_back_when_no_user_is_set(tmp_path, app_module):
-    """Deliberately the fallback name, not the host name again: the parent directory
-    already carries the identity, so repeating it would give tmpl/tmpl-20260823."""
-    prefix = app_module.build_log_prefix(tmp_path, "1. Projects", "tmpl", "", "20260823")
-
-    assert prefix == tmp_path / "1. Projects" / "tmpl" / "session-20260823"
-    assert prefix.name != "tmpl-20260823"
-
-
-def test_build_log_prefix_puts_an_ungrouped_host_at_the_top_level(tmp_path, app_module):
-    """Local consoles arrive as Host("", "local"), so nothing above them moves."""
-    prefix = app_module.build_log_prefix(tmp_path, "", "local", "", "20260823")
-
-    assert prefix == tmp_path / "local" / "session-20260823"
-
-
-@pytest.mark.parametrize(
-    ("group", "expected"),
-    [
-        ("prod/eu-west", ["prod", "eu-west"]),
-        ("a//b/./c", ["a", "b", "c"]),
-        ("../../etc", ["etc"]),
-        ("", []),
-        (None, []),
-        ("...", []),
-    ],
-)
-def test_sanitize_log_segments(app_module, group, expected):
-    """Dots and blanks are dropped before sanitising -- sanitize_log_name would turn
-    ".." into the fallback name and litter the tree with bogus directories."""
-    assert app_module.sanitize_log_segments(group) == expected
-
-
-def test_sanitize_log_segments_does_not_flatten_the_separator(app_module):
-    """Sanitising the whole path at once would collapse it: / is in the unsafe set."""
-    assert app_module.sanitize_log_name("prod/eu-west") == "prod_eu-west"
-    assert app_module.sanitize_log_segments("prod/eu-west") == ["prod", "eu-west"]
+    assert path is not None
+    assert Path(path).is_relative_to(tmp_path)
+    assert Path(path).parent == tmp_path / "prod" / "web-01"
+    assert Path(path).name.startswith("deploy-")
 
 
 class LoggingTerminal:
@@ -1915,35 +1855,6 @@ def test_cloning_a_console_keeps_the_host_name(app_module):
         assert "host.name = tab.get_text()" not in block
 
 
-class LogHost:
-    def __init__(self, group="", name="web-01", user="", host="", port=""):
-        self.group = group
-        self.name = name
-        self.user = user
-        self.host = host
-        self.port = port
-
-
-@pytest.mark.parametrize(
-    ("host", "expected"),
-    [
-        (
-            LogHost(name="OPNA-TS", user="root", host="10.0.0.4", port=22),
-            "OPNA-TS (root@10.0.0.4:22)",
-        ),
-        (LogHost(name="web-01", user="", host="10.0.0.5", port=22), "web-01 (10.0.0.5:22)"),
-        (
-            LogHost(name="web-01", user="deploy", host="10.0.0.5", port=""),
-            "web-01 (deploy@10.0.0.5)",
-        ),
-        (LogHost(name="local", host=""), "local"),
-    ],
-)
-def test_describe_log_session(app_module, host, expected):
-    """Provenance lives inside the file so it survives the log being moved."""
-    assert app_module.describe_log_session(host) == expected
-
-
 class PlainTabLabel:
     """A tab label that is not a NotebookTabLabel, as the glade placeholders are."""
 
@@ -2076,31 +1987,6 @@ def test_glade_no_longer_defines_a_menubar(app_module):
     assert "GtkMenuBar" not in glade.read_text()
 
 
-# -- tab titles from window-title-changed (#18) -----------------------------
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("npm run build", "npm run build"),
-        ("  spaced   out  ", "spaced out"),
-        ("bell\x07and\x1bescape", "bellandescape"),
-        ("", ""),
-        (None, ""),
-    ],
-)
-def test_sanitize_tab_title(app_module, raw, expected):
-    """Titles arrive over OSC from whatever runs in the terminal, including a remote host."""
-    assert app_module.sanitize_tab_title(raw) == expected
-
-
-def test_sanitize_tab_title_truncates(app_module):
-    out = app_module.sanitize_tab_title("y" * 300)
-
-    assert len(out) == app_module.TAB_TITLE_MAX
-    assert out.endswith("…")
-
-
 class StubLabel:
     def __init__(self):
         self.text = ""
@@ -2165,7 +2051,7 @@ def test_set_terminal_title_truncates_before_rendering(app_module, monkeypatch):
 
     tab.set_terminal_title("y" * 300)
 
-    assert len(tab.terminal_title) == app_module.TAB_TITLE_MAX
+    assert len(tab.terminal_title) == logpaths.TAB_TITLE_MAX
     assert tab.label.get_text().endswith("…  ")
 
 
