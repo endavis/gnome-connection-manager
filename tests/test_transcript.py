@@ -173,7 +173,7 @@ def test_scroll_shift_will_not_invent_a_scroll_from_one_matching_line():
 
     Here nothing scrolled -- the screen was replaced -- but `match` happens to land two
     rows up. Taking that as evidence reports a two-line scroll and emits `p` and `q`,
-    which were never scrolled past, and pre-empts the page-turn rule that would have
+    which were never scrolled past, and prevents the page-turn rule that would have
     recovered the screen properly.
     """
     before = ["p", "q", "match", "r"]

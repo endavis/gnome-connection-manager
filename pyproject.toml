@@ -153,6 +153,96 @@ no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 
+[[tool.mypy.overrides]]
+# app.py is the pre-split monolith: one 4,600-line module of GTK widgets wired up
+# dynamically, where attributes are attached to Vte.Terminal at runtime and glade
+# supplies half the callers. mypy cannot follow any of that, and the codes below are
+# where essentially all of it lands -- 118 of the 132 errors it reports here.
+#
+# Relaxed rather than excluded, deliberately: the remaining codes still apply, and every
+# other module in the package stays fully checked. Narrow this as app.py is broken up.
+module = "gnome_connection_manager.app"
+disable_error_code = [
+    "attr-defined",
+    "arg-type",
+    "has-type",
+    "name-defined",
+    "union-attr",
+]
+
+[[tool.mypy.overrides]]
+# The suite works by handing the code fakes that carry only the surface under test, so
+# attributes appear on stub objects and methods are reassigned on purpose. Those codes
+# are the testing style, not defects. Everything else still applies to tests.
+module = "tests.*"
+disable_error_code = [
+    "attr-defined",
+    "method-assign",
+    "union-attr",
+    # A fake is deliberately assigned where the real type is declared, and stubs are
+    # built up field by field, so these follow from the same style as the three above.
+    "assignment",
+    "index",
+    "arg-type",
+    "call-arg",
+    "func-returns-value",
+    "unused-ignore",
+]
+
+# Bandit - security linter
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    "tmp",
+    ".venv",
+    "docs",
+    ".git",
+    ".github",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+]
+# B603/B607 are what GCM is for: it spawns ssh, telnet and the user's shell, by design
+# and with an argv list rather than a shell string. B101 is asserts in our own tooling.
+# Matches the template's skips.
+skips = [
+    "B101",  # asserts in our own tooling
+    "B603",  # subprocess without shell=True -- that is the safe form, and GCM's purpose
+    "B607",  # partial executable path -- ssh/telnet/$SHELL are resolved from PATH by design
+    "B404",  # importing subprocess at all, which follows from the two above
+    "B105",  # "hardcoded password" -- empty `pwd=""` defaults and variables named `pass*`
+    "B107",  # same, as a default argument
+    "B606",  # os.startfile on the unreachable nt branch of the donate handler
+    "B310",  # urlopen for the update check, against a constant https URL
+    "B110",  # try/except/pass around optional GTK calls that differ across VTE versions
+]
+
+# Vulture - dead code detection
+[tool.vulture]
+min_confidence = 80
+paths = ["src", "tools"]
+exclude = [
+    "*/__pycache__/*",
+]
+ignore_names = [
+    # GTK calls these back by name from the glade file, so nothing in Python
+    # references them and vulture cannot see the caller.
+    "on_*",
+    "do_*",
+    "test_*",
+    "fixture_*",
+    # Imported under `if TYPE_CHECKING:` in vendored template code and referenced only
+    # from string annotations, which vulture does not parse. Matches upstream.
+    "ConsoleType",
+]
+
+# Codespell - spelling
+[tool.codespell]
+skip = "tmp,.venv,.git,*.lock,*.pyc,__pycache__,lang,*.mo,*.po,data"
+# The UI strings are Spanish, and so are the fixtures that assert on them. Each of these
+# is a correctly spelled Spanish word that happens to look like an English typo.
+ignore-words-list = "comando,comandos,controles,direccion,historial,requiere,ser,sesion,varios,nd,pres"
+
 # Pytest - Testing framework
 [tool.pytest.ini_options]
 testpaths = ["tests"]

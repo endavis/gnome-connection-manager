@@ -165,7 +165,7 @@ def _message(text, selection="c"):
 
 def test_a_relayed_write_reaches_the_clipboard(app_module, monkeypatch):
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
-    captured = {}
+    captured: dict = {}
     monkeypatch.setattr(
         app_module.Gtk.Clipboard,
         "get_default",

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import types
 
+import pytest
+
 
 class CheckButtonStub:
     def __init__(self, field: str, value: bool):
@@ -183,3 +185,31 @@ def test_wconfig_on_okbutton_updates_conf_shortcuts(monkeypatch, app_module):
     assert wmain_stub.cmd_calls == 1
     assert wmain_stub.write_calls == 1
     assert destroy_stub.destroyed is True
+
+
+# -- preferences are addressed by name, not executed as source ---------------
+
+
+def test_resolve_preference_splits_the_address(app_module):
+    owner, attribute = app_module.resolve_preference("conf.LOG_PATH")
+
+    assert owner is app_module.conf
+    assert attribute == "LOG_PATH"
+
+
+def test_resolve_preference_refuses_an_address_it_does_not_own(app_module):
+    """The old exec() would happily have run anything on the left of the `=`."""
+    with pytest.raises(ValueError, match="unsupported preference field"):
+        app_module.resolve_preference("os.environ")
+
+
+def test_a_preference_containing_a_quote_round_trips(app_module, monkeypatch):
+    """Saving used to interpolate the typed text into an exec() statement, so a value
+    with a double quote in it was a SyntaxError and the preference silently never saved.
+    """
+    monkeypatch.setattr(app_module.conf, "WORD_SEPARATORS", "", raising=False)
+
+    owner, attribute = app_module.resolve_preference("conf.WORD_SEPARATORS")
+    setattr(owner, attribute, 'has "quotes" inside')
+
+    assert app_module.conf.WORD_SEPARATORS == 'has "quotes" inside'

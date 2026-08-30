@@ -17,7 +17,7 @@
 # - sftp
 # - master password (al iniciar la aplicacion)
 # - guardar estado de consolas abiertas (y estado de split)
-# - sortcut para moverse entre notebooks
+# - shortcut para moverse entre notebooks
 # - quitar los "accelerator" del archivo .glade (o dejarlos opcionales)
 # - soporte picocom (o minicom, o pyserial, ser2net) para comunicación serial
 # - Permitir modificar combinacion para cerrar aplicacion CTRL+Q
@@ -34,7 +34,7 @@
 # - overwrite colors (like putty)
 # - Cambiar charset en consola o en propiedades del host
 # - One "nice to have" would be the ability for GCM to use my existing PuTTY sessions instead of entering everything a second time. External script for that that parses ~/putty/session files
-# - Enter passwords in commands and hide them, #P=password (Angelo Corsaro). TextView doesnt support masking text, it needs a different implementation. Pending.
+# - Enter passwords in commands and hide them, #P=password (Angelo Corsaro). TextView does not support masking text, it needs a different implementation. Pending.
 # - Persist history of cluster commands. is it really necessary?
 # - Option to disable shortcuts
 
@@ -49,6 +49,7 @@ import logging
 import operator
 import os
 import re
+import secrets
 import shlex
 import socket
 import subprocess
@@ -98,19 +99,25 @@ def bindtextdomain(app_name, locale_dir=None):
         builtins.__dict__["_"] = lambda x: x
 
 
-import pyaes
+import pyaes  # noqa: E402  # must follow the gi.require_version calls above
 
-from gnome_connection_manager.utils import transcript, urlregex, vtehtml
+from gnome_connection_manager.utils import (  # noqa: E402
+    transcript,
+    urlregex,
+    vtehtml,
+)
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
 
 # Ver si expect esta instalado
 try:
-    e = os.system("expect >/dev/null 2>&1 -v")
+    expect_status = subprocess.run(
+        ["expect", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
+    ).returncode
 except (OSError, RuntimeError):
-    e = -1
-if e != 0:
+    expect_status = -1
+if expect_status != 0:
     error = Gtk.MessageDialog(
         modal=True,
         message_type=Gtk.MessageType.ERROR,
@@ -420,15 +427,15 @@ bindtextdomain(domain_name, locale_dir)
 # Import translation function installed by bindtextdomain
 # gettext.install() adds _ to builtins, but we need to import it for type checking
 try:
-    from builtins import _  # type: ignore
+    from builtins import _
 except ImportError:
     # Fallback if gettext.install() didn't add _ to builtins
     def _(s):
         return s
 
 
-groups = {}
-shortcuts = {}
+groups: dict = {}
+shortcuts: dict = {}
 
 enc_passwd = ""
 
@@ -506,7 +513,7 @@ class GladeComponent:
 
 
 # Variables de configuracion
-class conf:
+class conf:  # noqa: N801  # a settings namespace, referenced as conf.X throughout
     WORD_SEPARATORS = "-A-Za-z0-9,./?%&#:_=+@~"
     BUFFER_LINES = 10000
     STARTUP_LOCAL = True
@@ -521,7 +528,7 @@ class conf:
     CONFIRM_ON_CLOSE_TAB_MIDDLE = 1
     AUTO_CLOSE_TAB = 0
     CYCLE_TABS = True
-    COLLAPSED_FOLDERS = ""
+    COLLAPSED_FOLDERS: str | None = ""
     LEFT_PANEL_WIDTH = 100
     CHECK_UPDATES = True
     WINDOW_WIDTH = -1
@@ -666,7 +673,7 @@ def terminal_working_directory(terminal):
     if pty is None:
         return None
     try:
-        return os.readlink(f"/proc/{os.tcgetpgrp(pty.get_fd())}/cwd")
+        return str(Path(f"/proc/{os.tcgetpgrp(pty.get_fd())}/cwd").readlink())
     except OSError:
         return None
 
@@ -963,7 +970,7 @@ def msgconfirm(text: str) -> int:
     msgBox.set_icon_from_file(ICON_PATH)
     response = msgBox.run()
     msgBox.destroy()
-    return response
+    return int(response)
 
 
 def inputbox(
@@ -1345,11 +1352,11 @@ def load_encryption_key() -> None:
 def initialise_encyption_key() -> None:
     """Initialize a new encryption key and save it to file."""
     global enc_passwd
-    import random
-
-    x = int(str(random.random())[2:])
-    y = int(str(random.random())[2:])
-    enc_passwd = "%x" % (x * y)
+    # secrets, not random. This key encrypts the host passwords saved in gcm.conf, and
+    # random.random() is a Mersenne Twister seeded from the clock, so the key was
+    # reproducible by anyone who could estimate when it was generated. Existing key files
+    # are untouched -- this only changes how a new one is made (bandit B311).
+    enc_passwd = secrets.token_hex(16)
     try:
         with os.fdopen(os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
             f.write(enc_passwd)
@@ -1377,7 +1384,7 @@ def encrypt_old(passw: str, string: str) -> str:
     """Encrypt a string using XOR (legacy method)."""
     try:
         ret = xor(passw, string)
-        s = base64.b64encode("".join(ret))
+        s = base64.b64encode("".join(ret)).decode("ascii")
     except (ValueError, TypeError, UnicodeError):
         logger.exception("Legacy encryption error")
         s = ""
@@ -1440,7 +1447,7 @@ def encrypt(passw: str, string: str) -> str:
         ciphertext = bytearray()
         for block in _iter_blocks(plaintext):
             stream_block = next(keystream)
-            ciphertext.extend(bytes(b ^ s for b, s in zip(block, stream_block)))
+            ciphertext.extend(bytes(b ^ s for b, s in zip(block, stream_block, strict=True)))
         return base64.b64encode(iv + ciphertext).decode("ascii")
     except Exception:
         logger.exception("AES encryption error")
@@ -1461,7 +1468,7 @@ def decrypt(passw: str, string: str) -> str:
         plaintext = bytearray()
         for block in _iter_blocks(ciphertext):
             stream_block = next(keystream)
-            plaintext.extend(bytes(b ^ s for b, s in zip(block, stream_block)))
+            plaintext.extend(bytes(b ^ s for b, s in zip(block, stream_block, strict=True)))
         return _pkcs7_unpad(bytes(plaintext)).decode("utf-8")
     except Exception:
         logger.exception("AES decryption error")
@@ -1586,7 +1593,7 @@ def vte_run(terminal, command, arg=None):
             None,
             -1,
             None,
-            lambda term, pid, err, user_data: None,
+            lambda _term, _pid, _err, _user_data: None,
             None,
         )
     else:
@@ -1830,7 +1837,7 @@ class Wmain(GladeComponent):
         # hack to allow transparent widgets inside a opaque window
         # the key is to set the alpha channel of the window's background color to 0.9999, in that way the window is opaque but still allows transparent children
 
-        # remove previously addded css to get the background color from the current gtk theme
+        # remove previously added css to get the background color from the current gtk theme
         if hasattr(window, "style_provider") and window.style_provider:
             Gtk.StyleContext.remove_provider_for_screen(
                 Gdk.Screen.get_default(), window.style_provider
@@ -1950,7 +1957,7 @@ class Wmain(GladeComponent):
             if url:
                 Gtk.show_uri(Gdk.Screen.get_default(), url, Gtk.get_current_event_time())
 
-        # terminal doesnt emmit the "focus" signal when there is more than one visible on the screen, so force the focus
+        # terminal does not emit the "focus" signal when there is more than one visible on the screen, so force the focus
         nb = widget.get_parent().get_parent()
         self.on_tab_focus(nb, nb.get_nth_page(nb.get_current_page()), nb.get_current_page())
 
@@ -3042,7 +3049,9 @@ class Wmain(GladeComponent):
                     prepend = "\n\n===== {} =====\n\n".format(
                         _("Fin del registro de sesión anterior")
                     )
-                terminal.log = Path(filename).open("a", 1)
+                # Deliberately not a context manager: the handle lives as long as the
+                # terminal and is closed when the session ends.
+                terminal.log = Path(filename).open("a", 1)  # noqa: SIM115
                 terminal.log.write(
                     "{}Session '{}' opened at {}\n{}\n".format(
                         prepend,
@@ -3179,7 +3188,7 @@ class Wmain(GladeComponent):
             v.connect("decrease-font-size", self.terminal_zoom_out)
 
             if conf.TRANSPARENCY > 0 and self.wMain.transparency:
-                # v.set_opacity(1 - (conf.TRANSPARENCY / 100)) #posibly a bug in gtk3, set_opacity only works if parent is transparent too (worked just fine in gtk2),
+                # v.set_opacity(1 - (conf.TRANSPARENCY / 100)) #possibly a bug in gtk3, set_opacity only works if parent is transparent too (worked just fine in gtk2),
                 # the workaround is to set the background color with alpha channel
 
                 # if bcolor is not set, then use default background color
@@ -3269,7 +3278,7 @@ class Wmain(GladeComponent):
             # esperar 3 seg antes de enviar comandos
             if host.commands is not None and host.commands != "":
                 basetime = 700 if len(host.host) == 0 else 3000
-                lines = []
+                lines: list = []
                 for line in host.commands.splitlines():
                     if line.startswith("##D=") and line[4:].isdigit():
                         if len(lines):
@@ -3325,7 +3334,7 @@ class Wmain(GladeComponent):
             return True
         return False
 
-    def on_treeServers_tooltip(self, widget, x, y, keyboard, tooltip):
+    def on_treeServers_tooltip(self, widget, x, y, _keyboard, tooltip):
         x, y = widget.convert_widget_to_bin_window_coords(x, y)
         pos = widget.get_path_at_pos(x, y)
         if pos:
@@ -3353,17 +3362,17 @@ class Wmain(GladeComponent):
             setattr(conf, attr, read_config_option(cp, section, option, kind, getattr(conf, attr)))
         conf.APP_TITLE = conf.APP_TITLE or app_name
 
-        # setup shorcuts
-        scuts = {}
+        # setup shortcuts
+        scuts: dict = {}
         for command, name, default in SHORTCUT_DEFAULTS:
             self.add_shortcut(cp, scuts, command, name, default)
 
         # shortcuts para cambiar consola1-consola9
         for x in range(1, 10):
             try:
-                scuts[cp.get("shortcuts", f"console_{x}")] = eval(f"_CONSOLE_{x}")
+                scuts[cp.get("shortcuts", f"console_{x}")] = globals()[f"_CONSOLE_{x}"]
             except (configparser.NoSectionError, configparser.NoOptionError):
-                scuts[f"ALT+{x}"] = eval(f"_CONSOLE_{x}")
+                scuts[f"ALT+{x}"] = globals()[f"_CONSOLE_{x}"]
         try:
             i = 1
             while True:
@@ -3404,7 +3413,7 @@ class Wmain(GladeComponent):
             nodes.append(self.treeModel.get_string_from_iter(iter))
 
     def get_collapsed_nodes(self):
-        nodes = []
+        nodes: list = []
         self.treeModel.foreach(self.is_node_collapsed, nodes)
         return nodes
 
@@ -3433,9 +3442,8 @@ class Wmain(GladeComponent):
 
         iconHost = "gtk-network"
         iconDir = "gtk-directory"
-        grupos = groups.keys()
+        grupos = sorted(groups.keys(), reverse=True)
         # grupos.sort(lambda x,y: cmp(y,x))
-        grupos = sorted(grupos, reverse=True)
 
         for grupo in grupos:
             group = None
@@ -3695,7 +3703,7 @@ class Wmain(GladeComponent):
                 tab_text = (
                     widget.get_parent().get_parent().get_tab_label(widget.get_parent()).get_text()
                 )
-            elif tab is not None:  # notebok page switched
+            elif tab is not None:  # notebook page switched
                 tab_text = widget.get_tab_label(tab).get_text() if widget.get_tab_label(tab) else ""
             else:
                 tab_text = ""
@@ -3852,7 +3860,7 @@ class Wmain(GladeComponent):
         GLib.io_add_watch(
             connection.fileno(),
             GLib.IO_IN | GLib.IO_HUP,
-            lambda source, condition: self._on_clipboard_data(connection, buffer, condition),
+            lambda _source, condition: self._on_clipboard_data(connection, buffer, condition),
         )
         return True
 
@@ -4270,7 +4278,7 @@ class Wmain(GladeComponent):
                 ):
                     return
 
-                grupos = {}
+                grupos: dict = {}
                 for section in cp.sections():
                     if not section.startswith("host "):
                         continue
@@ -4554,9 +4562,15 @@ class Wmain(GladeComponent):
             )
             f.flush()
             if os.name == "nt":
-                os.filestart(f.name)
+                # os.startfile, not os.filestart -- the latter has never existed. Dead on
+                # a Linux-only target, but it would have been an AttributeError for anyone
+                # attempting a port.
+                os.startfile(f.name)  # noqa: S606  # type: ignore[attr-defined]  # nt-only
             elif os.name == "posix":
-                os.system(f"/usr/bin/xdg-open {f.name}")
+                # A list, not os.system with an interpolated name: the argument is a
+                # tempfile path rather than user input, so this was not exploitable, but
+                # the shell has no business being involved either way (bandit B605).
+                subprocess.run(["/usr/bin/xdg-open", f.name], check=False)  # noqa: S603
 
     # -- Wmain.on_btnDonate_clicked }
 
@@ -4957,9 +4971,9 @@ class Whost(GladeComponent):
         self.txtLocalPort.set_adjustment(txtLocalPortAdjustment)
         self.txtRemoteHost = self.get_widget("txtRemoteHost")
         self.txtRemotePort = self.get_widget("txtRemotePort")
-        # Done programaticaly because engine does not see top-level abjustment object
+        # Done programmatically because engine does not see top-level adjustment object
         # Local and remote port adjustments cannot be merged into one adjustment,
-        # because their vaues becomes dependent
+        # because their values become dependent
         txtRemotePortAdjustment = Gtk.Adjustment(
             value=8080, lower=1, upper=65535, step_increment=1, page_increment=10
         )
@@ -5405,6 +5419,26 @@ class Wabout(GladeComponent):
     # -- Wabout.on_wAbout_close }
 
 
+def resolve_preference(field):
+    """Split a preference address like "conf.LOG_PATH" into its owner and attribute.
+
+    The preferences table addresses settings by source text. That text used to be handed
+    to eval() to read the current value and to exec() to write the new one, and the write
+    interpolated the user's own input into the statement:
+
+        value = f'"{obj.get_text()}"'
+        exec(f"{obj.field}={value}")
+
+    so any preference containing a double quote produced a SyntaxError rather than being
+    saved -- and the same interpolation would have run whatever else was typed alongside
+    it. Resolving the address to a real attribute removes both.
+    """
+    owner, _, attribute = field.rpartition(".")
+    if owner != "conf":
+        raise ValueError(f"unsupported preference field {field!r}")
+    return conf, attribute
+
+
 class Wconfig(GladeComponent):
     def __init__(self, path="gnome-connection-manager.glade", root="wConfig", domain=domain_name):
         path = str(Path(glade_dir) / path)
@@ -5614,7 +5648,8 @@ class Wconfig(GladeComponent):
     def addParam(self, name, field, ptype, *args):
         x = self.tblGeneral.rows
         self.tblGeneral.rows += 1
-        value = eval(field)
+        owner, attribute = resolve_preference(field)
+        value = getattr(owner, attribute)
         if ptype is bool:
             obj = Gtk.CheckButton()
             obj.set_label(name)
@@ -5714,8 +5749,9 @@ class Wconfig(GladeComponent):
                 elif isinstance(obj, Gtk.ComboBox):
                     value = obj.get_active()
                 else:
-                    value = f'"{obj.get_text()}"'
-                exec(f"{obj.field}={value}")
+                    value = obj.get_text()
+                owner, attribute = resolve_preference(obj.field)
+                setattr(owner, attribute, value)
 
         if self.get_widget("chkDefaultColors1").get_active():
             conf.FONT_COLOR = ""
@@ -5733,7 +5769,7 @@ class Wconfig(GladeComponent):
             conf.FONT = ""
 
         # Guardar shortcuts
-        scuts = {}
+        scuts: dict = {}
         for x in self.treeModel:
             if x[0] != "" and x[1] != "":
                 scuts[x[1]] = [x[0]]
@@ -6715,7 +6751,7 @@ class MultilineCellRenderer(Gtk.CellRendererText):
         # avoid bug: gtk_text_mark_get_buffer: assertion 'GTK_IS_TEXT_MARK (mark)' failed
         return True
 
-    def do_start_editing(self, event, widget, path, bg_area, cell_area, flags):
+    def do_start_editing(self, event, widget, path, _bg_area, cell_area, flags):
         editor = CellTextView()
         editor.override_font(self.props.font_desc)
         editor.set_text(self.props.text)

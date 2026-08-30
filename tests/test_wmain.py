@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import configparser
 import inspect
 import os
+import re
 import subprocess
 import sys
-import re
 import time
 import types
-import configparser
 from pathlib import Path
 
 import pytest
@@ -484,7 +484,7 @@ def test_run_custom_command_invokes_vte_feed(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = app_module.Vte.Terminal()
     wmain.get_target_terminal = lambda: terminal
-    fed = {}
+    fed: dict = {}
     monkeypatch.setattr(app_module, "vte_feed", lambda term, data: fed.setdefault("data", data))
 
     wmain.run_custom_command("echo hi")
@@ -568,10 +568,10 @@ class ClipboardTerminal:
     """Mirrors the Vte.Terminal clipboard surface. Only add methods VTE really has."""
 
     def __init__(self, has_selection: bool = True, screen_text: str = "visible screen\n"):
-        self.copied = []
+        self.copied: list = []
         self.pasted = 0
-        self.pasted_text = []
-        self.selected = []
+        self.pasted_text: list = []
+        self.selected: list = []
         self._has_selection = has_selection
         self.screen_text = screen_text
         self.font_scale = 1.0
@@ -1979,7 +1979,7 @@ def test_tab_focus_still_updates_the_title_after_a_plain_label(app_module, monke
     """The crash aborted on_tab_focus before it reached the title update."""
     monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", 1)
     monkeypatch.setattr(app_module.conf, "APP_TITLE", "GCM")
-    titles = []
+    titles: list = []
     notebook = BellNotebook(PlainTabLabel())
     page = types.SimpleNamespace(get_parent=lambda: notebook)
     wmain = object.__new__(app_module.Wmain)
@@ -3161,7 +3161,7 @@ def test_disabling_logging_flushes_first(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = LogTerminal("tail of the session", row=0, col=19)
     terminal.log_handler_id = 7
-    disconnected = []
+    disconnected: list = []
     terminal.disconnect = disconnected.append
 
     wmain.set_terminal_logger(terminal, False)

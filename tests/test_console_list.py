@@ -841,7 +841,7 @@ def test_check_menu_item_really_draws_as_a_radio():
 def test_set_attention_records_the_flag_it_styles(app_module):
     """The entry reads this back; a style class is only answerable once realized."""
     label = object.__new__(app_module.NotebookTabLabel)
-    classes = set()
+    classes: set = set()
     label.get_style_context = lambda: types.SimpleNamespace(
         add_class=classes.add, remove_class=classes.discard
     )

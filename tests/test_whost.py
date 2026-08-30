@@ -131,7 +131,7 @@ def test_whost_on_okbutton_adds_host_and_updates_wmain(monkeypatch, app_module):
 
     wmain_stub = WmainStub()
     monkeypatch.setattr(app_module, "wMain", wmain_stub, raising=False)
-    captured = {}
+    captured: dict = {}
     monkeypatch.setattr(app_module, "msgbox", lambda text: captured.setdefault("msg", text))
 
     whost.on_okbutton1_clicked(None)
@@ -152,7 +152,7 @@ def test_whost_on_okbutton_validates_port(monkeypatch, app_module):
     whost, destroy_stub = make_whost(app_module)
     whost.txtPort = TextEntry("invalid")
     monkeypatch.setattr(app_module, "groups", {"ops": []})
-    messages = {}
+    messages: dict = {}
     monkeypatch.setattr(app_module, "msgbox", lambda text: messages.setdefault("msg", text))
 
     whost.on_okbutton1_clicked(None)

@@ -260,22 +260,64 @@ Now that the tools are installed, all of them run:
 is `os.startfile`. Unreachable on GCM's Linux-only target, but it is a typo waiting for
 anyone who tries a port. Not fixed here; it is unrelated to the migration.
 
-## Phase 5 — mypy, before pre-commit can work
+## Phase 5 — make `doit check` pass
 
-138 pre-existing errors, 137 of them in `app.py`. The template's pre-commit runs
-`mypy src/ tools/ tests/`, so until this is resolved **every commit fails**.
+**Done. `doit check` runs format_check, lint, type_check, deadcode, security, audit,
+spell_check and test, and all eight pass.**
 
-- [ ] Decide the approach:
-  - **(a)** Per-module override relaxing `app.py`, fix the rest — pragmatic, keeps the gate
-    for new code
-  - **(b)** Fix all 137 — large, and `app.py` is the file most in flux
-  - **(c)** Leave mypy out of pre-commit — cheapest, loses the check
-- [ ] Implement, and confirm the chosen scope is clean
-- [ ] Record the new baseline
+| Gate | Before | After |
+|---|---|---|
+| ruff lint | 10 | **0** |
+| mypy `src/` | 138 | **0** |
+| mypy `src/ tools/ tests/` | 186 | **0** |
+| bandit | 123 | **0** |
+| vulture | n/a (unconfigured) | **0** |
+| codespell | n/a (unconfigured) | **0** |
+| pip-audit | failed | **0 vulnerabilities** |
+| tests | 534 | **538** |
 
-Recommendation: **(a)**. The dominant codes are `attr-defined` (36), `arg-type` (31) and
-`name-defined` (17) — largely GTK dynamic-attribute noise in one legacy monolith, not a
-signal worth blocking every commit on.
+### mypy: relaxed by code, not excluded
+
+`app.py` is a 4,600-line GTK monolith where attributes are attached at runtime and glade
+supplies half the callers. Five codes — `attr-defined`, `arg-type`, `has-type`,
+`name-defined`, `union-attr` — account for 118 of its 132 errors. Those are disabled *for
+that module only*; every other module stays fully checked, and the remaining 15 errors
+were fixed rather than suppressed. Narrow this as `app.py` is broken up.
+
+`tests/` gets a similar override for the codes that follow from fake-based testing. This
+needed `tests/__init__.py`: a per-module pattern must be fully qualified, and `test_*` is
+rejected outright, so without the package marker the override silently matched nothing.
+
+### Real problems found by the new gates
+
+- **Weak encryption key generation.** `initialise_encyption_key()` built the key that
+  encrypts saved host passwords from `random.random()` — a Mersenne Twister seeded from
+  the clock. Now `secrets.token_hex(16)`. Existing key files are untouched; only newly
+  generated keys change.
+- **`exec()` on user input.** Saving preferences did
+  `value = f'"{obj.get_text()}"'` then `exec(f"{obj.field}={value}")`, so **any preference
+  containing a double quote raised SyntaxError and silently failed to save** — reproduced
+  before fixing. Addresses now resolve to a real attribute via `resolve_preference()`.
+- **A vulnerable dependency**: pygments 2.19.2, PYSEC-2026-2987. Upgraded to 2.21.0.
+- `eval()` and `os.system()` are now **entirely absent** from the codebase.
+- Six genuine English typos, and three unused-parameter warnings that were toolkit-
+  mandated signature positions rather than dead code.
+
+### `audit` had to be overridden
+
+`pip-audit` walks the *environment*, and GCM's venv uses `--system-site-packages` so it
+can reach PyGObject — so it also walked `cloud-init`, `python-apt` and `ubuntu-pro-client`
+and failed on distributions that are not on PyPI. `tools/doit/gcm.py` exports the lockfile
+and audits that instead. `dodo.py` installs it by name after discovery, because two
+modules defining `task_audit` would otherwise be resolved by whatever order `rglob`
+returned them in.
+
+### Suppressions, and why
+
+Every skip is documented in `pyproject.toml`. bandit's `B603`/`B607`/`B404` are a program
+whose purpose is spawning `ssh`, `telnet` and `$SHELL`; `B105`/`B107` are empty `pwd=""`
+defaults. codespell's ignore list is Spanish words that look like English typos — the UI
+and its fixtures are bilingual.
 
 ## Phase 6 — pre-commit
 

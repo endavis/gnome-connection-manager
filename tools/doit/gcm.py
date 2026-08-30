@@ -101,3 +101,30 @@ def task_translate() -> dict[str, Any]:
         "title": title_with_actions,
         "verbosity": 2,
     }
+
+
+def task_audit() -> dict[str, Any]:
+    """Audit the project's locked dependencies for known vulnerabilities.
+
+    Overrides the vendored task, which audits the *environment*. GCM's virtualenv is
+    created with --system-site-packages so it can reach PyGObject, and a plain `pip-audit`
+    therefore walks every distribution apt installed as well -- cloud-init, python-apt,
+    ubuntu-pro-client -- then fails because none of them are on PyPI. Exporting the
+    lockfile audits what this project actually pins, which is the question being asked.
+
+    dodo.py installs this by name after discovery, because two modules defining task_audit
+    would otherwise be resolved by whatever order rglob happened to return them in.
+    """
+    export = (
+        "uv export --frozen --no-emit-project --all-extras "
+        "--format requirements-txt -o tmp/requirements-audit.txt"
+    )
+    return {
+        "actions": [
+            "mkdir -p tmp",
+            export,
+            "uv run pip-audit -r tmp/requirements-audit.txt",
+        ],
+        "title": title_with_actions,
+        "verbosity": 2,
+    }

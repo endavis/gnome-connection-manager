@@ -44,9 +44,9 @@ def parse_po(path: Path) -> dict[str, str]:
         elif line.startswith('"') and target:
             chunk = _unescape(line[1:-1])
             if target == "id":
-                msgid += chunk
+                msgid = (msgid or "") + chunk
             else:
-                msgstr += chunk
+                msgstr = (msgstr or "") + chunk
     if msgid is not None and msgstr:
         entries[msgid] = msgstr
     return entries

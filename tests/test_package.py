@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 import gnome_connection_manager
 from gnome_connection_manager import __main__ as gcm_entrypoint
