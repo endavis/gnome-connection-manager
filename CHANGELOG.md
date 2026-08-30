@@ -29,3 +29,5 @@ the git log.
 - Saving a preference containing a double quote raised `SyntaxError` and silently failed
 - Every translation catalog carried duplicate message definitions, which `msgfmt` rejects
 - The application reported version 1.2.1 while the package said 1.2.0 and the `.deb` 1.2.2
+- Passwords in a config predating the `version` key all decrypted to nothing: the legacy
+  XOR helpers raised `TypeError` on Python 3 and swallowed it, and test shims hid it
