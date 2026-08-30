@@ -3,6 +3,14 @@
 Working checklist for [#115](https://github.com/endavis/gnome-connection-manager/issues/115).
 Transient: delete this file when the migration lands.
 
+**Split at Phase 8.** Phases 1–8 landed in
+[#116](https://github.com/endavis/gnome-connection-manager/pull/116) — 101 files,
++16,595/−1,074 across 12 commits, with CI green. Phase 9 rewrites `AGENTS.md`, `README.md`
+and two more docs and has to repair up to 12 doc tests, so it continues as its own issue
+and PR rather than growing a change nobody can review. Branch protection is repo
+configuration, not a migration step, and gets its own issue too — the first thing gated by
+it is Phase 9's PR, which also proves the gate works.
+
 Template checkout: `../pyproject-template` (branch `main`).
 Template docs: `../pyproject-template/docs/template/`.
 
@@ -479,11 +487,45 @@ Highest-breakage phase. Do it last, when everything else is green.
 
 ## Phase 10 — Land it
 
-- [ ] Full suite green, 0 skipped
-- [ ] ruff and mypy at or better than the recorded baseline
-- [ ] CI green on the PR — the first time this repo has ever had CI
+Phases 1–8, in #116:
+
+- [x] Full suite green, 0 skipped — **539 passed in 23.74s on a clean runner**
+- [x] ruff and mypy better than the recorded baseline: 10 → 0 and 138 → 0
+- [x] CI green — the first time this repo has ever had CI
+- [x] Merged
+
+Remaining, in the Phase 9 follow-up:
+
+- [ ] Doc tests repaired after `configure.py`
+- [ ] `LICENSE` confirmed still GPL-3.0
 - [ ] Delete this file
-- [ ] PR referencing #115
+
+### Merged over two advisory failures
+
+Neither is enforced — the repository has no branch protection, which is why the merge was
+possible and why closing that gap is the next thing.
+
+- **CodeQL**: a pre-existing SHA-256 password-KDF weakness in code this branch does not
+  touch, surfaced because the diff was large enough to scan the whole file. Tracked as
+  [#117](https://github.com/endavis/gnome-connection-manager/issues/117); fixing it needs
+  a versioned-ciphertext migration so saved passwords stay readable.
+- **`require-label`**: the `ready-to-merge` label does not exist in this repository.
+  Creating one to satisfy a gate that nothing enforces would have been ceremony.
+
+### Bugs the migration found
+
+None were its purpose; the new gates surfaced them.
+
+| | |
+|---|---|
+| Encryption key built from `random.random()` | fixed |
+| `exec()` on preference input — a double quote raised `SyntaxError` | fixed |
+| Every `.po` catalog carried 3 duplicate msgids, fatal to `msgfmt` | fixed |
+| `pygments` 2.19.2, PYSEC-2026-2987 | upgraded |
+| Three application versions across four files | reconciled |
+| A modal dialog blocking module import ([#118](https://github.com/endavis/gnome-connection-manager/issues/118)) | worked around in CI |
+| A test that only passed in an English locale | fixed |
+| SHA-256 as a password KDF ([#117](https://github.com/endavis/gnome-connection-manager/issues/117)) | filed |
 
 ---
 
