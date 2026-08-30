@@ -105,18 +105,16 @@ def test_decrypt_wrapper_forwards_the_version_flag(app_module, monkeypatch):
     assert seen["legacy"] is False
 
 
-def test_the_crypto_callers_still_resolve_through_app(app_module):
-    """The re-export footgun this extraction had to avoid.
+def test_the_remaining_crypto_callers_still_resolve_through_app(app_module):
+    """The re-export footgun, narrowed to the callers that are still in app.py.
 
-    `encrypt` and `decrypt` are named in app.py, so its own call sites resolve them
-    through the module global and `monkeypatch.setattr(app, "encrypt", ...)` still
-    intercepts them -- which nine existing tests rely on. Move one of these callers
-    into utils/ and that stops being true: the patch would rebind app's name while the
-    caller read the other module's, and the test would pass while testing nothing.
+    `HostUtils` moved to utils/hosts.py in #138 and is no longer covered here -- it
+    calls `crypto.encrypt` / `crypto.decrypt` module-qualified, so `crypto` is its patch
+    point, not `app`. This test caught that move: it failed the moment the class left,
+    which is what it is for. What remains are Wmain's import/export paths, which still
+    resolve `encrypt` / `decrypt` through app's globals.
     """
     callers = (
-        app_module.HostUtils.save_host_to_ini,
-        app_module.HostUtils.load_host_from_ini,
         app_module.Wmain.on_importar_servidores1_activate,
         app_module.Wmain.on_exportar_servidores1_activate,
     )
@@ -124,9 +122,20 @@ def test_the_crypto_callers_still_resolve_through_app(app_module):
         func = getattr(caller, "__func__", caller)
         assert func.__globals__ is vars(app_module), (
             f"{func.__qualname__} no longer resolves encrypt/decrypt through app.py; "
-            "the patch points in test_config.py, test_hosts.py and test_wmain.py "
-            "would silently become no-ops"
+            "repoint its patch points at the module it now reads them from"
         )
+
+
+def test_hostutils_reads_crypto_from_its_own_module(app_module):
+    """The other half: patching `app` must NOT be assumed to reach HostUtils any more.
+
+    Asserted rather than left implicit, because the failure mode is a test that passes
+    while testing nothing -- which is how #141 survived as long as it did.
+    """
+    from gnome_connection_manager.utils import hosts
+
+    assert hosts.HostUtils.load_host_from_ini.__globals__ is not vars(app_module)
+    assert hosts.HostUtils.load_host_from_ini.__globals__ is vars(hosts)
 
 
 def test_patching_app_encrypt_intercepts_a_real_caller(app_module, monkeypatch):
