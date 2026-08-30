@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
 import gnome_connection_manager
 from gnome_connection_manager import __main__ as gcm_entrypoint
@@ -70,3 +69,60 @@ def test_every_declared_version_agrees() -> None:
     declared = _declared_versions()
 
     assert len(set(declared.values())) == 1, f"version drift: {declared}"
+
+
+# -- importing the app must not block or exit (#118) -------------------------
+
+_IMPORT_PROBE = """
+import os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+# No expect on PATH, and no display: the two conditions that used to hang the import.
+os.environ["PATH"] = tempfile.mkdtemp()
+os.environ.pop("DISPLAY", None); os.environ.pop("WAYLAND_DISPLAY", None)
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gnome_connection_manager import app
+print("IMPORT-OK", callable(app.require_expect))
+"""
+
+
+def test_importing_the_app_neither_blocks_nor_exits() -> None:
+    """The import used to run an expect check and report it with a modal dialog.
+
+    `Gtk.MessageDialog.run()` waits for a button, so importing the module with nobody at
+    the screen never returned, and `sys.exit(1)` on the failure path meant importing it
+    could end the interpreter. It presented as CI taking seven minutes rather than as an
+    error: every test importing the module in a subprocess sat on an invisible dialog
+    until its own timeout.
+
+    The timeout here is the assertion. If the import blocks again, this fails rather than
+    hanging the suite.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", _IMPORT_PROBE],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "IMPORT-OK True" in result.stdout
+
+
+def test_require_expect_reports_on_stderr_when_there_is_no_display(monkeypatch, capsys) -> None:
+    """With no display there is nobody to click OK, so the dialog would be a hang."""
+    import gnome_connection_manager.app as app_mod
+
+    monkeypatch.setattr(app_mod, "expect_is_installed", lambda: False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    with pytest.raises(SystemExit) as exit_info:
+        app_mod.require_expect()
+
+    assert exit_info.value.code == 1
+    assert "install expect" in capsys.readouterr().err
