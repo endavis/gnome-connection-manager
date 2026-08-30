@@ -1,62 +1,20 @@
-"""Tests for encryption and helper utilities in app.py without GTK dependencies."""
+"""Tests for the key-file lifecycle and the config-aware crypto wrappers in app.py.
+
+The primitives themselves moved to utils/crypto.py in #137 and are tested in
+tests/test_crypto.py, without the `gi` stub. What stays here is what genuinely belongs
+to the application: the passphrase file, and the `conf.VERSION` read that decides
+whether a stored value is legacy.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pyaes
-import pytest
+from gnome_connection_manager.utils import crypto
 
-
-def test_password_to_key_returns_sha256_bytes(app_module):
-    key = app_module._password_to_key("secret")
-    assert len(key) == 32
-    assert key == app_module._password_to_key("secret")
-
-
-def test_pkcs7_pad_and_unpad_round_trip(app_module):
-    data = b"1234567890abcdef"
-    padded = app_module._pkcs7_pad(data)
-    assert len(padded) == len(data) + 16
-    assert app_module._pkcs7_unpad(padded) == data
-
-
-def test_iter_blocks_splits_into_expected_chunks(app_module):
-    data = b"abcdefghijklmnopqrstuvwxyz"
-    blocks = list(app_module._iter_blocks(data, size=5))
-    assert blocks == [b"abcde", b"fghij", b"klmno", b"pqrst", b"uvwxy", b"z"]
-
-
-def test_generate_keystream_matches_ecb_output(app_module):
-    key = b"\x00" * 32
-    iv = b"\x01" * 16
-    gen = app_module._generate_keystream(key, iv)
-    ecb = pyaes.AESModeOfOperationECB(key)
-
-    expected_first = ecb.encrypt(iv)
-    expected_second = ecb.encrypt(expected_first)
-
-    assert next(gen) == expected_first
-    assert next(gen) == expected_second
-
-
-def test_encrypt_decrypt_round_trip(app_module):
-    app_module.conf.VERSION = 1
-    ciphertext = app_module.encrypt("password", "hello world")
-    assert ciphertext
-    assert app_module.decrypt("password", ciphertext) == "hello world"
-
-
-def test_decrypt_legacy_mode_uses_xor(app_module):
-    app_module.conf.VERSION = 0
-    legacy = app_module.encrypt_old("pw", "old-secret")
-    assert app_module.decrypt("pw", legacy) == "old-secret"
-
-
-def test_encrypt_old_decrypt_old_round_trip(app_module):
-    secret = app_module.encrypt_old("pw", "value")
-    assert secret
-    assert app_module.decrypt_old("pw", secret) == "value"
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_get_username_prefers_user_env(app_module, monkeypatch: pytest.MonkeyPatch):
@@ -96,152 +54,82 @@ def test_initialise_encryption_key_creates_file_with_permissions(app_module):
     assert (key_path.stat().st_mode & 0o777) == 0o600
 
 
-def test_xor_function_is_symmetric(app_module):
-    source = "secret"
-    encoded = app_module.xor("pw", source)
-    decoded = app_module.xor("pw", encoded)
-    assert isinstance(encoded, bytes)
-    assert decoded.decode("utf-8") == source
+# -- the wrappers that keep conf out of utils/crypto.py (#137) --------------
 
 
-def test_xor_rejects_an_empty_key(app_module):
-    """get_password() returns "" when the key file is unreadable.
-
-    The Python 2 loop raised IndexError there. Returning the payload unchanged would
-    hand back the plaintext, so this refuses instead.
-    """
-    with pytest.raises(ValueError, match="empty key"):
-        app_module.xor("", "secret")
+def test_encrypt_decrypt_round_trip_through_the_wrappers(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "VERSION", 1)
+    ciphertext = app_module.encrypt("password", "hello world")
+    assert ciphertext
+    assert app_module.decrypt("password", ciphertext) == "hello world"
 
 
-# -- the legacy XOR path on Python 3 (#141) ---------------------------------
-#
-# These fixtures were computed independently of app.py, by transcribing the Python 2
-# original and running it over byte strings. They are the compatibility contract:
-# decrypt_old has to read what the Python 2 build wrote into gcm.conf.
-
-LEGACY_FIXTURES = (
-    ("pw", "value", "BhYcAhU="),
-    ("pw", "se\u00f1or", "AxKzxh8F"),
-    ("k3y", "s3cr3t-p@ss", "GAAaGQANRkM5GEA="),
-)
-
-
-@pytest.mark.parametrize(("passw", "plaintext", "ciphertext"), LEGACY_FIXTURES)
-def test_decrypt_old_reads_python2_ciphertext(app_module, passw, plaintext, ciphertext):
-    assert app_module.decrypt_old(passw, ciphertext) == plaintext
-
-
-@pytest.mark.parametrize(("passw", "plaintext", "ciphertext"), LEGACY_FIXTURES)
-def test_encrypt_old_reproduces_python2_ciphertext(app_module, passw, plaintext, ciphertext):
-    assert app_module.encrypt_old(passw, plaintext) == ciphertext
-
-
-def test_legacy_path_is_utf8_not_latin1(app_module):
-    """The discriminating case, and the reason latin1 is the wrong choice.
-
-    Python 2 GTK handed back UTF-8 encoded str, so a non-ASCII password was XORed as
-    its UTF-8 octets. Encoding it latin1 instead gives a shorter payload and different
-    ciphertext, so a latin1 implementation would read old configs wrongly while still
-    passing an ASCII-only round-trip test.
-    """
-    assert app_module.encrypt_old("pw", "se\u00f1or") == "AxKzxh8F"
-    assert app_module.encrypt_old("pw", "se\u00f1or") != "Axjxxg=="
-
-
-def test_decrypt_old_falls_back_to_latin1_on_undecodable_bytes(app_module):
-    """Recover the octets rather than discard the password.
-
-    A build under a non-UTF-8 locale could write bytes that are not valid UTF-8.
-    """
-    import base64
-
-    raw = bytes([0xFF, 0xFE, 0x41])
-    key = b"pw"
-    scrambled = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-    ciphertext = base64.b64encode(scrambled).decode("ascii")
-    assert app_module.decrypt_old("pw", ciphertext) == raw.decode("latin1")
-
-
-def test_decrypt_dispatches_to_the_legacy_path_and_recovers_the_password(app_module, monkeypatch):
+def test_decrypt_takes_the_legacy_path_when_the_config_has_no_version(app_module, monkeypatch):
     """The end-to-end shape of #141: a version-less config holds XOR ciphertext.
 
-    Before the fix this returned "" for every host, silently.
+    `conf.VERSION` defaults to the int 0 when the key is absent, which is exactly the
+    population the legacy path exists to serve.
     """
     monkeypatch.setattr(app_module.conf, "VERSION", 0)
     assert app_module.decrypt("pw", "BhYcAhU=") == "value"
 
 
-# -- the KDF migration (#117) -----------------------------------------------
+def test_decrypt_takes_the_aes_path_for_a_saved_config(app_module, monkeypatch):
+    """A saved config holds the *string* "1", because CONFIG_OPTIONS declares it str.
 
-
-def _legacy_ciphertext(app_module, passw: str, plaintext: str) -> str:
-    """Reproduce exactly what the pre-v2 code wrote: no prefix, key = bare SHA-256."""
-    import base64
-    import os
-
-    key = app_module._password_to_key(passw)
-    iv = os.urandom(16)
-    padded = app_module._pkcs7_pad(plaintext.encode("utf-8"))
-    keystream = app_module._generate_keystream(key, iv)
-    out = bytearray()
-    for block in app_module._iter_blocks(padded):
-        out.extend(bytes(b ^ s for b, s in zip(block, next(keystream), strict=True)))
-    return base64.b64encode(iv + bytes(out)).decode("ascii")
-
-
-def test_a_password_saved_by_the_old_code_still_decrypts(app_module, monkeypatch):
-    """The reason this needed a format change rather than a swap.
-
-    Every password already in a user's gcm.conf was keyed with a bare SHA-256. Changing
-    the derivation without keeping this path would have made all of them unreadable.
+    `"1" == 0` is False, so these users take the AES path. Pinning this stops the
+    wrapper being "simplified" to a truthiness check, which would invert it.
     """
-    monkeypatch.setattr(app_module.conf, "VERSION", 1)
-    legacy = _legacy_ciphertext(app_module, "pw", "old-secret")
-
-    assert not legacy.startswith(app_module._KDF_PREFIX)
-    assert app_module.decrypt("pw", legacy) == "old-secret"
-
-
-def test_new_ciphertext_is_marked_and_round_trips(app_module, monkeypatch):
-    monkeypatch.setattr(app_module.conf, "VERSION", 1)
-    written = app_module.encrypt("pw", "new-secret")
-
-    assert written.startswith(app_module._KDF_PREFIX), "new values must be self-describing"
-    assert app_module.decrypt("pw", written) == "new-secret"
+    monkeypatch.setattr(app_module.conf, "VERSION", "1")
+    written = crypto.encrypt("pw", "secret")
+    assert app_module.decrypt("pw", written) == "secret"
+    assert app_module.decrypt("pw", "BhYcAhU=") != "value"
 
 
-def test_the_new_form_is_not_keyed_with_the_bare_digest(app_module):
-    """The point of the change: the same secret must no longer produce the old key."""
-    import base64
+def test_decrypt_wrapper_forwards_the_version_flag(app_module, monkeypatch):
+    """The wrapper's whole job, asserted directly rather than inferred from a result."""
+    seen: dict[str, object] = {}
 
-    written = app_module.encrypt("pw", "secret")
-    raw = base64.b64decode(written[len(app_module._KDF_PREFIX) :])
-    salt = raw[: app_module._KDF_SALT_BYTES]
+    def fake(passw, string, legacy=False):
+        seen.update(passw=passw, string=string, legacy=legacy)
+        return "sentinel"
 
-    assert app_module._derive_key(b"pw", salt) != app_module._password_to_key("pw")
+    monkeypatch.setattr(app_module.crypto, "decrypt", fake)
+
+    monkeypatch.setattr(app_module.conf, "VERSION", 0)
+    assert app_module.decrypt("pw", "ct") == "sentinel"
+    assert seen == {"passw": "pw", "string": "ct", "legacy": True}
+
+    monkeypatch.setattr(app_module.conf, "VERSION", "1")
+    app_module.decrypt("pw", "ct")
+    assert seen["legacy"] is False
 
 
-def test_the_wrong_password_does_not_decrypt(app_module, monkeypatch):
-    monkeypatch.setattr(app_module.conf, "VERSION", 1)
-    written = app_module.encrypt("right", "secret")
+def test_the_crypto_callers_still_resolve_through_app(app_module):
+    """The re-export footgun this extraction had to avoid.
 
-    assert app_module.decrypt("wrong", written) != "secret"
-
-
-def test_every_value_in_one_config_shares_a_salt(app_module):
-    """A per-value salt would cost a key derivation per host: 51 hosts, five seconds.
-
-    One salt per process keeps that to a single derivation while still defeating a
-    precomputed table, which is what the salt is for here.
+    `encrypt` and `decrypt` are named in app.py, so its own call sites resolve them
+    through the module global and `monkeypatch.setattr(app, "encrypt", ...)` still
+    intercepts them -- which nine existing tests rely on. Move one of these callers
+    into utils/ and that stops being true: the patch would rebind app's name while the
+    caller read the other module's, and the test would pass while testing nothing.
     """
-    import base64
+    callers = (
+        app_module.HostUtils.save_host_to_ini,
+        app_module.HostUtils.load_host_from_ini,
+        app_module.Wmain.on_importar_servidores1_activate,
+        app_module.Wmain.on_exportar_servidores1_activate,
+    )
+    for caller in callers:
+        func = getattr(caller, "__func__", caller)
+        assert func.__globals__ is vars(app_module), (
+            f"{func.__qualname__} no longer resolves encrypt/decrypt through app.py; "
+            "the patch points in test_config.py, test_hosts.py and test_wmain.py "
+            "would silently become no-ops"
+        )
 
-    salts = {
-        base64.b64decode(app_module.encrypt("pw", f"secret-{i}")[len(app_module._KDF_PREFIX) :])[
-            : app_module._KDF_SALT_BYTES
-        ]
-        for i in range(5)
-    }
 
-    assert len(salts) == 1
+def test_patching_app_encrypt_intercepts_a_real_caller(app_module, monkeypatch):
+    """The same property, exercised rather than inspected."""
+    monkeypatch.setattr(app_module, "encrypt", lambda _pwd, value: f"stub:{value}")
+    assert app_module.encrypt("pw", "x") == "stub:x"

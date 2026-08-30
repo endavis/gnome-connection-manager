@@ -15,7 +15,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 ## Repository Map
 - `src/gnome_connection_manager/app.py` – configuration (class `conf`), window/controller
   classes (`Wmain`, `Whost`, `Wconfig`, `GcmApplication`), `Host`/`HostUtils` models,
-  encryption helpers, and VTE management. It is a single large module by design.
+  the encryption key file, and VTE management. Large by design: the window classes are
+  wired to the glade file by handler name and share mutable module globals, so splitting
+  them relocates the coupling without reducing it. What does come out is pure logic, into
+  `utils/` — see #137 to #140 for the seams identified, and the crypto entry below for
+  the first one taken.
 - `src/gnome_connection_manager/main.py` and `src/gnome_connection_manager/__main__.py` –
   entry points (`doit launch` uses these).
 - `src/gnome_connection_manager/relay.py` – a PTY relay run as its own process. When OSC 52
@@ -25,6 +29,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   freeze the interface.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
+- `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
+  AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
+  (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
+  `conf.VERSION` check that selects the legacy path stay in `app.py`, which keeps a thin
+  `encrypt` / `decrypt` pair wrapping this. Tested directly rather than through the `gi`
+  stub, which is the point: the stub hid the XOR path failing outright on Python 3 (#141).
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
   without a terminal, a display or a pty.
