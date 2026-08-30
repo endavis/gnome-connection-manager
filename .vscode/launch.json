@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Python: Debug Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Python: Module with Args",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "${input:moduleName}",
+      "args": "${input:moduleArgs}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "moduleName",
+      "type": "promptString",
+      "description": "Module name to run (e.g., gnome_connection_manager)"
+    },
+    {
+      "id": "moduleArgs",
+      "type": "promptString",
+      "description": "Arguments to pass to the module"
+    }
+  ]
+}

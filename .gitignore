@@ -29,7 +29,10 @@ env/
 .uv/
 
 # IDEs
-.vscode/
+# .vscode/ is deliberately absent from this list: the template tracks it so contributors
+# share the recommended extensions, debug configurations and task shortcuts (#128).
+# Per-developer overrides go in .vscode/settings.local.json, which VS Code reads and git
+# does not see.
 .idea/
 *.swp
 *.swo
