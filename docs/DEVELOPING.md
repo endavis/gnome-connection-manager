@@ -49,7 +49,7 @@ gnome-connection-manager/
    # or: sudo apt install just
    ```
 
-> Use the doit tasks for day-to-day development (`doit launch`, `doit check`, etc.).  
+> Use the doit tasks for day-to-day development (`doit launch`, `doit check`, etc.).
 > When you need to run a command that doesn't have a task, wrap it with `uv run ...`
 > so the project environment is used.
 

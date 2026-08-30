@@ -116,7 +116,7 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 1. **Standard Python layout** - src/ layout prevents import issues
 2. **Modern tooling** - uv is 10-100x faster than pip
 3. **Type safety** - mypy for gradual typing
-4. **Code quality** - ruff for fast linting/formatting  
+4. **Code quality** - ruff for fast linting/formatting
 5. **Proper packaging** - Can publish to PyPI
 6. **Development workflow** - doit tasks for common operations
 7. **Reproducible** - .python-version pins Python version

@@ -321,15 +321,47 @@ and its fixtures are bilingual.
 
 ## Phase 6 — pre-commit
 
-- [ ] Copy `.pre-commit-config.yaml` and `tools/hooks/`
-- [ ] `doit pre_commit_install`
-- [ ] Verify `commit-msg`, `pre-commit`, `post-merge`, `post-checkout` in `.git/hooks/`
-- [ ] Confirm existing commit style passes conventional-commit enforcement
+- [x] Copy `.pre-commit-config.yaml`, `tools/hooks/`, `tools/generate_doc_toc.py`
+- [x] `doit pre_commit_install`
+- [x] All four hook types present: `commit-msg`, `pre-commit`, `post-merge`, `post-checkout`
+- [x] `pre-commit run --all-files` clean across 23 hooks
 
-**Changes how we work here.** The dangerous-command hook scans heredoc bodies, and long
-commit messages must be written to `tmp/agents/<agent-type>/` and passed with
-`git commit -F <file>` rather than piped via heredoc. See the template's
-`docs/template/consumer-notes.md`.
+### Branch naming convention changed
+
+The `check-branch-name` hook requires `<type>/<issue>-<description>` and allows only
+`main`/`develop` as bare names. GCM's convention was `fix/<description>` with no issue
+number, so **this branch was renamed** from `chore/migrate-to-pyproject-template` to
+`chore/115-migrate-to-pyproject-template`. It had not been pushed, so the rename was free.
+
+Going forward: `feat/`, not `feature/`, and every branch carries its issue number. That
+fits the issue-first workflow — the number is now in the branch, the commit and the PR.
+
+`check-commit-issue-ref` additionally requires that if a message cites an issue, the
+branch's issue is among them.
+
+### The whitespace hook broke i18n, and would have done it silently
+
+`trailing-whitespace` stripped a space from inside a *translatable* glade string:
+
+```
+-<property name="tooltip-text" translatable="yes">Nivel de compresión:
++<property name="tooltip-text" translatable="yes">Nivel de compresión:
+```
+
+That trailing space is part of the msgid, so the widget detached from every translation of
+it. Two i18n tests caught it. `data/ui/*.glade` and `lang/*.po` are now excluded from that
+hook — they are translation sources, where whitespace is data.
+
+`end-of-file-fixer` also trimmed blank lines from `postinst` and `data/scripts/ssh.expect`;
+both harmless and kept.
+
+### Adaptations
+
+- The mypy hook ran `mypy src/ tools/ tests/ bootstrap.py`; GCM has no `bootstrap.py`.
+- `protect-dynamic-version` is inert here — it guards a `dynamic =` field GCM does not
+  have. It becomes relevant if hatch-vcs is ever adopted.
+- `test_agents_md_describes_every_module` needed `tools/generate_doc_toc.py` treating as
+  vendored, like the directories added in Phase 1.
 
 ## Phase 7 — CI (the substantial one)
 

@@ -217,6 +217,8 @@ _UNDOCUMENTED_BY_DESIGN = {"__init__.py"}
 # documented in the template, and listing it here would mean re-describing someone else's
 # code every time a sync pulls a new file in.
 _VENDORED_FROM_TEMPLATE = {"pyproject_template", "doit", "hooks", "statusline"}
+# Vendored files that sit directly in tools/ rather than in a directory of their own.
+_VENDORED_FILES = {"generate_doc_toc.py"}
 
 
 def source_modules():
@@ -229,6 +231,7 @@ def source_modules():
         if path.name not in _UNDOCUMENTED_BY_DESIGN
         and "__pycache__" not in path.parts
         and not _VENDORED_FROM_TEMPLATE & set(path.parts)
+        and path.name not in _VENDORED_FILES
     )
 
 

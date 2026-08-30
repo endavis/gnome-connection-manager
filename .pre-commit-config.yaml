@@ -1,0 +1,255 @@
+# Hook types installed by `pre-commit install`.
+#
+# `commit-msg` was missing, so every hook declared with `stages: [commit-msg]`
+# was configured but never ran — including `conventional-pre-commit`, which has
+# been enforcing nothing since it was added. Declaring the types here means a
+# plain `pre-commit install` wires all of them, rather than depending on each
+# caller remembering the right `--hook-type` flags (#741).
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+  - post-merge
+  - post-checkout
+
+repos:
+  # Generic file checks (not Python-specific, keep external)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        stages: [pre-commit]
+        # The glade file and the .po catalogs are translation sources: a trailing space
+        # inside a translatable string is part of the msgid, and stripping it silently
+        # detaches the widget from every translation of it.
+        exclude: ^(data/ui/.*\.glade|lang/.*\.po)$
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: check-yaml
+        stages: [pre-commit]
+      - id: check-added-large-files
+        stages: [pre-commit]
+        # Add project-specific exclusions for large data/generated directories:
+        # exclude: ^(vendor/|fixtures/|data/)
+      - id: check-toml
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        stages: [pre-commit]
+      - id: detect-private-key
+        stages: [pre-commit]
+        # Exclude directories with non-secret key-like patterns:
+        # exclude: ^(example-config/|test-fixtures/)
+
+  # Conventional commits enforcement
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--strict]
+
+  # GitHub Actions workflow linting
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # Local hooks using project's installed tools via uv
+  # This ensures version consistency with pyproject.toml
+  - repo: local
+    hooks:
+      # Python linting and formatting (uses project's ruff version)
+      - id: ruff
+        name: ruff
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      - id: ruff-format
+        name: ruff-format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      # Type checking (uses project's mypy version)
+      # Scope matches `doit type_check`. It was src/ only, which stopped
+      # matching when #700 widened the doit task to tools/ and tests/ --
+      # leaving the hook able to pass on code CI would then reject. Warm-cache
+      # cost of the wider scope is ~60ms.
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src/ tools/ tests/
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Security scanning (uses project's bandit version)
+      # Skips if bandit not installed (optional security extra)
+      - id: bandit
+        name: bandit
+        entry: bash -c 'command -v bandit &>/dev/null || uv run python -c "import bandit" 2>/dev/null || exit 0; uv run bandit -c pyproject.toml "$@"' --
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      # Spell checking (uses project's codespell version)
+      - id: codespell
+        name: codespell
+        entry: uv run codespell
+        language: system
+        types: [text]
+        exclude: ^(\.git/|\.venv/|uv\.lock)
+        stages: [pre-commit]
+
+      # Branch naming enforcement
+      - id: check-branch-name
+        name: Check branch naming convention
+        entry: |
+          bash -c '
+          BRANCH=$(git branch --show-current);
+          if [[ "$BRANCH" != "main" && "$BRANCH" != "develop" && ! "$BRANCH" =~ ^(issue|feat|fix|docs|test|refactor|chore|ci|perf|hotfix)/[0-9]+-[a-z0-9\-]+$ && ! "$BRANCH" =~ ^release/.+ ]]; then
+            echo "❌ Branch name must follow convention:";
+            echo "   - issue/<num>-<description>";
+            echo "   - feat/<num>-<description>";
+            echo "   - fix/<num>-<description>";
+            echo "   - docs/<num>-<description>";
+            echo "   - test/<num>-<description>";
+            echo "   - refactor/<num>-<description>";
+            echo "   - chore/<num>-<description>";
+            echo "   - ci/<num>-<description>";
+            echo "   - perf/<num>-<description>";
+            echo "   - hotfix/<description>";
+            echo "   - release/<version>";
+            echo "";
+            echo "Current branch: $BRANCH";
+            exit 1;
+          fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # Generate documentation TOC from frontmatter
+      - id: generate-doc-toc
+        name: Generate documentation TOC
+        entry: doit docs_toc
+        language: system
+        pass_filenames: false
+        files: ^docs/.*\.md$
+        stages: [pre-commit]
+
+      # Prevent direct commits to main branch
+      - id: check-commit-issue-ref
+        name: Check commit issue matches branch
+        entry: python3 tools/hooks/check_commit_issue_ref.py
+        language: system
+        # commit-msg stage: the message is what this compares against the branch.
+        stages: [commit-msg]
+
+      - id: no-commit-to-main
+        name: Prevent commits to main branch
+        entry: |
+          bash -c '
+          BRANCH=$(git branch --show-current);
+          if [[ "$BRANCH" == "main" ]]; then
+            echo "❌ ERROR: Direct commits to main branch are not allowed!";
+            echo "";
+            echo "The mandatory workflow is: Issue → Branch → Commit → PR → Merge";
+            echo "";
+            echo "Please follow these steps:";
+            echo "  1. Ensure a GitHub issue exists for your change";
+            echo "  2. Create a feature branch: git checkout -b <type>/<issue#>-<description>";
+            echo "  3. Make your changes and commit on the feature branch";
+            echo "  4. Push and create a Pull Request";
+            echo "  5. Merge the PR after review and CI checks pass";
+            echo "";
+            echo "See AGENTS.md and .github/CONTRIBUTING.md for details.";
+            exit 1;
+          fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # Prevent committing local config files
+      - id: no-local-config
+        name: Prevent committing local config files
+        entry: |
+          bash -c '
+          # Find staged files with .local or .local. in name (as distinct segment, not substring)
+          LOCAL_FILES=$(git diff --cached --name-only | grep -E "\.local$|\.local\." | grep -v "\.local\.example" || true)
+          if [[ -n "$LOCAL_FILES" ]]; then
+            echo "❌ ERROR: Local config files should not be committed!"
+            echo ""
+            echo "The following files appear to be user-specific configs:"
+            echo "$LOCAL_FILES" | sed "s/^/  - /"
+            echo ""
+            echo "These files are gitignored for a reason - they may contain"
+            echo "user-specific settings, paths, or sensitive data."
+            echo ""
+            echo "If this is a template, rename it to include .example (e.g., .envrc.local.example)"
+            exit 1
+          fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # Protect dynamic version configuration
+      - id: protect-dynamic-version
+        name: Protect dynamic version configuration
+        entry: |
+          bash -c '
+          if git diff --cached --name-only | grep -q "^pyproject.toml$"; then
+            if git diff --cached pyproject.toml | grep -E "^[-+]dynamic\s*=" | grep -q .; then
+              echo "❌ ERROR: Changes to the dynamic field in pyproject.toml are not allowed!"
+              echo ""
+              echo "Version is managed dynamically via git tags."
+              echo "The dynamic = [\"version\"] setting should not be modified."
+              echo ""
+              echo "See AGENTS.md for details on version management."
+              exit 1
+            fi
+          fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # Validate uv.lock is in sync with pyproject.toml when pyproject.toml is staged
+      - id: uv-lock-check
+        name: Validate uv.lock matches pyproject.toml
+        entry: |
+          bash -c '
+          uv lock --check || {
+            echo ""
+            echo "❌ ERROR: uv.lock is out of sync with pyproject.toml"
+            echo ""
+            echo "Run: uv lock"
+            echo "Then re-stage: git add uv.lock"
+            exit 1
+          }'
+        language: system
+        pass_filenames: false
+        files: ^pyproject\.toml$
+        stages: [pre-commit]
+
+      # Auto-sync dependencies when uv.lock changes after git pull
+      - id: uv-sync-on-pull
+        name: Auto uv sync after pull (lock changed)
+        entry: bash -c 'git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD | grep -q "^uv\.lock$" && echo "uv.lock changed — running uv sync..." && uv sync --all-extras --dev || true'
+        language: system
+        stages: [post-merge]
+        pass_filenames: false
+        always_run: true
+
+      # Auto-sync dependencies when uv.lock changes after branch switch
+      - id: uv-sync-on-checkout
+        name: Auto uv sync after branch switch (lock changed)
+        entry: bash -c 'if [ "$3" = "1" ]; then git diff --name-only "$1" "$2" | grep -q "^uv\.lock$" && echo "uv.lock changed — running uv sync..." && uv sync --all-extras --dev || true; fi'
+        language: system
+        stages: [post-checkout]
+        pass_filenames: false
+        always_run: true

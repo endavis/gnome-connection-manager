@@ -52,6 +52,3 @@ log_user 1
 set ret [exp_wait]
 set status [lindex $ret 3]
 exit $status
-
-
-
