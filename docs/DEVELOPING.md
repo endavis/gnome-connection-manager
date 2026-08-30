@@ -116,6 +116,27 @@ just test
 just test-cov
 ```
 
+Some tests drive real GTK/VTE and open real windows. If `Xvfb` is installed the suite
+runs them on a private display of its own, so nothing maps on your desktop or steals
+keyboard and pointer focus mid-run:
+
+```bash
+sudo apt install xvfb
+```
+
+Without it the suite still passes, but those windows appear on your real display. To
+force the real display -- which is what you want when measuring against the compositor
+GCM actually ships on -- set:
+
+```bash
+GCM_TEST_REAL_DISPLAY=1 just test
+```
+
+Note that WSLg exports `GDK_SCALE=2.25` and both `DISPLAY` and `WAYLAND_DISPLAY`. The
+private display drops all three: GTK prefers Wayland whenever `WAYLAND_DISPLAY` is set,
+and on X11 `GDK_SCALE` is applied rather than absorbed, which would report a 960x540
+workarea for a 1920x1080 screen.
+
 ### Building
 
 ```bash

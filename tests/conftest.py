@@ -4,11 +4,122 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
+import socket
+import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
 import pytest
+
+# --- private display for the tests that drive real GTK -------------------------------
+#
+# A handful of tests deliberately spawn real Gtk/Vte windows and let them settle for a
+# couple of seconds. On a live desktop -- WSLg in particular -- those windows map on the
+# developer's screen and steal keyboard and pointer focus mid-run. Give them an Xvfb of
+# their own instead: still a real X server driving real GTK, just not the one being
+# looked at.
+#
+# This has to happen in pytest_configure, before collection: the tests gate themselves
+# with @pytest.mark.skipif(not os.environ.get("DISPLAY")), which is evaluated at import
+# time, so setting DISPLAY from a fixture would be too late to un-skip them.
+#
+# Set GCM_TEST_REAL_DISPLAY=1 to keep the real desktop, which is what you want when
+# measuring against the compositor GCM actually ships on.
+
+_XVFB_SCREEN = "1920x1080x24"
+_xvfb_process = None
+
+
+def _x_display_is_up(number):
+    """True once display :number accepts a connection.
+
+    Checks the abstract socket first. WSLg mounts /tmp/.X11-unix read-only, so Xvfb
+    cannot create the filesystem socket there at all and only the abstract one appears;
+    waiting for the path would wait forever. Xvfb's own -displayfd never reports back
+    under that same condition, which is why readiness is probed rather than asked for.
+    """
+    for address in (f"\0/tmp/.X11-unix/X{number}", f"/tmp/.X11-unix/X{number}"):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            sock.connect(address)
+            return True
+        except OSError:
+            continue
+        finally:
+            sock.close()
+    return False
+
+
+def _free_display():
+    for number in range(90, 200):
+        if Path(f"/tmp/.X{number}-lock").exists() or _x_display_is_up(number):
+            continue
+        return number
+    return None
+
+
+def _start_xvfb():
+    """Spawn an Xvfb and return (process, display), or None if it cannot be used."""
+    xvfb = shutil.which("Xvfb")
+    if xvfb is None:
+        return None
+    number = _free_display()
+    if number is None:
+        return None
+    try:
+        process = subprocess.Popen(
+            [xvfb, f":{number}", "-screen", "0", _XVFB_SCREEN, "-nolisten", "tcp"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return None
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if _x_display_is_up(number):
+            return process, f":{number}"
+        if process.poll() is not None:
+            return None
+        time.sleep(0.02)
+    process.terminate()
+    return None
+
+
+def pytest_configure(config):
+    global _xvfb_process
+    if os.environ.get("GCM_TEST_REAL_DISPLAY"):
+        return
+    started = _start_xvfb()
+    if started is None:
+        # No Xvfb, or it failed to come up. Fall back to whatever display is already
+        # there rather than turning a focus annoyance into a broken test run.
+        return
+    _xvfb_process, display = started
+    os.environ["DISPLAY"] = display
+    os.environ["GDK_BACKEND"] = "x11"
+    # WSLg exports both, and GTK prefers Wayland whenever WAYLAND_DISPLAY is set, which
+    # would send the windows straight back to the real desktop.
+    os.environ.pop("WAYLAND_DISPLAY", None)
+    # WSLg also exports GDK_SCALE=2.25. Wayland reports scale 1 and absorbs it, but on
+    # X11 it is applied, so a 1920x1080 screen reports a 960x540 workarea and the
+    # geometry assertions are measuring a screen that does not exist.
+    os.environ.pop("GDK_SCALE", None)
+    os.environ.pop("GDK_DPI_SCALE", None)
+
+
+def pytest_unconfigure(config):
+    global _xvfb_process
+    if _xvfb_process is None:
+        return
+    _xvfb_process.terminate()
+    try:
+        _xvfb_process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        _xvfb_process.kill()
+    _xvfb_process = None
 
 
 class DummyAttribute:
