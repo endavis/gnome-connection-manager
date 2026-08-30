@@ -1,0 +1,149 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-pr-title:
+    name: Validate PR Title Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title follows conventional commits
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const pattern = /^(feat|fix|refactor|docs|test|chore|ci|perf|release)(\(.+\))?:\s.+$/;
+
+            if (!pattern.test(title)) {
+              core.setFailed(
+                '❌ PR title must follow Conventional Commits format:\n' +
+                '   <type>: <subject>\n' +
+                '   or\n' +
+                '   <type>(<scope>): <subject>\n\n' +
+                'Valid types: feat, fix, refactor, docs, test, chore, ci, perf, release\n\n' +
+                'Examples:\n' +
+                '  ✅ feat: add user authentication\n' +
+                '  ✅ fix(api): handle null response\n' +
+                '  ✅ docs: update installation guide\n' +
+                '  ✅ release: v0.1.0a0\n\n' +
+                `Current title: "${title}"`
+              );
+            } else {
+              console.log('✅ PR title follows conventional commits format');
+            }
+
+  validate-issue-link:
+    name: Validate Issue Link
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check for linked issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Get list of changed files
+            const files = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            // Check if this is a docs-only PR
+            const docsOnlyPatterns = [
+              /^docs\//,
+              /^README\.md$/,
+              /^CHANGELOG\.md$/,
+              /\.md$/,
+              /^\.github\//,  // GitHub config files (workflows, issue templates, etc.)
+              /^\.claude\//,  // Claude configuration
+              /^\.pre-commit-config\.ya?ml$/,  // Pre-commit hooks configuration
+              /^examples\/.*\.md$/
+            ];
+
+            const isDocsOnly = files.data.every(file =>
+              docsOnlyPatterns.some(pattern => pattern.test(file.filename))
+            );
+
+            if (isDocsOnly) {
+              console.log('✅ Docs-only PR - issue link not required');
+              return;
+            }
+
+            if (pr.user.login === 'dependabot[bot]') {
+              console.log('✅ Dependabot PR - issue link not required');
+              return;
+            }
+
+            // Check for issue reference in PR body or title
+            const issuePatterns = [
+              /addresses\s+#\d+/i,
+              /#\d+/
+            ];
+
+            const hasIssueLink = issuePatterns.some(pattern =>
+              pattern.test(body) || pattern.test(pr.title)
+            );
+
+            if (!hasIssueLink) {
+              core.setFailed(
+                '❌ PR must reference an issue number\n\n' +
+                'Code changes require a linked GitHub issue.\n' +
+                'Add the following to your PR description:\n' +
+                '  - "Addresses #123"\n\n' +
+                '📝 Documentation-only PRs are exempt from this requirement.\n\n' +
+                'Why? Issue-driven development ensures:\n' +
+                '  • Clear tracking of why changes were made\n' +
+                '  • Better project management\n' +
+                '  • Searchable history of decisions'
+              );
+            } else {
+              console.log('✅ PR has linked issue');
+            }
+
+  validate-pr-description:
+    name: Validate PR Description
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR description completeness
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+
+            if (body.trim().length < 50) {
+              core.setFailed(
+                '❌ PR description is too short\n\n' +
+                'Please provide a meaningful description that includes:\n' +
+                '  • Summary of changes (2-3 sentences)\n' +
+                '  • What issue this addresses\n' +
+                '  • How to test the changes\n' +
+                '  • Any breaking changes or special considerations\n\n' +
+                'Minimum length: 50 characters\n' +
+                `Current length: ${body.trim().length} characters`
+              );
+            }
+
+            // Check for required sections (lenient check)
+            const hasBreakingSection = /breaking change/i.test(body);
+            const hasTestingSection = /test|testing/i.test(body);
+
+            if (!hasTestingSection) {
+              core.warning(
+                '⚠️ PR description should include testing information\n' +
+                'Consider adding a "Testing" or "Test Plan" section'
+              );
+            }
+
+            console.log('✅ PR description meets minimum requirements');

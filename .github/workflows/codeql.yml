@@ -1,0 +1,70 @@
+name: CodeQL
+
+# Advanced CodeQL setup (replaces GitHub's "default setup").
+#
+# The summary job below is named exactly `CodeQL` (case-sensitive): that
+# string is the required check-run that branch protection on main expects.
+# If this job is renamed, PRs will stop merging until the ruleset is updated.
+# See issue #431 for the migration from default setup to this workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan, Monday 04:27 UTC. Offset from mutation.yml (Sun 00:00) and
+    # dependabot-automerge.yml (every 6h) so they don't contend for runners.
+    - cron: '27 4 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, python]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  CodeQL:
+    # Summary job -- this is the check-run required by the `main` ruleset.
+    # The name MUST be exactly `CodeQL` (case-sensitive) to match branch
+    # protection; renaming it will break merges.
+    name: CodeQL
+    needs: [analyze]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate matrix result
+        env:
+          ANALYZE_RESULT: ${{ needs.analyze.result }}
+        run: |
+          echo "analyze job result: $ANALYZE_RESULT"
+          if [[ "$ANALYZE_RESULT" != "success" ]]; then
+            echo "CodeQL analysis did not succeed for all languages"
+            exit 1
+          fi
+          echo "CodeQL analysis succeeded for all matrix languages"

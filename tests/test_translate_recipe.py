@@ -89,18 +89,36 @@ def test_doit_reports_the_empty_case_as_a_failure(tmp_path):
     assert "nothing was compiled" in (result.stdout + result.stderr)
 
 
+def _catalog_entries(path):
+    """The translations in a .mo, without the metadata header.
+
+    The "" entry holds Project-Id-Version and friends, and msgfmt records a
+    POT-Creation-Date that build_mo.py does not. That is metadata about the build, not a
+    translation, so comparing it would fail the two compilers for agreeing.
+    """
+    with path.open("rb") as handle:
+        catalog = dict(gettext.GNUTranslations(handle)._catalog)
+    catalog.pop("", None)
+    return catalog
+
+
 def test_the_fallback_compiler_agrees_with_msgfmt(lang_tree, monkeypatch):
-    """tools/build_mo.py exists for checkouts without gettext, so it has to match it."""
+    """tools/build_mo.py exists for checkouts without gettext, so it has to agree with it.
+
+    Agree on content, not on bytes: msgfmt writes a hash table into the .mo for lookup
+    speed and build_mo.py does not, which makes its output about 800 bytes smaller for
+    the same messages. gettext reads either.
+    """
     if shutil.which("msgfmt") is None:
         pytest.skip("msgfmt is not installed, so there is nothing to compare against")
 
     _compile_catalogs(lang_tree)
-    with_msgfmt = (lang_tree / "fr/LC_MESSAGES/gcm-lang.mo").read_bytes()
+    with_msgfmt = _catalog_entries(lang_tree / "fr/LC_MESSAGES/gcm-lang.mo")
 
     for stale in lang_tree.glob("*/LC_MESSAGES/*.mo"):
         stale.unlink()
     monkeypatch.setattr(shutil, "which", lambda _name: None)
     _compile_catalogs(lang_tree)
-    with_fallback = (lang_tree / "fr/LC_MESSAGES/gcm-lang.mo").read_bytes()
+    with_fallback = _catalog_entries(lang_tree / "fr/LC_MESSAGES/gcm-lang.mo")
 
     assert with_fallback == with_msgfmt

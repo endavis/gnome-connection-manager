@@ -1,0 +1,81 @@
+name: Daily Check
+
+on:
+  schedule:
+    - cron: "17 6 * * *"  # Daily at 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: daily-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    env:
+      UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the GTK stack
+        # GCM reaches GTK/VTE through apt's PyGObject, so the environment is built from
+        # the system interpreter rather than actions/setup-python. See ci.yml.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo \
+            gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb gettext
+
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: |
+          uv venv --system-site-packages --python /usr/bin/python3
+          uv sync --all-extras --dev
+
+      - name: Run doit check
+        run: uv run doit check
+
+      - name: Open or update failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          today="$(date -u +%Y-%m-%d)"
+          existing="$(gh issue list --state open --label automated --json number,title \
+            --jq '[.[] | select(.title | contains("Daily doit check failed"))][0].number // empty')"
+          {
+            echo "Scheduled \`doit check\` failed on \`main\`."
+            echo
+            echo "- Run: ${RUN_URL}"
+            echo "- Seen: ${today} (UTC)"
+            echo
+            echo "Runs \`uv run doit check\` (format, lint, type, security, audit, spell, tests)."
+            echo "See the run log for the failing step. Close this issue once the check passes again."
+          } > "${RUNNER_TEMP}/issue-body.md"
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" \
+              --body "Still failing as of ${today} (UTC). Run: ${RUN_URL}"
+          else
+            gh issue create --title "🚨 Daily doit check failed on main" \
+              --label automated --label needs-triage \
+              --assignee "${OWNER}" \
+              --body-file "${RUNNER_TEMP}/issue-body.md"
+          fi

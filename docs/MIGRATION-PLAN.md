@@ -363,24 +363,61 @@ both harmless and kept.
 - `test_agents_md_describes_every_module` needed `tools/generate_doc_toc.py` treating as
   vendored, like the directories added in Phase 1.
 
-## Phase 7 — CI (the substantial one)
+## Phase 7 — CI
 
-GCM's tests need a GTK stack and a display. The template's CI provides neither.
+**GCM has CI for the first time.** Ten workflows, adapted where the GTK stack forced it.
 
-- [ ] Adopt `ci.yml`, `codeql.yml`, `pr-checks.yml`, `merge-gate.yml`, `mutation.yml`,
-      dependabot config
-- [ ] **Skip** `release.yml`, `testpypi.yml`
-- [ ] Restrict the matrix to `ubuntu-latest` (drop windows and macos)
-- [ ] Add an apt step: `python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-vte-2.91 xvfb`
-- [ ] Create the venv with `--system-site-packages` before `uv sync`
-- [ ] **Prove the GTK tests actually run in CI** — assert 534 passed / 0 skipped, because
-      a missing display makes 12 tests skip and still report green
-- [ ] Reconcile `pytest -n auto` (xdist) with the real-GTK tests, which spawn subprocesses
-      and an Xvfb of their own
+- [x] `ci.yml`, `codeql.yml`, `pr-checks.yml`, `merge-gate.yml`, `mutation.yml`,
+      `daily-check.yml`, dependabot workflows and config
+- [x] **Skipped** `release.yml`, `testpypi.yml` (no PyPI publishing)
+- [x] **Dropped** `ci-full-matrix.yml` (no matrix to run) and
+      `breaking-change-detection.yml` (`griffe` API diffing for a library; GCM is an
+      application, and it still held the unconfigured `package_name` placeholder)
+- [x] actionlint passes on every workflow
 
-`mutation.yml` is worth having: the mutation run recorded in
-[#115](https://github.com/endavis/gnome-connection-manager/issues/115) scored `relay.py`
-at 33% -- its resize, stdin-lifecycle and EINTR paths have no behavioural tests.
+### The constraint that shaped everything
+
+PyGObject is an apt package built for the distribution's own interpreter, living in
+`/usr/lib/python3/dist-packages`. It is not on PyPI. So:
+
+- **Linux only.** There is no GTK 3 / VTE stack to test against on windows or macos.
+- **No `actions/setup-python`.** It installs a separate interpreter that cannot see apt's
+  dist-packages, so `import gi` fails whatever else is configured. The venv is built from
+  `/usr/bin/python3` with `--system-site-packages`.
+- **`ubuntu-24.04` pinned**, not `ubuntu-latest`, so the system interpreter stays the 3.12
+  that `.python-version` names and that apt's PyGObject is built for.
+
+Verified locally by building the CI environment exactly as the workflow does: `gi` resolved
+to `/usr/lib/python3/dist-packages`, Gtk 3.24, Vte 0.76.
+
+`daily-check.yml` and `mutation.yml` needed the same treatment.
+
+### The skip guard, and what it found
+
+CI fails the run if **anything** skips. Twelve tests gate themselves on a display, so
+without Xvfb they vanish and the run still reports success — a green tick that tested
+nothing is worse than a red one.
+
+Installing `gettext` locally to satisfy that rule immediately exposed a real bug: **every
+one of the 8 `.po` catalogs had 3 duplicate msgid definitions**, which `msgfmt` rejects as
+fatal. `doit translate` was therefore broken on any machine with gettext installed. It
+only appeared to work here because `build_mo.py` silently accepts duplicates, last one
+winning.
+
+The duplicates were untranslated stubs appended under "glade strings that had no catalog
+entry" — for three strings that *did* already have entries. Removed, keeping the canonical
+entries that carry `#:` source references. One case in `en_US.po` had two real
+translations differing as `"blank: default compression"` versus `"blank: default"`; the
+canonical one was kept and the difference is recorded here.
+
+**539 passed, 0 skipped.**
+
+### Also corrected
+
+`test_the_fallback_compiler_agrees_with_msgfmt` asserted byte equality, which is too
+strong: msgfmt writes a lookup hash table that `build_mo.py` does not, making its output
+~800 bytes smaller for identical messages. It now compares catalog contents, minus the
+metadata header, where msgfmt records a `POT-Creation-Date` that the fallback does not.
 
 ## Phase 8 — Branch rename
 
