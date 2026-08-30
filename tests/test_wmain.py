@@ -1846,6 +1846,63 @@ def test_addtab_sets_the_host_before_it_starts_logging(app_module):
     assert body.index("v.host = host") < body.index("set_terminal_logger(v")
 
 
+# addTab needs a real Gtk/Vte to run at all, so the ordering above is only half the
+# story: it proves the statements are in the right order, not that a session actually
+# lands in its host's directory. Drive the real thing in a subprocess and look at where
+# the file came out. HOME is redirected so this can never touch a real ~/.gcm.
+_ADDTAB_LOG_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from pathlib import Path
+from gnome_connection_manager import app
+
+logs = tempfile.mkdtemp()
+app.conf.LOG_PATH = logs
+
+app.wMain = app.Wmain(application=None)
+# No host address, so this opens a local shell rather than reaching for the network.
+# The group, name and user are what the log path is built from either way.
+host = app.Host("Work/Projects", "uss3-linux-bastion", "", "", "admed")
+host.log = True
+
+app.wMain.addTab(app.wMain.nbConsole, host)
+deadline = time.monotonic() + 3
+while time.monotonic() < deadline:
+    Gtk.main_iteration_do(False); time.sleep(0.005)
+
+found = sorted(str(p.relative_to(logs)) for p in Path(logs).rglob("*.log"))
+expected = ["Work/Projects/uss3-linux-bastion/admed-%s-001.log" % time.strftime("%Y%m%d")]
+assert found == expected, "log landed at %r, expected %r" % (found, expected)
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_addtab_logs_into_the_host_directory_against_real_gtk():
+    """The regression #111 actually produced: every session logged to <logs>/session/.
+
+    Mutation tested -- with v.host assigned after set_terminal_logger this reports
+    session/session-<date>-001.log, which is exactly what was found in the wild.
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _ADDTAB_LOG_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 def _clone_blocks(app_module):
     source = Path(app_module.__file__).read_text()
     return [
