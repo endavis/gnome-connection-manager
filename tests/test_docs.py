@@ -205,6 +205,12 @@ def test_agents_md_lists_the_locales_that_exist():
 # entry points are covered by the one prose line about them.
 _UNDOCUMENTED_BY_DESIGN = {"__init__.py"}
 
+# Directories under tools/ vendored from pyproject-template (#115). This test exists to
+# stop AGENTS.md going stale about *our* modules; upstream tooling is maintained and
+# documented in the template, and listing it here would mean re-describing someone else's
+# code every time a sync pulls a new file in.
+_VENDORED_FROM_TEMPLATE = {"pyproject_template", "doit", "hooks", "statusline"}
+
 
 def source_modules():
     roots = [REPO / "src" / "gnome_connection_manager", REPO / "tools"]
@@ -213,7 +219,9 @@ def source_modules():
         for root in roots
         if root.is_dir()
         for path in root.rglob("*.py")
-        if path.name not in _UNDOCUMENTED_BY_DESIGN and "__pycache__" not in path.parts
+        if path.name not in _UNDOCUMENTED_BY_DESIGN
+        and "__pycache__" not in path.parts
+        and not _VENDORED_FROM_TEMPLATE & set(path.parts)
     )
 
 

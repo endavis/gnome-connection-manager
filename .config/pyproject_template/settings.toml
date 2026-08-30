@@ -1,0 +1,13 @@
+[project]
+project_name = "gnome-connection-manager"
+package_name = "gnome_connection_manager"
+pypi_name = "gnome-connection-manager"
+description = "A tabbed SSH and telnet connection manager for GTK environments"
+author_name = "Renzo Bertuzzi"
+author_email = "kuthulu@gmail.com"
+github_user = "endavis"
+github_repo = "gnome-connection-manager"
+
+[template]
+commit = ""
+commit_date = ""

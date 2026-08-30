@@ -14,7 +14,7 @@ Everything happens on `chore/migrate-to-pyproject-template`, branched from `6571
 git checkout master && git branch -D chore/migrate-to-pyproject-template
 ```
 
-Nothing outside this branch changes until Phase 7, which renames the default branch on
+Nothing outside this branch changes until Phase 8, which renames the default branch on
 GitHub. That is the first irreversible step and has its own checkpoint.
 
 ## Baseline at 65714ba
@@ -37,6 +37,8 @@ Every phase re-checks these. A regression is a stop signal, not a footnote.
 | Python floor | `>=3.8` becomes `>=3.12` | Matches `.python-version` and the venv; drops an untested claim |
 | Default branch | `master` becomes `main` | Template workflows apply unmodified; breaks existing clones |
 | Release flow | Skipped | No `release.yml`/`testpypi.yml`; version stays static |
+| Version | 1.2.2 | The `Makefile` was right; `pyproject.toml` was stale |
+| Task runner | doit only | `justfile` is deleted once its recipes are ported |
 
 ## Things that must survive
 
@@ -65,19 +67,51 @@ Check these after every phase that copies template files.
 Installs `tools/pyproject_template/` and `.config/pyproject_template/settings.toml`, which
 is what makes later template updates a supported operation rather than a manual diff.
 
-- [ ] Install the suite (`bootstrap.py --sync`, or copy from the local checkout)
-- [ ] Review `.config/pyproject_template/settings.toml`
-- [ ] Run `python tools/pyproject_template/manage.py check`
-- [ ] Save the drift report; it drives Phases 3, 5, 6 and 8
+- [x] Install the suite (`python ../pyproject-template/bootstrap.py --sync`)
+- [x] Review `.config/pyproject_template/settings.toml`
+- [x] Run `python tools/pyproject_template/manage.py check`
+- [x] Save the drift report; it drives Phases 3, 5, 6 and 7
 
-**Deliverable:** a file-by-file list of Modified / Missing / Extra.
+### Result: 328 files differ
+
+**320 are new in the template** — workflows, `tools/doit/`, `tools/hooks/`,
+`tools/statusline/`, docs and the template's own test suite. These are additive and get
+adopted phase by phase.
+
+**8 exist in both and differ. This is the danger list — never copy these wholesale:**
+
+| File | Why it differs | Action |
+|---|---|---|
+| `LICENSE` | Template MIT vs GCM **GPL-3.0-or-later** | **Never adopt** |
+| `tests/conftest.py` | Carries the Xvfb bootstrap from #113/#114 | **Never adopt**; merge by hand |
+| `src/package_name/__init__.py` | Template's placeholder package | **Never adopt** — would create a bogus `src/package_name/` |
+| `AGENTS.md` | GCM's is project-specific; 7 tests assert on it | Merge in Phase 9 |
+| `README.md` | Doc-link tests assert on it | Merge in Phase 9 |
+| `pyproject.toml` | Deps, metadata, tool config | Merge, never overwrite (Phases 2, 4) |
+| `.gitignore` | Both have real entries | Merge |
+| `.python-version` | Template `3.12`, GCM `3.12.3` | Trivial; either works |
+
+### Settings detected
+
+`bootstrap.py` read `author_name = "Renzo Bertuzzi"` from `[project].authors`. That is
+correct attribution for the original author, but `configure.py` writes these values into
+generated files in Phase 9. Decide then whether template-generated prose should name the
+author or the maintainer.
+
+### Side effect already handled
+
+Adding `tools/pyproject_template/` broke `test_agents_md_describes_every_module`, which
+requires AGENTS.md to name every module under `src/` and `tools/`. Vendored template
+directories are now excluded from that discovery — verified both ways: a new GCM module
+still fails the test, a new vendored file does not.
 
 ## Phase 2 — Python floor and version drift
 
 - [ ] `requires-python = ">=3.12"`
 - [ ] ruff `target-version = "py312"`, mypy `python_version = "3.12"`
 - [ ] Update classifiers: drop 3.8–3.11, add 3.13
-- [ ] Resolve the version drift: `pyproject.toml` 1.2.0 vs `Makefile` 1.2.2
+- [ ] Set the version to **1.2.2** everywhere (`pyproject.toml` says 1.2.0, `Makefile`
+      already says 1.2.2 — the Makefile is correct)
 - [ ] Tests still 534
 
 Note that raising the floor may *surface* new ruff findings (pyupgrade rules apply more
@@ -89,7 +123,8 @@ aggressively at py312). Baseline the count before judging it.
 - [ ] Port every `justfile` recipe: `run fmt lint typecheck test test-cov check install build clean translate setup`
 - [ ] **`setup` must keep `uv venv --system-site-packages`** — everything depends on it
 - [ ] `translate` must keep calling `tools/build_mo.py`
-- [ ] Decide: delete `justfile` or keep it as a thin shim
+- [ ] **Delete `justfile`** once every recipe has a doit equivalent — doit is the single
+      task runner, no shim
 - [ ] `doit check` and `doit test` both work
 
 ## Phase 4 — Dependencies
@@ -148,9 +183,9 @@ GCM's tests need a GTK stack and a display. The template's CI provides neither.
 - [ ] Reconcile `pytest -n auto` (xdist) with the real-GTK tests, which spawn subprocesses
       and an Xvfb of their own
 
-`mutation.yml` is worth having: the mutation run in
-[#113 follow-up](https://github.com/endavis/gnome-connection-manager/issues/115) found
-`relay.py` at a 33% score.
+`mutation.yml` is worth having: the mutation run recorded in
+[#115](https://github.com/endavis/gnome-connection-manager/issues/115) scored `relay.py`
+at 33% -- its resize, stdin-lifecycle and EINTR paths have no behavioural tests.
 
 ## Phase 8 — Branch rename
 
@@ -197,6 +232,7 @@ Highest-breakage phase. Do it last, when everything else is green.
 
 ## Open questions
 
-- Keep `justfile` alongside `doit`, or delete it?
 - Does the .deb packaging (`Makefile`, `postinst`) stay outside the template's build flow?
-- Adopt `hatch-vcs` later, and what is the correct current version — 1.2.0 or 1.2.2?
+  It carries `PKG_VERSION`, so it is a second place the version lives.
+- Adopt `hatch-vcs` later? If so the first tag should be `v1.2.2`, and that would remove
+  the version duplication between `pyproject.toml` and the `Makefile`.
