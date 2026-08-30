@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pyaes
-
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
 
 def test_password_to_key_returns_sha256_bytes(app_module):
@@ -101,9 +98,78 @@ def test_initialise_encryption_key_creates_file_with_permissions(app_module):
 
 def test_xor_function_is_symmetric(app_module):
     source = "secret"
-    encoded = "".join(app_module.xor("pw", source))
-    decoded = "".join(app_module.xor("pw", encoded))
-    assert decoded == source
+    encoded = app_module.xor("pw", source)
+    decoded = app_module.xor("pw", encoded)
+    assert isinstance(encoded, bytes)
+    assert decoded.decode("utf-8") == source
+
+
+def test_xor_rejects_an_empty_key(app_module):
+    """get_password() returns "" when the key file is unreadable.
+
+    The Python 2 loop raised IndexError there. Returning the payload unchanged would
+    hand back the plaintext, so this refuses instead.
+    """
+    with pytest.raises(ValueError, match="empty key"):
+        app_module.xor("", "secret")
+
+
+# -- the legacy XOR path on Python 3 (#141) ---------------------------------
+#
+# These fixtures were computed independently of app.py, by transcribing the Python 2
+# original and running it over byte strings. They are the compatibility contract:
+# decrypt_old has to read what the Python 2 build wrote into gcm.conf.
+
+LEGACY_FIXTURES = (
+    ("pw", "value", "BhYcAhU="),
+    ("pw", "se\u00f1or", "AxKzxh8F"),
+    ("k3y", "s3cr3t-p@ss", "GAAaGQANRkM5GEA="),
+)
+
+
+@pytest.mark.parametrize(("passw", "plaintext", "ciphertext"), LEGACY_FIXTURES)
+def test_decrypt_old_reads_python2_ciphertext(app_module, passw, plaintext, ciphertext):
+    assert app_module.decrypt_old(passw, ciphertext) == plaintext
+
+
+@pytest.mark.parametrize(("passw", "plaintext", "ciphertext"), LEGACY_FIXTURES)
+def test_encrypt_old_reproduces_python2_ciphertext(app_module, passw, plaintext, ciphertext):
+    assert app_module.encrypt_old(passw, plaintext) == ciphertext
+
+
+def test_legacy_path_is_utf8_not_latin1(app_module):
+    """The discriminating case, and the reason latin1 is the wrong choice.
+
+    Python 2 GTK handed back UTF-8 encoded str, so a non-ASCII password was XORed as
+    its UTF-8 octets. Encoding it latin1 instead gives a shorter payload and different
+    ciphertext, so a latin1 implementation would read old configs wrongly while still
+    passing an ASCII-only round-trip test.
+    """
+    assert app_module.encrypt_old("pw", "se\u00f1or") == "AxKzxh8F"
+    assert app_module.encrypt_old("pw", "se\u00f1or") != "Axjxxg=="
+
+
+def test_decrypt_old_falls_back_to_latin1_on_undecodable_bytes(app_module):
+    """Recover the octets rather than discard the password.
+
+    A build under a non-UTF-8 locale could write bytes that are not valid UTF-8.
+    """
+    import base64
+
+    raw = bytes([0xFF, 0xFE, 0x41])
+    key = b"pw"
+    scrambled = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
+    ciphertext = base64.b64encode(scrambled).decode("ascii")
+    assert app_module.decrypt_old("pw", ciphertext) == raw.decode("latin1")
+
+
+def test_decrypt_dispatches_to_the_legacy_path_and_recovers_the_password(app_module, monkeypatch):
+    """The end-to-end shape of #141: a version-less config holds XOR ciphertext.
+
+    Before the fix this returned "" for every host, silently.
+    """
+    monkeypatch.setattr(app_module.conf, "VERSION", 0)
+    assert app_module.decrypt("pw", "BhYcAhU=") == "value"
 
 
 # -- the KDF migration (#117) -----------------------------------------------

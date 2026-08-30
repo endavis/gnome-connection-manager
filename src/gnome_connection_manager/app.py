@@ -1397,41 +1397,47 @@ def initialise_encyption_key() -> None:
 
 
 ## funciones para encryptar passwords - no son muy seguras, pero impiden que los pass se guarden en texto plano
-def xor(pw: str, str1: str) -> list[str]:
-    """XOR two strings character by character."""
-    c = 0
-    liste = []
-    for k in range(len(str1)):
-        if c > len(pw) - 1:
-            c = 0
-        fi = ord(pw[c])
-        c += 1
-        se = ord(str1[k])
-        fin = operator.xor(fi, se)
-        liste += [chr(fin)]
-    return liste
+def xor(pw: str | bytes, data: str | bytes) -> bytes:
+    """XOR `data` against a repeating `pw`, one byte at a time.
+
+    Bytes rather than characters, because that is what the Python 2 original did and
+    what the ciphertext in old configs was produced with: there `str` was `bytes`, so
+    `ord`/`chr` walked octets. Running the same loop over Python 3 `str` indices XORs
+    code points instead, which reads those files wrongly -- and raised outright once
+    `base64.b64decode` started handing back `bytes` (#141).
+    """
+    key = pw.encode("utf-8") if isinstance(pw, str) else pw
+    payload = data.encode("utf-8") if isinstance(data, str) else data
+    if not key:
+        # The Python 2 loop raised IndexError here. Reachable when the key file is
+        # unreadable, since get_password() then returns "". Refuse rather than hand
+        # back the payload unchanged.
+        raise ValueError("empty key")
+    return bytes(operator.xor(byte, key[i % len(key)]) for i, byte in enumerate(payload))
 
 
 def encrypt_old(passw: str, string: str) -> str:
     """Encrypt a string using XOR (legacy method)."""
     try:
-        ret = xor(passw, string)
-        s = base64.b64encode("".join(ret)).decode("ascii")
+        return base64.b64encode(xor(passw, string)).decode("ascii")
     except (ValueError, TypeError, UnicodeError):
         logger.exception("Legacy encryption error")
-        s = ""
-    return s
+        return ""
 
 
 def decrypt_old(passw: str, string: str) -> str:
     """Decrypt a string using XOR (legacy method)."""
     try:
-        ret = xor(passw, base64.b64decode(string))
-        s = "".join(ret)
+        plaintext = xor(passw, base64.b64decode(string))
     except (ValueError, TypeError, UnicodeError):
         logger.exception("Legacy decryption error")
-        s = ""
-    return s
+        return ""
+    try:
+        return plaintext.decode("utf-8")
+    except UnicodeDecodeError:
+        # Written under a non-UTF-8 locale. latin1 cannot fail and gives back the
+        # original octets, which beats discarding the password entirely.
+        return plaintext.decode("latin1")
 
 
 # Ciphertext written by this version carries this prefix. Anything without it predates

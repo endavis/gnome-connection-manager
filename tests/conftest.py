@@ -352,30 +352,13 @@ def app_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     sys.modules.pop("gnome_connection_manager.app", None)
     module = importlib.import_module("gnome_connection_manager.app")
 
-    original_b64encode = module.base64.b64encode
-    original_b64decode = module.base64.b64decode
-
-    def compat_b64encode(data, *args, **kwargs):
-        if isinstance(data, str):
-            data = data.encode("latin1")
-        return original_b64encode(data, *args, **kwargs)
-
-    def compat_b64decode(data, *args, **kwargs):
-        # Forward every argument: dropping them silently disabled validate=True for
-        # any caller that asked for strict decoding, which is the kind of drift
-        # between a fake and the real API that caused #30 and #41.
-        return original_b64decode(data, *args, **kwargs)
-
-    monkeypatch.setattr(module.base64, "b64encode", compat_b64encode)
-    monkeypatch.setattr(module.base64, "b64decode", compat_b64decode)
-
-    original_xor = module.xor
-
-    def compat_xor(pw: str, str1):
-        if isinstance(str1, bytes):
-            str1 = str1.decode("latin1")
-        return original_xor(pw, str1)
-
-    monkeypatch.setattr(module, "xor", compat_xor)
+    # Nothing is shimmed here on purpose. This fixture used to replace
+    # base64.b64encode with one that accepted str, and app.xor with one that accepted
+    # bytes, so that the legacy XOR helpers appeared to round-trip. They never did on
+    # Python 3 -- both raised TypeError, swallowed it and returned "" -- and because
+    # monkeypatch.setattr(module.base64, ...) mutates the stdlib module object, the
+    # shim applied to the whole test session rather than to the fake. That is the same
+    # drift between a fake and the real API that caused #30 and #41, and it hid #141
+    # until the functions were read against production.
 
     return module
