@@ -216,15 +216,49 @@ Phase 2. They have to be resolved before CI in Phase 7.
 
 ## Phase 4 — Dependencies
 
-- [ ] Merge the template's dev extras into `pyproject.toml`
-- [ ] **Do not** take the template's runtime deps (`click`, `rich`) — GCM needs neither
-- [ ] Keep `pyaes` and the commented note about system GTK packages
-- [ ] `uv lock`
-- [ ] Tests still 534
+- [x] Merge the template's `dev` and `security` extras into `pyproject.toml`
+- [x] Skip `click`; **keep `rich`** — the template has it as a runtime dep, but GCM needs
+      it only because `tools/doit` imports it, so it is a dev tool here
+- [x] Keep `pyaes` and the note about system GTK packages
+- [x] `uv lock` and `uv sync --all-extras --dev`
+- [x] Tests still pass
 
-**Risk:** the template pins `pytest>=9.1.1`; GCM is on 8.x. A major pytest bump against 534
-tests is the most likely source of surprise breakage in the whole migration. Do this phase
-alone and run the suite before anything else changes.
+### The feared bump was a non-event
+
+| Tool | Was | Now | Result |
+|---|---|---|---|
+| pytest | 8.x | **9.1.1** | 535 passed, 1 skipped |
+| ruff | 0.8.0 | **0.16.5** | format clean, lint exactly 10 |
+| mypy | 1.8.0 | **2.3.1** | exactly 132 in 1 file |
+
+Not one finding moved across three major version jumps.
+
+### Four new blockers for `doit check`
+
+`check` depends on `format_check lint type_check deadcode security audit spell_check test`.
+Now that the tools are installed, all of them run:
+
+1. **`deadcode` (vulture)** — fails with "Please pass at least one file or directory". The
+   task relies on a `[tool.vulture]` section GCM does not have. Config, not findings.
+2. **`spell_check` (codespell)** — 4 findings, all false: `comandos` and `historial` are
+   Spanish, and GCM's UI strings and i18n tests are bilingual by design. Needs an ignore
+   list.
+3. **`security` (bandit)** — 123 findings. Read the summary carefully: the task prints
+   *confidence*, so "High: 111" is not severity. By severity it is **117 LOW, 5 MEDIUM,
+   1 HIGH**. The LOW mass is `B603`/`B607` subprocess use, inherent to a program whose job
+   is spawning `ssh` and `telnet`. The single HIGH is `app.py:4559`,
+   `os.system(f"/usr/bin/xdg-open {f.name}")` in the donate handler — the argument is a
+   tempfile name, not user input, and the fix is a `subprocess.run` list.
+4. **`audit` (pip-audit)** — fails on `ubuntu-pro-client`, `unattended-upgrades` and
+   `types-pytz`. It is auditing the **system** site-packages, which it can see precisely
+   because the venv is built with `--system-site-packages`. A direct consequence of the
+   GTK constraint, and it needs `--skip-editable` plus an ignore or a different strategy.
+
+### Incidental bug found
+
+`app.py:4557` calls `os.filestart`, which does not exist in Python — the Windows function
+is `os.startfile`. Unreachable on GCM's Linux-only target, but it is a typo waiting for
+anyone who tries a port. Not fixed here; it is unrelated to the migration.
 
 ## Phase 5 — mypy, before pre-commit can work
 

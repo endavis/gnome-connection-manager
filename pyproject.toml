@@ -34,17 +34,39 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Mirrors pyproject-template's dev extra so a sync does not fight this list. rich is the
+# one addition: the template carries it as a runtime dependency, but GCM only needs it
+# because tools/doit imports it, so here it is a dev tool.
 dev = [
-    "ruff>=0.8.0",
-    "mypy>=1.8.0",
-    "pytest>=8.0.0",
-    "pytest-cov>=4.1.0",
-    "pytest-xdist>=3.5",
-    # Task runner. doit discovers every module under tools/doit/, so anything those
-    # modules import at module scope has to be here: rich and pyyaml are the only two.
     "doit>=0.36.0",
     "rich>=13.0.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=5.0",
+    "pytest-xdist>=3.5",
+    "ruff>=0.16.3",
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
+    "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.6",
+    "pymdown-extensions>=11.0.1",
+    "codespell>=2.4.3",
+    "pyproject-fmt>=2.28.0",
+    "commitizen>=4.17.1",
+    "pyright>=1.1.411",
     "pyyaml>=6.0",
+    "types-pyyaml>=6.0.12.20260815",
+    "vulture>=2.11",
+    "radon>=6.0",
+    "pytest-benchmark>=4.0",
+    "mutmut>=3.7.0",
+    "hypothesis>=6.165.10",
+]
+security = [
+    "pip-audit>=2.10.1",
+    "bandit>=1.7",
+    "pip>=26.2.1",
+    "pip-licenses>=4.0",
+    "cyclonedx-bom>=7.3.1",
 ]
 
 [project.urls]
