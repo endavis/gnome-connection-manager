@@ -360,7 +360,7 @@ def check(name, component, window_id, expected_first):
 
 config = app.Wconfig()
 settle()
-check("Settings", config, "wConfig", "General")
+check("Settings", config, "wConfig", _("General"))
 
 host = app.Host("g", "n", "", "example.test", "u", "", "", "22", "", "ssh")
 # Host defaults some fields to ints; init() feeds them straight to set_text().
@@ -371,7 +371,7 @@ host.term = ""
 edit = app.Whost()
 edit.init("g", host)
 settle()
-check("Edit Host", edit, "wHost", "Properties")
+check("Edit Host", edit, "wHost", _("Propiedades"))
 
 print("TABS-OK")
 """
