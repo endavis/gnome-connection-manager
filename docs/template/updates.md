@@ -104,7 +104,7 @@ i Downloading from https://github.com/endavis/pyproject-template/archive/5853ced
 
 That is the same identity `bootstrap.py` pins, so the SHA it prints can be passed straight to
 `manage.py check --template-version <sha>` to diff against exactly what you synced. See
-[ADR-9020](../decisions/9020-a-template-version-is-a-commit-sha.md).
+[ADR-9020](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9020-a-template-version-is-a-commit-sha.md).
 
 `--skip-changelog` and `--keep-template` are not exposed: `manage.py` already sets both, keeping the
 downloaded template so you can run your own diffs and not opening an editor mid-run.

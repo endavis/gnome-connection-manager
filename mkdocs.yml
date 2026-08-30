@@ -104,8 +104,34 @@ nav:
   - Developing: DEVELOPING.md
   - Project structure: PROJECT_STRUCTURE.md
   - Specification: SPEC.md
+  - Contents: TABLE_OF_CONTENTS.md
+  - Development:
+      - Tooling roles: development/tooling-roles.md
+      - Coding standards: development/coding-standards.md
+      - doit tasks: development/doit-tasks-reference.md
+      - CI and testing: development/ci-cd-testing.md
+      - Repository settings: development/github-repository-settings.md
+      - Dependabot auto-merge: development/dependabot-automerge.md
+      - Install-tools framework: development/install-tools-framework.md
+      - Extensions: development/extensions.md
+      - Release and automation: development/release-and-automation.md
+      - AI setup: development/AI_SETUP.md
+  - Agents:
+      - First five minutes: development/ai/first-5-minutes.md
+      - Architectural conventions: development/ai/architectural-conventions.md
+      - Enforcement principles: development/ai/enforcement-principles.md
+      - Command blocking: development/ai/command-blocking.md
+      - Auto-checkpoint hook: development/ai/auto-checkpoint-hook.md
+      - Ruff-fix hook: development/ai/ruff-fix-hook.md
+      - Cross-agent delegation: development/ai/cross-agent-delegation.md
+      - Slash commands: development/ai/slash-commands.md
+      - LSP tool: development/ai/lsp-tool.md
+      - Statusline: development/ai/statusline.md
+      - Token-efficiency add-ons: development/ai/token-efficiency-add-ons.md
   - Template:
       - Overview: template/index.md
+      - New project: template/new-project.md
+      - Migration: template/migration.md
       - Keeping up to date: template/updates.md
       - Template manager: template/manage.md
       - Tools reference: template/tools-reference.md
