@@ -56,6 +56,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   commands and delegation skills; `.claude/rules/` holds narrow footgun rules that apply on
   top of this file, and `.github/instructions/` carries the same rules in the form
   Copilot reads — change one and change the other. All of it is vendored from pyproject-template and replaced on a sync.
+- `docs/development/` – how the vendored tooling works: the doit tasks, CI, repository
+  settings, and `docs/development/ai/` on the hooks, delegation and slash commands.
+  Written for the template, so it describes machinery this project has but does not
+  always use — `docs/development/release-and-automation.md` carries a banner saying so.
 - `docs/decisions/` – Architecture Decision Records, created with `doit adr`. The template
   numbers its own decisions from 9001; a project's own start at 0001.
 
