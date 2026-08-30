@@ -71,7 +71,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   Qt/PySide6 port (conclusion: don't, for terminal ergonomics).
 
 ## Dependencies & Environment
-- Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91`, and `expect`. VTE
+- Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91`, and `expect`.
+  `expect` is checked in `main()`, not at import: the check used to run while the module
+  was being imported and report through a modal dialog, so importing it headless hung
+  forever (#118). Keep imports side-effect free. VTE
   terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
 - Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip,
   desktop-file utilities (`xdg-desktop-menu`, invoked in `postinst`).

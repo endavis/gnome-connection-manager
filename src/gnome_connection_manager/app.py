@@ -111,22 +111,53 @@ from gnome_connection_manager.utils import (  # noqa: E402
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
 
-# Ver si expect esta instalado
-try:
-    expect_status = subprocess.run(
-        ["expect", "-v"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
-    ).returncode
-except (OSError, RuntimeError):
-    expect_status = -1
-if expect_status != 0:
-    error = Gtk.MessageDialog(
-        modal=True,
-        message_type=Gtk.MessageType.ERROR,
-        buttons=Gtk.ButtonsType.OK,
-        text="You must install expect",
-    )
-    error.run()
+
+def expect_is_installed() -> bool:
+    """Whether the `expect` binary can be run. Relayed sessions need it."""
+    try:
+        return (
+            subprocess.run(
+                ["expect", "-v"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            ).returncode
+            == 0
+        )
+    except (OSError, RuntimeError):
+        return False
+
+
+def require_expect() -> None:
+    """Refuse to start without `expect`, reporting it in a way someone can receive.
+
+    Called from main() rather than at import (#118). It used to run while the module was
+    being imported, and to report through a modal Gtk.MessageDialog whose run() blocks
+    until a button is clicked -- so importing this module with no one at the screen hung
+    forever, and importing it at all could exit the interpreter.
+
+    That is not a hypothetical: it made CI look slow rather than broken. Every test that
+    imports the module in a subprocess sat on the invisible dialog until its own timeout.
+
+    The dialog is still right when there is a display and a user. Without one, say it on
+    stderr, where a log will keep it.
+    """
+    if expect_is_installed():
+        return
+    message = "You must install expect"
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        error = Gtk.MessageDialog(
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=message,
+        )
+        error.run()
+        error.destroy()
+    else:
+        print(f"{message}. Install it with: sudo apt install expect", file=sys.stderr)
     sys.exit(1)
+
 
 # Gdk.threads_init()
 
@@ -7349,6 +7380,7 @@ class GcmApplication(Gtk.Application):
 def main(argv=None):
     if argv is None:
         argv = sys.argv
+    require_expect()
     application = GcmApplication()
     return application.run(argv)
 
