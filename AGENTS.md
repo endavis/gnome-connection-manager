@@ -168,6 +168,33 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - The expect script assumes `/usr/bin/ssh` and `/usr/bin/telnet`; if touching authentication,
   check the regexes and resize trap in `data/scripts/ssh.expect`.
 
+## Contribution Workflow
+
+Issue first, then a branch for it, then a PR. Use the doit tasks rather than `gh` directly:
+they validate against the templates in `.github/`, and `tools/hooks/ai/` refuses the raw
+commands once wired (#119).
+
+| Step | Command |
+|---|---|
+| File the issue | `doit issue --type=<bug\|feature\|docs\|refactor\|chore> --title=... --body-file=...` |
+| Branch from `origin/main` | `<type>/<issue-number>-<slug>`, e.g. `fix/111-session-log-host-ordering` |
+| Open the PR | `doit pr` |
+| Merge | `doit pr_merge` |
+
+- **`feat/`, not `feature/`.** A pre-commit hook rejects a malformed branch name, and
+  another rejects a commit citing an issue that is not the branch's own.
+- **`doit pr_merge` squashes**, producing `<type>: <subject> (merges PR #XX, addresses #YY)`.
+  That is why `main` has linear history, which branch protection requires.
+- **`--body-file` for anything long.** A body passed inline is scanned as command
+  arguments, so a message that merely names a blocked pattern is refused. Write it under
+  `tmp/agents/` and pass the path. The same applies to commit messages: `git commit -F`.
+- **`ready-to-merge` is a governance label**, applied by a person. An agent may not add it,
+  and `require-label` blocks the merge until someone does.
+- Section headings in an issue body must be `##`; the validator parses on that and reports
+  "Missing required sections" for `###`.
+
+See `.github/CONTRIBUTING.md` for the full account.
+
 ## Agent Checklist
 1. Understand which component you're touching and read its neighbors before editing.
 2. Update config, dialogs, menus, translations, and docs together for user-facing options.
@@ -175,4 +202,5 @@ Practices below have each caught real bugs in this repo. They are worth the time
 4. Run `doit test`, `doit lint`, `doit type_check` — compare the last two against a baseline.
 5. Launch the app with a throwaway HOME and confirm no tracebacks.
 6. Rebuild translations (`doit translate`) if `.po` files change, and say so in your summary.
-7. State plainly what you did not verify.
+7. Open the work as an issue and a PR through the doit tasks, not `gh` (see above).
+8. State plainly what you did not verify.
