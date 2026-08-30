@@ -20,6 +20,8 @@ the git log.
   the developer's desktop
 
 ### Changed
+- Password encryption moved out of `app.py` into `utils/crypto.py`, where it is tested
+  directly rather than through the `gi` stub that hid a real fault in it
 - Python floor raised from 3.8 to 3.12, matching what was actually being used and tested
 - Default branch renamed from `master` to `main`
 
