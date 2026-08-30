@@ -148,13 +148,48 @@ migration and are deliberately not bundled into a version bump.
 
 ## Phase 3 — Task runner: just to doit
 
-- [ ] Copy `dodo.py` and `tools/doit/`
-- [ ] Port every `justfile` recipe: `run fmt lint typecheck test test-cov check install build clean translate setup`
-- [ ] **`setup` must keep `uv venv --system-site-packages`** — everything depends on it
-- [ ] `translate` must keep calling `tools/build_mo.py`
-- [ ] **Delete `justfile`** once every recipe has a doit equivalent — doit is the single
-      task runner, no shim
-- [ ] `doit check` and `doit test` both work
+- [x] Copy `dodo.py`, `tools/__init__.py` and `tools/doit/` (17 vendored modules)
+- [x] Port every `justfile` recipe
+- [x] **`setup` keeps `uv venv --system-site-packages`**
+- [x] `translate` still falls back to `tools/build_mo.py`
+- [x] **`justfile` deleted**
+- [x] `doit test` works; `doit check` does **not** yet — see below
+
+### Recipe mapping
+
+`launch` (not `run`: doit reserves that as a command name), `format`, `lint`,
+`type_check`, `test`, `coverage`, `check`, `install`, `build`, `cleanup`, `translate`,
+`setup`. GCM-specific tasks live in `tools/doit/gcm.py`; the other 16 modules are vendored
+and replaced wholesale on a sync.
+
+### Findings
+
+- **`uv sync` preserves an existing venv's `--system-site-packages`** (verified). So the
+  footgun is limited to fresh environments, which is exactly CI. `doit setup` is the
+  documented entry point; `doit install_dev` would build a venv that cannot `import gi`.
+- **`pytest -n auto` is safe and faster** — 535 in 23s against 32s serial. But
+  `pytest_configure` runs in every xdist worker, so each was starting its own Xvfb, and
+  picking a free display is a check-then-bind race: the worker that loses falls back to
+  the real desktop. Workers now inherit the controller's display. Verified: one server,
+  no orphans, `gw0` reports `DISPLAY=:90`.
+- **Vendored code fails GCM's ruff config** — 47 findings, all because the template does
+  not select `PTH` (use-pathlib). Per-file-ignores added for the vendored directories,
+  which are linted upstream under their own rules. Back to the baseline of 10.
+- **`tools/build_mo.py` had 3 real findings** that `just lint` never saw, because it only
+  covered `src/ tests/`. Fixed; the compiled `.mo` is byte-identical afterwards.
+- **`pythonpath = ["."]`** added so tests can import `tools.doit.*`, matching the template.
+- **`msgfmt` is not installed here**, so `build_mo.py` has been doing all the work. Add
+  `gettext` to the Phase 7 apt list or the fallback-versus-reference test skips forever.
+
+### Blocked: `doit check` fails on `format_check`
+
+`ruff format --check` would reformat **19 files**, including `app.py`. GCM's `AGENTS.md`
+says to *"avoid sweeping refactors or auto-formatters"*. This is a genuine policy conflict
+between the two projects and needs a decision before Phase 6:
+
+- **(a)** Reformat once, accept the churn, drop the prohibition from `AGENTS.md`
+- **(b)** Drop `format_check` from `check` and from pre-commit, keep the policy
+- **(c)** Reformat everything except `app.py` via ruff's `exclude`
 
 ## Phase 4 — Dependencies
 

@@ -39,6 +39,12 @@ dev = [
     "mypy>=1.8.0",
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5",
+    # Task runner. doit discovers every module under tools/doit/, so anything those
+    # modules import at module scope has to be here: rich and pyyaml are the only two.
+    "doit>=0.36.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.urls]
@@ -101,6 +107,12 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+# Vendored from pyproject-template and replaced wholesale on every sync, so fixing
+# findings here would be undone by the next one. Upstream lints them under its own
+# config, which does not select PTH (flake8-use-pathlib) -- hence the 40-odd os.path
+# calls. Our own tools/doit/gcm.py sits in this tree but passes these rules anyway.
+"tools/doit/*" = ["E741", "F401", "PTH"]
+"tools/pyproject_template/*" = ["E741", "F401", "PTH"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -121,6 +133,9 @@ warn_unused_ignores = true
 # Pytest - Testing framework
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so tests can import tools.doit.* -- the doit tasks are
+# project code and are tested like any other. Matches the template's own setting.
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

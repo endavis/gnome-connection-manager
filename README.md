@@ -77,10 +77,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv --system-site-packages
 uv sync --extra dev
 
-# Prefer just for day-to-day commands
-just run      # Launch the app
-just check    # Lint + typecheck + tests
-just test     # Run the pytest suite
+# Prefer doit for day-to-day commands
+doit launch   # Launch the app
+doit check    # Format, lint, typecheck, tests
+doit test     # Run the pytest suite
 
 # Or run directly via uv
 uv run python -m gnome_connection_manager
@@ -102,7 +102,7 @@ git clone <this repository>
 cd gnome-connection-manager
 uv venv --system-site-packages
 uv sync
-just run
+doit launch
 ```
 
 ---

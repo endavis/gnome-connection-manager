@@ -8,7 +8,7 @@ gnome-connection-manager/
 ├── pyproject.toml          # Modern Python project configuration
 ├── .python-version         # Pin Python version (3.12.3)
 ├── .gitignore             # Comprehensive Python gitignore
-├── justfile               # Task runner (optional but recommended)
+├── dodo.py                # Task runner entry point (doit)
 ├── DEVELOPING.md          # Developer guide
 ├── src/
 │   └── gnome_connection_manager/
@@ -55,10 +55,10 @@ uv sync --extra dev
 # Run application
 uv run python -m gnome_connection_manager
 
-# Development tasks (with justfile)
-just run       # Run the app
-just check     # Lint, typecheck, test
-just fmt       # Format code
+# Development tasks (doit)
+doit launch    # Run the app
+doit check     # Lint, typecheck, test
+doit format    # Format code
 ```
 
 ### What's Next?
@@ -118,7 +118,7 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 3. **Type safety** - mypy for gradual typing
 4. **Code quality** - ruff for fast linting/formatting  
 5. **Proper packaging** - Can publish to PyPI
-6. **Development workflow** - justfile for common tasks
+6. **Development workflow** - doit tasks for common operations
 7. **Reproducible** - .python-version pins Python version
 
 ### Migration Notes

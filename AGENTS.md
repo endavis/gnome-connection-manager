@@ -17,7 +17,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   classes (`Wmain`, `Whost`, `Wconfig`, `GcmApplication`), `Host`/`HostUtils` models,
   encryption helpers, and VTE management. It is a single large module by design.
 - `src/gnome_connection_manager/main.py` and `src/gnome_connection_manager/__main__.py` –
-  entry points (`just run` uses these).
+  entry points (`doit launch` uses these).
 - `src/gnome_connection_manager/relay.py` – a PTY relay run as its own process. When OSC 52
   or raw recording is enabled, sessions are spawned *under this* rather than directly, so it
   sits in the byte path between the child and VTE. It forwards bytes unmodified, watches for
@@ -35,7 +35,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   burst of writes back into the frame it drew, tracks which screen the stream is on, and
   decides what a new alternate-screen frame actually added. Pure, so the heuristics are
   testable without a display; the emulator driving it is `TranscriptReplayer` in `app.py`.
-- `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `just translate` is the
+- `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget
   names/signals aligned with handler names in `app.py`.
@@ -46,7 +46,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
   `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, en, fr, it, ko, pl, pt, ru.
 - `docs/` – see [Documentation](#documentation).
-- `gnome-connection-manager.desktop`, `postinst`, `Makefile`, `justfile`, `pyproject.toml`.
+- `gnome-connection-manager.desktop`, `postinst`, `Makefile`, `dodo.py`, `pyproject.toml`.
 
 ## Documentation
 - `docs/TERMINAL-USAGE.md` – user-facing: selection when an application has taken the mouse,
@@ -60,13 +60,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
 - Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip,
   desktop-file utilities (`xdg-desktop-menu`, invoked in `postinst`).
-- Preferred tooling: the recipes in `justfile` — `just run`, `just test`, `just lint`,
-  `just typecheck`, `just check`, `just translate`. For anything without a recipe, use
-  `uv run …` so the repo's environment is honored.
+- Preferred tooling: the doit tasks — `doit launch`, `doit test`, `doit lint`,
+  `doit type_check`, `doit translate`. `doit list` shows them all. Project-specific
+  tasks live in `tools/doit/gcm.py`; the rest of `tools/doit/` is vendored from
+  pyproject-template and is replaced wholesale on a sync. For anything without a task,
+  use `uv run …` so the repo's environment is honored.
 
 ## Testing & Verification
 
-**Tests are automated.** `just test` runs the suite; `just test-cov` adds coverage. Add
+**Tests are automated.** `doit test` runs the suite; `doit coverage` adds coverage. Add
 tests with behavior changes rather than documenting a manual test surface.
 
 Practices below have each caught real bugs in this repo. They are worth the time:
@@ -130,7 +132,7 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - CSS tweaks go in `data/style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
-  (`lang/en/LC_MESSAGES/gcm-lang.mo`). `just translate` compiles every source, creating
+  (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
   the directory it writes into. It uses `msgfmt` where that exists and `tools/build_mo.py`
   otherwise, and fails rather than reporting success when it finds nothing to compile.
   Add a locale by copying an existing `.po` and updating its headers; the Makefile still
@@ -164,7 +166,7 @@ Practices below have each caught real bugs in this repo. They are worth the time
 1. Understand which component you're touching and read its neighbors before editing.
 2. Update config, dialogs, menus, translations, and docs together for user-facing options.
 3. Add tests, then mutation-test them by reverting the fix.
-4. Run `just test`, `just lint`, `just typecheck` — compare the last two against a baseline.
+4. Run `doit test`, `doit lint`, `doit type_check` — compare the last two against a baseline.
 5. Launch the app with a throwaway HOME and confirm no tracebacks.
-6. Rebuild translations (`just translate`) if `.po` files change, and say so in your summary.
+6. Rebuild translations (`doit translate`) if `.po` files change, and say so in your summary.
 7. State plainly what you did not verify.

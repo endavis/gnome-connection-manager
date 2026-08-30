@@ -190,7 +190,7 @@ def test_agents_md_does_not_claim_tests_are_manual():
     text = AGENTS.read_text().lower()
 
     assert "tests are manual" not in text
-    assert "just test" in text
+    assert "doit test" in text
 
 
 def test_agents_md_lists_the_locales_that_exist():

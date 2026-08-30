@@ -7,7 +7,6 @@ reading it back with Python's own gettext, which is what the application uses.
 
 from __future__ import annotations
 
-import re
 import struct
 import sys
 from pathlib import Path
@@ -68,8 +67,8 @@ def write_mo(entries: dict[str, str], path: Path) -> None:
     output = struct.pack(
         "Iiiiiii", 0x950412DE, 0, len(items), 7 * 4, 7 * 4 + len(items) * 8, 0, 0
     )
-    output += b"".join(struct.pack("ii", l, o + keystart) for l, o in koffsets)
-    output += b"".join(struct.pack("ii", l, o + valuestart) for l, o in voffsets)
+    output += b"".join(struct.pack("ii", length, off + keystart) for length, off in koffsets)
+    output += b"".join(struct.pack("ii", length, off + valuestart) for length, off in voffsets)
     output += ids + strs
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(output)
