@@ -1,0 +1,72 @@
+name: 🔨 Chore / Maintenance
+description: Maintenance tasks, tooling, CI/CD, or dependency updates
+labels: ["chore", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Chore / Maintenance Task
+
+        Describe the maintenance or tooling task that needs to be done.
+
+  - type: dropdown
+    id: chore-type
+    attributes:
+      label: Chore Type
+      description: What kind of maintenance task is this?
+      options:
+        - CI/CD configuration
+        - Dependency updates
+        - Tooling improvements
+        - Code cleanup
+        - Configuration changes
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the maintenance task
+      placeholder: |
+        What needs to be done and why?
+        Example: "Update GitHub Actions to use Node 20 before Node 16 EOL..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-changes
+    attributes:
+      label: Proposed Changes
+      description: What specific changes need to be made?
+      placeholder: |
+        - Update file X
+        - Modify configuration Y
+        - Add/remove dependency Z
+    validations:
+      required: false
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: How will we know this task is complete?
+      placeholder: |
+        - [ ] CI passes
+        - [ ] No breaking changes
+        - [ ] Documentation updated if needed
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        - Related issues
+        - Urgency/timeline
+        - Dependencies on other tasks
+    validations:
+      required: false

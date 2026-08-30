@@ -1,0 +1,80 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Report a Bug
+
+        Help us fix the issue by providing clear reproduction steps.
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: |
+        Describe the bug and its impact.
+        Example: "Application crashes when processing files larger than 10MB..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue
+      placeholder: |
+        1. Run command `...`
+        2. With input `...`
+        3. Observe error `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: Expected vs Actual Behavior
+      description: What should happen vs what actually happens
+      placeholder: |
+        **Expected:** The function should return a valid result
+        **Actual:** The function raises ValueError
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: System information (Python version, OS, package version)
+      placeholder: |
+        - Python: 3.12
+        - OS: Ubuntu 22.04
+        - Package version: 1.2.3
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Error Output
+      description: Paste any error messages, stack traces, or relevant logs
+      placeholder: Paste error output here...
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        - Screenshots
+        - Related issues
+        - Workarounds attempted
+        - Possible solutions
+    validations:
+      required: false

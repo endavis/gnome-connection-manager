@@ -1,0 +1,120 @@
+site_name: Package Name
+site_description: A short description of your package
+site_author: Eric Davis
+site_url: https://endavis.github.io/gnome-connection-manager
+
+repo_name: endavis/gnome-connection-manager
+repo_url: https://github.com/endavis/gnome-connection-manager
+edit_uri: edit/main/docs/
+
+# Theme configuration
+# Default: material (modern, responsive theme)
+theme:
+  name: material
+  # Optional features (uncomment to enable)
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_signature_annotations: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            merge_init_into_class: true
+            show_root_heading: true
+            show_root_full_path: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - toc:
+      permalink: true
+
+# `docs/` deliberately links to real repository files that live outside
+# `docs_dir` — AGENTS.md, README.md, .github/CONTRIBUTING.md, hook scripts
+# under tools/, and their tests. Those links are kept relative so they resolve
+# when the repository is browsed on GitHub, which is how a template is mostly
+# read, and so downstream forks resolve to their own files rather than to this
+# upstream repo.
+#
+# mkdocs 1.6 reports those identically to genuinely broken links
+# (`links.not_found`), so silencing one silences the other. `not_found` is
+# therefore ignored here and link validation lives in
+# `tests/test_docs_links.py`, which resolves every relative link against the
+# whole repository — including the out-of-docs links mkdocs can never check.
+# Anchors are still validated here, where mkdocs has the rendered headings.
+#
+# Trade-off: the out-of-docs links do not resolve on the published site.
+# `decisions/adr-template.md` is a scaffold, not a decision record: it carries
+# placeholder text and intentionally unresolvable links (`../path/to/doc.md`).
+# Listing it in the nav would present a fill-in-the-blanks form to readers as
+# though it were content, and `doit adr` is how an ADR is actually created. It
+# is excluded deliberately rather than left to drift out of the nav unnoticed.
+not_in_nav: |
+  MIGRATION-PLAN.md
+
+validation:
+  nav:
+    # Any other page missing from the nav is an oversight; surface it. With
+    # `mkdocs build --strict` this fails the docs job rather than scrolling
+    # past as INFO, which is how seven pages became unreachable (#688).
+    omitted_files: warn
+  links:
+    not_found: ignore
+    unrecognized_links: ignore
+    anchors: warn
+
+nav:
+  - Home: index.md
+  - Terminal usage: TERMINAL-USAGE.md
+  - Developing: DEVELOPING.md
+  - Project structure: PROJECT_STRUCTURE.md
+  - Specification: SPEC.md
+  - Template:
+      - Overview: template/index.md
+      - Keeping up to date: template/updates.md
+      - Template manager: template/manage.md
+      - Tools reference: template/tools-reference.md
+      - Consumer notes: template/consumer-notes.md
+      - AI sync checklist: template/ai-sync-checklist.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/username
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/package-name
