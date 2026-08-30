@@ -1,0 +1,15 @@
+{
+  "block-dangerous-commands": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/tools/hooks/ai/block-dangerous-commands.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

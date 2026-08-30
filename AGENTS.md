@@ -48,6 +48,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `docs/` – see [Documentation](#documentation).
 - `gnome-connection-manager.desktop`, `postinst`, `Makefile`, `dodo.py`, `pyproject.toml`.
 
+- `.claude/`, `.agents/`, `.codex/`, `.copilot/` – agent configuration. `.claude/settings.json`
+  and `.agents/hooks.json` register the guard rails in `tools/hooks/ai/`, which refuse
+  `gh pr create`/`gh pr merge` in favour of the doit tasks and treat `ready-to-merge` as a
+  label only a person may apply. `.claude/commands/` and `.agents/skills/` hold the slash
+  commands and delegation skills; `.claude/rules/` holds narrow footgun rules that apply on
+  top of this file. All of it is vendored from pyproject-template and replaced on a sync.
+- `docs/decisions/` – Architecture Decision Records, created with `doit adr`. The template
+  numbers its own decisions from 9001; a project's own start at 0001.
+
 ## Documentation
 - `docs/TERMINAL-USAGE.md` – user-facing: selection when an application has taken the mouse,
   what Copy All copies, pasting, font zoom, session log layout, the shortcut table.

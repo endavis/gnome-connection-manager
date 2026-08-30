@@ -85,6 +85,7 @@ markdown_extensions:
 # though it were content, and `doit adr` is how an ADR is actually created. It
 # is excluded deliberately rather than left to drift out of the nav unnoticed.
 not_in_nav: |
+  decisions/adr-template.md
 
 validation:
   nav:
