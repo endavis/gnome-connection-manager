@@ -115,6 +115,7 @@ def test_a_stray_close_tag_does_not_raise():
 
 # -- viewer integration (needs a real Gtk.TextView) --------------------------
 
+
 @pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
 def test_the_viewer_applies_colour_and_falls_back_cleanly():
     """conftest stubs gi session-wide, so the real TextView needs its own interpreter."""

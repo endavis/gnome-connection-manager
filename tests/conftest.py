@@ -92,6 +92,14 @@ def pytest_configure(config):
     global _xvfb_process
     if os.environ.get("GCM_TEST_REAL_DISPLAY"):
         return
+    # Under xdist this hook runs in the controller and again in every worker. The
+    # controller configures first and workers inherit its environment, so they already
+    # have DISPLAY pointing at the server it started. Starting one per worker would be
+    # wasteful, and worse: picking a free display number is a check followed by a bind,
+    # so two workers racing can choose the same number, and the one that loses falls
+    # back to the developer's real desktop -- the exact thing this exists to prevent.
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return
     started = _start_xvfb()
     if started is None:
         # No Xvfb, or it failed to come up. Fall back to whatever display is already
@@ -297,9 +305,7 @@ def app_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     gdk_module.ModifierType = types.SimpleNamespace(
         CONTROL_MASK=1, SHIFT_MASK=2, MOD1_MASK=4, SUPER_MASK=8
     )
-    gdk_module.ScrollDirection = types.SimpleNamespace(
-        UP=0, DOWN=1, LEFT=2, RIGHT=3, SMOOTH=4
-    )
+    gdk_module.ScrollDirection = types.SimpleNamespace(UP=0, DOWN=1, LEFT=2, RIGHT=3, SMOOTH=4)
     gdk_module.RGBA = DummyRGBA
     gdk_module.Color = object
     gdk_module.keyval_name = lambda *_args, **_kwargs: "KEY"

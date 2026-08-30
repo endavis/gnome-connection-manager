@@ -31,9 +31,7 @@ def write_recording(tmp_path, writes, timing=True):
     raw.write_bytes(b"".join(chunk for _, chunk in writes))
     sidecar = tmp_path / "s.timing"
     if timing:
-        sidecar.write_text(
-            "".join(f"{delay:.6f} {len(chunk)}\n" for delay, chunk in writes)
-        )
+        sidecar.write_text("".join(f"{delay:.6f} {len(chunk)}\n" for delay, chunk in writes))
     return str(raw), str(sidecar)
 
 
@@ -175,7 +173,7 @@ def test_scroll_shift_will_not_invent_a_scroll_from_one_matching_line():
 
     Here nothing scrolled -- the screen was replaced -- but `match` happens to land two
     rows up. Taking that as evidence reports a two-line scroll and emits `p` and `q`,
-    which were never scrolled past, and pre-empts the page-turn rule that would have
+    which were never scrolled past, and prevents the page-turn rule that would have
     recovered the screen properly.
     """
     before = ["p", "q", "match", "r"]
@@ -409,7 +407,10 @@ def test_the_refusal_says_what_to_do_about_it(app_module):
     already running.
     """
     source = inspect.getsource(app_module.Wmain.save_session_transcript)
-    message = [s for s in re.findall(r'_\("([^"]+)"\)', source) if "grabación" in s]
+    # \s* around the literal, matching the i18n guard in test_i18n.py: the formatter is
+    # free to wrap a long msgbox call across lines, and a pattern that only matched
+    # `_("...")` on one line silently stopped seeing this message when it did.
+    message = [s for s in re.findall(r'_\(\s*"([^"]+)"\s*\)', source) if "grabación" in s]
 
     assert message, "the refusal must be a translatable string"
     assert "raw-session-log" in message[0], "say which preference"
@@ -434,8 +435,9 @@ def test_an_empty_recording_says_so_instead_of_doing_nothing(app_module, monkeyp
     controller.wMain = None
     controller.save_text_to_file = lambda text, *a, **k: saved.append(text)
     terminal = type(
-        "T", (), {"raw_path": str(raw), "get_column_count": lambda s: 80,
-                  "get_row_count": lambda s: 24}
+        "T",
+        (),
+        {"raw_path": str(raw), "get_column_count": lambda s: 80, "get_row_count": lambda s: 24},
     )()
 
     controller.save_session_transcript(terminal)
@@ -450,8 +452,14 @@ def test_the_progress_dialog_fake_matches_real_gtk():
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk
 
-    for name in ("set_icon_from_file", "add_button", "get_content_area", "show_all",
-                 "connect", "destroy"):
+    for name in (
+        "set_icon_from_file",
+        "add_button",
+        "get_content_area",
+        "show_all",
+        "connect",
+        "destroy",
+    ):
         assert hasattr(Gtk.Dialog, name), f"Gtk.Dialog has no {name}"
     for name in ("set_fraction", "set_show_text", "set_text"):
         assert hasattr(Gtk.ProgressBar, name), f"Gtk.ProgressBar has no {name}"

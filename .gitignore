@@ -62,3 +62,6 @@ tmp/
 .gcm/
 gcm.conf
 .gcm.key
+
+# doit task state
+.doit.db*

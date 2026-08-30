@@ -552,12 +552,18 @@ class FakeEvent:
 def button_env(monkeypatch, console_env):
     monkeypatch.setattr(console_env.Gtk, "Button", FakeButton, raising=False)
     monkeypatch.setattr(console_env.Gtk, "Menu", FakeMenu, raising=False)
-    monkeypatch.setattr(console_env.Gtk, "PackType", types.SimpleNamespace(END="end"), raising=False)
     monkeypatch.setattr(
-        console_env.Gtk, "Image", types.SimpleNamespace(new_from_icon_name=lambda *a: object()),
+        console_env.Gtk, "PackType", types.SimpleNamespace(END="end"), raising=False
+    )
+    monkeypatch.setattr(
+        console_env.Gtk,
+        "Image",
+        types.SimpleNamespace(new_from_icon_name=lambda *a: object()),
         raising=False,
     )
-    monkeypatch.setattr(console_env.Gtk, "ReliefStyle", types.SimpleNamespace(NONE=0), raising=False)
+    monkeypatch.setattr(
+        console_env.Gtk, "ReliefStyle", types.SimpleNamespace(NONE=0), raising=False
+    )
     monkeypatch.setattr(console_env.Gtk, "IconSize", types.SimpleNamespace(MENU=1), raising=False)
     return console_env
 
@@ -585,8 +591,10 @@ def test_the_button_is_not_installed_twice(button_env):
 
 
 GRAVITY = types.SimpleNamespace(
-    SOUTH_WEST="south-west", NORTH_WEST="north-west",
-    SOUTH_EAST="south-east", NORTH_EAST="north-east",
+    SOUTH_WEST="south-west",
+    NORTH_WEST="north-west",
+    SOUTH_EAST="south-east",
+    NORTH_EAST="north-east",
 )
 
 
@@ -594,12 +602,15 @@ def click_button(button_env, monkeypatch, wmain, notebook, keyboard=False):
     """Open the dropdown and report (menu, widget_anchor, menu_anchor, event)."""
     button = wmain.install_console_button(notebook)
     popped = []
-    monkeypatch.setattr(button_env.Gtk, "get_current_event", lambda: "keyboard-event",
-                        raising=False)
+    monkeypatch.setattr(
+        button_env.Gtk, "get_current_event", lambda: "keyboard-event", raising=False
+    )
     monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
     monkeypatch.setattr(
-        button_env.Gdk, "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"), raising=False,
+        button_env.Gdk,
+        "EventType",
+        types.SimpleNamespace(BUTTON_PRESS="button-press"),
+        raising=False,
     )
     FakeMenu.popup_at_widget = lambda self, _w, ra, ma, e: popped.append((self, ra, ma, e))
     try:
@@ -616,7 +627,8 @@ def test_clicking_the_button_fills_its_menu(button_env, monkeypatch):
     wmain = make_wmain(button_env, FakePaned(notebook))
 
     menu, _widget_anchor, _menu_anchor, _event = click_button(
-        button_env, monkeypatch, wmain, notebook)
+        button_env, monkeypatch, wmain, notebook
+    )
 
     assert [item.markup for item in menu.items] == ["a", "b"]
 
@@ -629,7 +641,8 @@ def test_the_menu_opens_leftwards_from_the_button(button_env, monkeypatch):
     wmain = make_wmain(button_env, FakePaned(notebook))
 
     _menu, widget_anchor, menu_anchor, _event = click_button(
-        button_env, monkeypatch, wmain, notebook)
+        button_env, monkeypatch, wmain, notebook
+    )
 
     assert widget_anchor == GRAVITY.SOUTH_EAST
     assert menu_anchor == GRAVITY.NORTH_EAST
@@ -658,8 +671,10 @@ def test_the_press_is_consumed_so_the_button_does_not_also_click(button_env, mon
     button = wmain.install_console_button(notebook)
     monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
     monkeypatch.setattr(
-        button_env.Gdk, "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"), raising=False,
+        button_env.Gdk,
+        "EventType",
+        types.SimpleNamespace(BUTTON_PRESS="button-press"),
+        raising=False,
     )
     FakeMenu.popup_at_widget = lambda *_a: None
     try:
@@ -675,8 +690,10 @@ def test_a_right_press_is_left_alone(button_env, monkeypatch):
     wmain = make_wmain(button_env, FakePaned(notebook))
     button = wmain.install_console_button(notebook)
     monkeypatch.setattr(
-        button_env.Gdk, "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"), raising=False,
+        button_env.Gdk,
+        "EventType",
+        types.SimpleNamespace(BUTTON_PRESS="button-press"),
+        raising=False,
     )
     popped = []
     FakeMenu.popup_at_widget = lambda self, *_a: popped.append(self)
@@ -694,8 +711,7 @@ def test_the_keyboard_still_opens_the_menu(button_env, monkeypatch):
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
 
-    menu, _wa, _ma, event = click_button(
-        button_env, monkeypatch, wmain, notebook, keyboard=True)
+    menu, _wa, _ma, event = click_button(button_env, monkeypatch, wmain, notebook, keyboard=True)
 
     assert [item.markup for item in menu.items] == ["a"]
     assert event == "keyboard-event"
@@ -709,8 +725,10 @@ def test_the_menu_is_attached_to_the_window_like_the_others(button_env, monkeypa
     wmain.install_console_button(notebook)
     monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
     monkeypatch.setattr(
-        button_env.Gdk, "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"), raising=False,
+        button_env.Gdk,
+        "EventType",
+        types.SimpleNamespace(BUTTON_PRESS="button-press"),
+        raising=False,
     )
     popped = []
     FakeMenu.popup_at_widget = lambda self, *_a: popped.append(self)
@@ -823,7 +841,7 @@ def test_check_menu_item_really_draws_as_a_radio():
 def test_set_attention_records_the_flag_it_styles(app_module):
     """The entry reads this back; a style class is only answerable once realized."""
     label = object.__new__(app_module.NotebookTabLabel)
-    classes = set()
+    classes: set = set()
     label.get_style_context = lambda: types.SimpleNamespace(
         add_class=classes.add, remove_class=classes.discard
     )

@@ -1,0 +1,19 @@
+{
+  "_comment": "Auto-merge configuration for dependabot PRs. See docs/development/dependabot-automerge.md.",
+  "sensitive_dependencies": [
+    "crypt*",
+    "*ssl*",
+    "*security*",
+    "auth*",
+    "*jwt*",
+    "*oauth*"
+  ],
+  "allowed_update_types": [
+    "version-update:semver-patch",
+    "version-update:semver-minor"
+  ],
+  "blocking_labels": [
+    "do-not-merge",
+    "automerge-blocked"
+  ]
+}

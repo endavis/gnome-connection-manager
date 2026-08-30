@@ -1,0 +1,62 @@
+name: Dependabot Blocked Label
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  handle-blocked-label:
+    name: Handle blocking label
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      (github.event.label.name == 'automerge-blocked' || github.event.label.name == 'do-not-merge')
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      LABEL_NAME: ${{ github.event.label.name }}
+    steps:
+      - name: Disable auto-merge
+        run: gh pr merge --disable-auto "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Remove ready-to-merge label
+        run: gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label ready-to-merge || true
+
+      - name: Post sticky blocked comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const label = process.env.LABEL_NAME;
+            const marker = '<!-- dependabot-automerge:status -->';
+            const body =
+              marker +
+              `\n🛑 **Auto-merge disabled** by \`${label}\` label.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            for (const c of comments) {
+              if (c.user && c.user.type === 'Bot' && c.body && c.body.includes(marker)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });

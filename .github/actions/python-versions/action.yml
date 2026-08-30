@@ -1,0 +1,25 @@
+# Reusable composite action that reads .github/python-versions.json and exposes
+# the oldest and newest supported Python versions as outputs. Callers should
+# check out the repository (so .github/python-versions.json is on disk) before
+# invoking this action. Centralizing the jq parsing here keeps every workflow
+# that picks a Python version in sync with a single source of truth.
+name: Python Versions
+description: Read oldest and newest supported Python versions from .github/python-versions.json
+outputs:
+  oldest:
+    description: Oldest supported Python version (e.g., "3.12")
+    value: ${{ steps.read.outputs.oldest }}
+  newest:
+    description: Newest supported Python version (e.g., "3.14")
+    value: ${{ steps.read.outputs.newest }}
+runs:
+  using: composite
+  steps:
+    - name: Read python-versions.json
+      id: read
+      shell: bash
+      run: |
+        oldest=$(jq -r '.oldest' .github/python-versions.json)
+        newest=$(jq -r '.newest' .github/python-versions.json)
+        echo "oldest=$oldest" >> "$GITHUB_OUTPUT"
+        echo "newest=$newest" >> "$GITHUB_OUTPUT"

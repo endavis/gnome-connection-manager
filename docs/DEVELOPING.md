@@ -21,7 +21,7 @@ gnome-connection-manager/
 ├── lang/                         # Translations
 ├── tests/                        # Test suite
 ├── pyproject.toml               # Project metadata & config
-├── justfile                     # Task runner commands
+├── dodo.py                      # Task runner entry point (doit)
 └── README.md                    # User documentation
 ```
 
@@ -49,8 +49,8 @@ gnome-connection-manager/
    # or: sudo apt install just
    ```
 
-> Use the `just` recipes for day-to-day development (`just run`, `just check`, etc.).  
-> When you need to run a command that doesn't have a recipe, wrap it with `uv run ...`
+> Use the doit tasks for day-to-day development (`doit launch`, `doit check`, etc.).
+> When you need to run a command that doesn't have a task, wrap it with `uv run ...`
 > so the project environment is used.
 
 ### Setup Development Environment
@@ -71,8 +71,8 @@ source .venv/bin/activate
 ### Running the Application
 
 ```bash
-# Using just (preferred)
-just run
+# Using doit (preferred)
+doit launch
 
 # Or directly through uv
 uv run python -m gnome_connection_manager
@@ -90,30 +90,30 @@ GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
 
 ```bash
 # Format code
-just fmt
+doit format
 # or: uv run ruff format src/
 
 # Lint code
-just lint
+doit lint
 # or: uv run ruff check src/
 
 # Type check
-just typecheck
+doit type_check
 # or: uv run mypy src/
 
 # Run all checks
-just check
+doit check
 ```
 
 ### Testing
 
 ```bash
 # Run tests
-just test
+doit test
 # or: uv run pytest
 
 # Run with coverage
-just test-cov
+doit coverage
 ```
 
 Some tests drive real GTK/VTE and open real windows. If `Xvfb` is installed the suite
@@ -129,7 +129,7 @@ force the real display -- which is what you want when measuring against the comp
 GCM actually ships on -- set:
 
 ```bash
-GCM_TEST_REAL_DISPLAY=1 just test
+GCM_TEST_REAL_DISPLAY=1 doit test
 ```
 
 Note that WSLg exports `GDK_SCALE=2.25` and both `DISPLAY` and `WAYLAND_DISPLAY`. The
@@ -141,11 +141,11 @@ workarea for a 1920x1080 screen.
 
 ```bash
 # Build wheel and sdist
-just build
+doit build
 # or: uv build
 
 # Install locally for testing
-just install
+doit install
 # or: uv pip install -e .
 ```
 
@@ -186,18 +186,18 @@ This project is in the process of modernization:
 ## Useful Commands
 
 ```bash
-# Quick reference with justfile
-just              # List all commands
-just run          # Run the app
-just check        # Run all quality checks
-just test-cov     # Test with coverage report
+# Quick reference
+doit list         # List all tasks
+doit launch          # Run the app
+doit check        # Run all quality checks
+doit coverage     # Test with coverage report
 just clean        # Remove build artifacts
-just translate    # Compile .po files
+doit translate    # Compile .po files
 ```
 
 ## Contributing
 
-1. Run `just check` before committing
+1. Run `doit check` before committing
 2. Add type hints to new code
 3. Write tests for new features
 4. Update documentation

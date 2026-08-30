@@ -1,0 +1,21 @@
+name: Merge Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, labeled, unlabeled, synchronize, reopened]
+
+jobs:
+  require-label:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for ready-to-merge label
+        run: |
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'ready-to-merge') }}" != "true" ]]; then
+            echo "::error::PR requires 'ready-to-merge' label before merging"
+            echo "Add the label when the PR is reviewed and ready to merge."
+            exit 1
+          fi
+          echo "✓ ready-to-merge label present"

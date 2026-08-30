@@ -1745,12 +1745,6 @@ msgstr "Record the raw session (includes escape sequences)"
 
 # --- glade strings that had no catalog entry ---
 
-msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN para historial</span>"
-msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN for history</span>"
-
-msgid "<span size='smaller'>Usar ##D=milisegundos para introducir un delay.\nEj: ##D=1000</span>"
-msgstr "<span size='smaller'>Use ##D=milliseconds to insert a delay.\nEg: ##D=1000</span>"
-
 msgid "A simple ssh connection manager for gnome"
 msgstr "A simple ssh connection manager for gnome"
 
@@ -1777,9 +1771,6 @@ msgstr "Gnome Connection Manager"
 
 msgid "Ingrese el texto a enviar a las consolas:"
 msgstr "Enter the text to send to the consoles:"
-
-msgid "Nivel de compresión: \nblanco: por defecto\n1: min\n9: max"
-msgstr "Compression level: \nblank: default\n1: min\n9: max"
 
 msgid "OK"
 msgstr "OK"

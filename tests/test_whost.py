@@ -131,7 +131,7 @@ def test_whost_on_okbutton_adds_host_and_updates_wmain(monkeypatch, app_module):
 
     wmain_stub = WmainStub()
     monkeypatch.setattr(app_module, "wMain", wmain_stub, raising=False)
-    captured = {}
+    captured: dict = {}
     monkeypatch.setattr(app_module, "msgbox", lambda text: captured.setdefault("msg", text))
 
     whost.on_okbutton1_clicked(None)
@@ -152,7 +152,7 @@ def test_whost_on_okbutton_validates_port(monkeypatch, app_module):
     whost, destroy_stub = make_whost(app_module)
     whost.txtPort = TextEntry("invalid")
     monkeypatch.setattr(app_module, "groups", {"ops": []})
-    messages = {}
+    messages: dict = {}
     monkeypatch.setattr(app_module, "msgbox", lambda text: messages.setdefault("msg", text))
 
     whost.on_okbutton1_clicked(None)
@@ -255,10 +255,20 @@ def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module)
             pass
 
     dialog = app_module.Whost.__new__(app_module.Whost)
-    ssh_only = ("txtKeepAlive", "chkKeepAlive", "chkX11", "chkAgent", "chkCompression",
-                "txtCompressionLevel", "txtPrivateKey", "btnBrowse")
-    controls = {name: Control() for name in (*ssh_only, "txtPort", "txtUser",
-                                             "txtPassword", "txtHost", "txtExtraParams")}
+    ssh_only = (
+        "txtKeepAlive",
+        "chkKeepAlive",
+        "chkX11",
+        "chkAgent",
+        "chkCompression",
+        "txtCompressionLevel",
+        "txtPrivateKey",
+        "btnBrowse",
+    )
+    controls = {
+        name: Control()
+        for name in (*ssh_only, "txtPort", "txtUser", "txtPassword", "txtHost", "txtExtraParams")
+    }
     for name, widget in controls.items():
         setattr(dialog, name, widget)
     dialog.get_widget = lambda name: Grid() if name == "tunnelGrid" else controls.get(name)

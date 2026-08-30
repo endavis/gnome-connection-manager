@@ -1,0 +1,226 @@
+# Requires the `allow_auto_merge` repository setting to be enabled.
+# See docs/development/github-repository-settings.md for the full list
+# of required repository settings, and docs/development/dependabot-automerge.md
+# for how this workflow uses it.
+name: Dependabot Auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    name: Evaluate dependabot PR
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.actor == 'dependabot[bot]'
+    outputs:
+      qualifies: ${{ steps.decide.outputs.qualifies }}
+      reason: ${{ steps.decide.outputs.reason }}
+      pr_number: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide eligibility
+        id: decide
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          DEPENDENCY_NAMES: ${{ steps.meta.outputs.dependency-names }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = '.github/automerge-config.json';
+            const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+            const updateType = process.env.UPDATE_TYPE || '';
+            const depNames = (process.env.DEPENDENCY_NAMES || '')
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean);
+            const prLabels = (context.payload.pull_request.labels || [])
+              .map(l => l.name);
+
+            // Glob to regex: '*' -> '.*', anchored.
+            const globToRegex = (glob) => {
+              const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+              return new RegExp('^' + escaped.replace(/\*/g, '.*') + '$', 'i');
+            };
+
+            const sensitiveRegexes = (config.sensitive_dependencies || [])
+              .map(globToRegex);
+
+            let qualifies = true;
+            let reason = 'eligible for auto-merge';
+
+            // Check update type.
+            if (updateType === 'version-update:semver-major') {
+              qualifies = false;
+              reason = 'major version bump';
+            }
+
+            // Check sensitive dependencies.
+            if (qualifies) {
+              for (const dep of depNames) {
+                const match = sensitiveRegexes.find(re => re.test(dep));
+                if (match) {
+                  qualifies = false;
+                  reason = `sensitive dependency: ${dep}`;
+                  break;
+                }
+              }
+            }
+
+            // Check blocking labels.
+            if (qualifies) {
+              const blocking = config.blocking_labels || [];
+              const hit = prLabels.find(l => blocking.includes(l));
+              if (hit) {
+                qualifies = false;
+                reason = `blocking label present: ${hit}`;
+              }
+            }
+
+            // Optionally enforce allowed update types (defense in depth).
+            if (qualifies) {
+              const allowed = config.allowed_update_types || [];
+              if (allowed.length && updateType && !allowed.includes(updateType)) {
+                qualifies = false;
+                reason = `update type not in allowlist: ${updateType}`;
+              }
+            }
+
+            core.setOutput('qualifies', String(qualifies));
+            core.setOutput('reason', reason);
+            core.info(`update-type=${updateType} deps=${depNames.join(',')} qualifies=${qualifies} reason=${reason}`);
+
+  enable-automerge:
+    name: Enable auto-merge
+    runs-on: ubuntu-latest
+    needs: evaluate
+    if: needs.evaluate.outputs.qualifies == 'true'
+    env:
+      PR_NUMBER: ${{ needs.evaluate.outputs.pr_number }}
+    steps:
+      - name: Generate App token
+        id: app-token
+        if: ${{ vars.RELEASE_APP_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Add ready-to-merge label
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label ready-to-merge
+
+      - name: Enable auto-merge (squash)
+        id: automerge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+
+      - name: Post sticky status comment
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          AUTOMERGE_OUTCOME: ${{ steps.automerge.outcome }}
+          APP_TOKEN_CONFIGURED: ${{ steps.app-token.outputs.token != '' }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const marker = '<!-- dependabot-automerge:status -->';
+            const succeeded = process.env.AUTOMERGE_OUTCOME === 'success';
+            const appTokenConfigured = process.env.APP_TOKEN_CONFIGURED === 'true';
+
+            let body;
+            if (succeeded) {
+              body = marker +
+                '\n✅ **Auto-merge enabled.** This PR will merge automatically when required CI checks pass. To block, add label `automerge-blocked`.';
+            } else if (!appTokenConfigured) {
+              body = marker +
+                '\n⚠️ **Auto-merge could not be enabled, and the App token is not configured.** The `ready-to-merge` label has been applied with `GITHUB_TOKEN`, which does not trigger downstream workflows — so the Merge Gate will **not** re-run automatically. To unstick this PR, either remove and re-add the `ready-to-merge` label manually (which will trigger the Merge Gate as your user), or configure the `RELEASE_APP_ID` variable and `RELEASE_APP_PRIVATE_KEY` secret so future runs can apply the label with an App token. See `docs/development/dependabot-automerge.md` for details.';
+            } else {
+              body = marker +
+                '\n⚠️ **Auto-merge could not be enabled**, but the `ready-to-merge` label has been applied so the Merge Gate is satisfied. A maintainer will need to merge this PR manually (or re-run the workflow once the underlying issue is resolved). See the workflow run logs for details. To opt this PR out of auto-merge entirely, add the `automerge-blocked` label.';
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            for (const c of comments) {
+              if (c.user && c.user.type === 'Bot' && c.body && c.body.includes(marker)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
+
+  comment-skip:
+    name: Comment skip reason
+    runs-on: ubuntu-latest
+    needs: evaluate
+    if: needs.evaluate.outputs.qualifies == 'false'
+    steps:
+      - name: Post sticky skip comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ needs.evaluate.outputs.pr_number }}
+          REASON: ${{ needs.evaluate.outputs.reason }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const reason = process.env.REASON || 'unknown';
+            const marker = '<!-- dependabot-automerge:status -->';
+            const body =
+              marker +
+              `\n⏸️ **Auto-merge skipped:** ${reason}. Human review required.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            for (const c of comments) {
+              if (c.user && c.user.type === 'Bot' && c.body && c.body.includes(marker)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });

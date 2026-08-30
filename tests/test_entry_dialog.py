@@ -89,8 +89,7 @@ def test_no_widget_is_constructed_with_an_underscore_label():
     `append_page`, and a bare substring search reports three false positives on it.
     """
     source = (
-        Path(__file__).resolve().parents[1]
-        / "src/gnome_connection_manager/app.py"
+        Path(__file__).resolve().parents[1] / "src/gnome_connection_manager/app.py"
     ).read_text(encoding="utf-8")
 
     assert not re.search(r"(?<![A-Za-z0-9])_label\s*=", source)

@@ -1,0 +1,180 @@
+name: CI
+
+# Adapted from pyproject-template. The template runs a matrix of Python versions across
+# ubuntu, windows and macos; GCM can do none of that.
+#
+# GCM imports GTK 3 and VTE through PyGObject, which is an apt package built for the
+# distribution's own interpreter and living in /usr/lib/python3/dist-packages. It is not
+# installable from PyPI. So:
+#
+#   * Linux only -- there is no GTK 3 / VTE stack to test against on windows or macos.
+#   * No actions/setup-python -- that installs a separate interpreter which cannot see
+#     apt's dist-packages, so `import gi` would fail no matter what else was configured.
+#     The venv is built from /usr/bin/python3 with --system-site-packages instead.
+#   * ubuntu-24.04 pinned rather than ubuntu-latest, so the system interpreter stays the
+#     3.12 that .python-version names and that apt's PyGObject is built for.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
+  # gettext for msgfmt, which the catalog tests compare their fallback against;
+  # xvfb for the tests that drive real Gtk/Vte windows (#113).
+  #
+  # expect is not optional here. app.py checks for it at *import* time and, if it is
+  # missing, opens a modal Gtk.MessageDialog and calls run() on it -- which blocks
+  # forever with nobody to click OK. Every test that imports the real module then sits
+  # there until its own 90s subprocess timeout, several times over. See #118.
+  SYSTEM_PACKAGES: >-
+    python3-gi
+    python3-gi-cairo
+    gir1.2-gtk-3.0
+    gir1.2-vte-2.91
+    xvfb
+    gettext
+    expect
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the GTK stack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $SYSTEM_PACKAGES
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Create the environment
+        run: |
+          uv venv --system-site-packages --python /usr/bin/python3
+          uv sync --all-extras --dev
+
+      - name: Verify PyGObject is reachable
+        # Fail here with a clear message rather than 400 lines of collection errors.
+        run: |
+          uv run python - <<'PY'
+          import gi
+          gi.require_version("Gtk", "3.0")
+          gi.require_version("Vte", "2.91")
+          from gi.repository import Gtk, Vte
+          print(f"gi {gi.__file__}")
+          print(f"Gtk {Gtk.MAJOR_VERSION}.{Gtk.MINOR_VERSION}  Vte {Vte.MAJOR_VERSION}.{Vte.MINOR_VERSION}")
+          PY
+
+      - name: Run tests
+        # -rs and the skip check are the point. Twelve tests gate themselves on a display
+        # being present, so without Xvfb they vanish and the run still reports success.
+        # A green tick that silently tested nothing is worse than a red one.
+        run: |
+          set -o pipefail
+          mkdir -p tmp
+          uv run pytest -n auto -q -rs --cov --cov-report=xml:tmp/coverage.xml \
+            | tee tmp/pytest.log
+          if grep -qE "^SKIPPED|[0-9]+ skipped" tmp/pytest.log; then
+            echo "::error::Tests were skipped. Everything they need is installed here, so a skip means the environment is wrong, not that the test is inapplicable."
+            grep -E "^SKIPPED" tmp/pytest.log || true
+            exit 1
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: ./tmp/coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the GTK stack
+        # mypy resolves gi lazily, but vulture and bandit parse the tree and the doit
+        # tasks run through the project environment, so build the same one as test.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $SYSTEM_PACKAGES
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Create the environment
+        run: |
+          uv venv --system-site-packages --python /usr/bin/python3
+          uv sync --all-extras --dev
+
+      - name: Check code formatting
+        run: uv run doit format_check
+
+      - name: Run linting
+        run: uv run doit lint
+
+      - name: Run type checking
+        run: uv run doit type_check
+
+      - name: Detect dead code
+        run: uv run doit deadcode
+
+      - name: Run security scan
+        run: uv run doit security
+
+      - name: Run spell check
+        run: uv run doit spell_check
+
+      - name: Run dependency audit
+        run: uv run doit audit
+
+  ci-complete:
+    if: always()
+    needs: [test, lint]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check CI status
+        run: |
+          echo "Test result: ${{ needs.test.result }}"
+          echo "Lint result: ${{ needs.lint.result }}"
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "Test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "Lint job failed"
+            exit 1
+          fi
+          echo "CI completed successfully"

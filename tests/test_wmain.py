@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import configparser
 import inspect
 import os
+import re
 import subprocess
 import sys
-import re
 import time
 import types
-import configparser
 from pathlib import Path
 
 import pytest
@@ -239,7 +239,9 @@ def make_host(app_module):
 
 def make_wmain_with_host(app_module, host, has_child=False):
     model = FakeTreeModel()
-    iter_ = model.register("ops/prod/router", host=host if not has_child else None, has_child=has_child)
+    iter_ = model.register(
+        "ops/prod/router", host=host if not has_child else None, has_child=has_child
+    )
     selection = FakeSelection(model, iter_)
     tree = FakeTreeView(selection)
 
@@ -369,14 +371,13 @@ def test_populate_commands_menu_without_an_application(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     wmain.popupMenu = types.SimpleNamespace(mnuCommands=DummyMenu())
     wmain.createMenuItem = lambda shortcut, label: MenuItemStub(shortcut, label)
-    monkeypatch.setattr(
-        app_module.Gtk.Application, "get_default", lambda: None, raising=False
-    )
+    monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
     monkeypatch.setattr(app_module, "shortcuts", {"ALT+R": "run reboot now"})
 
     wmain.populateCommandsMenu()
 
     assert len(wmain.popupMenu.mnuCommands.children) == 1
+
 
 def test_get_context_tree_iter_prefers_context_path(app_module):
     host = make_host(app_module)
@@ -402,9 +403,7 @@ def test_on_btnDel_clicked_removes_host(monkeypatch, app_module):
     wmain.writeConfig = lambda: calls.__setitem__("write", calls["write"] + 1)
 
     monkeypatch.setattr(app_module, "groups", {host.group: [host]})
-    monkeypatch.setattr(
-        app_module, "msgconfirm", lambda _text: app_module.Gtk.ResponseType.OK
-    )
+    monkeypatch.setattr(app_module, "msgconfirm", lambda _text: app_module.Gtk.ResponseType.OK)
 
     wmain.on_btnDel_clicked(None)
 
@@ -436,9 +435,7 @@ def test_on_btnDel_clicked_removes_group(monkeypatch, app_module):
             child_host.group: [child_host],
         },
     )
-    monkeypatch.setattr(
-        app_module, "msgconfirm", lambda _text: app_module.Gtk.ResponseType.OK
-    )
+    monkeypatch.setattr(app_module, "msgconfirm", lambda _text: app_module.Gtk.ResponseType.OK)
 
     wmain.on_btnDel_clicked(None)
 
@@ -487,7 +484,7 @@ def test_run_custom_command_invokes_vte_feed(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = app_module.Vte.Terminal()
     wmain.get_target_terminal = lambda: terminal
-    fed = {}
+    fed: dict = {}
     monkeypatch.setattr(app_module, "vte_feed", lambda term, data: fed.setdefault("data", data))
 
     wmain.run_custom_command("echo hi")
@@ -571,10 +568,10 @@ class ClipboardTerminal:
     """Mirrors the Vte.Terminal clipboard surface. Only add methods VTE really has."""
 
     def __init__(self, has_selection: bool = True, screen_text: str = "visible screen\n"):
-        self.copied = []
+        self.copied: list = []
         self.pasted = 0
-        self.pasted_text = []
-        self.selected = []
+        self.pasted_text: list = []
+        self.selected: list = []
         self._has_selection = has_selection
         self.screen_text = screen_text
         self.font_scale = 1.0
@@ -1049,6 +1046,8 @@ def test_exportar_servidores_writes_encrypted_hosts(monkeypatch, tmp_path, app_m
     assert cp.get("gcm", "gcm")
     assert cp.get("host 1", "group") == "ops/prod"
     assert cp.get("host 1", "name") == host.name
+
+
 class DummyTreeNode:
     def __init__(self, label, host=None):
         self.label = label
@@ -1254,7 +1253,9 @@ def test_terminal_paste_confirms_large_paste_and_delivers_on_ok(monkeypatch, app
     monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 2)
     prompts = []
     monkeypatch.setattr(
-        app_module, "msgconfirm", lambda text: prompts.append(text) or app_module.Gtk.ResponseType.OK
+        app_module,
+        "msgconfirm",
+        lambda text: prompts.append(text) or app_module.Gtk.ResponseType.OK,
     )
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal()
@@ -1503,9 +1504,7 @@ def test_right_click_paste_goes_through_the_policy(monkeypatch, app_module):
     terminal = ClipboardTerminal()
     terminal.get_parent = NotebookAncestor
     _clipboard(monkeypatch, app_module, "echo hi\n")
-    event = types.SimpleNamespace(
-        type=app_module.Gdk.EventType.BUTTON_PRESS, button=3, x=0, y=0
-    )
+    event = types.SimpleNamespace(type=app_module.Gdk.EventType.BUTTON_PRESS, button=3, x=0, y=0)
 
     wmain.on_terminal_click(terminal, event)
 
@@ -1606,9 +1605,7 @@ def test_bell_marks_the_visible_tab_when_the_window_is_not_active(app_module, mo
     assert wmain.wMain.urgency is True
 
 
-def test_bell_does_not_raise_the_urgency_hint_while_the_window_is_active(
-    app_module, monkeypatch
-):
+def test_bell_does_not_raise_the_urgency_hint_while_the_window_is_active(app_module, monkeypatch):
     wmain, terminal, _label, _page = _bell_setup(app_module, monkeypatch, window_active=True)
 
     wmain.on_terminal_bell(terminal)
@@ -1694,9 +1691,7 @@ def test_sanitize_log_name_caps_the_length(app_module):
     assert name == "x" * app_module.LOG_NAME_MAX
 
 
-def test_build_log_prefix_keeps_a_traversing_name_inside_the_log_directory(
-    tmp_path, app_module
-):
+def test_build_log_prefix_keeps_a_traversing_name_inside_the_log_directory(tmp_path, app_module):
     prefix = app_module.build_log_prefix(tmp_path, "", "../../../../tmp/pwned", "", "20260823")
 
     assert prefix is not None
@@ -1907,9 +1902,7 @@ def _clone_blocks(app_module):
     source = Path(app_module.__file__).read_text()
     return [
         source[m : m + 400]
-        for m in (
-            i for i in range(len(source)) if source.startswith("host = term.host.clone()", i)
-        )
+        for m in (i for i in range(len(source)) if source.startswith("host = term.host.clone()", i))
     ]
 
 
@@ -1934,9 +1927,15 @@ class LogHost:
 @pytest.mark.parametrize(
     ("host", "expected"),
     [
-        (LogHost(name="OPNA-TS", user="root", host="10.0.0.4", port=22), "OPNA-TS (root@10.0.0.4:22)"),
+        (
+            LogHost(name="OPNA-TS", user="root", host="10.0.0.4", port=22),
+            "OPNA-TS (root@10.0.0.4:22)",
+        ),
         (LogHost(name="web-01", user="", host="10.0.0.5", port=22), "web-01 (10.0.0.5:22)"),
-        (LogHost(name="web-01", user="deploy", host="10.0.0.5", port=""), "web-01 (deploy@10.0.0.5)"),
+        (
+            LogHost(name="web-01", user="deploy", host="10.0.0.5", port=""),
+            "web-01 (deploy@10.0.0.5)",
+        ),
         (LogHost(name="local", host=""), "local"),
     ],
 )
@@ -1980,7 +1979,7 @@ def test_tab_focus_still_updates_the_title_after_a_plain_label(app_module, monke
     """The crash aborted on_tab_focus before it reached the title update."""
     monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", 1)
     monkeypatch.setattr(app_module.conf, "APP_TITLE", "GCM")
-    titles = []
+    titles: list = []
     notebook = BellNotebook(PlainTabLabel())
     page = types.SimpleNamespace(get_parent=lambda: notebook)
     wmain = object.__new__(app_module.Wmain)
@@ -2031,13 +2030,17 @@ def test_install_menubar_renders_the_model_into_the_layout(app_module, monkeypat
     menubar_widget = MenuBarStub()
     menubar_widget.children = [object(), object()]  # model items, Help last
     monkeypatch.setattr(
-        app_module.Gtk, "MenuBar",
-        types.SimpleNamespace(new_from_model=lambda model: menubar_widget), raising=False,
+        app_module.Gtk,
+        "MenuBar",
+        types.SimpleNamespace(new_from_model=lambda model: menubar_widget),
+        raising=False,
     )
     monkeypatch.setattr(app_module.Gtk, "MenuItem", MenuItemStubGtk, raising=False)
     monkeypatch.setattr(
-        app_module.Gtk.Application, "get_default",
-        lambda: types.SimpleNamespace(get_menubar=lambda: object()), raising=False,
+        app_module.Gtk.Application,
+        "get_default",
+        lambda: types.SimpleNamespace(get_menubar=lambda: object()),
+        raising=False,
     )
 
     wmain = object.__new__(app_module.Wmain)
@@ -2316,9 +2319,7 @@ def test_uri_to_terminal_text(app_module, _real_uri_decoding, uri, expected):
 
 
 def test_uris_to_terminal_text_joins_and_skips_blanks(app_module, _real_uri_decoding):
-    text = app_module.uris_to_terminal_text(
-        ["file:///tmp/a.py", "", "file:///tmp/b%20c.py", None]
-    )
+    text = app_module.uris_to_terminal_text(["file:///tmp/a.py", "", "file:///tmp/b%20c.py", None])
 
     assert text == "/tmp/a.py '/tmp/b c.py'"
 
@@ -2357,14 +2358,14 @@ class DropData:
 def _drop(app_module, monkeypatch, data):
     finished = []
     monkeypatch.setattr(
-        app_module.Gtk, "drag_finish",
-        lambda ctx, success, delete, t: finished.append(success), raising=False,
+        app_module.Gtk,
+        "drag_finish",
+        lambda ctx, success, delete, t: finished.append(success),
+        raising=False,
     )
     wmain = object.__new__(app_module.Wmain)
     terminal = DropTerminal()
-    handled = wmain.on_terminal_drag_data_received(
-        terminal, object(), 0, 0, data, 0, 0
-    )
+    handled = wmain.on_terminal_drag_data_received(terminal, object(), 0, 0, data, 0, 0)
     return terminal, finished, handled
 
 
@@ -2407,7 +2408,8 @@ def test_an_empty_drop_feeds_nothing(app_module, monkeypatch):
 def test_uri_drop_wins_over_text_when_both_are_offered(app_module, monkeypatch, _real_uri_decoding):
     """File managers offer both; the URI is the one that carries a usable path."""
     terminal, _finished, _handled = _drop(
-        app_module, monkeypatch,
+        app_module,
+        monkeypatch,
         DropData(uris=["file:///tmp/a.py"], text="file:///tmp/a.py"),
     )
 
@@ -2459,7 +2461,9 @@ class LocationTerminal:
 def test_terminal_is_local_only_for_a_shell_session(app_module):
     """A path printed by a remote host does not exist here."""
     assert app_module.terminal_is_local(LocationTerminal(LogHost(name="local", host=""))) is True
-    assert app_module.terminal_is_local(LocationTerminal(LogHost(name="w", host="10.0.0.5"))) is False
+    assert (
+        app_module.terminal_is_local(LocationTerminal(LogHost(name="w", host="10.0.0.5"))) is False
+    )
     assert app_module.terminal_is_local(LocationTerminal(None)) is False
 
 
@@ -2488,7 +2492,9 @@ def test_build_editor_command_prefers_the_configured_template(app_module, monkey
     monkeypatch.setattr(app_module.conf, "EDITOR_COMMAND", "code --goto {file}:{line}:{col}")
 
     assert app_module.build_editor_command("/tmp/x.py", 42, 7) == [
-        "code", "--goto", "/tmp/x.py:42:7",
+        "code",
+        "--goto",
+        "/tmp/x.py:42:7",
     ]
 
 
@@ -2530,9 +2536,7 @@ def test_open_file_location_skips_remote_sessions(tmp_path, app_module, _spawned
     (tmp_path / "app.py").write_text("x\n")
     terminal = LocationTerminal(LogHost(name="w", host="10.0.0.5"))
 
-    result = app_module.Wmain.open_file_location(
-        None, terminal, f"{tmp_path / 'app.py'}:42"
-    )
+    result = app_module.Wmain.open_file_location(None, terminal, f"{tmp_path / 'app.py'}:42")
 
     assert result is False
     assert _spawned == []
@@ -2586,8 +2590,10 @@ def test_ctrl_click_on_a_file_match_opens_it(app_module, monkeypatch):
     """Without this the match is registered, shows a pointer, and does nothing."""
     opened = []
     monkeypatch.setattr(
-        app_module.Wmain, "open_file_location",
-        lambda self, term, match: opened.append(match) or True, raising=False,
+        app_module.Wmain,
+        "open_file_location",
+        lambda self, term, match: opened.append(match) or True,
+        raising=False,
     )
     wmain = object.__new__(app_module.Wmain)
     terminal = ClickTerminal("src/app.py:42", "file", "file")
@@ -2600,8 +2606,10 @@ def test_ctrl_click_on_a_url_does_not_go_to_the_file_handler(app_module, monkeyp
     opened = []
     shown = []
     monkeypatch.setattr(
-        app_module.Wmain, "open_file_location",
-        lambda self, term, match: opened.append(match), raising=False,
+        app_module.Wmain,
+        "open_file_location",
+        lambda self, term, match: opened.append(match),
+        raising=False,
     )
     monkeypatch.setattr(app_module.Gtk, "show_uri", lambda *a: shown.append(a), raising=False)
     wmain = object.__new__(app_module.Wmain)
@@ -2687,9 +2695,7 @@ class BufferTerminal:
         self.selected = []
 
     def get_vadjustment(self):
-        return types.SimpleNamespace(
-            get_lower=lambda: self._lower, get_upper=lambda: self._upper
-        )
+        return types.SimpleNamespace(get_lower=lambda: self._lower, get_upper=lambda: self._upper)
 
     def get_text_range_format(self, fmt, srow, scol, erow, ecol):
         self.range_calls.append((srow, scol, erow, ecol))
@@ -2757,9 +2763,7 @@ class FormatTerminal:
         return "html" if fmt == self._formats.HTML else "text"
 
     def get_vadjustment(self):
-        return types.SimpleNamespace(
-            get_lower=lambda: self._lower, get_upper=lambda: self._upper
-        )
+        return types.SimpleNamespace(get_lower=lambda: self._lower, get_upper=lambda: self._upper)
 
     def get_text_range_format(self, fmt, srow, scol, erow, ecol):
         self.range_calls.append((self._name(fmt), srow, scol, erow, ecol))
@@ -3077,8 +3081,10 @@ def test_view_buffer_shortcut_opens_the_viewer(app_module, monkeypatch):
     """The shortcut is the discoverable route; without dispatch it is inert."""
     opened = []
     monkeypatch.setattr(
-        app_module.Wmain, "show_buffer_viewer",
-        lambda self, term: opened.append(term), raising=False,
+        app_module.Wmain,
+        "show_buffer_viewer",
+        lambda self, term: opened.append(term),
+        raising=False,
     )
     monkeypatch.setattr(app_module, "get_key_name", lambda event: "CTRL+SHIFT+F")
     monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+F": app_module._VIEW_BUFFER})
@@ -3155,7 +3161,7 @@ def test_disabling_logging_flushes_first(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = LogTerminal("tail of the session", row=0, col=19)
     terminal.log_handler_id = 7
-    disconnected = []
+    disconnected: list = []
     terminal.disconnect = disconnected.append
 
     wmain.set_terminal_logger(terminal, False)
@@ -3170,7 +3176,9 @@ def test_child_exit_flushes_and_marks_the_tab(monkeypatch, app_module):
     terminal = LogTerminal("last line", row=0, col=9)
     marked = []
 
-    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: marked.append(True)))
+    wmain.on_terminal_child_exited(
+        terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: marked.append(True))
+    )
 
     assert terminal.log.entries == ["last line"]
     assert marked == [True]
