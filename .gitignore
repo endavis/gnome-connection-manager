@@ -68,3 +68,6 @@ gcm.conf
 
 # mkdocs build output
 site/
+
+# Per-developer Claude Code settings; a pre-commit hook also refuses these
+.claude/settings.local.json
