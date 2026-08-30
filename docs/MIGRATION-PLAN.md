@@ -107,15 +107,44 @@ still fails the test, a new vendored file does not.
 
 ## Phase 2 — Python floor and version drift
 
-- [ ] `requires-python = ">=3.12"`
-- [ ] ruff `target-version = "py312"`, mypy `python_version = "3.12"`
-- [ ] Update classifiers: drop 3.8–3.11, add 3.13
-- [ ] Set the version to **1.2.2** everywhere (`pyproject.toml` says 1.2.0, `Makefile`
-      already says 1.2.2 — the Makefile is correct)
-- [ ] Tests still 534
+- [x] `requires-python = ">=3.12"`
+- [x] ruff `target-version = "py312"`, mypy `python_version = "3.12"`
+- [x] Update classifiers: drop 3.8–3.11, add 3.13
+- [x] Set the version to **1.2.2** everywhere
+- [x] `uv lock` refreshed — 518 lines lighter, all the 3.8–3.11 resolution branches gone
+- [x] Tests 535 (534 + the new version check)
 
-Note that raising the floor may *surface* new ruff findings (pyupgrade rules apply more
-aggressively at py312). Baseline the count before judging it.
+### The version drift was worse than recorded
+
+Three values across four files, not two: `pyproject.toml` 1.2.0, `__init__.py` 1.2.0,
+`app.py` **1.2.1**, `Makefile` 1.2.2. `app_version` feeds the About dialog and the update
+check, so the application reported a different release from the `.deb` the user installed.
+
+All four now say 1.2.2, and `test_every_declared_version_agrees` reads all four and fails
+naming the offender, so it cannot drift again silently.
+
+### Measured against baseline
+
+| Measure | Baseline | After | Note |
+|---|---|---|---|
+| Tests | 534 | 535 | +1, the version check |
+| ruff `src/` | 4 | 7 | +3 newly surfaced at py312 |
+| ruff `tests/` | 3 | 3 | unchanged |
+| mypy | 138 in 2 files | **132 in 1 file** | improved; `main.py` now clean |
+
+### Deferred: 3 ruff findings newly surfaced at py312
+
+These block Phase 7 (CI runs ruff) and need a decision, but they are unrelated to the
+migration and are deliberately not bundled into a version bump.
+
+- `app.py:664` `PTH115 os.readlink()` → `Path.readlink()`. Mechanical.
+- `app.py:1436,1457` `B905 zip() without strict=`. **Password encryption.** In `encrypt`,
+  `_pkcs7_pad` guarantees 16-byte blocks so the lengths always match and `strict=True` is
+  safe. In `decrypt` the ciphertext is externally supplied and can be short, so the final
+  block can genuinely mismatch — today `zip` truncates and `_pkcs7_unpad` usually fails,
+  but it could return garbage instead of `""`. Both sit inside `except Exception: return ""`,
+  so the caller sees the same thing either way. `strict=True` is the better behaviour
+  (fails closed), but it is a crypto change and deserves its own review.
 
 ## Phase 3 — Task runner: just to doit
 

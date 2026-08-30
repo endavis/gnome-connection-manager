@@ -124,7 +124,7 @@ if e != 0:
 # Gdk.threads_init()
 
 app_name = "Gnome Connection Manager"
-app_version = "1.2.1"
+app_version = "1.2.2"
 app_web = "http://www.kuthulu.com/gcm"
 app_fileversion = "1"
 
