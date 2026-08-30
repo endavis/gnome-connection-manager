@@ -521,7 +521,7 @@ those improvements "in the rewrite instead" means building the substrate first.
 #### Effort
 
 Measured from the current tree: `app.py` is 7,244 lines with ~443 direct toolkit calls
-(305 `Gtk.`, 100 `Gdk.`, 38 `Vte.`), plus 2,401 lines of Glade and 9,096 lines of tests.
+(305 `Gtk.`, 100 `Gdk.`, 38 `Vte.`), plus 2,401 lines of Glade and 15,800 lines of tests.
 Toolkit-free logic (`conf`, `Host`, `HostUtils`, encryption, and the `utils` package) is
 roughly 800 lines, so about 85% of the application is rewritten, before the new scope this
 spec adds.

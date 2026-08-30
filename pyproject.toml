@@ -135,6 +135,15 @@ ignore = [
 # calls. Our own tools/doit/gcm.py sits in this tree but passes these rules anyway.
 "tools/doit/*" = ["E741", "F401", "PTH"]
 "tools/pyproject_template/*" = ["E741", "F401", "PTH"]
+# Tests vendored from the template alongside the hooks and workflows they cover (#127).
+# Same reasoning as the tools/ entries above: they are replaced wholesale on a sync, and
+# upstream lints them under a config that does not select TC (flake8-type-checking).
+"tests/test_hook_*.py" = ["TC"]
+"tests/test_bash_ban_raw_tools.py" = ["TC"]
+"tests/test_ci_workflow.py" = ["TC"]
+"tests/test_codeql_workflow.py" = ["TC"]
+"tests/test_workflow_action_pinning.py" = ["TC"]
+"tests/test_dependabot_*.py" = ["TC"]
 
 [tool.ruff.format]
 quote-style = "double"
