@@ -110,7 +110,7 @@ def test_load_config_populates_conf_groups_and_shortcuts(tmp_path, app_module, m
     monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_path))
     monkeypatch.setattr(app_module, "groups", {})
     monkeypatch.setattr(app_module, "shortcuts", {})
-    monkeypatch.setattr(app_module, "decrypt", lambda _pwd, value: value)
+    monkeypatch.setattr(app_module.crypto, "decrypt", lambda _pwd, value, **_kw: value)
 
     wmain = object.__new__(app_module.Wmain)
     wmain.loadConfig()
@@ -135,7 +135,7 @@ def test_write_config_persists_conf_window_hosts_and_shortcuts(tmp_path, app_mod
     """Ensure writeConfig serializes runtime values back to disk."""
     config_file = tmp_path / "gcm.conf"
     monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_file))
-    monkeypatch.setattr(app_module, "encrypt", lambda _pwd, value: value)
+    monkeypatch.setattr(app_module.crypto, "encrypt", lambda _pwd, value: value)
 
     conf = app_module.conf
     conf.WORD_SEPARATORS = "abc"
@@ -327,7 +327,7 @@ def _load_with_keys(tmp_path, app_module, monkeypatch, keys, shortcuts=None):
     monkeypatch.setattr(app_module, "groups", {})
     monkeypatch.setattr(app_module, "shortcuts", {})
     monkeypatch.setattr(app_module, "custom_keys", {})
-    monkeypatch.setattr(app_module, "decrypt", lambda _pwd, value: value)
+    monkeypatch.setattr(app_module.crypto, "decrypt", lambda _pwd, value, **_kw: value)
 
     object.__new__(app_module.Wmain).loadConfig()
     return app_module.custom_keys

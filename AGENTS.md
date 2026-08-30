@@ -29,6 +29,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   freeze the interface.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
+- `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which
+  read and write it to the `configparser` object behind gcm.conf. Pure: the passphrase and
+  the pre-v2 `legacy` flag are arguments the caller supplies, not defaults read from
+  `get_password()` and `conf.VERSION` as they used to be, and `Vte.EraseBinding.AUTO` is
+  held as `ERASE_BINDING_AUTO` with a test asserting it still matches the real enum.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -121,7 +126,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   elsewhere. Sweep every `get_widget("...")` id in the source against the glade.
 - **Run the app for tracebacks** with a throwaway HOME:
   `HOME=<tmpdir> timeout 12 uv run python -m gnome_connection_manager`. Never point it at a
-  real `~/.gcm`.
+  real `~/.gcm`. Give it a scratch `DISPLAY` too — a real one puts a GCM window over
+  whatever the developer is doing and steals focus for the whole timeout. `pytest` already
+  starts its own Xvfb (`pytest_configure` in `tests/conftest.py`); do the same here rather
+  than reusing `:0`, which is only for probes that must measure the real compositor.
 
 ## Configuration & Data Flow
 - User data lives in `~/.gcm/`: `gcm.conf` (INI) holds options, window state, shortcuts, and
@@ -138,6 +146,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Host attributes include group/name/description, connection info, tunnels, terminal
   overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep
   `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in sync.
+  The first two now live in `src/gnome_connection_manager/utils/hosts.py` and the dialogs
+  in `app.py`, so adding an attribute crosses both files.
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
   hides the Port forwarding page for anything that is not SSH, so a Telnet host's dialog has
   three tabs and an SSH host's has four. It looks like a bug from the outside -- a whole tab
