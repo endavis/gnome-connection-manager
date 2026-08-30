@@ -43,6 +43,20 @@ FEATURE_BRANCH = "feature/test"
 
 # --- Bash command cases (no bypass env var) ---
 BASH_CASES = [
+    # The commands the block messages redirect to. Added here (#127) because the matrix
+    # asserted `gh pr merge` is refused without ever asserting its replacement is not:
+    # an over-broad pattern matching "merge" would break the documented workflow and
+    # nothing would have caught it.
+    (
+        "doit pr_merge --pr=130",
+        "ALLOW",
+        "the task gh pr merge redirects to",
+    ),
+    (
+        "doit pr --title=x --body-file=y.md",
+        "ALLOW",
+        "the task gh pr create redirects to",
+    ),
     (
         "git status",
         "ALLOW",
