@@ -421,14 +421,39 @@ metadata header, where msgfmt records a `POT-Creation-Date` that the fallback do
 
 ## Phase 8 — Branch rename
 
-**First irreversible step. Stop here and confirm before running.**
+**Done. The default branch is `main`; `origin/master` is deleted.**
 
-- [ ] `git branch -m master main` locally
-- [ ] `git push -u origin main`
-- [ ] `gh repo edit --default-branch main`
-- [ ] Retarget open PRs
-- [ ] Delete `origin/master`
-- [ ] Grep the repo for `master` references in docs, workflows and `AGENTS.md`
+- [x] `git branch -m master main`, pushed, default branch set on GitHub
+- [x] `origin/master` deleted; the working branch retargeted to `origin/main`
+- [x] Swept for stale `master` references — the only two hits are correct as they stand:
+      a Spanish comment about a "master password", and the vendored hook whose
+      `PROTECTED_BRANCHES` deliberately covers both names
+
+### Blast radius, checked before doing it
+
+| | |
+|---|---|
+| Forks of this repo | 1 — `Kianda/gnome-connection-manager`, still defaulting to `master` |
+| This repo is itself a fork of | `kuthulux/gnome-connection-manager` |
+| Open PRs to retarget | none |
+| Stars / watchers | 1 / 0 |
+
+GitHub redirects `master` to `main` for web URLs and for fetching the default branch, so
+existing clones keep working. What breaks is a hardcoded `master` ref — a fork opening a
+PR against it, or a deep link to `blob/master/...`. Kianda is the contributor behind #2;
+they were deliberately not notified.
+
+### Noted, not done
+
+The repository has **no branch protection and no rulesets**. Nothing was left dangling by
+the rename, but nothing guards `main` either. Now that CI exists, requiring `ci-complete`
+before merge is worth doing — the template's `manage.py` can configure it.
+
+### Memory updated
+
+The stored note describing this project's workflow said "branch from `origin/master` as
+`fix/...` or `feature/...`", which is wrong twice over now. It records `origin/main`,
+`<type>/<issue>-<slug>`, `feat/` over `feature/`, and the hooks that enforce all of it.
 
 ## Phase 9 — configure.py and the docs rewrite
 
