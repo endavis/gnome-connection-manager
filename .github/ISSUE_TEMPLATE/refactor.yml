@@ -1,0 +1,60 @@
+name: 🔧 Refactor Request
+description: Propose code refactoring or improvement
+labels: ["refactor", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Propose a Refactoring
+
+        Describe the current code issue and how you propose to improve it.
+
+  - type: textarea
+    id: current-code-issue
+    attributes:
+      label: Current Code Issue
+      description: Describe the code that needs refactoring and why
+      placeholder: |
+        Describe what code currently exists, where it's located, and what problems it causes.
+        Example: "The validation logic in src/module.py is duplicated across 5 functions,
+        making it difficult to maintain and test..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-improvement
+    attributes:
+      label: Proposed Improvement
+      description: Describe how you propose to refactor the code
+      placeholder: |
+        Describe the refactoring approach and what the code will look like after.
+        Include specific files/modules that will be affected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: How will we know the refactoring is complete and successful?
+      placeholder: |
+        - [ ] Code duplication eliminated
+        - [ ] All existing tests still pass
+        - [ ] New tests added for refactored code
+        - [ ] No breaking changes to public API
+        - [ ] Code is more maintainable/readable
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        - Performance impact
+        - Breaking change considerations
+        - Migration steps needed
+        - Related issues or PRs
+    validations:
+      required: false

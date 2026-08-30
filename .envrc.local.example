@@ -1,0 +1,29 @@
+# .envrc.local - Personal settings (git-ignored)
+# Copy this file to .envrc.local and customize
+
+# Development preferences
+# export DEBUG=true
+# export LOG_LEVEL=DEBUG
+
+# API keys and credentials (NEVER commit these!)
+# export API_KEY=your_api_key_here
+# export DATABASE_URL=sqlite:///tmp/dev.db
+
+# Override cache locations if needed
+# export UV_CACHE_DIR="$(pwd)/tmp/.uv_cache"
+# export RUFF_CACHE_DIR="$(pwd)/tmp/.ruff_cache"
+# export MYPY_CACHE_DIR="$(pwd)/tmp/.mypy_cache"
+# export COVERAGE_FILE="$(pwd)/tmp/.coverage"
+# export PRE_COMMIT_HOME="$(pwd)/tmp/.pre-commit"
+
+# Custom environment variables for your workflow
+# export EDITOR=vim
+# export BROWSER=firefox
+
+# Claude Code LSP support (enables fast code navigation)
+# Uncomment to enable Language Server Protocol in Claude Code
+# See .claude/lsp-setup.md for setup instructions
+# export ENABLE_LSP_TOOL=1
+
+# Pyright LSP debug logging (uncomment for troubleshooting LSP issues)
+# export PYRIGHT_PYTHON_DEBUG=1

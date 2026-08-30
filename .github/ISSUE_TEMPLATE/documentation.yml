@@ -1,0 +1,74 @@
+name: 📚 Documentation Request
+description: Request new documentation or improvements to existing docs
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Documentation Request
+
+        Help us improve our documentation by describing what's needed.
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What kind of documentation change is needed?
+      options:
+        - New guide or tutorial
+        - Update existing documentation
+        - Fix incorrect information
+        - Add code examples
+        - API documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation that is needed
+      placeholder: |
+        What documentation is missing or needs improvement?
+        Example: "There's no guide explaining how to configure logging..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Suggested Location
+      description: Where should this documentation live?
+      placeholder: |
+        - docs/getting-started/
+        - docs/examples/
+        - README.md
+        - Inline code comments
+    validations:
+      required: false
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: How will we know the documentation is complete?
+      placeholder: |
+        - [ ] Topic is fully explained
+        - [ ] Code examples included
+        - [ ] Added to navigation/index
+        - [ ] Reviewed for accuracy
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        - Links to related documentation
+        - Examples from other projects
+        - Target audience
+    validations:
+      required: false

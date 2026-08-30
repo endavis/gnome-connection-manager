@@ -1,0 +1,56 @@
+# GitHub label definitions for this repository.
+#
+# Source of truth for labels replicated to GitHub. Edit this file and run
+# `doit labels_sync` (or `doit labels_sync --dry-run` to preview) to reconcile
+# the repository's labels with the list below.
+#
+# Fields:
+#   name        (required) Label name exactly as it appears on GitHub.
+#   color       6-char hex (no leading "#"). Defaults to "ededed".
+#   description Plain text description. Defaults to "".
+
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+- name: documentation
+  color: 0075ca
+  description: Improvements or additions to documentation
+- name: refactor
+  color: F9D0C4
+  description: Code refactoring and cleanup
+- name: chore
+  color: FEF2C0
+  description: Maintenance, tooling, CI tasks
+- name: needs-triage
+  color: FBCA04
+  description: Needs review and prioritization
+- name: needs-adr
+  color: d4c5f9
+  description: This issue requires an Architecture Decision Record
+- name: ready-to-merge
+  color: 0E8A16
+  description: PR is reviewed and ready to merge
+- name: full-matrix
+  color: 1D76DB
+  description: Run CI on all supported Python versions
+- name: automerge-blocked
+  color: B60205
+  description: Block dependabot auto-merge for this PR
+- name: do-not-merge
+  color: B60205
+  description: Prevent the merge gate from allowing this PR
+- name: security
+  color: d73a4a
+  description: Security vulnerability or fix
+- name: automated
+  color: 02db74
+  description: Created or managed by automation
+- name: dependencies
+  color: 0366d6
+  description: Pull requests that update a dependency file
+- name: github_actions
+  color: "000000"
+  description: Pull requests that update GitHub Actions code

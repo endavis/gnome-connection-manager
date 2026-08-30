@@ -1,0 +1,58 @@
+name: ✨ Feature Request
+description: Propose a new feature or enhancement
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Propose a New Feature
+
+        Describe the problem you're trying to solve and your proposed solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this feature solve? What need does it address?
+      placeholder: |
+        Describe the problem or limitation you're experiencing.
+        Example: "Currently, there's no way to validate custom data types..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how you envision this feature working
+      placeholder: |
+        Clear description of what you want to happen.
+        Include specific implementation ideas if you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: How will we know this feature is complete and working correctly?
+      placeholder: |
+        - [ ] Feature implements X functionality
+        - [ ] Tests added and passing
+        - [ ] Documentation updated
+        - [ ] Works with existing code without breaking changes
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, examples, links, or screenshots
+      placeholder: |
+        - Similar features in other projects
+        - Code examples
+        - Use cases
+        - Breaking change considerations
+    validations:
+      required: false

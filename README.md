@@ -2,7 +2,7 @@
 
 A tabbed SSH and telnet connection manager for GTK 3 desktop environments.
 
-Requires Python 3.8+ and GTK 3.
+Requires Python 3.12+ and GTK 3.
 
 ---
 

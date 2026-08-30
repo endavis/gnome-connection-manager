@@ -65,3 +65,6 @@ gcm.conf
 
 # doit task state
 .doit.db*
+
+# mkdocs build output
+site/

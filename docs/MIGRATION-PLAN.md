@@ -463,27 +463,58 @@ The stored note describing this project's workflow said "branch from `origin/mas
 `fix/...` or `feature/...`", which is wrong twice over now. It records `origin/main`,
 `<type>/<issue>-<slug>`, `feat/` over `feature/`, and the hooks that enforce all of it.
 
-## Phase 9 — configure.py and the docs rewrite
+## Phase 9 — the remaining template files
 
-Highest-breakage phase. Do it last, when everything else is green.
+**Done, and `configure.py` was not run.**
 
-- [ ] Copy the remaining template files: `mkdocs.yml`, `CHANGELOG.md`, `.editorconfig`,
-      `.envrc`, `.github/` non-workflow files, `.claude/`, `.codex/`, `.copilot/`, `.agents/`
-- [ ] Run `configure.py` via `manage.py configure`
-- [ ] **Verify `LICENSE` is still GPL-3.0** — check immediately, before anything else
-- [ ] Repair the doc tests it breaks:
-      `test_agents_md_references_paths_that_exist`,
-      `test_agents_md_names_symbols_that_exist`,
-      `test_agents_md_carries_no_line_number_references`,
-      `test_agents_md_does_not_claim_tests_are_manual`,
-      `test_agents_md_lists_the_locales_that_exist`,
-      `test_agents_md_describes_every_module`,
-      `test_documented_application_accelerators_are_real`,
-      `test_doc_is_linked_from_the_readme`,
-      `test_internal_links_resolve_to_a_heading`
-- [ ] Merge the template's `AGENTS.md` with GCM's, keeping the project-specific content the
-      tests assert on
-- [ ] `mkdocs build` succeeds
+- [x] `mkdocs.yml`, `CHANGELOG.md`, `.editorconfig`, `.envrc`, `.envrc.local.example`
+- [x] `.github/`: `CONTRIBUTING.md`, `SECURITY.md`, `CODEOWNERS`, `labels.yml`,
+      `pull_request_template.md`, `CODE_OF_CONDUCT.md`, `ISSUE_TEMPLATE/`
+- [x] `docs/template/` — the vendored tooling's own documentation, minus the two
+      setup-only files `cleanup.py --setup` would remove
+- [x] Placeholders substituted by hand
+- [x] `mkdocs build --strict` passes
+- [x] **`LICENSE` still GPL-3.0**, `authors`/`maintainers` split intact, 19 doc tests green
+- [x] `.claude/`, `.codex/`, `.copilot/`, `.agents/` **deferred** to
+      [#119](https://github.com/endavis/gnome-connection-manager/issues/119)
+
+### Why `configure.py` was skipped
+
+It is a placeholder replacer built for a fresh template checkout. GCM has real content in
+every file it targets, and running it would have rewritten `AGENTS.md` and `README.md` —
+the two files 12 tests assert against — to regenerate content we wanted to keep.
+
+It would also have collapsed the `authors`/`maintainers` split. `get_first_author()` reads
+`[project].authors[0]` and nothing in the tooling reads `maintainers`, so it detected
+`Renzo Bertuzzi` — the original author — and would have written that name into generated
+prose about the current maintainer, and into `pyproject.toml` over the split GCM had
+correct. Filed upstream as
+[endavis/pyproject-template#787](https://github.com/endavis/pyproject-template/issues/787).
+
+Substituting by hand applied the split the issue proposes: the **maintainer** for upkeep
+(`site_author`, `CODEOWNERS`, security contact), the **author** preserved where it is about
+origin (`LICENSE` copyright, `pyproject.toml` authors).
+
+### Adaptations
+
+- **`mkdocs.yml` nav** was the template's own docs tree — ADRs, examples, a table of
+  contents GCM does not have — and produced 62 strict-mode warnings. Replaced with GCM's
+  actual docs. `MIGRATION-PLAN.md` is listed under `not_in_nav`, being transient.
+- **`CONTRIBUTING.md` described a PyPI release flow GCM does not have.** Those ~300 lines
+  now say what is actually true: static version, no `release.yml`, packaging is a `.deb`
+  built by the `Makefile` with `fpm`.
+- **`CHANGELOG.md`** shipped with "Initial project structure / Basic functionality", which
+  is wrong for a project at 1.2.2 with years of history. Rewritten to start at this
+  migration and point at the git log for what came before.
+- **`README.md`** still claimed Python 3.8+, stale since Phase 2.
+- `site/` added to `.gitignore`.
+
+### A trap worth remembering
+
+The first attempt at the nav replacement used `s.index("nav:")`, which matches
+`not_in_nav:` — it appears earlier in the file and contains that substring. The nav was
+pasted into the wrong key and mkdocs failed with a type error rather than anything
+mentioning nav. Anchor on `^nav:$`.
 
 ## Phase 10 — Land it
 
