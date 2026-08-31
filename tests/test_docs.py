@@ -295,3 +295,80 @@ def test_spec_effort_figures_are_still_roughly_true(pattern, measure):
     assert drift <= _FIGURE_TOLERANCE, (
         f"SPEC.md says {documented:,} but the tree has {actual:,} ({drift:.0%} out); re-measure §14"
     )
+
+
+# -- the task runner is doit, and the docs have to say so (#146) ------------
+
+# `just` was replaced by `doit` in e944cdb. Every recipe was migrated, but three doc
+# references were not, and one of them sat inside a block of otherwise-correct doit
+# commands -- the shape of drift a reader trusts and a writer skims past.
+_JUST_INVOCATION = re.compile(
+    r"""
+      install \s+ just \b        # cargo install just / apt install just
+    | ` \s* just \b              # `just clean` in prose
+    | ^ \s* just \b              # just clean, on its own line in a code block
+    | github\.com/casey/just     # a link naming it as the project's task runner
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+
+
+@pytest.mark.parametrize("relative", _MARKDOWN_DOCS)
+def test_docs_do_not_invoke_just(relative):
+    """The word survives in prose ("just a", "justified"); the command must not."""
+    body = (REPO / relative).read_text(encoding="utf-8")
+
+    found = sorted({m.group(0).strip() for m in _JUST_INVOCATION.finditer(body)})
+
+    assert not found, f"{relative} still invokes the removed task runner: {found}"
+
+
+# doit's own subcommands, which are not tasks and so are not in tools/doit/.
+_DOIT_BUILTINS = {"list", "help", "clean", "forget", "ignore", "auto", "info", "reset-dep"}
+
+
+def _defined_task_names() -> set[str]:
+    defined = set()
+    for module in sorted((REPO / "tools" / "doit").glob("*.py")):
+        source = module.read_text(encoding="utf-8")
+        defined.update(re.findall(r"^def task_(\w+)", source, re.MULTILINE))
+    return defined
+
+
+def _command_lines(body: str) -> list[str]:
+    """Every inline-code span and every line inside a fenced block.
+
+    Prose says "the doit tasks" and "doit is a dev dependency"; only these two forms
+    are a reader being told what to type, so only these two are checked.
+    """
+    lines = []
+    in_fence = False
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            lines.append(line.strip())
+        else:
+            lines.extend(span.strip() for span in re.findall(r"`([^`]+)`", line))
+    return lines
+
+
+def test_documented_doit_tasks_all_exist():
+    """A named task that does not exist is the failure #146 was made of: `just run`
+    became `doit launch`, and nothing would have caught a doc that kept saying `run`."""
+    known = _defined_task_names() | _DOIT_BUILTINS
+    assert "launch" in known, "task discovery found nothing; the parser is wrong"
+
+    unknown = {}
+    for relative in _MARKDOWN_DOCS:
+        named = set()
+        for line in _command_lines((REPO / relative).read_text(encoding="utf-8")):
+            found = re.match(r"doit\s+([a-z][\w-]*)", line)
+            if found:
+                named.add(found.group(1))
+        missing = sorted(named - known)
+        if missing:
+            unknown[relative] = missing
+
+    assert not unknown, f"docs name doit tasks that do not exist: {unknown}"
