@@ -43,11 +43,8 @@ gnome-connection-manager/
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-3. **just** (preferred task runner):
-   ```bash
-   cargo install just
-   # or: sudo apt install just
-   ```
+3. **doit** (task runner) -- a dev dependency, installed by the setup step below.
+   No separate install is needed.
 
 > Use the doit tasks for day-to-day development (`doit launch`, `doit check`, etc.).
 > When you need to run a command that doesn't have a task, wrap it with `uv run ...`
@@ -188,10 +185,10 @@ This project is in the process of modernization:
 ```bash
 # Quick reference
 doit list         # List all tasks
-doit launch          # Run the app
+doit launch       # Run the app
 doit check        # Run all quality checks
 doit coverage     # Test with coverage report
-just clean        # Remove build artifacts
+doit cleanup      # Remove build and cache artifacts
 doit translate    # Compile .po files
 ```
 

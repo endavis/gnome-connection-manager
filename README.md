@@ -67,7 +67,7 @@ sudo apt install ./gnome-connection-manager_1.2.2_all.deb
 
 ## Development setup
 
-GCM uses [uv](https://github.com/astral-sh/uv) for dependency management and [just](https://github.com/casey/just) as a task runner.
+GCM uses [uv](https://github.com/astral-sh/uv) for dependency management and [doit](https://pydoit.org/) as a task runner. doit is a dev dependency, so `uv sync` installs it -- there is nothing separate to install.
 
 ```bash
 # Install uv (modern Python package manager)
