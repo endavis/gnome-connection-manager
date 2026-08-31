@@ -313,7 +313,12 @@ _JUST_INVOCATION = re.compile(
 )
 
 
-@pytest.mark.parametrize("relative", _MARKDOWN_DOCS)
+# The Makefile is checked too: its translate comment pointed at `just translate` for
+# long enough to outlive the justfile, which is #148.
+_JUST_FREE_FILES = [*_MARKDOWN_DOCS, "Makefile"]
+
+
+@pytest.mark.parametrize("relative", _JUST_FREE_FILES)
 def test_docs_do_not_invoke_just(relative):
     """The word survives in prose ("just a", "justified"); the command must not."""
     body = (REPO / relative).read_text(encoding="utf-8")
@@ -321,6 +326,44 @@ def test_docs_do_not_invoke_just(relative):
     found = sorted({m.group(0).strip() for m in _JUST_INVOCATION.finditer(body)})
 
     assert not found, f"{relative} still invokes the removed task runner: {found}"
+
+
+# -- the Makefile's translate comment must point somewhere real (#148) ------
+
+# It tells a reader where the other half of a deliberate duplication lives. That is only
+# useful while the names resolve, and the reason this test exists is that they stopped:
+# the comment went on naming a justfile recipe for 27 commits after the justfile was
+# deleted, and #146 -- which swept the same drift out of the docs -- walked past it.
+_TRANSLATE_COMMENT_REFERENTS = [
+    ("tools/doit/gcm.py", "_compile_catalogs"),
+    ("tools/build_mo.py", None),
+]
+
+
+def _translate_comment() -> str:
+    """The comment block immediately above the Makefile's translate target."""
+    lines = (REPO / "Makefile").read_text(encoding="utf-8").splitlines()
+    target = lines.index("translate:")
+    start = target
+    while start > 0 and lines[start - 1].startswith("#"):
+        start -= 1
+    return "\n".join(lines[start:target])
+
+
+@pytest.mark.parametrize(("path", "symbol"), _TRANSLATE_COMMENT_REFERENTS)
+def test_translate_comment_points_at_something_that_exists(path, symbol):
+    comment = _translate_comment()
+    assert path in comment, f"the Makefile's translate comment no longer names {path}"
+
+    referent = REPO / path
+    assert referent.is_file(), f"the comment names {path}, which is not in the tree"
+    if symbol is not None:
+        # Both directions. Asserting only that the tree still defines the symbol lets
+        # the comment drift to a name nothing has, which is the failure being guarded.
+        assert symbol in comment, f"the Makefile's translate comment no longer names {symbol}"
+        assert f"def {symbol}" in referent.read_text(encoding="utf-8"), (
+            f"the comment names {symbol}, which {path} no longer defines"
+        )
 
 
 # doit's own subcommands, which are not tasks and so are not in tools/doit/.

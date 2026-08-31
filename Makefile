@@ -17,9 +17,13 @@ FPM_OPTS=-s dir -n $(PKG_NAME) -v $(PKG_VERSION) -C $(TMPINSTALLDIR) \
 
 all: deb rpm
 
-# Compile .po -> .mo translation files. Same walk as `just translate`, so a new
-# locale is one file to add rather than two, and it still works where msgfmt is
-# not installed. Fails rather than reporting success over an empty list (#101).
+# Compile .po -> .mo translation files. A second implementation of what `doit
+# translate` does -- _compile_catalogs in tools/doit/gcm.py -- deliberately, because
+# packaging runs where uv and the dev extras are not installed and doit is one of
+# them. It is not the same code: that one is Python, this one is shell. What the two
+# must keep in common is the layout, so a new locale stays one file to add rather
+# than two, the msgfmt fallback to tools/build_mo.py, and failing rather than
+# reporting success over an empty list (#101). Change one, change the other.
 translate:
 	@set -e; \
 	count=0; \
