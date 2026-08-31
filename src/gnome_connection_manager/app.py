@@ -113,6 +113,11 @@ from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     sanitize_log_name,
     sanitize_tab_title,
 )
+from gnome_connection_manager.utils.shortcuts import (  # noqa: E402
+    FONT_SCALE_STEP,
+    clamp_font_scale,
+    parse_custom_keys,
+)
 
 # check Terminal version
 TERMINAL_V048 = "spawn_async" in Vte.Terminal.__dict__
@@ -297,35 +302,6 @@ RESERVED_ACCELERATORS = (
 custom_keys: dict = {}
 
 
-def parse_custom_keys(entries, reserved):
-    """Turn a [keys] section into {key name: bytes}, dropping what cannot be delivered.
-
-    A binding on a reserved combination is refused at load time rather than ignored at
-    press time: the terminal handler never runs for those, so the user would otherwise
-    see nothing happen and get no explanation.
-    """
-    accepted = {}
-    for name, value in (entries or {}).items():
-        key = (name or "").strip().upper()
-        if not key:
-            continue
-        if key in reserved:
-            logger.warning(
-                "Ignoring [keys] entry %r: already bound, so it would never reach the terminal",
-                key,
-            )
-            continue
-        try:
-            sequence = value.encode("utf-8").decode("unicode_escape").encode("latin-1")
-        except (UnicodeDecodeError, UnicodeEncodeError):
-            logger.warning("Ignoring [keys] entry %r: %r is not a decodable sequence", key, value)
-            continue
-        if not sequence:
-            continue
-        accepted[key] = sequence
-    return accepted
-
-
 # Commands that also exist as an application action. Their accelerator is derived from
 # the configured shortcut rather than hardcoded, so a fixed accelerator can never shadow
 # the user's binding -- GTK dispatches window accelerators before the focused widget
@@ -351,19 +327,6 @@ TERMINAL_ACTIONS = {
     "zoom_reset": "zoom-reset",
     "view_buffer": "view-buffer",
 }
-
-# VTE clamps set_font_scale() to this range itself (measured on 0.76: 0.1 lands on
-# 0.25 and 99.0 on 4.0). Mirroring it here keeps a held-down zoom key from walking
-# a scale value that VTE has already stopped honouring.
-FONT_SCALE_MIN = 0.25
-FONT_SCALE_MAX = 4.0
-FONT_SCALE_STEP = 1.1
-
-
-def clamp_font_scale(scale):
-    """Hold a font scale inside the range VTE will actually apply."""
-    return min(FONT_SCALE_MAX, max(FONT_SCALE_MIN, scale))
-
 
 _ACCEL_MODIFIERS = (
     ("CTRL+", Gdk.ModifierType.CONTROL_MASK),
