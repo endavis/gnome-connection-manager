@@ -20,6 +20,8 @@ the git log.
   the developer's desktop
 
 ### Changed
+- Custom-key parsing and font-scale clamping moved out of `app.py` into
+  `utils/shortcuts.py`, tested without the `gi` stub
 - Session-log naming moved out of `app.py` into `utils/logpaths.py`, with the log root
   passed in rather than read from `conf`
 - `Host` and `HostUtils` moved out of `app.py` into `utils/hosts.py`; their passphrase
