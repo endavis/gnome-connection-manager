@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from gnome_connection_manager.utils import logpaths
+from gnome_connection_manager.utils import logpaths, shortcuts
 
 
 class FakeIter:
@@ -1355,13 +1355,6 @@ def test_terminal_signals_are_wired_at_creation(app_module):
     assert connections.get("bell") == "on_terminal_bell"
 
 
-def test_clamp_font_scale_holds_vte_limits(app_module):
-    """VTE itself lands 0.1 on 0.25 and 99.0 on 4.0; the clamp mirrors that."""
-    assert app_module.clamp_font_scale(0.01) == app_module.FONT_SCALE_MIN
-    assert app_module.clamp_font_scale(99.0) == app_module.FONT_SCALE_MAX
-    assert app_module.clamp_font_scale(1.0) == 1.0
-
-
 def test_terminal_zoom_steps_and_resets(app_module):
     wmain = object.__new__(app_module.Wmain)
     terminal = ClipboardTerminal()
@@ -1383,11 +1376,11 @@ def test_terminal_zoom_saturates_instead_of_running_away(app_module):
 
     for _ in range(80):
         wmain.terminal_zoom_in(terminal)
-    assert terminal.font_scale == app_module.FONT_SCALE_MAX
+    assert terminal.font_scale == shortcuts.FONT_SCALE_MAX
 
     for _ in range(120):
         wmain.terminal_zoom_out(terminal)
-    assert terminal.font_scale == app_module.FONT_SCALE_MIN
+    assert terminal.font_scale == shortcuts.FONT_SCALE_MIN
 
 
 def test_terminal_zoom_is_per_terminal_not_global(app_module):

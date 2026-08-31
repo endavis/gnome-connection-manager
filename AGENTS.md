@@ -46,6 +46,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `sanitize_log_name` guards a filesystem path, `sanitize_tab_title` guards a widget that
   ends at `set_markup`. Pure of GTK and of configuration: the log root is an argument, and
   `app.py` keeps a `session_file_for` wrapper that supplies `conf.LOG_PATH`.
+- `src/gnome_connection_manager/utils/shortcuts.py` – the two shortcut decisions that need
+  no widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
+  and refuses anything already bound, and `clamp_font_scale` with the VTE range it mirrors.
+  Pure — the reserved set is an argument, and `RESERVED_ACCELERATORS` stays in `app.py`
+  beside the `do_startup` registrations a test checks it against. `shortcut_to_accel`,
+  `apply_menu_accels` and `sync_shortcut_accels` stay too: measurement showed they are
+  `Gdk`/`Gtk` calls rather than logic, which is what put the seam here (#140).
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
   without a terminal, a display or a pty.

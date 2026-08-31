@@ -507,17 +507,6 @@ def test_reserved_accelerators_match_what_do_startup_registers(app_module):
     )
 
 
-def test_a_custom_key_on_a_terminal_shortcut_is_refused(app_module):
-    """Accepting it would shadow copy, paste or find depending on the user's config."""
-    accepted = app_module.parse_custom_keys(
-        {"CTRL+SHIFT+C": "\\n", "SHIFT+RETURN": "\\n"},
-        reserved={"CTRL+SHIFT+C"},
-    )
-
-    assert "CTRL+SHIFT+C" not in accepted
-    assert accepted["SHIFT+RETURN"] == b"\n"
-
-
 def test_a_custom_key_on_an_application_accelerator_is_refused(app_module):
     """The terminal handler never runs for these, so the binding would be inert."""
     reserved = set(app_module.RESERVED_ACCELERATORS)
@@ -526,36 +515,6 @@ def test_a_custom_key_on_an_application_accelerator_is_refused(app_module):
     accepted = app_module.parse_custom_keys({"CTRL+Q": "\\n"}, reserved=reserved)
 
     assert accepted == {}
-
-
-def test_custom_keys_decode_escape_sequences(app_module):
-    accepted = app_module.parse_custom_keys(
-        {
-            "SHIFT+RETURN": "\\n",
-            "ALT+RETURN": "\\x1b\\r",
-            "CTRL+SHIFT+RETURN": "\\r\\n",
-            "SHIFT+TAB": "literal",
-        },
-        reserved=set(),
-    )
-
-    assert accepted["SHIFT+RETURN"] == b"\n"
-    assert accepted["ALT+RETURN"] == b"\x1b\r"
-    assert accepted["CTRL+SHIFT+RETURN"] == b"\r\n"
-    assert accepted["SHIFT+TAB"] == b"literal"
-
-
-def test_an_undecodable_custom_key_is_dropped_not_fatal(app_module):
-    accepted = app_module.parse_custom_keys(
-        {"SHIFT+RETURN": "\\xZZ", "SHIFT+TAB": "\\n"}, reserved=set()
-    )
-
-    assert "SHIFT+RETURN" not in accepted
-    assert accepted["SHIFT+TAB"] == b"\n"
-
-
-def test_an_empty_custom_sequence_is_dropped(app_module):
-    assert app_module.parse_custom_keys({"SHIFT+RETURN": ""}, reserved=set()) == {}
 
 
 class KeypressTerminal:
