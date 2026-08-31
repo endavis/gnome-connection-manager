@@ -30,6 +30,7 @@ the git log.
 - Default branch renamed from `master` to `main`
 
 ### Fixed
+- The README and the developing guide still told a reader to install and use `just`
 - Session logs were written to `logs/session/` rather than the host's own directory
 - The encryption key protecting saved host passwords was generated with `random.random()`
 - Saving a preference containing a double quote raised `SyntaxError` and silently failed
