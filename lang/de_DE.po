@@ -1762,3 +1762,9 @@ msgstr ""
 
 msgid "Delete folder"
 msgstr ""
+
+msgid "GCM could not read its configuration file, so it has not started."
+msgstr ""
+
+msgid "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
+msgstr ""

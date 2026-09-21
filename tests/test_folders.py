@@ -10,7 +10,7 @@ import io
 
 import pytest
 
-from gnome_connection_manager.utils import folders
+from gnome_connection_manager.utils import configfile, folders
 from gnome_connection_manager.utils.folders import (
     EMPTY_NAME,
     INTO_ITSELF,
@@ -270,10 +270,16 @@ def test_load_repairs_what_it_reads():
 
 
 def test_a_repeated_folder_id_never_reaches_the_tree():
-    """#154 asked repair to reassign a repeated id. It cannot arise: the id is the section
-    name, and configparser refuses a repeated section before load() sees either."""
-    with pytest.raises(configparser.DuplicateSectionError):
-        configparser.RawConfigParser().read_string("[folder a]\nname = x\n\n[folder a]\n")
+    """#154 asked repair to reassign a repeated id. The id is the section name, and strict
+    configparser refused the repeat -- and with it the whole file, so GCM did not start.
+    Now the file reader gives the repeat a fresh id before load() sees either (#161)."""
+    reading = configfile.read_config("[folder a]\nname = x\n\n[folder a]\nname = y\n")
+
+    loaded, fixes = FolderTree.load(reading.config)
+
+    assert loaded.folders["a"].name == "x"
+    assert sorted(folder.name for folder in loaded.folders.values()) == ["x", "y"]
+    assert fixes == []
 
 
 def test_a_config_with_no_folder_sections_loads_an_empty_tree():

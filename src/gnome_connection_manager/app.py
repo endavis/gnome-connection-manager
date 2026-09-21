@@ -98,6 +98,7 @@ def bindtextdomain(app_name, locale_dir=None):
 
 
 from gnome_connection_manager.utils import (  # noqa: E402
+    configfile,
     crypto,
     logpaths,
     transcript,
@@ -177,6 +178,40 @@ def require_expect() -> None:
     else:
         print(f"{message}. Install it with: sudo apt install expect", file=sys.stderr)
     sys.exit(1)
+
+
+def require_readable_config() -> None:
+    """Refuse to start on a gcm.conf that cannot be read, saying what is wrong and where.
+
+    Starting without it is the worse choice, measured (#161): configparser skipped a file
+    it could not open, GCM came up with an empty tree, and closing the window wrote that
+    empty tree over the file. Every other refusal left GCM running with no window and the
+    reason only on stderr. Reported the way require_expect reports -- a dialog when there
+    is a display, stderr when not -- and before anything exists that could write.
+    """
+    try:
+        configfile.load(Path(CONFIG_FILE))
+    except configfile.UnreadableError as error:
+        message = _("GCM could not read its configuration file, so it has not started.")
+        detail = "{}\n\n{}".format(
+            error,
+            _(
+                "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
+            ),
+        )
+        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            dialog = Gtk.MessageDialog(
+                modal=True,
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text=message,
+            )
+            dialog.format_secondary_text(detail)
+            dialog.run()
+            dialog.destroy()
+        else:
+            print(f"{message}\n{detail}", file=sys.stderr)
+        sys.exit(1)
 
 
 # Gdk.threads_init()
@@ -471,6 +506,18 @@ def sync_folders():
     for order in contents.values():
         number(order)
     return contents
+
+
+def refile_ambiguous_hosts(groups_by_path, ambiguous_folders):
+    """Forget a folder id that named two folder records in the file (#161).
+
+    The id cannot say which record a host meant, but the `group` path saved beside it
+    can: with the id cleared, FolderTree.bind files the host by that path instead.
+    """
+    for hosts in groups_by_path.values():
+        for host in hosts:
+            if host.folder in ambiguous_folders:
+                host.folder = ""
 
 
 def folder_contents():
@@ -3238,8 +3285,18 @@ class Wmain(GladeComponent):
     def loadConfig(self):
         global groups, folders
 
-        cp = configparser.RawConfigParser()
-        cp.read(CONFIG_FILE)
+        # main() has already refused a file that cannot be read at all (#161). What is
+        # left to handle is what a hand merge leaves behind, which reads without loss.
+        reading = configfile.load(Path(CONFIG_FILE))
+        cp = reading.config
+        if reading.kept_apart or reading.dropped:
+            logger.warning(
+                "gcm.conf repeats %d section(s): %d kept as entries of their own, "
+                "%d dropped as verbatim copies",
+                reading.kept_apart + reading.dropped,
+                reading.kept_apart,
+                reading.dropped,
+            )
 
         # Leer configuracion general
         for attr, section, option, kind in CONFIG_OPTIONS:
@@ -3302,6 +3359,7 @@ class Wmain(GladeComponent):
             # CodeQL taints every attribute read off one, naming included.
             logger.warning("Reassigned %d duplicate host id(s)", len(reassigned))
 
+        refile_ambiguous_hosts(groups, reading.ambiguous_folders)
         # A config written before ADR-0002 has no folder sections: the tree starts empty
         # and sync_folders builds it from the hosts' group paths.
         folders, fixes = FolderTree.load(cp)
@@ -4372,8 +4430,8 @@ class Wmain(GladeComponent):
 
             # abrir archivo con lista de servers y cargarlos en el arbol
             try:
-                cp = configparser.RawConfigParser()
-                cp.read(filename)
+                reading = configfile.load(Path(filename))
+                cp = reading.config
 
                 # validar el pass
                 s = decrypt(password, cp.get("gcm", "gcm"))
@@ -4399,10 +4457,16 @@ class Wmain(GladeComponent):
                         grupos[host.group] = []
 
                     grupos[host.group].append(host)
+                refile_ambiguous_hosts(grupos, reading.ambiguous_folders)
                 imported_folders, fixes = FolderTree.load(cp)
                 if fixes:
                     logger.warning("Repaired %d problem(s) in the folder tree", len(fixes))
-            except (configparser.Error, ValueError, AttributeError) as e:
+            except (
+                configfile.UnreadableError,
+                configparser.Error,
+                ValueError,
+                AttributeError,
+            ) as e:
                 msgbox(f"{_('Archivo invalido')}: {e}")
                 return
 
@@ -7296,6 +7360,7 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv
     require_expect()
+    require_readable_config()
     application = GcmApplication()
     return application.run(argv)
 

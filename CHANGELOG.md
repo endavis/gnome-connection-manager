@@ -62,3 +62,10 @@ the git log.
 - The application reported version 1.2.1 while the package said 1.2.0 and the `.deb` 1.2.2
 - Passwords in a config predating the `version` key all decrypted to nothing: the legacy
   XOR helpers raised `TypeError` on Python 3 and swallowed it, and test shims hid it
+- A `gcm.conf` with a repeated section, which is what merging two copies by hand
+  produces, stopped GCM starting: no window, and the reason only on stderr. A repeated
+  host or folder is now kept as an entry of its own and a verbatim copy dropped, and an
+  import reads such a file too
+- A `gcm.conf` that cannot be read in full now stops GCM before its window opens, with a
+  message saying what is wrong and where. One it could not open at all used to start it
+  empty, and closing the window then wrote that empty list over the file

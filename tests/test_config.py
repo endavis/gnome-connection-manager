@@ -7,6 +7,8 @@ import re
 import types
 from pathlib import Path
 
+import pytest
+
 
 def make_host(app_module):
     """Create a sample Host instance for config round-trips."""
@@ -587,3 +589,173 @@ def test_collapsed_folders_are_saved_by_id_beside_the_old_row_positions(
     assert written.get("window", "collapsed-folder-ids") == "ab12cd34,ef56ab78"
     load_hosts(app_module, monkeypatch, path)
     assert app_module.conf.COLLAPSED_FOLDER_IDS == "ab12cd34,ef56ab78"
+
+
+# -- a gcm.conf that strict configparser refused (#161) ------------------------
+
+
+def hand_merged(tmp_path, *copies):
+    """gcm.conf as a hand merge leaves it: each copy's text, one after another.
+
+    Each copy is a list of host entries, as write_minimal_hosts_config takes them, so
+    every copy numbers its hosts from [host 1] -- which is what made the merge unreadable.
+    """
+    texts = []
+    for index, entries in enumerate(copies):
+        folder = tmp_path / f"copy{index}"
+        folder.mkdir()
+        texts.append(write_minimal_hosts_config(folder, entries).read_text())
+    path = tmp_path / "gcm.conf"
+    path.write_text("".join(texts))
+    return path
+
+
+def test_load_config_reads_a_hand_merged_config(tmp_path, app_module, monkeypatch):
+    """Measured before the fix: DuplicateSectionError, and no window at all."""
+    path = hand_merged(
+        tmp_path,
+        [{"id": "aaaa1111"}, {"id": "bbbb2222"}],
+        [{"id": "aaaa1111"}, {"id": "cccc3333", "name": "switch"}],
+    )
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    # the first host is in both copies verbatim; the second differs, so both are kept
+    assert sorted(host.name for host in loaded) == ["router1", "router2", "switch"]
+    assert sorted(host.id for host in loaded) == ["aaaa1111", "bbbb2222", "cccc3333"]
+
+
+def test_load_config_files_hosts_by_group_when_a_folder_id_repeats(
+    tmp_path, app_module, monkeypatch
+):
+    """One copy renamed the folder. The id cannot say which name a host meant; the group
+    path saved beside it can."""
+    path = hand_merged(
+        tmp_path,
+        [{"group": "ops", "folder": "f1"}],
+        [{"group": "operations", "folder": "f1", "name": "switch"}],
+    )
+    text = path.read_text()
+    first, second = text.split("[host 1]", 2)[1:]
+    path.write_text(
+        "[host 1]" + first + "[folder f1]\nname = ops\nparent =\n\n"
+        "[host 1]" + second + "[folder f1]\nname = operations\nparent =\n"
+    )
+
+    loaded = {host.name: host for host in load_hosts(app_module, monkeypatch, path)}
+
+    assert loaded["router1"].group == "ops"
+    assert loaded["switch"].group == "operations"
+    assert sorted(app_module.groups) == ["operations", "ops"]
+
+
+UNREADABLE = "[host 1]\nname = web\nthis line has no equals sign\n"
+
+
+def test_require_readable_config_refuses_on_stderr_without_a_display(
+    tmp_path, app_module, monkeypatch, capsys
+):
+    """With no display there is nobody to click OK, so a dialog would be a hang."""
+    path = tmp_path / "gcm.conf"
+    path.write_text(UNREADABLE)
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(path))
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    with pytest.raises(SystemExit) as exit_info:
+        app_module.require_readable_config()
+
+    assert exit_info.value.code == 1
+    said = capsys.readouterr().err
+    assert "could not read its configuration file" in said
+    assert str(path) in said
+    assert "[line  3]" in said
+    assert path.read_text() == UNREADABLE
+
+
+class RefusalDialog:
+    """Records what require_readable_config shows. Its methods are checked against the
+    real Gtk.MessageDialog below."""
+
+    shown: list = []
+
+    def __init__(self, **kwargs):
+        self.text = kwargs["text"]
+        self.detail = None
+
+    def format_secondary_text(self, text):
+        self.detail = text
+
+    def run(self):
+        RefusalDialog.shown.append(self)
+
+    def destroy(self):
+        pass
+
+
+def test_require_readable_config_says_it_in_a_dialog_when_there_is_a_display(
+    tmp_path, app_module, monkeypatch
+):
+    path = tmp_path / "gcm.conf"
+    path.write_text(UNREADABLE)
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(path))
+    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+
+    with pytest.raises(SystemExit) as exit_info:
+        app_module.require_readable_config()
+
+    assert exit_info.value.code == 1
+    [dialog] = RefusalDialog.shown
+    assert "could not read its configuration file" in dialog.text
+    assert str(path) in dialog.detail
+    assert "Nothing has been changed" in dialog.detail
+
+
+def test_the_refusal_dialog_fake_matches_real_gtk():
+    """conftest stubs all of gi, so the fake could offer methods GTK does not have."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("format_secondary_text", "run", "destroy"):
+        assert hasattr(Gtk.MessageDialog, name), f"Gtk.MessageDialog has no {name}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [None, "[host 1]\nname = web\n\n[host 1]\nname = db\n"],
+    ids=["first run, no file", "a hand merge"],
+)
+def test_require_readable_config_lets_a_readable_file_through(
+    tmp_path, app_module, monkeypatch, capsys, text
+):
+    path = tmp_path / "gcm.conf"
+    if text is not None:
+        path.write_text(text)
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(path))
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    app_module.require_readable_config()
+
+    assert capsys.readouterr().err == ""
+
+
+def test_main_checks_the_config_before_the_application_exists(app_module, monkeypatch):
+    """The empty start that overwrote the file on close needs a window to exist."""
+    calls = []
+
+    def refuse():
+        calls.append("config")
+        raise SystemExit(1)
+
+    monkeypatch.setattr(app_module, "require_expect", lambda: calls.append("expect"))
+    monkeypatch.setattr(app_module, "require_readable_config", refuse)
+    monkeypatch.setattr(app_module, "GcmApplication", lambda: calls.append("application"))
+
+    with pytest.raises(SystemExit):
+        app_module.main(["gcm"])
+
+    assert calls == ["expect", "config"]
