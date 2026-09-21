@@ -62,6 +62,8 @@ Complete index of all documentation, organized by audience and as a full alphabe
 
 ## Complete Index
 <!-- BEGIN:all -->
+- [ADR-0001: A stable id on every host record](decisions/0001-a-stable-id-on-every-host-record.md)
+- [ADR-0002: Folders are records, not a path string](decisions/0002-folders-are-records-not-a-path-string.md)
 - [ADR-NNNN: Title](decisions/adr-template.md)
 - [AI Agent Setup Guide](development/AI_SETUP.md) - Configure Claude, Copilot, Codex, and Antigravity for this project
 - [AI Agent Sync Checklist](template/ai-sync-checklist.md) - Step-by-step checklist for AI agents synchronizing downstream projects with pyproject-template
