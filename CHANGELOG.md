@@ -21,8 +21,17 @@ the git log.
 - A stable `id` on every saved host, so a host can be referred to from outside its own
   record and still be found after a rename or a move. Existing configurations get one
   the first time they are read; nothing reads the field yet (ADR-0001)
+- Folders in the server tree can be created, renamed and deleted: New Folder and Rename
+  Folder in the tree's right-click menu and the Servers menu, and `F2` to rename. Renaming
+  a folder no longer means editing every host in it, and a folder stays when its last
+  host leaves (ADR-0002)
+- Hosts and folders can be dragged between folders in the server tree. A drop that would
+  put a folder inside itself, or a host beside another of the same name, is refused
 
 ### Changed
+- Collapsed folders in the server tree are remembered by folder rather than by row
+  position, so a change in the shape of the tree no longer leaves the wrong folders
+  collapsed. The positional setting is still written for older versions
 - Folders in the server tree are stored as records of their own in `gcm.conf`, with each
   host filed under one by id. `group` is still written, derived from the folder, so older
   versions read the file unchanged. An existing configuration converts the first time it

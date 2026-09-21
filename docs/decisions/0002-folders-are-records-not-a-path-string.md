@@ -187,6 +187,45 @@ name stored with outer spaces would change on the first reload; `Work / Servers`
 `Work/Servers` at migration instead. No log directory moves, because
 `sanitize_log_segments` already stripped each segment.
 
+### 2026-09-21, implementing phase 3
+
+The drag-and-drop mechanism in the Rationale would not have worked, and several details
+it left open needed deciding.
+
+**The veto returns true.** The Rationale has the `drag-motion` handler return false on an
+invalid target. Measured with real pointer input under Xvfb, a handler that refuses a spot
+with `Gdk.drag_status(context, 0, time)` and then returns false has the drop delivered
+anyway; returning true makes it fail with `no-target`, and nothing changes.
+
+**The drag is the tree view's own, with a target of GCM's.** Rather than `drag_dest_set`,
+the tree uses `enable_model_drag_source` and `enable_model_drag_dest` with a custom
+`GCM_TREE_ROW` target. That keeps the highlight under the pointer and the folder that opens
+when hovered over, both measured, while GTK moves no row itself. The handlers refile the
+record and call `updateTree`, as planned.
+
+**Where a drop lands.** On a folder row, into it; just above or below one, into its
+parent; on a host row, into that host's folder; below every row, the top level. A host may
+not go to the top level, because every host lives in a folder — one with an empty `group`
+has always sat in a folder with an empty name. Nor may it land beside a host of the same
+name, the rule the host dialog already applies.
+
+**Names are checked before an edit, not repaired after.** `check_name` refuses an empty
+name, a `/`, and a sibling's name, the rules `repair` enforces on a hand-edited file.
+`move` checks only the last, so a folder with an empty name from an old file can still be
+moved without renaming it first.
+
+**Empty folders stay, and the servers menu leaves them out.** Phases 1 and 2 kept removing
+a folder with no hosts below it, so that nothing changed on screen; phase 3 stops. The
+servers menu exists to connect, so it shows only folders with a host somewhere below. It is
+now built from the records in the same pass as the tree, and the label matching in
+`get_folder_menu` is gone.
+
+**Collapsed state is keyed by id, in a new key.** Changing what `collapsed-folders` holds
+would break an older build: it passes each entry to `Gtk.TreePath.new_from_string` with no
+guard, and that raises `TypeError` on an id. So `collapsed-folder-ids` is written beside
+it, and wins when present. The positional key is read only on the first start after an
+upgrade.
+
 ## Related Issues
 
 - Issue #154: Replace the group path string with a real folder tree

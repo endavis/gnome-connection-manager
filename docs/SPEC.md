@@ -38,8 +38,11 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 
 ### Host Tree
 - Left panel with hierarchical group/host tree (QTreeView)
-- Drag-and-drop reordering of hosts between groups
-- Collapsible groups with persisted expand/collapse state
+- Drag-and-drop of hosts and folders between folders, refusing a folder dropped into
+  itself or a host dropped beside another of the same name
+- Folders are records with an id, not a path: create, rename and delete them, and an
+  empty folder persists
+- Collapsible groups with persisted expand/collapse state, keyed by folder id
 - Context menu: connect, edit, delete, duplicate, copy address
 - Expand all / collapse all
 
@@ -382,6 +385,7 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Connect
 - Copy address to clipboard
 - Add host to group
+- New folder / Rename folder (`F2`)
 - Edit / Delete / Duplicate host
 - Expand all / Collapse all
 

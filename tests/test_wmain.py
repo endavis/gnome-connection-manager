@@ -159,27 +159,104 @@ class MenuItemStub:
         self.target_value = value
 
 
-class TrackingTreeModel:
-    def __init__(self, owner):
-        self.owner = owner
-        self.folder_rows: list[tuple[str, str]] = []
-        self.host_rows: list[list] = []
+class FakeTreePath(tuple):
+    def copy(self):
+        return self
+
+
+class RecordingTreeStore:
+    """The slice of Gtk.TreeStore the tree code uses, kept as nested nodes."""
+
+    def __init__(self):
+        self.roots: list = []
 
     def clear(self):
-        self.folder_rows.clear()
-        self.host_rows.clear()
-
-    def prepend(self, parent, row):
-        path = getattr(self.owner, "_pending_path", "")
-        node = types.SimpleNamespace(label=row[0])
-        handle = types.SimpleNamespace(iter=node)
-        self.owner.folder_nodes[path] = handle
-        self.folder_rows.append((path, row[0]))
-        return handle
+        self.roots.clear()
 
     def append(self, parent, row):
-        self.host_rows.append(row)
-        return types.SimpleNamespace(iter=None)
+        node = types.SimpleNamespace(row=list(row), children=[])
+        (parent.children if parent is not None else self.roots).append(node)
+        return node
+
+    def get_value(self, node, column):
+        return node.row[column]
+
+    def get_iter_first(self):
+        return self.roots[0] if self.roots else None
+
+    def get_iter(self, path):
+        nodes, node = self.roots, None
+        for index in path:
+            node = nodes[index]
+            nodes = node.children
+        return node
+
+    def foreach(self, func):
+        def walk(nodes, prefix):
+            for index, node in enumerate(nodes):
+                path = FakeTreePath((*prefix, index))
+                if func(self, path, node) or walk(node.children, path):
+                    return True
+            return False
+
+        walk(self.roots, ())
+
+    def find(self, name):
+        found: list = []
+        self.foreach(lambda _m, path, node: node.row[0] == name and found.append((path, node)))
+        return found[0]
+
+    def shape(self, nodes=None):
+        nodes = self.roots if nodes is None else nodes
+        return [
+            (n.row[0], self.shape(n.children)) if n.children or n.row[1] is None else n.row[0]
+            for n in nodes
+        ]
+
+
+class FolderTreeView:
+    """The slice of Gtk.TreeView the folder and drag code uses."""
+
+    def __init__(self, store):
+        self.store = store
+        self.selected = None
+        self.dest = None
+        self.collapsed: set = set()
+        self.cursor = None
+        self.expanded_to: list = []
+        self.stopped: list = []
+        self.dest_row = "unset"
+
+    def get_selection(self):
+        return types.SimpleNamespace(
+            get_selected=lambda: (self.store, self.selected),
+            unselect_all=lambda: setattr(self, "selected", None),
+        )
+
+    def get_dest_row_at_pos(self, _x, _y):
+        return self.dest
+
+    def set_drag_dest_row(self, path, pos):
+        self.dest_row = (path, pos)
+
+    def stop_emission_by_name(self, name):
+        self.stopped.append(name)
+
+    def expand_all(self):
+        self.collapsed.clear()
+
+    def collapse_row(self, path):
+        self.collapsed.add(tuple(path))
+        return True
+
+    def row_expanded(self, path):
+        return tuple(path) not in self.collapsed
+
+    def expand_to_path(self, path):
+        self.expanded_to.append(tuple(path))
+
+    def set_cursor(self, path, _column, _start_editing):
+        self.cursor = tuple(path)
 
 
 class DeletionTreeModel:
@@ -254,18 +331,43 @@ def make_wmain_with_host(app_module, host, has_child=False):
     return wmain, iter_
 
 
-def make_wmain_for_tree(app_module):
+def make_wmain_for_tree(app_module, monkeypatch, groups=None):
+    """A Wmain whose updateTree is real, drawn onto RecordingTreeStore."""
+    monkeypatch.setattr(app_module.Gtk, "MenuItem", DummyMenuItem)
+    monkeypatch.setattr(app_module.Gtk, "Menu", DummyMenu)
+    if groups is not None:
+        monkeypatch.setattr(app_module, "groups", groups)
     wmain = object.__new__(app_module.Wmain)
-    wmain.folder_nodes = {}
-    wmain.menu_nodes = {}
-    wmain.treeModel = TrackingTreeModel(wmain)
+    wmain.treeModel = RecordingTreeStore()
+    wmain.treeServers = FolderTreeView(wmain.treeModel)
     wmain.menuServers = DummyMenu()
     wmain.nbConsole = object()
-    wmain.get_collapsed_nodes = lambda: []
-    wmain.set_collapsed_nodes = lambda: None
+    wmain.window = object()
     wmain.update_row_color = lambda *args: None
     wmain.addTab = lambda nb, host: None
+    wmain.writes = 0
+    wmain.writeConfig = lambda: setattr(wmain, "writes", wmain.writes + 1)
     return wmain
+
+
+def hosts_named(app_module, *names):
+    """Hosts from make_host, renamed and filed at the given group paths."""
+    made = []
+    for spec in names:
+        group, name = spec.rsplit("/", 1)
+        host = make_host(app_module)
+        host.group, host.name = group, name
+        made.append(host)
+    return made
+
+
+def menu_shape(menu):
+    return [
+        (item.get_label(), menu_shape(item.get_submenu()))
+        if item.get_submenu()
+        else item.get_label()
+        for item in menu.get_children()
+    ]
 
 
 def test_get_selected_host_returns_none_for_group(app_module):
@@ -414,37 +516,46 @@ def test_on_btnDel_clicked_removes_host(monkeypatch, app_module):
     assert calls["write"] == 1
 
 
-def test_on_btnDel_clicked_removes_group(monkeypatch, app_module):
-    parent_host = make_host(app_module)
-    child_host = parent_host.clone()
-    child_host.group = f"{parent_host.group}/child"
-    model = DeletionTreeModel(label="ops", host=None, has_child=True, child_host=parent_host)
-    selection = FakeSelection(model, model.selection_iter)
-    tree = FakeTreeView(selection)
-
-    wmain = object.__new__(app_module.Wmain)
-    wmain.treeModel = model
-    wmain.treeServers = tree
-    calls = {"tree": 0, "write": 0}
-    wmain.updateTree = lambda: calls.__setitem__("tree", calls["tree"] + 1)
-    wmain.writeConfig = lambda: calls.__setitem__("write", calls["write"] + 1)
-
+def test_deleting_a_folder_removes_its_hosts_and_every_folder_below(monkeypatch, app_module):
+    prod, db, home = hosts_named(app_module, "ops/prod/web", "ops/prod/db/pg", "home/nas")
+    groups = {"ops/prod": [prod], "ops/prod/db": [db], "home": [home]}
+    wmain = make_wmain_for_tree(app_module, monkeypatch, groups)
+    wmain.updateTree()
+    asked: list = []
     monkeypatch.setattr(
-        app_module,
-        "groups",
-        {
-            parent_host.group: [parent_host],
-            child_host.group: [child_host],
-        },
+        app_module, "msgconfirm", lambda text: asked.append(text) or app_module.Gtk.ResponseType.OK
     )
-    monkeypatch.setattr(app_module, "msgconfirm", lambda _text: app_module.Gtk.ResponseType.OK)
+    wmain.treeServers.selected = wmain.treeModel.find("prod")[1]
 
     wmain.on_btnDel_clicked(None)
 
-    assert parent_host.group not in app_module.groups
-    assert child_host.group not in app_module.groups
-    assert calls["tree"] == 1
-    assert calls["write"] == 1
+    assert wmain.treeModel.shape() == [("home", ["nas"]), ("ops", [])]
+    assert [h.name for hs in app_module.groups.values() for h in hs] == ["nas"]
+    assert asked == [
+        "{} [ops/prod]?".format(
+            app_module._("Confirma que desea eliminar todos los hosts del grupo")
+        )
+    ]
+    assert wmain.writes == 1
+
+
+def test_deleting_an_empty_folder_asks_about_the_folder(monkeypatch, app_module):
+    wmain = make_wmain_for_tree(
+        app_module, monkeypatch, {"ops": hosts_named(app_module, "ops/web")}
+    )
+    app_module.sync_folders()
+    app_module.folders.add(app_module.ROOT_FOLDER, "archive")
+    wmain.updateTree()
+    asked: list = []
+    monkeypatch.setattr(
+        app_module, "msgconfirm", lambda text: asked.append(text) or app_module.Gtk.ResponseType.OK
+    )
+    wmain.treeServers.selected = wmain.treeModel.find("archive")[1]
+
+    wmain.on_btnDel_clicked(None)
+
+    assert asked == ["{} [archive]?".format(app_module._("Delete folder"))]
+    assert wmain.treeModel.shape() == [("ops", ["web"])]
 
 
 def test_set_context_terminal_tracks_terminal_state(app_module, monkeypatch):
@@ -779,47 +890,32 @@ def test_toolbar_stub_matches_the_real_gtk_toolbar_api():
         assert hasattr(Gtk.ToolItem, name), f"Gtk.ToolItem has no {name}"
 
 
-def test_update_tree_rebuilds_structure(monkeypatch, app_module):
-    base_host = make_host(app_module)
-    base_host.group = "ops"
-    base_host.name = "alpha"
-    child_host = base_host.clone()
-    child_host.group = "ops/prod"
-    child_host.name = "beta"
-    monkeypatch.setattr(
-        app_module,
-        "groups",
-        {"ops": [base_host], "ops/prod": [child_host], "unused": []},
-    )
-    wmain = make_wmain_for_tree(app_module)
-
-    def fake_get_folder(_model, base, path):
-        wmain._pending_path = path
-        return wmain.folder_nodes.get(path)
-
-    def fake_get_folder_menu(menu, base, path):
-        wmain._pending_menu_path = path
-        return wmain.menu_nodes.get(path)
-
-    wmain.get_folder = fake_get_folder
-    wmain.get_folder_menu = fake_get_folder_menu
-
-    class RecordingMenuItem(DummyMenuItem):
-        def set_submenu(self, menu):
-            super().set_submenu(menu)
-            wmain.menu_nodes[wmain._pending_menu_path] = menu
-
-    monkeypatch.setattr(app_module.Gtk, "MenuItem", RecordingMenuItem)
-    monkeypatch.setattr(app_module.Gtk, "Menu", DummyMenu)
+def test_update_tree_draws_subfolders_then_hosts_each_in_name_order(monkeypatch, app_module):
+    gamma, beta, alpha = hosts_named(app_module, "ops/gamma", "ops/prod/beta", "ops/alpha")
+    groups = {"ops": [gamma, alpha], "ops/prod": [beta], "unused": []}
+    wmain = make_wmain_for_tree(app_module, monkeypatch, groups)
 
     wmain.updateTree()
 
+    assert wmain.treeModel.shape() == [("ops", [("prod", ["beta"]), "alpha", "gamma"])]
+    assert menu_shape(wmain.menuServers) == [("ops", [("prod", ["beta"]), "alpha", "gamma"])]
     assert "unused" not in app_module.groups
-    assert wmain.treeModel.host_rows[0][0] == "beta"
-    assert wmain.treeModel.host_rows[1][0] == "alpha"
-    assert "/ops" in wmain.folder_nodes
-    assert "/ops/prod" in wmain.folder_nodes
-    assert "/ops" in wmain.menu_nodes
+
+
+def test_update_tree_draws_an_empty_folder_but_keeps_it_out_of_the_servers_menu(
+    monkeypatch, app_module
+):
+    """The tree is where folders are managed; the servers menu is for connecting."""
+    wmain = make_wmain_for_tree(
+        app_module, monkeypatch, {"ops": hosts_named(app_module, "ops/alpha")}
+    )
+    app_module.sync_folders()
+    app_module.folders.add(app_module.ROOT_FOLDER, "archive")
+
+    wmain.updateTree()
+
+    assert wmain.treeModel.shape() == [("archive", []), ("ops", ["alpha"])]
+    assert menu_shape(wmain.menuServers) == [("ops", ["alpha"])]
 
 
 def test_terminal_copy_helpers(monkeypatch, app_module):
@@ -3135,18 +3231,17 @@ def test_importing_a_file_with_a_repeated_id_separates_them(monkeypatch, tmp_pat
     assert len({h.id for h in imported}) == 2
 
 
-def test_deleting_the_last_host_in_a_folder_drops_the_folder(monkeypatch, app_module):
-    """Today's rule, kept until #154 can create empty folders: none outlives its hosts."""
-    kept, doomed = make_host(app_module), make_host(app_module)
-    kept.group, doomed.group = "ops", "ops/old"
-    monkeypatch.setattr(app_module, "groups", {"ops": [kept], "ops/old": [doomed]})
+def test_a_folder_outlives_its_last_host(monkeypatch, app_module):
+    """ADR-0002: folders are records, not a side effect of some host's path."""
+    kept, moved = hosts_named(app_module, "ops/web", "ops/old/db")
+    monkeypatch.setattr(app_module, "groups", {"ops": [kept], "ops/old": [moved]})
     app_module.sync_folders()
 
-    app_module.groups["ops/old"].remove(doomed)  # what on_btnDel_clicked does
+    app_module.groups["ops/old"].remove(moved)  # what on_btnDel_clicked does to a host
     app_module.sync_folders()
 
     tree = app_module.folders
-    assert [tree.path_for(folder_id) for folder_id in tree.folders] == ["ops"]
+    assert sorted(tree.path_for(folder_id) for folder_id in tree.folders) == ["ops", "ops/old"]
     assert list(app_module.groups) == ["ops"]
 
 
@@ -3179,3 +3274,344 @@ def test_importing_an_export_from_before_adr_0002_builds_the_tree(
     app_module.sync_folders()
 
     assert app_module.folders.path_for(imported[0].folder) == host.group
+
+
+def drawn_tree(app_module, monkeypatch, *specs):
+    """A Wmain with `specs` (``group/name``) drawn, plus inputbox and msgbox captured."""
+    made = hosts_named(app_module, *specs)
+    groups: dict = {}
+    for host in made:
+        groups.setdefault(host.group, []).append(host)
+    wmain = make_wmain_for_tree(app_module, monkeypatch, groups)
+    wmain.updateTree()
+    wmain.said = []
+    monkeypatch.setattr(app_module, "msgbox", wmain.said.append)
+    return wmain, made
+
+
+def answer(monkeypatch, app_module, text):
+    asked: list = []
+    monkeypatch.setattr(
+        app_module,
+        "inputbox",
+        lambda title, prompt, default="", **_kw: asked.append(default) or text,
+    )
+    return asked
+
+
+def paths(app_module):
+    return sorted(app_module.folders.path_for(f) for f in app_module.folders.folders)
+
+
+@pytest.mark.parametrize(
+    ("select", "expected"),
+    [("prod", "ops/prod/staging"), ("web", "ops/prod/staging"), (None, "staging")],
+)
+def test_new_folder_goes_in_the_selected_folder_or_a_hosts_folder_or_the_top(
+    monkeypatch, app_module, select, expected
+):
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/web")
+    wmain.treeServers.selected = wmain.treeModel.find(select)[1] if select else None
+    answer(monkeypatch, app_module, " staging ")
+
+    wmain.new_folder()
+
+    assert expected in paths(app_module)
+    assert wmain.treeServers.cursor == wmain.treeModel.find("staging")[0]
+    assert wmain.writes == 1
+
+
+@pytest.mark.parametrize(("typed", "said"), [("a/b", "cannot contain /"), ("prod", "[prod]")])
+def test_new_folder_explains_a_refused_name_and_changes_nothing(
+    monkeypatch, app_module, typed, said
+):
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/web")
+    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    before = paths(app_module)
+    answer(monkeypatch, app_module, typed)
+
+    wmain.new_folder()
+
+    assert paths(app_module) == before
+    assert len(wmain.said) == 1 and said in wmain.said[0]
+    assert wmain.writes == 0
+
+
+@pytest.mark.parametrize("typed", [None, "", "   "])
+def test_new_folder_cancelled_or_blank_does_nothing(monkeypatch, app_module, typed):
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/web")
+    answer(monkeypatch, app_module, typed)
+
+    wmain.new_folder()
+
+    assert paths(app_module) == ["ops"]
+    assert wmain.said == [] and wmain.writes == 0
+
+
+def test_rename_moves_every_host_below_the_folder_with_it(monkeypatch, app_module):
+    wmain, (web, db) = drawn_tree(app_module, monkeypatch, "ops/web", "ops/prod/db")
+    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    offered = answer(monkeypatch, app_module, "operations")
+
+    wmain.rename_selected_folder()
+
+    assert offered == ["ops"]
+    assert (web.group, db.group) == ("operations", "operations/prod")
+    assert sorted(app_module.groups) == ["operations", "operations/prod"]
+    assert wmain.treeServers.cursor == wmain.treeModel.find("operations")[0]
+
+
+def test_rename_refused_and_rename_of_a_host_row_do_nothing(monkeypatch, app_module):
+    wmain, (web, _db) = drawn_tree(app_module, monkeypatch, "ops/web", "home/nas")
+    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    answer(monkeypatch, app_module, "home")
+
+    wmain.rename_selected_folder()
+    wmain.treeServers.selected = wmain.treeModel.find("web")[1]
+    answer(monkeypatch, app_module, "renamed")
+    wmain.rename_selected_folder()
+
+    assert paths(app_module) == ["home", "ops"]
+    assert len(wmain.said) == 1 and "[home]" in wmain.said[0]
+    assert web.group == "ops"
+
+
+def test_f2_renames_the_selected_folder(monkeypatch, app_module):
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/web")
+    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    answer(monkeypatch, app_module, "operations")
+    monkeypatch.setattr(app_module.Gdk, "KEY_Delete", 1, raising=False)
+    monkeypatch.setattr(app_module.Gdk, "KEY_F2", 2, raising=False)
+
+    handled = wmain.on_treeServers_key_press(None, types.SimpleNamespace(keyval=2))
+
+    assert handled is True
+    assert paths(app_module) == ["operations"]
+
+
+DROP = types.SimpleNamespace(
+    BEFORE="before", AFTER="after", INTO_OR_BEFORE="into-before", INTO_OR_AFTER="into-after"
+)
+
+
+def aim(wmain, name, position):
+    """Point the fake drag at the row called `name`, or at blank space for None."""
+    wmain.treeServers.dest = None if name is None else (wmain.treeModel.find(name)[0], position)
+
+
+@pytest.mark.parametrize(
+    ("row", "position", "lands_in"),
+    [
+        ("prod", DROP.INTO_OR_BEFORE, "ops/prod"),
+        ("prod", DROP.INTO_OR_AFTER, "ops/prod"),
+        ("prod", DROP.BEFORE, "ops"),
+        ("prod", DROP.AFTER, "ops"),
+        ("ops", DROP.AFTER, ""),
+        ("web", DROP.BEFORE, "ops/prod"),
+        ("web", DROP.INTO_OR_AFTER, "ops/prod"),
+        (None, None, ""),
+    ],
+)
+def test_drop_target(monkeypatch, app_module, row, position, lands_in):
+    monkeypatch.setattr(app_module.Gtk, "TreeViewDropPosition", DROP)
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/web")
+    aim(wmain, row, position)
+
+    assert app_module.folders.path_for(wmain.drop_target(0, 0)) == lands_in
+
+
+def folder_id(app_module, path):
+    return next(f for f in app_module.folders.folders if app_module.folders.path_for(f) == path)
+
+
+@pytest.mark.parametrize(
+    ("kind", "subject", "target", "refused"),
+    [
+        ("host", "web", "ops/prod", "already there"),
+        ("host", "web", "", "hosts live in folders"),
+        ("host", "web", "home", "taken"),
+        ("host", "web", "ops", None),
+        ("folder", "ops/prod", "ops/prod", "cycle"),
+        ("folder", "ops", "ops/prod", "cycle"),
+        ("folder", "ops/prod", "ops", "already there"),
+        ("folder", "home", "ops/prod", None),
+        ("folder", "ops/prod", "", None),
+    ],
+)
+def test_drop_refusal(monkeypatch, app_module, kind, subject, target, refused):
+    wmain, made = drawn_tree(app_module, monkeypatch, "ops/prod/web", "home/web")
+    target_id = folder_id(app_module, target) if target else app_module.ROOT_FOLDER
+    item = ("host", made[0]) if kind == "host" else ("folder", folder_id(app_module, subject))
+
+    assert wmain.drop_refusal(item, target_id) == refused
+
+
+class DragData:
+    def __init__(self, payload=b""):
+        self.payload = payload
+        self.sent = None
+
+    def get_target(self):
+        return "GCM_TREE_ROW"
+
+    def set(self, target, fmt, payload):
+        self.sent = (target, fmt, payload)
+
+    def get_data(self):
+        return self.payload
+
+
+def test_drag_data_names_the_dragged_row_by_id(monkeypatch, app_module):
+    wmain, (web,) = drawn_tree(app_module, monkeypatch, "ops/web")
+    data = DragData()
+
+    wmain.treeServers.selected = wmain.treeModel.find("web")[1]
+    wmain.on_treeServers_drag_data_get(None, None, data, 0, 0)
+    assert data.sent == ("GCM_TREE_ROW", 8, f"host:{web.id}".encode())
+
+    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    wmain.on_treeServers_drag_data_get(None, None, data, 0, 0)
+    assert data.sent[2] == f"folder:{web.folder}".encode()
+
+
+@pytest.mark.parametrize("payload", [b"", b"host:nobody", b"folder:nothing", b"bogus"])
+def test_a_drop_naming_nothing_known_is_ignored(monkeypatch, app_module, payload):
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/web")
+
+    assert wmain.decode_dragged_item(payload) is None
+
+
+def drag_recorders(monkeypatch, app_module):
+    finished: list = []
+    statuses: list = []
+    monkeypatch.setattr(app_module.Gtk, "TreeViewDropPosition", DROP)
+    monkeypatch.setattr(app_module.Gtk, "drag_finish", lambda *args: finished.append(args))
+    monkeypatch.setattr(app_module.Gdk, "drag_status", lambda *args: statuses.append(args))
+    return finished, statuses
+
+
+def test_dropping_a_host_on_a_folder_refiles_it(monkeypatch, app_module):
+    finished, _statuses = drag_recorders(monkeypatch, app_module)
+    wmain, (web, _nas) = drawn_tree(app_module, monkeypatch, "ops/web", "home/nas")
+    aim(wmain, "home", DROP.INTO_OR_BEFORE)
+
+    wmain.on_treeServers_drag_data_received(
+        wmain.treeServers, "ctx", 0, 0, DragData(f"host:{web.id}".encode()), 0, 7
+    )
+
+    assert web.group == "home"
+    assert wmain.treeModel.shape() == [("home", ["nas", "web"]), ("ops", [])]
+    assert finished == [("ctx", True, False, 7)]
+    assert wmain.treeServers.stopped == ["drag-data-received"]
+    assert wmain.writes == 1
+
+
+def test_dropping_a_folder_moves_it_with_its_hosts(monkeypatch, app_module):
+    finished, _statuses = drag_recorders(monkeypatch, app_module)
+    wmain, (db, _nas) = drawn_tree(app_module, monkeypatch, "ops/prod/db", "home/nas")
+    aim(wmain, "home", DROP.INTO_OR_AFTER)
+
+    wmain.on_treeServers_drag_data_received(
+        wmain.treeServers,
+        "ctx",
+        0,
+        0,
+        DragData(f"folder:{folder_id(app_module, 'ops/prod')}".encode()),
+        0,
+        7,
+    )
+
+    assert db.group == "home/prod"
+    assert finished == [("ctx", True, False, 7)]
+
+
+def test_a_refused_drop_changes_nothing_and_reports_failure(monkeypatch, app_module):
+    finished, _statuses = drag_recorders(monkeypatch, app_module)
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/db")
+    aim(wmain, "prod", DROP.INTO_OR_BEFORE)
+    ops = folder_id(app_module, "ops")
+
+    wmain.on_treeServers_drag_data_received(
+        wmain.treeServers, "ctx", 0, 0, DragData(f"folder:{ops}".encode()), 0, 7
+    )
+
+    assert paths(app_module) == ["ops", "ops/prod"]
+    assert finished == [("ctx", False, False, 7)]
+    assert wmain.writes == 0
+
+
+def test_drag_motion_refuses_a_spot_itself_and_leaves_a_good_one_to_gtk(monkeypatch, app_module):
+    _finished, statuses = drag_recorders(monkeypatch, app_module)
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/db", "home/nas")
+    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+
+    aim(wmain, "prod", DROP.INTO_OR_BEFORE)
+    assert wmain.on_treeServers_drag_motion(wmain.treeServers, "ctx", 0, 0, 7) is True
+    assert statuses == [("ctx", 0, 7)]
+    assert wmain.treeServers.dest_row == (None, DROP.BEFORE)
+
+    aim(wmain, "home", DROP.INTO_OR_BEFORE)
+    assert wmain.on_treeServers_drag_motion(wmain.treeServers, "ctx", 0, 0, 8) is False
+    assert statuses == [("ctx", 0, 7)]
+
+
+def test_collapsed_folders_are_recorded_and_restored_by_id(monkeypatch, app_module):
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/db", "home/nas")
+    wmain.treeServers.collapse_row(wmain.treeModel.find("prod")[0])
+    wmain.treeServers.collapse_row(wmain.treeModel.find("home")[0])
+    recorded = wmain.get_collapsed_folder_ids()
+    assert sorted(recorded) == sorted(
+        [folder_id(app_module, "ops/prod"), folder_id(app_module, "home")]
+    )
+
+    # A new folder sorts ahead of both, so every row position shifts. Ids do not.
+    app_module.folders.add(app_module.ROOT_FOLDER, "archive")
+    wmain.updateTree()
+
+    collapsed = {wmain.treeModel.get_iter(p).row[0] for p in wmain.treeServers.collapsed}
+    assert collapsed == {"prod", "home"}
+
+
+def test_the_first_start_after_upgrading_restores_row_positions(monkeypatch, app_module):
+    monkeypatch.setattr(
+        app_module.Gtk,
+        "TreePath",
+        types.SimpleNamespace(new_from_string=lambda s: FakeTreePath(int(i) for i in s.split(":"))),
+    )
+    monkeypatch.setattr(app_module.conf, "COLLAPSED_FOLDER_IDS", None)
+    monkeypatch.setattr(app_module.conf, "COLLAPSED_FOLDERS", "1")
+    made = hosts_named(app_module, "home/nas", "ops/web")
+    wmain = make_wmain_for_tree(app_module, monkeypatch, {"home": [made[0]], "ops": [made[1]]})
+
+    wmain.updateTree()
+
+    assert wmain.treeServers.collapsed == {(1,)}
+    assert app_module.conf.COLLAPSED_FOLDERS is None
+
+
+def test_folder_fakes_offer_only_what_gtk_has():
+    """The fakes above stand in for real widgets; a method the real class lacks would
+    pass here and fail in the application (#30, #41)."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("clear", "append", "get_value", "get_iter_first", "get_iter", "foreach"):
+        assert hasattr(RecordingTreeStore, name) and hasattr(Gtk.TreeStore, name), name
+    for name in (
+        "get_selection",
+        "get_dest_row_at_pos",
+        "set_drag_dest_row",
+        "stop_emission_by_name",
+        "expand_all",
+        "collapse_row",
+        "row_expanded",
+        "expand_to_path",
+        "set_cursor",
+    ):
+        assert hasattr(FolderTreeView, name) and hasattr(Gtk.TreeView, name), name
+    for name in ("get_selected", "unselect_all"):
+        assert hasattr(Gtk.TreeSelection, name), name
+    for name in ("get_target", "set", "get_data"):
+        assert hasattr(DragData, name) and hasattr(Gtk.SelectionData, name), name
+    assert hasattr(Gtk.TreePath, "copy")

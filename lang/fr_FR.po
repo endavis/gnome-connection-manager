@@ -1660,3 +1660,15 @@ msgstr ""
 
 msgid "Error al exportar servidores"
 msgstr ""
+
+msgid "New Folder"
+msgstr ""
+
+msgid "Rename Folder"
+msgstr ""
+
+msgid "A folder name cannot contain /"
+msgstr ""
+
+msgid "Delete folder"
+msgstr ""

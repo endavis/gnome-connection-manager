@@ -8,8 +8,20 @@ from __future__ import annotations
 import configparser
 import io
 
+import pytest
+
 from gnome_connection_manager.utils import folders
-from gnome_connection_manager.utils.folders import ROOT, Folder, FolderTree
+from gnome_connection_manager.utils.folders import (
+    EMPTY_NAME,
+    INTO_ITSELF,
+    NAME_HAS_SEPARATOR,
+    NAME_TAKEN,
+    NO_SUCH_FOLDER,
+    ROOT,
+    Folder,
+    FolderError,
+    FolderTree,
+)
 from gnome_connection_manager.utils.hosts import Host
 
 
@@ -147,28 +159,6 @@ def test_bind_on_an_empty_tree_reproduces_every_group_path():
     assert all_paths(tree) == sorted(paths)
 
 
-def test_prune_removes_folders_with_nothing_kept_below_them():
-    tree = FolderTree()
-    kept = tree.ensure_path("ops/prod/db")
-    tree.ensure_path("ops/staging")
-    tree.ensure_path("home")
-
-    removed = tree.prune({kept})
-
-    assert all_paths(tree) == ["ops", "ops/prod", "ops/prod/db"]
-    assert len(removed) == 2
-
-
-def test_prune_keeps_a_folder_that_holds_hosts_and_subfolders():
-    tree = FolderTree()
-    parent = tree.ensure_path("ops")
-    child = tree.ensure_path("ops/prod")
-
-    tree.prune({parent, child})
-
-    assert all_paths(tree) == ["ops", "ops/prod"]
-
-
 def test_repair_moves_a_folder_with_an_unknown_parent_to_the_top():
     tree = tree_of(("a", "orphan", "missing"))
 
@@ -284,3 +274,179 @@ def test_a_config_with_no_folder_sections_loads_an_empty_tree():
 
     assert loaded.folders == {}
     assert fixes == []
+
+
+def test_bind_leaves_a_folder_standing_when_its_last_host_moves_out():
+    """Folders are records now, not a side effect of some host's path."""
+    tree = FolderTree()
+    record = host("ops/old")
+    tree.bind([record])
+
+    record.folder = tree.ensure_path("ops/new")
+    tree.bind([record])
+
+    assert all_paths(tree) == ["ops", "ops/new", "ops/old"]
+
+
+def test_children_come_back_in_name_order():
+    tree = FolderTree()
+    for path in ("ops/zeta", "ops/alpha", "ops/Beta", "home"):
+        tree.ensure_path(path)
+    ops = tree.child_named(ROOT, "ops").id
+
+    assert [f.name for f in tree.children(ops)] == ["Beta", "alpha", "zeta"]
+    assert [f.name for f in tree.children(ROOT)] == ["home", "ops"]
+
+
+def test_is_ancestor_and_subtree():
+    tree = FolderTree()
+    db = tree.ensure_path("ops/prod/db")
+    prod = tree.folders[db].parent
+    ops = tree.folders[prod].parent
+    home = tree.ensure_path("home")
+
+    assert tree.is_ancestor(ops, db)
+    assert tree.is_ancestor(db, db)
+    assert not tree.is_ancestor(db, ops)
+    assert not tree.is_ancestor(home, db)
+    assert tree.subtree(prod) == {prod, db}
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        ("   ", EMPTY_NAME),
+        ("a/b", NAME_HAS_SEPARATOR),
+        ("prod", NAME_TAKEN),
+        (" prod ", NAME_TAKEN),
+    ],
+)
+def test_check_name_refuses(name, reason):
+    tree = FolderTree()
+    tree.ensure_path("ops/prod")
+    ops = tree.child_named(ROOT, "ops").id
+
+    with pytest.raises(FolderError) as refused:
+        tree.check_name(ops, name)
+
+    assert refused.value.reason == reason
+
+
+def test_add_creates_a_stripped_name_under_its_parent():
+    tree = FolderTree()
+    ops = tree.ensure_path("ops")
+
+    folder = tree.add(ops, "  staging ")
+
+    assert tree.path_for(folder.id) == "ops/staging"
+
+
+def test_add_refuses_a_parent_that_does_not_exist():
+    with pytest.raises(FolderError) as refused:
+        FolderTree().add("nope", "x")
+
+    assert refused.value.reason == NO_SUCH_FOLDER
+
+
+def test_rename_may_keep_its_own_name_but_not_take_a_siblings():
+    tree = FolderTree()
+    prod = tree.ensure_path("ops/prod")
+    tree.ensure_path("ops/staging")
+
+    tree.rename(prod, "prod")
+    with pytest.raises(FolderError) as refused:
+        tree.rename(prod, "staging")
+
+    assert refused.value.reason == NAME_TAKEN
+    tree.rename(prod, "production")
+    assert tree.path_for(prod) == "ops/production"
+
+
+def test_move_refiles_a_folder_with_everything_below_it():
+    tree = FolderTree()
+    db = tree.ensure_path("ops/prod/db")
+    prod = tree.folders[db].parent
+    home = tree.ensure_path("home")
+
+    tree.move(prod, home)
+
+    assert tree.path_for(db) == "home/prod/db"
+
+
+def test_move_to_the_top_level():
+    tree = FolderTree()
+    prod = tree.ensure_path("ops/prod")
+
+    tree.move(prod, ROOT)
+
+    assert tree.path_for(prod) == "prod"
+
+
+@pytest.mark.parametrize("into", ["itself", "its child"])
+def test_move_refuses_a_folder_into_itself_or_below_itself(into):
+    tree = FolderTree()
+    db = tree.ensure_path("ops/prod/db")
+    prod = tree.folders[db].parent
+
+    with pytest.raises(FolderError) as refused:
+        tree.move(prod, prod if into == "itself" else db)
+
+    assert refused.value.reason == INTO_ITSELF
+    assert tree.path_for(db) == "ops/prod/db"
+
+
+def test_move_refuses_a_name_already_taken_at_the_destination():
+    tree = FolderTree()
+    ops_prod = tree.ensure_path("ops/prod")
+    home = tree.ensure_path("home")
+    tree.ensure_path("home/prod")
+
+    with pytest.raises(FolderError) as refused:
+        tree.move(ops_prod, home)
+
+    assert refused.value.reason == NAME_TAKEN
+
+
+def test_move_does_not_demand_a_name_from_a_legacy_empty_folder():
+    """``a//b`` left an empty-named folder; moving it must not fail on the name."""
+    tree = FolderTree()
+    b = tree.ensure_path("a//b")
+    blank = tree.folders[b].parent
+    home = tree.ensure_path("home")
+
+    tree.move(blank, home)
+
+    assert tree.path_for(b) == "home//b"
+
+
+def test_check_move_changes_nothing():
+    tree = FolderTree()
+    prod = tree.ensure_path("ops/prod")
+    home = tree.ensure_path("home")
+
+    tree.check_move(prod, home)
+
+    assert tree.path_for(prod) == "ops/prod"
+
+
+def test_remove_takes_the_whole_subtree():
+    tree = FolderTree()
+    db = tree.ensure_path("ops/prod/db")
+    prod = tree.folders[db].parent
+    tree.ensure_path("ops/staging")
+
+    removed = tree.remove(prod)
+
+    assert removed == {prod, db}
+    assert all_paths(tree) == ["ops", "ops/staging"]
+
+
+def test_editing_an_unknown_folder_is_a_folder_error_not_a_key_error():
+    tree = FolderTree()
+    for edit in (
+        lambda: tree.rename("nope", "x"),
+        lambda: tree.move("nope", ROOT),
+        lambda: tree.remove("nope"),
+    ):
+        with pytest.raises(FolderError):
+            edit()
