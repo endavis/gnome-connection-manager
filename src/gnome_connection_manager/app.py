@@ -3211,8 +3211,10 @@ class Wmain(GladeComponent):
         # Only now is the whole list known, so only now can a repeated id be seen. A
         # record with no id of its own already has one by this point -- Host mints it.
         reassigned = HostUtils.ensure_unique_ids(h for hs in groups.values() for h in hs)
-        for host in reassigned:
-            logger.warning("Reassigned a duplicate host id to %s/%s", host.group, host.name)
+        if reassigned:
+            # A count rather than which entries: a Host carries the stored password, and
+            # CodeQL taints every attribute read off one, naming included.
+            logger.warning("Reassigned %d duplicate host id(s)", len(reassigned))
 
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
