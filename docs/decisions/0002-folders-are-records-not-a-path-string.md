@@ -226,6 +226,52 @@ guard, and that raises `TypeError` on an id. So `collapsed-folder-ids` is writte
 it, and wins when present. The positional key is read only on the first start after an
 upgrade.
 
+### 2026-09-21, implementing phase 4
+
+Ordering needed four decisions the Rationale left open, and it exposed a fault in phase 3.
+
+**Hosts carry a `position` too.** The Decision puts one on folder records only, but the
+tree was alphabetical in both dimensions, and a host cannot be placed without one. On a
+folder or a host, it is written only when set.
+
+**Subfolders and hosts share one order.** A folder's children are a single sequence, so a
+folder can sit between two hosts. Ordering them as two lists, subfolders first, would
+make some drops land somewhere other than the line GTK draws; with one list, the line is
+always where the item goes.
+
+**A position is kept only while it says something.** A folder's children carry positions
+only while their order differs from the one the tree always used: subfolders, then
+hosts, each by name. `number` strips them otherwise, and `sync_folders` runs it on every
+folder. So a config nobody arranges is written exactly as before, a host added to a
+folder in name order sorts into place, and a folder dragged back into name order goes
+back to sorting itself. In an arranged folder, a host without a position goes last.
+Sort by Name clears one folder's positions.
+
+**Where a drop lands.** The edge of a row, where GTK draws its line, places the item
+beside that row. The middle of a folder row files it into that folder: at the end of an
+arranged one, and by name in one that is not, so dropping on a folder never arranges it.
+The middle of a host row means that host's folder, as in phase 3. A drop that would
+leave the order as it is is refused. A duplicate in an arranged folder is placed after
+its original; the host dialog carries a position across an edit that keeps the host in
+its folder, and drops it on a move.
+
+**Phase 3 dragged the selection, not the pressed row.** Measured with real pointer input
+under Xvfb, a press on a folder's expander arrow starts a drag without selecting the
+folder, so `dragged_tree_item`, which read the selection, carried whichever row had been
+selected before. The tree now records the row under each left press, which is the row
+GtkTreeView drags.
+
+**A repeated folder id still cannot reach the tree, and what that costs.** The issue
+asked for a test of the duplicate-id repair; the test now shows configparser refusing the
+repeated section, as the amendment above says. Measured while closing #154, the cost is
+larger than that note implies: such a file does not load at all. `loadConfig` raises
+`DuplicateSectionError` during startup and no window opens. configparser refuses a
+repeated host section the same way, so this predates ADR-0002.
+
+**Downgrading loses the order, not the hosts.** Measured on a copy of a real config, an
+older build opens a file with positions in it and draws name order. From reading its
+code, its next save writes no positions.
+
 ## Related Issues
 
 - Issue #154: Replace the group path string with a real folder tree

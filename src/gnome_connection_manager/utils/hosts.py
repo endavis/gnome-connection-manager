@@ -25,6 +25,7 @@ import configparser
 import secrets
 
 from gnome_connection_manager.utils import crypto
+from gnome_connection_manager.utils.folders import parse_position
 
 HOST_ID_BYTES = 4
 
@@ -53,6 +54,7 @@ class Host:
         # unset, and an id is the one attribute no consumer should have to test for.
         self.id = ""
         self.folder = ""
+        self.position: int | None = None
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -86,9 +88,11 @@ class Host:
             # record predates ADR-0001 and is minted one below, which is the whole of the
             # migration: a config gets ids by being read, with no version bump.
             self.id = self.get_arg(args, "")
-            # Last. The id of the folder this host is filed under (ADR-0002); `group` is
-            # the path derived from it. Empty until FolderTree.bind resolves `group`.
+            # The id of the folder this host is filed under (ADR-0002); `group` is the
+            # path derived from it. Empty until FolderTree.bind resolves `group`.
             self.folder = self.get_arg(args, "")
+            # Last. Where it sits among that folder's children, or None for name order.
+            self.position = self.get_arg(args, None)
         except (IndexError, ValueError, AttributeError):
             pass
         if not self.id:
@@ -110,7 +114,8 @@ class Host:
 
         The id is deliberately not carried: a clone is a second host, and two entries
         sharing an id is the thing `ensure_unique_ids` exists to undo. The folder is: the
-        copy is filed beside the original.
+        copy is filed beside the original. The position is not, since two siblings cannot
+        hold one place; a duplicate in the tree is placed by the caller.
         """
         return Host(
             self.group,
@@ -197,6 +202,8 @@ class HostUtils:
         host_id = HostUtils.get_val(cp, section, "id", "")
         # Absent before ADR-0002; FolderTree.bind resolves `group` for it instead.
         folder = HostUtils.get_val(cp, section, "folder", "")
+        # Written only for a host in a folder the user has arranged.
+        position = parse_position(cp.get(section, "position", fallback=None))
         h = Host(
             group,
             name,
@@ -224,6 +231,7 @@ class HostUtils:
             commands_enabled,
             host_id,
             folder,
+            position,
         )
         return h
 
@@ -256,6 +264,8 @@ class HostUtils:
         cp.set(section, "commands-enabled", host.commands_enabled)
         cp.set(section, "id", host.id)
         cp.set(section, "folder", host.folder)
+        if host.position is not None:
+            cp.set(section, "position", str(host.position))
 
     @staticmethod
     def ensure_unique_ids(hosts):

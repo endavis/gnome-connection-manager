@@ -27,6 +27,9 @@ the git log.
   host leaves (ADR-0002)
 - Hosts and folders can be dragged between folders in the server tree. A drop that would
   put a folder inside itself, or a host beside another of the same name, is refused
+- The server tree can be put in any order: drop a host or folder on the line between two
+  rows and it stays there. A folder you never arrange keeps sorting by name, and Sort by
+  Name hands one back to that (ADR-0002)
 
 ### Changed
 - Collapsed folders in the server tree are remembered by folder rather than by row

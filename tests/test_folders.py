@@ -269,6 +269,13 @@ def test_load_repairs_what_it_reads():
     assert loaded.folders["a"].parent == ROOT
 
 
+def test_a_repeated_folder_id_never_reaches_the_tree():
+    """#154 asked repair to reassign a repeated id. It cannot arise: the id is the section
+    name, and configparser refuses a repeated section before load() sees either."""
+    with pytest.raises(configparser.DuplicateSectionError):
+        configparser.RawConfigParser().read_string("[folder a]\nname = x\n\n[folder a]\n")
+
+
 def test_a_config_with_no_folder_sections_loads_an_empty_tree():
     loaded, fixes = FolderTree.load(configparser.RawConfigParser())
 
@@ -288,14 +295,157 @@ def test_bind_leaves_a_folder_standing_when_its_last_host_moves_out():
     assert all_paths(tree) == ["ops", "ops/new", "ops/old"]
 
 
-def test_children_come_back_in_name_order():
-    tree = FolderTree()
-    for path in ("ops/zeta", "ops/alpha", "ops/Beta", "home"):
-        tree.ensure_path(path)
-    ops = tree.child_named(ROOT, "ops").id
+def named(order):
+    return [child.name for child in order]
 
-    assert [f.name for f in tree.children(ops)] == ["Beta", "alpha", "zeta"]
-    assert [f.name for f in tree.children(ROOT)] == ["home", "ops"]
+
+def filed(tree, path, *names, positions=()):
+    """Hosts called `names` in the folder at `path`, with positions if given."""
+    folder_id = tree.ensure_path(path)
+    made = []
+    for index, name in enumerate(names):
+        record = Host(path, name)
+        record.folder = folder_id
+        record.position = positions[index] if positions else None
+        made.append(record)
+    return folder_id, made
+
+
+def test_an_unarranged_folder_is_drawn_as_the_tree_always_drew_it():
+    """Subfolders first, then hosts, each by name -- case-sensitively, as before."""
+    tree = FolderTree()
+    for path in ("ops/zeta", "ops/Beta", "home"):
+        tree.ensure_path(path)
+    ops, hosts = filed(tree, "ops", "web", "Admin")
+
+    contents = tree.contents(hosts)
+
+    assert named(contents[ops]) == ["Beta", "zeta", "Admin", "web"]
+    assert named(contents[ROOT]) == ["home", "ops"]
+
+
+def test_positions_order_hosts_and_folders_together():
+    tree = FolderTree()
+    ops, hosts = filed(tree, "ops", "web", "db", positions=(0, 2))
+    tree.folders[tree.ensure_path("ops/prod")].position = 1
+
+    assert named(tree.contents(hosts)[ops]) == ["web", "prod", "db"]
+
+
+def test_anything_without_a_position_follows_the_arranged_ones_in_name_order():
+    """A host added to an arranged folder lands at the end, not at its place by name."""
+    tree = FolderTree()
+    ops, hosts = filed(tree, "ops", "zeta", "web", "alpha", positions=(1, 0, None))
+    tree.ensure_path("ops/new")
+
+    assert named(tree.contents(hosts)[ops]) == ["web", "zeta", "new", "alpha"]
+
+
+def test_contents_changes_no_position():
+    tree = FolderTree()
+    _ops, hosts = filed(tree, "ops", "b", "a", positions=(7, 9))
+
+    tree.contents(hosts)
+
+    assert [h.position for h in hosts] == [7, 9]
+
+
+def test_number_keeps_positions_only_for_an_order_names_would_not_give():
+    tree = FolderTree()
+    _ops, (a, b) = filed(tree, "ops", "a", "b")
+
+    folders.number([b, a])
+    assert (a.position, b.position) == (1, 0)
+
+    folders.number([a, b])
+    assert (a.position, b.position) == (None, None)
+
+
+def test_place_beside_a_sibling_reorders():
+    tree = FolderTree()
+    ops, (a, b, c) = filed(tree, "ops", "a", "b", "c")
+    order = tree.contents([a, b, c])[ops]
+
+    folders.place(order, c, a)
+    assert named(tree.contents([a, b, c])[ops]) == ["c", "a", "b"]
+
+    folders.place(tree.contents([a, b, c])[ops], c, b, after=True)
+    assert named(tree.contents([a, b, c])[ops]) == ["a", "b", "c"]
+    assert [h.position for h in (a, b, c)] == [None, None, None]
+
+
+def test_place_brings_an_item_in_from_elsewhere_beside_a_sibling():
+    tree = FolderTree()
+    ops, (a, b) = filed(tree, "ops", "a", "b")
+    _home, (z,) = filed(tree, "home", "z")
+    order = tree.contents([a, b])[ops]
+
+    z.folder = ops
+    folders.place(order, z, b)
+
+    assert named(tree.contents([a, b, z])[ops]) == ["a", "z", "b"]
+
+
+def test_place_without_a_spot_keeps_a_folder_in_name_order():
+    """Dropping on a folder is not arranging it."""
+    tree = FolderTree()
+    ops, (b, c) = filed(tree, "ops", "b", "c")
+    _home, (a,) = filed(tree, "home", "a", positions=(4,))
+    order = tree.contents([b, c])[ops]
+
+    a.folder = ops
+    folders.place(order, a)
+
+    assert a.position is None
+    assert named(tree.contents([a, b, c])[ops]) == ["a", "b", "c"]
+
+
+def test_place_without_a_spot_goes_to_the_end_of_an_arranged_folder():
+    tree = FolderTree()
+    ops, (c, b) = filed(tree, "ops", "c", "b", positions=(0, 1))
+    _home, (a,) = filed(tree, "home", "a")
+    order = tree.contents([c, b])[ops]
+
+    a.folder = ops
+    folders.place(order, a)
+
+    assert named(tree.contents([a, b, c])[ops]) == ["c", "b", "a"]
+
+
+def test_move_forgets_a_position_among_old_siblings_and_keeps_one_it_did_not_leave():
+    tree = FolderTree()
+    prod = tree.ensure_path("ops/prod")
+    home = tree.ensure_path("home")
+    tree.folders[prod].position = 2
+
+    tree.move(prod, tree.folders[prod].parent)
+    assert tree.folders[prod].position == 2
+
+    tree.move(prod, home)
+    assert tree.folders[prod].position is None
+
+
+def test_folder_positions_survive_save_and_load():
+    tree = FolderTree()
+    arranged_id = tree.ensure_path("ops")
+    unarranged_id = tree.ensure_path("home")
+    tree.folders[arranged_id].position = 5
+    config = configparser.RawConfigParser()
+
+    tree.save(config)
+    loaded, _fixes = FolderTree.load(reread(config))
+
+    assert loaded.folders[arranged_id].position == 5
+    assert loaded.folders[unarranged_id].position is None
+    assert not config.has_option(f"folder {unarranged_id}", "position")
+
+
+@pytest.mark.parametrize(
+    ("text", "position"),
+    [("3", 3), (" 4 ", 4), ("0", 0), ("", None), ("x", None), ("2.5", None), (None, None)],
+)
+def test_parse_position(text, position):
+    assert folders.parse_position(text) == position
 
 
 def test_is_ancestor_and_subtree():

@@ -117,8 +117,9 @@ def make_whost(
     whost.btnFColor = ColorButtonStub(types.SimpleNamespace(red=1, green=1, blue=1))
     whost.btnBColor = ColorButtonStub(types.SimpleNamespace(red=0, green=0, blue=0))
     whost.isNew = True
-    # The real dialog sets this in __init__ and overwrites it in init() for an edit.
+    # The real dialog sets these in __init__ and overwrites them in init() for an edit.
     whost.oldId = ""
+    whost.oldPosition = None
 
     destroy_stub = DestroyStub()
     widgets = {
@@ -439,6 +440,42 @@ def test_init_remembers_the_id_being_edited(monkeypatch, app_module):
     dialog.init("ops", stored)
 
     assert dialog.oldId == stored.id
+
+
+def test_init_remembers_where_the_host_sat(monkeypatch, app_module):
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    stored = make_stored_host(app_module, commands="", enabled=False)
+    stored.position = 3
+
+    dialog.init("ops", stored)
+
+    assert dialog.oldPosition == 3
+
+
+@pytest.mark.parametrize(("group", "kept"), [("ops", 3), ("netops/core", None)])
+def test_an_edit_keeps_the_hosts_place_only_while_it_stays_in_its_folder(
+    monkeypatch, app_module, group, kept
+):
+    """A position orders a host among its siblings; in another folder it means nothing."""
+    stored = make_stored_host(app_module, commands="", enabled=False)
+    monkeypatch.setattr(app_module, "groups", {"ops": [stored]})
+    whost, _destroy = make_whost(app_module)
+    whost.cmbGroup = ComboStub(group)
+    whost.isNew = False
+    whost.oldGroup = "ops"
+    whost.oldName = "router"
+    whost.oldId = stored.id
+    whost.oldPosition = 3
+    monkeypatch.setattr(
+        app_module,
+        "wMain",
+        types.SimpleNamespace(updateTree=lambda: None, writeConfig=lambda: None),
+        raising=False,
+    )
+
+    whost.on_okbutton1_clicked(None)
+
+    assert app_module.groups[group][0].position == kept
 
 
 def test_editing_a_host_keeps_its_id(monkeypatch, app_module):

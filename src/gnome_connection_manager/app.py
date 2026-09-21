@@ -45,7 +45,6 @@ import configparser
 import contextlib
 import json
 import logging
-import operator
 import os
 import re
 import secrets
@@ -110,6 +109,9 @@ from gnome_connection_manager.utils.folders import (  # noqa: E402
     NAME_TAKEN,
     FolderError,
     FolderTree,
+    arranged,
+    number,
+    place,
 )
 from gnome_connection_manager.utils.folders import ROOT as ROOT_FOLDER  # noqa: E402
 from gnome_connection_manager.utils.hosts import Host, HostUtils  # noqa: E402
@@ -450,18 +452,38 @@ shortcuts: dict = {}
 
 
 def sync_folders():
-    """Bind every host to a folder record and rebuild `groups` from the result.
+    """Bind every host to a folder record, rebuild `groups` from the result, and return
+    each folder's children in the order the tree draws them.
 
     Every edit to the host list -- the dialog, delete, duplicate, import, a drag --
     changes `groups` or a folder record and then calls updateTree, so doing this there
     keeps those callers simple. A folder whose last host has gone stays: folders are
-    records now, not a side effect of some host's path.
+    records now, not a side effect of some host's path. Positions are renumbered here
+    too, so a host that left a folder leaves no gap and one that arrived without a
+    position gets one -- see `number` for when a folder keeps positions at all.
     """
     hosts = [host for group_hosts in groups.values() for host in group_hosts]
     folders.bind(hosts)
     groups.clear()
     for host in hosts:
         groups.setdefault(host.group, []).append(host)
+    contents = folders.contents(hosts)
+    for order in contents.values():
+        number(order)
+    return contents
+
+
+def folder_contents():
+    """Each folder's children as drawn, as sync_folders returns them, changing nothing."""
+    return folders.contents(host for group_hosts in groups.values() for host in group_hosts)
+
+
+def place_copy(original, copy):
+    """Put a duplicate straight after its original in a folder someone has arranged. In
+    one still in name order it needs nothing: it sorts in by name like any new host."""
+    order = folder_contents().get(original.folder, [])
+    if any(child.position is not None for child in order):
+        place(order, copy, original, after=True)
 
 
 enc_passwd = ""
@@ -1565,6 +1587,7 @@ class Wmain(GladeComponent):
         self._context_terminal = None
         self._context_tab_widget = None
         self._context_tree_path = None
+        self._drag_source_path = None
 
         if conf.VERSION == 0:
             initialise_encyption_key()
@@ -2498,6 +2521,11 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.rename-folder")
         menuItem.show()
 
+        self.popupMenuFolder.mnuSortFolder = menuItem = Gtk.MenuItem(label=_("Sort by Name"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.sort-folder")
+        menuItem.show()
+
         self.popupMenuFolder.mnuDel = menuItem = Gtk.MenuItem(label=_("Eliminar"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.delete")
@@ -3327,7 +3355,7 @@ class Wmain(GladeComponent):
         return self.color_back1 if self.color_index % 2 else unevenColor
 
     def updateTree(self):
-        sync_folders()
+        contents = sync_folders()
 
         if conf.COLLAPSED_FOLDERS is None:
             # Not the first render: keep whatever the user has collapsed since.
@@ -3336,46 +3364,44 @@ class Wmain(GladeComponent):
         self.menuServers.foreach(self.menuServers.remove)
         self.treeModel.clear()
 
-        hosts_by_folder: dict = {}
-        for group_hosts in groups.values():
-            for host in group_hosts:
-                hosts_by_folder.setdefault(host.folder, []).append(host)
         # The servers menu is for connecting, so it leaves out folders with no host below.
         occupied = {
             folder_id
-            for host_folder in hosts_by_folder
+            for host_folder in {host.folder for hosts in groups.values() for host in hosts}
             for folder_id in folders.folders
             if folders.is_ancestor(folder_id, host_folder)
         }
-        self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, hosts_by_folder, occupied)
+        self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, contents, occupied)
 
         self.set_collapsed_nodes()
         conf.COLLAPSED_FOLDERS = None
         self.update_row_color()
 
-    def add_folder_rows(self, parent_id, parent_row, parent_menu, hosts_by_folder, occupied):
-        """Subfolders first, then hosts, each in name order -- the order the tree kept
-        when it was drawn from path strings."""
-        for folder in folders.children(parent_id):
+    def add_folder_rows(self, parent_id, parent_row, parent_menu, contents, occupied):
+        """A folder's children in their order, subfolders drawn with their own. Until
+        someone arranges a folder that is subfolders, then hosts, each by name -- the
+        order the tree kept when it was drawn from path strings."""
+        for child in contents.get(parent_id, []):
+            if isinstance(child, Host):
+                self.treeModel.append(parent_row, [child.name, child, "gtk-network", "#fff", ""])
+                mnuItem = Gtk.MenuItem(label=child.name)
+                mnuItem.show()
+                mnuItem.connect(
+                    "activate", lambda arg, nb, h: self.addTab(nb, h), self.nbConsole, child
+                )
+                parent_menu.append(mnuItem)
+                continue
             row = self.treeModel.append(
-                parent_row, [folder.name, None, "gtk-directory", "#fff", folder.id]
+                parent_row, [child.name, None, "gtk-directory", "#fff", child.id]
             )
             submenu = parent_menu
-            if folder.id in occupied:
-                item = Gtk.MenuItem(label=folder.name)
+            if child.id in occupied:
+                item = Gtk.MenuItem(label=child.name)
                 submenu = Gtk.Menu()
                 item.set_submenu(submenu)
                 item.show()
                 parent_menu.append(item)
-            self.add_folder_rows(folder.id, row, submenu, hosts_by_folder, occupied)
-            for host in sorted(hosts_by_folder.get(folder.id, []), key=operator.attrgetter("name")):
-                self.treeModel.append(row, [host.name, host, "gtk-network", "#fff", ""])
-                mnuItem = Gtk.MenuItem(label=host.name)
-                mnuItem.show()
-                mnuItem.connect(
-                    "activate", lambda arg, nb, h: self.addTab(nb, h), self.nbConsole, host
-                )
-                submenu.append(mnuItem)
+            self.add_folder_rows(child.id, row, submenu, contents, occupied)
 
     def is_folder_row(self, iter_):
         """Folder rows carry no host. This used to be asked as iter_has_child, which
@@ -4056,6 +4082,7 @@ class Wmain(GladeComponent):
         newhost = host.clone()
         newhost.name = newname
         groups.setdefault(group, []).append(newhost)
+        place_copy(host, newhost)
         self.updateTree()
         self.writeConfig()
 
@@ -4115,6 +4142,17 @@ class Wmain(GladeComponent):
         if self.apply_folder_edit(lambda: folders.rename(folder.id, name), folder.parent, name):
             self.select_folder_row(folder.id)
 
+    def sort_selected_folder(self):
+        """Put the selected folder back in name order, and keep it there as hosts are
+        added. Only that folder: its subfolders keep whatever order they were given."""
+        order = folder_contents().get(self.selected_tree_folder(), [])
+        if all(child.position is None for child in order):
+            return
+        for child in order:
+            child.position = None
+        self.updateTree()
+        self.writeConfig()
+
     def select_folder_row(self, folder_id):
         """Show a folder after a redraw, opening whatever it sits in."""
         found: list = []
@@ -4131,47 +4169,65 @@ class Wmain(GladeComponent):
             self.treeServers.set_cursor(found[0], None, False)
 
     def dragged_tree_item(self):
-        """("host", Host) or ("folder", id) for the row being dragged. GtkTreeView
-        selects a row on the press that starts a drag, so it is the selection."""
-        iter_ = self.treeServers.get_selection().get_selected()[1]
-        if iter_ is None:
+        """("host", Host) or ("folder", id) for the row being dragged: the one under the
+        press that started it. Not the selection -- measured with real pointer input, a
+        press on a folder's expander arrow starts a drag without selecting the folder,
+        and the selection would then carry whatever row was selected before."""
+        if self._drag_source_path is None:
+            return None
+        try:
+            iter_ = self.treeModel.get_iter(self._drag_source_path)
+        except ValueError:
             return None
         if self.is_folder_row(iter_):
             return ("folder", self.folder_id_at(iter_))
         return ("host", self.treeModel.get_value(iter_, 1))
 
     def drop_target(self, x, y):
-        """The folder a drop at (x, y) lands in: into a folder row, or beside it into
-        its parent; into a host row's own folder; or the top level below every row."""
+        """Where a drop at (x, y) lands, as `(folder_id, beside, after)`.
+
+        On the edge of a row -- the line GTK draws between rows -- it lands in that row's
+        folder, next to that row: `beside` is the row's host or folder record, and
+        `after` says which side. On the middle of a folder row it goes into that folder,
+        and on the middle of a host row into the host's folder, with no place asked for.
+        Below every row it goes to the top level."""
         dest = self.treeServers.get_dest_row_at_pos(x, y)
         if dest is None:
-            return ROOT_FOLDER
+            return ROOT_FOLDER, None, False
         path, position = dest
         iter_ = self.treeModel.get_iter(path)
+        edge = position in (Gtk.TreeViewDropPosition.BEFORE, Gtk.TreeViewDropPosition.AFTER)
+        after = position == Gtk.TreeViewDropPosition.AFTER
         if not self.is_folder_row(iter_):
-            return self.treeModel.get_value(iter_, 1).folder
-        folder_id = self.folder_id_at(iter_)
-        if position in (Gtk.TreeViewDropPosition.BEFORE, Gtk.TreeViewDropPosition.AFTER):
-            return folders.folders[folder_id].parent
-        return folder_id
+            host = self.treeModel.get_value(iter_, 1)
+            return (host.folder, host, after) if edge else (host.folder, None, False)
+        folder = folders.folders[self.folder_id_at(iter_)]
+        return (folder.parent, folder, after) if edge else (folder.id, None, False)
 
     def drop_refusal(self, item, target):
-        """None when `item` may land in `target`, otherwise the reason it may not."""
+        """None when `item` may land at `target`, otherwise the reason it may not."""
         kind, subject = item
-        if kind == "host":
-            if target == ROOT_FOLDER:
-                return "hosts live in folders"
-            if target == subject.folder:
+        folder_id, beside, after = target
+        record = subject if kind == "host" else folders.folders[subject]
+        if folder_id == (subject.folder if kind == "host" else record.parent):
+            if beside is None or beside is record:
                 return "already there"
+            order = folder_contents()[folder_id]
+            if arranged(order, record, beside, after=after) == order:
+                return "already there"
+            return None
+        if kind == "host":
+            if folder_id == ROOT_FOLDER:
+                return "hosts live in folders"
             if any(
-                h.name == subject.name and h.folder == target for hs in groups.values() for h in hs
+                h.name == subject.name and h.folder == folder_id
+                for hs in groups.values()
+                for h in hs
             ):
                 return NAME_TAKEN
             return None
-        if target == folders.folders[subject].parent:
-            return "already there"
         try:
-            folders.check_move(subject, target)
+            folders.check_move(subject, folder_id)
         except FolderError as error:
             return error.reason
         return None
@@ -4211,10 +4267,16 @@ class Wmain(GladeComponent):
         accepted = item is not None and self.drop_refusal(item, target) is None
         if accepted:
             kind, subject = item
+            folder_id, beside, after = target
+            # The destination as it was drawn, before the item leaves or arrives.
+            order = folder_contents().get(folder_id, [])
             if kind == "host":
-                subject.folder = target
+                record = subject
+                subject.folder = folder_id
             else:
-                folders.move(subject, target)
+                record = folders.folders[subject]
+                folders.move(subject, folder_id)
+            place(order, record, beside, after=after)
             self.updateTree()
             self.writeConfig()
         Gtk.drag_finish(context, accepted, False, time)
@@ -4726,6 +4788,11 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_tvServers_button_press_event {
     def on_tvServers_button_press_event(self, widget, event, *args):
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
+            # The row a drag from here would carry: GtkTreeView drags the row under the
+            # press, and a press on a folder's expander arrow does not select it.
+            hit = self.treeServers.get_path_at_pos(int(event.x), int(event.y))
+            self._drag_source_path = hit[0] if hit else None
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             x = int(event.x)
             y = int(event.y)
@@ -4853,6 +4920,7 @@ class Whost(GladeComponent):
         # Set here too so the attribute exists whatever init() is handed; only an edit
         # gives it a value, and only an edit reads it.
         self.oldId = ""
+        self.oldPosition = None
 
         self.chkDynamic = self.get_widget("chkDynamic")
         self.txtLocalPort = self.get_widget("txtLocalPort")
@@ -4928,8 +4996,10 @@ class Whost(GladeComponent):
         self.txtName.set_text(host.name)
         self.oldName = host.name
         # Saving builds a new Host rather than mutating this one, so the id has to be
-        # carried across by hand or the edit would look like a different record.
+        # carried across by hand or the edit would look like a different record. The
+        # position too, or every edit would move the host in a folder someone arranged.
         self.oldId = host.id
+        self.oldPosition = host.position
         self.txtDescription.set_text(host.description)
         self.txtHost.set_text(host.host)
         i = self.cmbType.get_model().get_iter_first()
@@ -5097,6 +5167,9 @@ class Whost(GladeComponent):
             commands_enabled,
             "" if self.isNew else self.oldId,
         )
+        if not self.isNew and group == self.oldGroup:
+            # Only while it stays in the same folder: a position means nothing elsewhere.
+            host.position = self.oldPosition
 
         try:
             # Guardar
@@ -6781,6 +6854,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("duplicate-host", self._on_action_duplicate_host)
         self._create_action("new-folder", self._on_action_new_folder)
         self._create_action("rename-folder", self._on_action_rename_folder)
+        self._create_action("sort-folder", self._on_action_sort_folder)
         self._create_action("expand-groups", self._on_action_expand_groups)
         self._create_action("collapse-groups", self._on_action_collapse_groups)
         self._create_stateful_action("toggle-panel", conf.SHOW_PANEL, self._on_toggle_panel, ["F9"])
@@ -6910,6 +6984,7 @@ class GcmApplication(Gtk.Application):
         folder_section = Gio.Menu()
         folder_section.append(_("New Folder"), "app.new-folder")
         folder_section.append(_("Rename Folder"), "app.rename-folder")
+        folder_section.append(_("Sort by Name"), "app.sort-folder")
         servers_menu.append_section(None, folder_section)
         address_section = Gio.Menu()
         address_section.append(_("Copy Address"), "app.copy-address")
@@ -7190,6 +7265,10 @@ class GcmApplication(Gtk.Application):
     def _on_action_rename_folder(self, action, _param):
         if self._controller is not None:
             self._controller.rename_selected_folder()
+
+    def _on_action_sort_folder(self, action, _param):
+        if self._controller is not None:
+            self._controller.sort_selected_folder()
 
     def _on_action_expand_groups(self, action, _param):
         if self._controller is not None:

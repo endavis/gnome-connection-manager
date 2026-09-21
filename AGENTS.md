@@ -53,6 +53,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   with children -- an empty folder has none. Collapsed folders are saved by id in
   `collapsed-folder-ids`, beside the positional `collapsed-folders` older builds read
   unguarded: `Gtk.TreePath.new_from_string` raises `TypeError` on an id.
+  Order is a `position` on folders and hosts alike, one sequence per folder with
+  subfolders and hosts mixed. It is kept only while it differs from name order
+  (subfolders, then hosts) -- `number` strips it otherwise, and `sync_folders` runs that
+  on every folder -- so a config nobody arranges carries no positions at all.
+  `FolderTree.contents` gives each folder's children as drawn; `place` files an item
+  beside a sibling, or into a folder: at the end of an arranged one, by name otherwise.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -175,12 +181,13 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `TERMINAL_ACTIONS` maps them to application actions. Accelerators are derived
   from the user's config rather than hardcoded — a fixed accelerator shadows the configured
   key, which is what broke #3 and #15. Tests enforce this.
-- Host attributes include an `id`, a `folder` (the id `group` is derived from),
-  group/name/description, connection info, tunnels,
+- Host attributes include an `id`, a `folder` (the id `group` is derived from), a
+  `position` among that folder's children, group/name/description, connection info, tunnels,
   terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options.
   Keep `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in
   sync. The dialog rebuilds the record rather than mutating it, so an edit carries the id
-  across in `Whost.oldId` -- dropping that would make every edit look like a new host.
+  across in `Whost.oldId` -- dropping that would make every edit look like a new host --
+  and the position in `Whost.oldPosition`, while the host stays in the same folder.
   The first two now live in `src/gnome_connection_manager/utils/hosts.py` and the dialogs
   in `app.py`, so adding an attribute crosses both files.
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
@@ -211,6 +218,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   record and redraws. A refused spot is vetoed in `on_treeServers_drag_motion` by
   `Gdk.drag_status(context, 0, time)` *and returning True*. Measured with real pointer
   input under Xvfb: return False instead and the refused drop is delivered anyway.
+  The dragged row is the one under the press (`_drag_source_path`), not the selection:
+  measured the same way, a press on a folder's expander arrow starts a drag without
+  selecting the folder. `drop_target` reads the edge of a row as a place beside it and
+  the middle as that row's folder.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating

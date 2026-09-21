@@ -9,6 +9,8 @@ from __future__ import annotations
 import configparser
 import io
 
+import pytest
+
 from gnome_connection_manager.utils import crypto, hosts
 
 
@@ -387,3 +389,41 @@ def test_a_folder_attribute_exists_even_when_parsing_fails_partway():
     broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
 
     assert broken.folder == ""
+
+
+@pytest.mark.parametrize(("position", "written"), [(2, "2"), (0, "0"), (None, None)])
+def test_a_position_survives_the_ini_round_trip_and_is_written_only_when_set(position, written):
+    """Only a host in a folder someone arranged has one; the rest sort by name."""
+    host = make_sample_host()
+    host.position = position
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    assert config.get("host 1", "position", fallback=None) == written
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+    assert loaded.position == position
+
+
+def test_an_unreadable_position_loads_as_none():
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+    stored = reread(config)
+    stored.set("host 1", "position", "second")
+
+    assert hosts.HostUtils.load_host_from_ini(stored, "host 1", pwd="secret").position is None
+
+
+def test_clone_does_not_take_the_originals_place():
+    host = make_sample_host()
+    host.position = 4
+
+    assert host.clone().position is None
+
+
+def test_a_position_attribute_exists_even_when_parsing_fails_partway():
+    broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
+
+    assert broken.position is None

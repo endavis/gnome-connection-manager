@@ -491,6 +491,54 @@ def test_write_config_persists_the_folder_tree_and_reloads_it_unchanged(
     assert sorted(app_module.groups) == ["ops", "ops/prod"]
 
 
+def save_config(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 200)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: []
+    wmain.get_collapsed_folder_ids = lambda: []
+    wmain.writeConfig()
+
+
+def test_an_arranged_folder_keeps_its_order_through_a_save_and_reload(
+    tmp_path, app_module, monkeypatch
+):
+    path = write_minimal_hosts_config(tmp_path, [{}, {}, {}])
+    first = {host.name: host for host in load_hosts(app_module, monkeypatch, path)}
+    for position, name in enumerate(["router3", "router1", "router2"]):
+        first[name].position = position
+
+    save_config(app_module)
+    reloaded = load_hosts(app_module, monkeypatch, path)
+
+    contents = app_module.folder_contents()[reloaded[0].folder]
+    assert [host.name for host in contents] == ["router3", "router1", "router2"]
+
+
+def test_an_empty_folder_survives_a_save_and_reload(tmp_path, app_module, monkeypatch):
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    load_hosts(app_module, monkeypatch, path)
+    app_module.folders.add(app_module.ROOT_FOLDER, "archive")
+
+    save_config(app_module)
+    load_hosts(app_module, monkeypatch, path)
+
+    tree = app_module.folders
+    assert sorted(tree.path_for(folder_id) for folder_id in tree.folders) == ["archive", "ops"]
+
+
+def test_a_config_nobody_arranged_is_saved_without_positions(tmp_path, app_module, monkeypatch):
+    """Ordering changes nothing in the file until someone uses it."""
+    path = write_minimal_hosts_config(tmp_path, [{"group": "ops/prod"}, {}, {}])
+    load_hosts(app_module, monkeypatch, path)
+
+    save_config(app_module)
+
+    written = configparser.RawConfigParser()
+    written.read(path)
+    assert not [s for s in written.sections() if written.has_option(s, "position")]
+
+
 def test_load_config_lets_the_folder_record_win_over_a_stale_group(
     tmp_path, app_module, monkeypatch
 ):
