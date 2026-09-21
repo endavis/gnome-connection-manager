@@ -3071,3 +3071,65 @@ def test_child_exit_is_wired_to_the_flushing_handler(app_module):
 
     connect = next(line for line in body.splitlines() if "child-exited" in line)
     assert "on_terminal_child_exited" in connect, connect
+
+
+def export_then_import(monkeypatch, tmp_path, app_module, exported_hosts, mangle=None):
+    """Export `exported_hosts`, optionally edit the file, then import it back.
+
+    Returns the hosts that landed in `groups`. Mirrors the round trip in
+    test_importar_servidores_loads_hosts; `mangle` takes and returns the file text.
+    """
+    filename = tmp_path / "hosts.ini"
+    monkeypatch.setattr(app_module, "encrypt", lambda _pwd, value: value)
+    monkeypatch.setattr(app_module, "decrypt", lambda _pwd, value: value)
+    monkeypatch.setattr(app_module, "show_open_dialog", lambda **_kwargs: str(filename))
+    monkeypatch.setattr(app_module, "inputbox", lambda *_args, **_kwargs: "secretpw")
+    monkeypatch.setattr(
+        app_module, "msgconfirm", lambda *_args, **_kwargs: app_module.Gtk.ResponseType.OK
+    )
+    messages: list[str] = []
+    monkeypatch.setattr(app_module, "msgbox", lambda text: messages.append(text))
+
+    exporter = object.__new__(app_module.Wmain)
+    exporter.window = object()
+    exporter.wMain = object()
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": list(exported_hosts)})
+    exporter.on_exportar_servidores1_activate(None)
+
+    if mangle is not None:
+        filename.write_text(mangle(filename.read_text()))
+
+    importer = object.__new__(app_module.Wmain)
+    importer.window = object()
+    importer.wMain = object()
+    importer.updateTree = lambda: None
+    monkeypatch.setattr(app_module, "groups", {})
+    importer.on_importar_servidores1_activate(None)
+
+    assert messages == []
+    return [host for hosts in app_module.groups.values() for host in hosts]
+
+
+def test_an_exported_host_keeps_its_id_through_an_import(monkeypatch, tmp_path, app_module):
+    host = make_host(app_module)
+
+    imported = export_then_import(monkeypatch, tmp_path, app_module, [host])
+
+    assert [h.id for h in imported] == [host.id]
+
+
+def test_importing_a_file_with_a_repeated_id_separates_them(monkeypatch, tmp_path, app_module):
+    """An export can be hand-edited or merged; nothing upstream would notice the repeat."""
+    first, second = make_host(app_module), make_host(app_module)
+    second.name = "switch"
+
+    imported = export_then_import(
+        monkeypatch,
+        tmp_path,
+        app_module,
+        [first, second],
+        mangle=lambda text: text.replace(f"id = {second.id}", f"id = {first.id}"),
+    )
+
+    assert len(imported) == 2
+    assert len({h.id for h in imported}) == 2

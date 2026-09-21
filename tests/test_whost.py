@@ -117,6 +117,8 @@ def make_whost(
     whost.btnFColor = ColorButtonStub(types.SimpleNamespace(red=1, green=1, blue=1))
     whost.btnBColor = ColorButtonStub(types.SimpleNamespace(red=0, green=0, blue=0))
     whost.isNew = True
+    # The real dialog sets this in __init__ and overwrites it in init() for an edit.
+    whost.oldId = ""
 
     destroy_stub = DestroyStub()
     widgets = {
@@ -427,3 +429,52 @@ def test_the_commands_box_uses_methods_gtk_really_has():
         assert hasattr(Gtk.TextView, name), f"Gtk.TextView has no {name}"
     for name in ("get_active", "set_active"):
         assert hasattr(Gtk.CheckButton, name), f"Gtk.CheckButton has no {name}"
+
+
+def test_init_remembers_the_id_being_edited(monkeypatch, app_module):
+    """Saving rebuilds the record, so the dialog has to carry the id across."""
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    stored = make_stored_host(app_module, commands="", enabled=False)
+
+    dialog.init("ops", stored)
+
+    assert dialog.oldId == stored.id
+
+
+def test_editing_a_host_keeps_its_id(monkeypatch, app_module):
+    """ADR-0001: an edit is the same record, however many fields changed."""
+    stored = make_stored_host(app_module, commands="", enabled=False)
+    whost, _destroy = make_whost(app_module)
+    whost.isNew = False
+    whost.oldGroup = "ops"
+    whost.oldName = "router"
+    whost.oldId = stored.id
+    monkeypatch.setattr(app_module, "groups", {"ops": [stored]})
+    monkeypatch.setattr(
+        app_module,
+        "wMain",
+        types.SimpleNamespace(updateTree=lambda: None, writeConfig=lambda: None),
+        raising=False,
+    )
+
+    whost.on_okbutton1_clicked(None)
+
+    saved = app_module.groups["ops"][0]
+    assert saved is not stored
+    assert saved.description == "edge router"
+    assert saved.id == stored.id
+
+
+def test_adding_a_host_gives_it_a_new_id(monkeypatch, app_module):
+    whost, _destroy = make_whost(app_module)
+    monkeypatch.setattr(app_module, "groups", {"ops": []})
+    monkeypatch.setattr(
+        app_module,
+        "wMain",
+        types.SimpleNamespace(updateTree=lambda: None, writeConfig=lambda: None),
+        raising=False,
+    )
+
+    whost.on_okbutton1_clicked(None)
+
+    assert app_module.groups["ops"][0].id

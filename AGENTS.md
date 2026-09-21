@@ -34,6 +34,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the pre-v2 `legacy` flag are arguments the caller supplies, not defaults read from
   `get_password()` and `conf.VERSION` as they used to be, and `Vte.EraseBinding.AUTO` is
   held as `ERASE_BINDING_AUTO` with a test asserting it still matches the real enum.
+  Every record also carries an `id` from `new_host_id` -- random, not sequential, because
+  an imported export brings ids minted elsewhere. `Host` mints one for any record read
+  without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
+  repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -156,9 +160,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `TERMINAL_ACTIONS` maps them to application actions. Accelerators are derived
   from the user's config rather than hardcoded — a fixed accelerator shadows the configured
   key, which is what broke #3 and #15. Tests enforce this.
-- Host attributes include group/name/description, connection info, tunnels, terminal
-  overrides, clipboard/logging flags, colors, command sequences, and SSH options. Keep
-  `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in sync.
+- Host attributes include an `id`, group/name/description, connection info, tunnels,
+  terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options.
+  Keep `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in
+  sync. The dialog rebuilds the record rather than mutating it, so an edit carries the id
+  across in `Whost.oldId` -- dropping that would make every edit look like a new host.
   The first two now live in `src/gnome_connection_manager/utils/hosts.py` and the dialogs
   in `app.py`, so adding an attribute crosses both files.
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
