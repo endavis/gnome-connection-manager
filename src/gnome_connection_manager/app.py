@@ -635,6 +635,15 @@ def terminal_is_local(terminal):
     return not (getattr(host, "host", "") or "")
 
 
+def host_sends_commands(host):
+    """True when a host's stored commands should be sent on connect.
+
+    The checkbox in the host dialog decides this, not whether there is any text: an
+    entry keeps its commands when they are switched off, so the two are separate (#151).
+    """
+    return bool(host.commands_enabled and host.commands)
+
+
 def terminal_working_directory(terminal):
     """Best-effort cwd for resolving a relative path.
 
@@ -3065,7 +3074,7 @@ class Wmain(GladeComponent):
                     GLib.timeout_add(2000, self.send_data, v, password)
 
             # esperar 3 seg antes de enviar comandos
-            if host.commands is not None and host.commands != "":
+            if host_sends_commands(host):
                 basetime = 700 if len(host.host) == 0 else 3000
                 lines: list = []
                 for line in host.commands.splitlines():
@@ -4634,6 +4643,9 @@ class Whost(GladeComponent):
         self.cmbType.set_active(0)
         self.cmbBackspace.set_active(0)
         self.cmbDelete.set_active(0)
+        # Matches the unticked chkCommands the glade file starts with; init() sets both
+        # from the stored host, but a new host never reaches it.
+        self.txtCommands.set_sensitive(False)
 
     # -- Whost.new }
 
@@ -4666,12 +4678,13 @@ class Whost(GladeComponent):
                 tun = t.split(":")
                 tun.append(t)
                 self.treeModel.append(tun)
-        self.txtCommands.set_sensitive(False)
-        self.chkCommands.set_active(False)
-        if host.commands != "" and host.commands is not None:
+        # The text is loaded whether or not it is enabled -- unticking the box turns the
+        # commands off, it does not discard them (#151) -- so the checkbox is read from
+        # the stored flag rather than derived from the text being non-empty.
+        if host.commands is not None and host.commands != "":
             self.txtCommands.get_buffer().set_text(host.commands)
-            self.txtCommands.set_sensitive(True)
-            self.chkCommands.set_active(True)
+        self.chkCommands.set_active(host.commands_enabled)
+        self.txtCommands.set_sensitive(host.commands_enabled)
         use_keep_alive = (
             host.keep_alive != "" and host.keep_alive != "0" and host.keep_alive is not None
         )
@@ -4748,11 +4761,8 @@ class Whost(GladeComponent):
         private_key = self.txtPrivateKey.get_text().strip()
         port = self.txtPort.get_text().strip()
         buf = self.txtCommands.get_buffer()
-        commands = (
-            buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False).strip()
-            if self.chkCommands.get_active()
-            else ""
-        )
+        commands = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False).strip()
+        commands_enabled = self.chkCommands.get_active()
         keepalive = self.txtKeepAlive.get_text().strip()
         if self.get_widget("chkDefaultColors").get_active():
             fcolor = ""
@@ -4814,6 +4824,7 @@ class Whost(GladeComponent):
             backspace_key,
             delete_key,
             term,
+            commands_enabled,
         )
 
         try:

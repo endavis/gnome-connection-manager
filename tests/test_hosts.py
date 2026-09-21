@@ -164,3 +164,74 @@ def test_load_honours_the_legacy_flag():
 
     assert hosts.HostUtils.load_host_from_ini(config, "h", "pw", legacy=True).password == "value"
     assert hosts.HostUtils.load_host_from_ini(config, "h", "pw").password != "value"
+
+
+# -- commands and their enable flag are stored separately (#151) --------------
+
+
+def test_clone_carries_the_commands_enable_flag():
+    host = make_sample_host()
+    host.commands_enabled = True
+
+    assert host.clone().commands_enabled is True
+
+
+def test_disabled_commands_survive_a_round_trip():
+    """The bug in #151: unticking the box used to write the commands away as "".
+
+    Storing the flag separately is what lets the text stay put, so assert both halves
+    come back rather than just the flag.
+    """
+    host = make_sample_host()
+    host.commands_enabled = False
+    config = configparser.RawConfigParser()
+    config.add_section("h")
+
+    hosts.HostUtils.save_host_to_ini(config, "h", host, pwd="secret")
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "h", pwd="secret")
+
+    assert loaded.commands == "echo start\nrun-checks"
+    assert loaded.commands_enabled is False
+
+
+def test_enabled_commands_round_trip():
+    host = make_sample_host()
+    host.commands_enabled = True
+    config = configparser.RawConfigParser()
+    config.add_section("h")
+
+    hosts.HostUtils.save_host_to_ini(config, "h", host, pwd="secret")
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "h", pwd="secret")
+
+    assert loaded.commands == "echo start\nrun-checks"
+    assert loaded.commands_enabled is True
+
+
+def test_pre_151_entries_keep_running_their_commands():
+    """A gcm.conf written before the split has no `commands-enabled` key.
+
+    Back then the text *was* the flag, so stored commands were being sent. Defaulting
+    the flag to "there is text" is what keeps that true across the upgrade.
+    """
+    config = configparser.RawConfigParser()
+    config.add_section("h")
+    for key in ("group", "name", "host", "user", "pass"):
+        config.set("h", key, "")
+    config.set("h", "commands", "echo start\\nrun-checks")
+
+    loaded = hosts.HostUtils.load_host_from_ini(config, "h", pwd="secret")
+
+    assert "commands-enabled" not in config["h"]
+    assert loaded.commands_enabled is True
+
+
+def test_pre_151_entries_without_commands_are_not_enabled():
+    config = configparser.RawConfigParser()
+    config.add_section("h")
+    for key in ("group", "name", "host", "user", "pass"):
+        config.set("h", key, "")
+
+    loaded = hosts.HostUtils.load_host_from_ini(config, "h", pwd="secret")
+
+    assert loaded.commands == ""
+    assert loaded.commands_enabled is False
