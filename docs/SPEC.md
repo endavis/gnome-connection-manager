@@ -314,6 +314,9 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
   such a binding would silently never fire.
 - Dispatched after the built-in commands and skipped for any key a shortcut claims, so a
   custom sequence can never shadow copy, paste or find.
+- GCM never writes `[keys]` itself. A save carries it across from the file as it is on
+  disk, like any section GCM does not write, so an edit made while GCM runs survives and
+  applies at the next start (#163).
 
 ### Default Shortcuts
 | Shortcut | Action |

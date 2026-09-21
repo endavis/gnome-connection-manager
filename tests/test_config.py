@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import configparser
+import logging
+import os
 import re
 import types
 from pathlib import Path
@@ -759,3 +761,140 @@ def test_main_checks_the_config_before_the_application_exists(app_module, monkey
         app_module.main(["gcm"])
 
     assert calls == ["expect", "config"]
+
+
+# -- what a save keeps of the file it replaces (#163) ----------------------------
+
+
+def saved_sections(path):
+    written = configparser.RawConfigParser()
+    written.read(path)
+    return written
+
+
+def test_a_save_keeps_the_keys_section(tmp_path, app_module, monkeypatch):
+    """[keys] is written by hand and never by GCM. Measured before the fix: the first save
+    dropped it, so a binding lasted one session."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    with path.open("a") as handle:
+        handle.write("\n[keys]\nSHIFT+RETURN = \\n\n")
+    load_hosts(app_module, monkeypatch, path)
+
+    save_config(app_module)
+    load_hosts(app_module, monkeypatch, path)
+
+    assert app_module.custom_keys == {"SHIFT+RETURN": b"\n"}
+
+
+def test_a_save_keeps_a_keys_line_added_while_gcm_runs(tmp_path, app_module, monkeypatch):
+    """The documented way in is editing gcm.conf by hand, and GCM may well be running. So a
+    save reads what it carries from the file as it is then, not as it was at startup."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    load_hosts(app_module, monkeypatch, path)
+    with path.open("a") as handle:
+        handle.write("\n[keys]\nSHIFT+RETURN = \\n\n")
+
+    save_config(app_module)
+
+    assert dict(saved_sections(path).items("keys")) == {"shift+return": "\\n"}
+
+
+def test_a_save_keeps_a_section_gcm_does_not_know(tmp_path, app_module, monkeypatch):
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    with path.open("a") as handle:
+        handle.write("\n[from-a-newer-gcm]\nsetting = on\n")
+    load_hosts(app_module, monkeypatch, path)
+
+    save_config(app_module)
+
+    assert dict(saved_sections(path).items("from-a-newer-gcm")) == {"setting": "on"}
+
+
+def test_a_save_does_not_bring_back_a_host_or_folder_deleted_since_the_load(
+    tmp_path, app_module, monkeypatch
+):
+    """Host and folder sections are records: one missing from memory was deleted."""
+    path = write_minimal_hosts_config(tmp_path, [{"group": "ops"}, {"group": "old"}])
+    load_hosts(app_module, monkeypatch, path)
+    del app_module.groups["old"]  # what deleting its one host does
+    [old] = [f for f in app_module.folders.folders if app_module.folders.path_for(f) == "old"]
+    app_module.folders.remove(old)
+
+    save_config(app_module)
+
+    written = saved_sections(path)
+    hosts = [written.get(s, "name") for s in written.sections() if s.startswith("host ")]
+    folders = [written.get(s, "name") for s in written.sections() if s.startswith("folder ")]
+    assert hosts == ["router1"]
+    assert folders == ["ops"]
+
+
+def test_a_second_save_starts_from_the_first(tmp_path, app_module, monkeypatch):
+    """Every section a save writes, it must strip from the file first, or the next save
+    finds it there and add_section refuses: every save after the first would fail."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    load_hosts(app_module, monkeypatch, path)
+    save_config(app_module)
+    first = saved_sections(path).sections()
+
+    save_config(app_module)
+
+    assert saved_sections(path).sections() == first
+
+
+@pytest.mark.parametrize(
+    "leftover",
+    [lambda saved: saved, lambda saved: "[options]\nword-sep"],
+    ids=["a complete copy", "cut off mid-line"],
+)
+def test_a_leftover_from_an_interrupted_save_does_not_stop_the_next(
+    tmp_path, app_module, monkeypatch, leftover
+):
+    """Measured before the fix: writeConfig read gcm.conf.tmp first, so a leftover raised
+    DuplicateSectionError or ParsingError on every save and nothing was saved again."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    load_hosts(app_module, monkeypatch, path)
+    save_config(app_module)
+    tmp = Path(f"{path}.tmp")
+    tmp.write_text(leftover(path.read_text()))
+    monkeypatch.setattr(app_module.conf, "FONT", "Monospace 13")
+
+    save_config(app_module)
+
+    assert saved_sections(path).get("options", "font") == "Monospace 13"
+    assert not tmp.exists()
+
+
+def test_a_save_keeps_a_file_it_cannot_read_aside_rather_than_write_over_it(
+    tmp_path, app_module, monkeypatch, caplog
+):
+    """Broken by hand while GCM runs, say. Writing over it would lose whatever the edit
+    meant, and main() refuses to start on such a file for the same reason (#161)."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    load_hosts(app_module, monkeypatch, path)
+    broken = path.read_text() + "[keys]\nSHIFT+RETURN = \\n\na line with no equals sign\n"
+    path.write_text(broken)
+
+    with caplog.at_level(logging.WARNING, logger="gnome_connection_manager"):
+        save_config(app_module)
+
+    [aside] = tmp_path.glob("gcm.conf.unreadable-*")
+    assert aside.read_text() == broken
+    assert str(aside) in caplog.text
+    assert saved_sections(path).get("host 1", "name") == "router1"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a file whatever its mode")
+def test_a_save_keeps_a_file_it_cannot_open_aside(tmp_path, app_module, monkeypatch):
+    """Renaming needs the directory, not the file, so even this one can be kept."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    load_hosts(app_module, monkeypatch, path)
+    before = path.read_text()
+    path.chmod(0)
+
+    save_config(app_module)
+
+    [aside] = tmp_path.glob("gcm.conf.unreadable-*")
+    aside.chmod(0o600)
+    assert aside.read_text() == before
+    assert saved_sections(path).get("host 1", "name") == "router1"

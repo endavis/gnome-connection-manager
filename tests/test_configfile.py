@@ -228,3 +228,66 @@ def test_load_refuses_a_file_without_read_permission(tmp_path):
             configfile.load(path)
     finally:
         path.chmod(0o600)
+
+
+# -- what a save carries across (#163) -------------------------------------------
+
+
+def test_unwritten_leaves_only_what_a_save_does_not_write():
+    """[keys] is written by hand and never by GCM, so the first save used to drop it."""
+    text = dedent("""\
+        [DEFAULT]
+        shared = 1
+
+        [options]
+        font = Monospace 11
+
+        [window]
+        show-panel = True
+
+        [shortcuts]
+        ctrl+shift+b = copy_all
+
+        [folder a1]
+        name = ops
+        parent =
+
+        [host 1]
+        name = web
+
+        [host 1 (repeat)]
+        name = db
+
+        [keys]
+        shift+return = \\n
+
+        [from-a-newer-gcm]
+        setting = on
+        """)
+
+    config = configfile.unwritten(configfile.read_config(text).config)
+
+    assert config.sections() == ["keys", "from-a-newer-gcm"]
+    assert config.defaults() == {"shared": "1"}
+
+
+def test_every_section_a_save_writes_is_one_unwritten_strips():
+    """A section a save writes and does not strip first is in the file at the next save,
+    and add_section refuses it: the way a leftover gcm.conf.tmp made every save fail."""
+    for section in configfile.WRITTEN_SECTIONS:
+        config = configfile.read_config(f"[{section}]\nkey = value\n").config
+        assert configfile.unwritten(config).sections() == []
+
+
+def test_aside_path_never_names_a_file_that_exists(tmp_path):
+    path = tmp_path / "gcm.conf"
+
+    first = configfile.aside_path(path, "20260921-120000")
+    first.write_text("kept")
+    second = configfile.aside_path(path, "20260921-120000")
+    second.write_text("kept too")
+    third = configfile.aside_path(path, "20260921-120000")
+
+    assert first.name == "gcm.conf.unreadable-20260921-120000"
+    assert second.name == "gcm.conf.unreadable-20260921-120000-2"
+    assert third.name == "gcm.conf.unreadable-20260921-120000-3"

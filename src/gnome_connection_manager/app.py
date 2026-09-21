@@ -520,6 +520,24 @@ def refile_ambiguous_hosts(groups_by_path, ambiguous_folders):
                 host.folder = ""
 
 
+def carried_config():
+    """The gcm.conf a save starts from: the file as it is now, less what the save writes.
+
+    Read when saving rather than kept from startup, so a [keys] line added by hand while
+    GCM runs survives the save (#163). A file that cannot be read in full is kept aside
+    rather than written over, as main() refuses to start on one (#161), and the save then
+    starts from nothing.
+    """
+    path = Path(CONFIG_FILE)
+    try:
+        return configfile.unwritten(configfile.load(path).config)
+    except configfile.UnreadableError as error:
+        aside = configfile.aside_path(path, time.strftime("%Y%m%d-%H%M%S"))
+        path.replace(aside)
+        logger.warning("Kept %s as %s rather than write over it. %s", path.name, aside, error)
+        return configparser.RawConfigParser()
+
+
 def folder_contents():
     """Each folder's children as drawn, as sync_folders returns them, changing nothing."""
     return folders.contents(host for group_hosts in groups.values() for host in group_hosts)
@@ -3500,8 +3518,10 @@ class Wmain(GladeComponent):
     def writeConfig(self):
         global groups
 
-        cp = configparser.RawConfigParser()
-        cp.read(CONFIG_FILE + ".tmp")
+        # Start from the file being replaced, less what this save writes, so a section GCM
+        # never writes survives -- [keys] (#163). Never from gcm.conf.tmp: that is this
+        # save's own output, and one left by an interrupted save made every later save fail.
+        cp = carried_config()
 
         cp.add_section("options")
         cp.set("options", "word-separators", conf.WORD_SEPARATORS)

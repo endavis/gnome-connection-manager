@@ -19,6 +19,9 @@ a file that cannot be decoded or opened raise `UnreadableError`, saying where. D
 such a line would lose whatever it was meant to say, and starting without the file is
 worse: GCM writes its host list over the file when the window closes.
 
+A save starts from the file too (#163): `unwritten` strips the sections a save writes from
+memory and leaves the rest -- [keys], which people write by hand -- to be carried across.
+
 Pure of GTK and of configuration globals, so it is tested directly.
 """
 
@@ -34,6 +37,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 HOST_PREFIX = "host "
+
+# Sections a save writes from memory. Host and folder sections are records, renumbered or
+# re-keyed on every save, so one missing from memory was deleted and must not come back
+# from the file; the others are written in full.
+WRITTEN_SECTIONS = frozenset({"options", "window", "shortcuts"})
+RECORD_PREFIXES = (HOST_PREFIX, FOLDER_PREFIX)
 
 
 class UnreadableError(Exception):
@@ -137,3 +146,26 @@ def load(path: Path) -> Reading:
         return read_config(text, str(path))
     except configparser.Error as error:
         raise UnreadableError(str(error)) from error
+
+
+def unwritten(config: configparser.RawConfigParser) -> configparser.RawConfigParser:
+    """Strip from `config` the sections a save writes, leaving what it carries across.
+
+    What is left is [keys], which GCM reads and never writes because people write it by
+    hand (#163), and any section GCM does not know. [DEFAULT] stays as well: configparser
+    keeps it apart from the sections.
+    """
+    for section in config.sections():
+        if section in WRITTEN_SECTIONS or section.startswith(RECORD_PREFIXES):
+            config.remove_section(section)
+    return config
+
+
+def aside_path(path: Path, stamp: str) -> Path:
+    """A free name beside `path` for a copy of it that must not be written over."""
+    candidate = path.with_name(f"{path.name}.unreadable-{stamp}")
+    count = 1
+    while candidate.exists():
+        count += 1
+        candidate = path.with_name(f"{path.name}.unreadable-{stamp}-{count}")
+    return candidate
