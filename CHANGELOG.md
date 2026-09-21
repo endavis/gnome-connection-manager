@@ -23,6 +23,10 @@ the git log.
   the first time they are read; nothing reads the field yet (ADR-0001)
 
 ### Changed
+- Folders in the server tree are stored as records of their own in `gcm.conf`, with each
+  host filed under one by id. `group` is still written, derived from the folder, so older
+  versions read the file unchanged. An existing configuration converts the first time it
+  is read, and nothing changes on screen (ADR-0002)
 - Custom-key parsing and font-scale clamping moved out of `app.py` into
   `utils/shortcuts.py`, tested without the `gi` stub
 - Session-log naming moved out of `app.py` into `utils/logpaths.py`, with the log root

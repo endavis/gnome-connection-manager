@@ -446,3 +446,70 @@ def test_write_config_persists_the_host_id(tmp_path, app_module, monkeypatch):
     written = configparser.RawConfigParser()
     written.read(config_file)
     assert written.get("host 1", "id") == host.id
+
+
+def test_load_config_files_a_pre_adr_0002_config_under_folder_records(
+    tmp_path, app_module, monkeypatch
+):
+    """The migration: no folder sections in, every host bound and no path changed."""
+    path = write_minimal_hosts_config(
+        tmp_path, [{"group": "Home/PVE"}, {"group": "Home/PVE/Nodes"}, {"group": "Work"}]
+    )
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    tree = app_module.folders
+    assert sorted(app_module.groups) == ["Home/PVE", "Home/PVE/Nodes", "Work"]
+    assert all(host.folder in tree.folders for host in loaded)
+    assert all(tree.path_for(host.folder) == host.group for host in loaded)
+    assert len(tree.folders) == 4
+
+
+def test_write_config_persists_the_folder_tree_and_reloads_it_unchanged(
+    tmp_path, app_module, monkeypatch
+):
+    path = write_minimal_hosts_config(tmp_path, [{"group": "ops/prod"}, {"group": "ops"}])
+    first = load_hosts(app_module, monkeypatch, path)
+    bound = {host.name: host.folder for host in first}
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 200)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: []
+    wmain.writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(path)
+    assert sorted(s for s in written.sections() if s.startswith("folder ")) == sorted(
+        f"folder {folder_id}" for folder_id in app_module.folders.folders
+    )
+    second = load_hosts(app_module, monkeypatch, path)
+    assert {host.name: host.folder for host in second} == bound
+    assert sorted(app_module.groups) == ["ops", "ops/prod"]
+
+
+def test_load_config_lets_the_folder_record_win_over_a_stale_group(
+    tmp_path, app_module, monkeypatch
+):
+    """ADR-0002: the group string is derived. Editing it by hand no longer moves a host."""
+    path = write_minimal_hosts_config(tmp_path, [{"group": "elsewhere", "folder": "f1"}])
+    with path.open("a") as handle:
+        handle.write("\n[folder f1]\nname = ops\nparent = \n")
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert loaded[0].group == "ops"
+    assert loaded[0].folder == "f1"
+    assert list(app_module.groups) == ["ops"]
+
+
+def test_renaming_a_folder_record_moves_every_host_below_it(tmp_path, app_module, monkeypatch):
+    path = write_minimal_hosts_config(
+        tmp_path, [{"group": "old", "folder": "f1"}, {"group": "old/sub", "folder": "f2"}]
+    )
+    with path.open("a") as handle:
+        handle.write("\n[folder f1]\nname = new\n\n[folder f2]\nname = sub\nparent = f1\n")
+
+    load_hosts(app_module, monkeypatch, path)
+
+    assert sorted(app_module.groups) == ["new", "new/sub"]

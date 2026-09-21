@@ -105,6 +105,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     urlregex,
     vtehtml,
 )
+from gnome_connection_manager.utils.folders import FolderTree  # noqa: E402
 from gnome_connection_manager.utils.hosts import Host, HostUtils  # noqa: E402
 from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     build_log_prefix,
@@ -436,7 +437,27 @@ except ImportError:
 
 
 groups: dict = {}
+# The folder records `groups` is keyed by (ADR-0002). `groups` stays the index everything
+# else reads; sync_folders() re-derives it from these after every change.
+folders = FolderTree()
 shortcuts: dict = {}
+
+
+def sync_folders():
+    """Bind every host to a folder record and rebuild `groups` from the result.
+
+    Every edit to the host list -- the dialog, delete, duplicate, import -- mutates
+    `groups` by path and then calls updateTree, so doing this there keeps those callers
+    as they were. Pruning keeps today's rule that a folder lasts only while a host is in
+    it; creating empty folders is a later phase of #154.
+    """
+    hosts = [host for group_hosts in groups.values() for host in group_hosts]
+    folders.bind(hosts)
+    folders.prune({host.folder for host in hosts})
+    groups.clear()
+    for host in hosts:
+        groups.setdefault(host.group, []).append(host)
+
 
 enc_passwd = ""
 
@@ -3150,7 +3171,7 @@ class Wmain(GladeComponent):
             scuts[default] = name
 
     def loadConfig(self):
-        global groups
+        global groups, folders
 
         cp = configparser.RawConfigParser()
         cp.read(CONFIG_FILE)
@@ -3216,6 +3237,13 @@ class Wmain(GladeComponent):
             # CodeQL taints every attribute read off one, naming included.
             logger.warning("Reassigned %d duplicate host id(s)", len(reassigned))
 
+        # A config written before ADR-0002 has no folder sections: the tree starts empty
+        # and sync_folders builds it from the hosts' group paths.
+        folders, fixes = FolderTree.load(cp)
+        if fixes:
+            logger.warning("Repaired %d problem(s) in the folder tree", len(fixes))
+        sync_folders()
+
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
             nodes.append(self.treeModel.get_string_from_iter(iter))
@@ -3238,9 +3266,7 @@ class Wmain(GladeComponent):
         return self.color_back1 if self.color_index % 2 else unevenColor
 
     def updateTree(self):
-        for grupo in dict(groups):
-            if len(groups[grupo]) == 0:
-                del groups[grupo]
+        sync_folders()
 
         if conf.COLLAPSED_FOLDERS is None:
             conf.COLLAPSED_FOLDERS = ",".join(self.get_collapsed_nodes())
@@ -3389,6 +3415,9 @@ class Wmain(GladeComponent):
         cp.set("window", "show-panel", conf.SHOW_PANEL)
         cp.set("window", "show-toolbar", conf.SHOW_TOOLBAR)
 
+        # So no host is written with a group that disagrees with its folder.
+        sync_folders()
+        folders.save(cp)
         i = 1
         for grupo in groups:
             for host in groups[grupo]:
@@ -4098,6 +4127,9 @@ class Wmain(GladeComponent):
                         grupos[host.group] = []
 
                     grupos[host.group].append(host)
+                imported_folders, fixes = FolderTree.load(cp)
+                if fixes:
+                    logger.warning("Repaired %d problem(s) in the folder tree", len(fixes))
             except (configparser.Error, ValueError, AttributeError) as e:
                 msgbox(f"{_('Archivo invalido')}: {e}")
                 return
@@ -4107,8 +4139,9 @@ class Wmain(GladeComponent):
             # what is left is an exported file hand-edited or merged into a repeat.
             HostUtils.ensure_unique_ids(h for hs in grupos.values() for h in hs)
             # sobreescribir lista de hosts
-            global groups
+            global groups, folders
             groups = grupos
+            folders = imported_folders
 
             self.updateTree()
 
@@ -4133,6 +4166,8 @@ class Wmain(GladeComponent):
                 cp.add_section("gcm")
                 cp.set("gcm", "gcm", encrypt(password, password[::-1]))
                 global groups
+                sync_folders()
+                folders.save(cp)
                 for grupo in groups:
                     for host in groups[grupo]:
                         section = "host " + str(i)

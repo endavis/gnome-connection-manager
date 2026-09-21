@@ -347,3 +347,43 @@ def test_ensure_unique_ids_separates_a_three_way_collision():
     hosts.HostUtils.ensure_unique_ids([one, two, three])
 
     assert len({one.id, two.id, three.id}) == 3
+
+
+def test_a_folder_survives_the_ini_round_trip():
+    host = make_sample_host()
+    host.folder = "ab12cd34"
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    assert config.get("host 1", "folder") == "ab12cd34"
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+    assert loaded.folder == "ab12cd34"
+
+
+def test_a_record_written_before_adr_0002_has_no_folder_yet():
+    """Empty, so FolderTree.bind resolves the group string instead."""
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+    stored = reread(config)
+    stored.remove_option("host 1", "folder")
+
+    assert hosts.HostUtils.load_host_from_ini(stored, "host 1", pwd="secret").folder == ""
+
+
+def test_clone_is_filed_beside_the_original():
+    host = make_sample_host()
+    host.folder = "ab12cd34"
+
+    cloned = host.clone()
+
+    assert cloned.folder == "ab12cd34"
+    assert cloned.id != host.id
+
+
+def test_a_folder_attribute_exists_even_when_parsing_fails_partway():
+    broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
+
+    assert broken.folder == ""
