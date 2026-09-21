@@ -52,6 +52,7 @@ class Host:
         # Before the try: its bare except leaves every attribute after the failure
         # unset, and an id is the one attribute no consumer should have to test for.
         self.id = ""
+        self.folder = ""
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -81,10 +82,13 @@ class Host:
             # positionally, so a new attribute goes on the end. Defaults False so a Host
             # built with no commands is not described as running them.
             self.commands_enabled = self.get_arg(args, False)
-            # Last, for the same reason. Absent or empty means the record predates
-            # ADR-0001 and is minted one below, which is the whole of the migration: a
-            # config gets ids by being read, with no version bump and no separate pass.
+            # After commands_enabled, for the same reason. Absent or empty means the
+            # record predates ADR-0001 and is minted one below, which is the whole of the
+            # migration: a config gets ids by being read, with no version bump.
             self.id = self.get_arg(args, "")
+            # Last. The id of the folder this host is filed under (ADR-0002); `group` is
+            # the path derived from it. Empty until FolderTree.bind resolves `group`.
+            self.folder = self.get_arg(args, "")
         except (IndexError, ValueError, AttributeError):
             pass
         if not self.id:
@@ -105,7 +109,8 @@ class Host:
         """A copy of this record as a separate entry.
 
         The id is deliberately not carried: a clone is a second host, and two entries
-        sharing an id is the thing `ensure_unique_ids` exists to undo.
+        sharing an id is the thing `ensure_unique_ids` exists to undo. The folder is: the
+        copy is filed beside the original.
         """
         return Host(
             self.group,
@@ -132,6 +137,8 @@ class Host:
             self.delete_key,
             self.term,
             self.commands_enabled,
+            "",
+            self.folder,
         )
 
 
@@ -188,6 +195,8 @@ class HostUtils:
         # Absent before ADR-0001. Host() mints one when this is empty, so reading an old
         # config is the migration; the value lands in the file at the next write.
         host_id = HostUtils.get_val(cp, section, "id", "")
+        # Absent before ADR-0002; FolderTree.bind resolves `group` for it instead.
+        folder = HostUtils.get_val(cp, section, "folder", "")
         h = Host(
             group,
             name,
@@ -214,6 +223,7 @@ class HostUtils:
             term,
             commands_enabled,
             host_id,
+            folder,
         )
         return h
 
@@ -245,6 +255,7 @@ class HostUtils:
         cp.set(section, "term", host.term)
         cp.set(section, "commands-enabled", host.commands_enabled)
         cp.set(section, "id", host.id)
+        cp.set(section, "folder", host.folder)
 
     @staticmethod
     def ensure_unique_ids(hosts):

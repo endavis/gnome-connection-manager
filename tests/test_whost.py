@@ -478,3 +478,29 @@ def test_adding_a_host_gives_it_a_new_id(monkeypatch, app_module):
     whost.on_okbutton1_clicked(None)
 
     assert app_module.groups["ops"][0].id
+
+
+def test_moving_a_host_in_the_dialog_refiles_it_and_drops_the_old_folder(monkeypatch, app_module):
+    stored = make_stored_host(app_module, commands="", enabled=False)
+    monkeypatch.setattr(app_module, "groups", {"ops": [stored]})
+    app_module.sync_folders()
+    old_folder = stored.folder
+    whost, _destroy = make_whost(app_module)
+    whost.cmbGroup = ComboStub("netops/core")
+    whost.isNew = False
+    whost.oldGroup = "ops"
+    whost.oldName = "router"
+    whost.oldId = stored.id
+    monkeypatch.setattr(
+        app_module,
+        "wMain",
+        types.SimpleNamespace(updateTree=app_module.sync_folders, writeConfig=lambda: None),
+        raising=False,
+    )
+
+    whost.on_okbutton1_clicked(None)
+
+    moved = app_module.groups["netops/core"][0]
+    assert app_module.folders.path_for(moved.folder) == "netops/core"
+    assert old_folder not in app_module.folders.folders
+    assert list(app_module.groups) == ["netops/core"]

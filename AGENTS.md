@@ -38,6 +38,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   an imported export brings ids minted elsewhere. `Host` mints one for any record read
   without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
   repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
+- `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
+  (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
+  which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
+  host's folder, so everything that reads the path string is unchanged -- which only holds
+  while every folder has a distinct path, the reason `repair` forbids `/` in a name and
+  merges same-named siblings. `FolderTree.bind` files each host: its folder id wins when
+  it resolves, and otherwise its `group` is resolved, which is the whole migration.
+  `app.py` runs it through `sync_folders`, called from `updateTree` and `writeConfig`, so
+  the code that edits `groups` by path needed no change. Until a later phase of #154,
+  `prune` keeps the old rule that a folder lasts only while a host is in it.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -160,7 +170,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `TERMINAL_ACTIONS` maps them to application actions. Accelerators are derived
   from the user's config rather than hardcoded — a fixed accelerator shadows the configured
   key, which is what broke #3 and #15. Tests enforce this.
-- Host attributes include an `id`, group/name/description, connection info, tunnels,
+- Host attributes include an `id`, a `folder` (the id `group` is derived from),
+  group/name/description, connection info, tunnels,
   terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options.
   Keep `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in
   sync. The dialog rebuilds the record rather than mutating it, so an edit carries the id

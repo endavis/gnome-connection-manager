@@ -149,6 +149,44 @@ tests around `writeConfig`, in exchange for eliminating one thirty-line validati
 **Closure table or nested sets.** The usual answers when subtree queries must be fast. This
 tree holds tens to hundreds of rows and is walked in full on every `updateTree` anyway.
 
+## Amendments
+
+### 2026-09-21, implementing phases 1 and 2
+
+Four points in the Rationale above did not survive contact with the code, and one detail
+it did not cover needed deciding.
+
+**Folder names still cannot contain `/`.** The Rationale says names become free text, `/`
+included. That cannot hold while `host.group` is kept as a cache: a top-level folder named
+`a/b` and a folder `b` inside `a` would both derive the path `a/b`, and `groups`, which
+everything else reads, would merge their hosts. Two siblings sharing a name collide the
+same way. So `FolderTree.repair` replaces a `/` in a name with `_` and merges same-named
+siblings, and every folder keeps a distinct path. The restriction lifts only if
+`host.group` stops being written.
+
+**Repeated folder ids cannot occur.** The repair pass was described as reassigning a
+duplicate id. A folder's id is its section name, and configparser refuses a repeated
+section, so there is nothing to reassign.
+
+**`position` arrives with ordering.** Phases 1 and 2 write `name` and `parent` only.
+`position` comes in phase 4 with the ordering that reads it, rather than as a field
+nothing uses.
+
+**`move`, `rename` and `is_ancestor` arrive with their callers** in phase 3, for the same
+reason.
+
+**Which wins when `folder` and `group` disagree.** A host's folder id wins when it names a
+folder, and `group` is rewritten from it. When it names nothing, `group` is resolved
+instead, creating folders as needed. That fallback is the migration, and it also covers a
+host the dialog has just built from a typed path. One consequence: in a config that has
+folder records, editing a host's `group` by hand no longer moves it. Rename or move the
+folder instead.
+
+**Segment whitespace is stripped.** configparser strips every value it reads back, so a
+name stored with outer spaces would change on the first reload; `Work / Servers` becomes
+`Work/Servers` at migration instead. No log directory moves, because
+`sanitize_log_segments` already stripped each segment.
+
 ## Related Issues
 
 - Issue #154: Replace the group path string with a real folder tree

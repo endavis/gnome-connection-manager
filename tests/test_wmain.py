@@ -3133,3 +3133,49 @@ def test_importing_a_file_with_a_repeated_id_separates_them(monkeypatch, tmp_pat
 
     assert len(imported) == 2
     assert len({h.id for h in imported}) == 2
+
+
+def test_deleting_the_last_host_in_a_folder_drops_the_folder(monkeypatch, app_module):
+    """Today's rule, kept until #154 can create empty folders: none outlives its hosts."""
+    kept, doomed = make_host(app_module), make_host(app_module)
+    kept.group, doomed.group = "ops", "ops/old"
+    monkeypatch.setattr(app_module, "groups", {"ops": [kept], "ops/old": [doomed]})
+    app_module.sync_folders()
+
+    app_module.groups["ops/old"].remove(doomed)  # what on_btnDel_clicked does
+    app_module.sync_folders()
+
+    tree = app_module.folders
+    assert [tree.path_for(folder_id) for folder_id in tree.folders] == ["ops"]
+    assert list(app_module.groups) == ["ops"]
+
+
+def test_an_export_carries_the_folder_tree_through_an_import(monkeypatch, tmp_path, app_module):
+    host = make_host(app_module)
+
+    imported = export_then_import(monkeypatch, tmp_path, app_module, [host])
+
+    assert host.folder
+    assert imported[0].folder == host.folder
+    assert app_module.folders.path_for(host.folder) == host.group
+
+
+def test_importing_an_export_from_before_adr_0002_builds_the_tree(
+    monkeypatch, tmp_path, app_module
+):
+    def strip_folders(text):
+        kept, in_folder = [], False
+        for line in text.splitlines():
+            if line.startswith("["):
+                in_folder = line.startswith("[folder ")
+            if not in_folder and not line.startswith("folder ="):
+                kept.append(line)
+        return "\n".join(kept) + "\n"
+
+    host = make_host(app_module)
+    imported = export_then_import(monkeypatch, tmp_path, app_module, [host], mangle=strip_folders)
+    assert app_module.folders.folders == {}
+
+    app_module.sync_folders()
+
+    assert app_module.folders.path_for(imported[0].folder) == host.group
