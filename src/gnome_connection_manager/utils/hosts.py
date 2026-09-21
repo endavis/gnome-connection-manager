@@ -53,6 +53,10 @@ class Host:
             self.backspace_key = self.get_arg(args, ERASE_BINDING_AUTO)
             self.delete_key = self.get_arg(args, ERASE_BINDING_AUTO)
             self.term = self.get_arg(args, "")
+            # Last on purpose: every caller passes the arguments positionally, so a new
+            # attribute goes on the end. Defaults False so a Host built with no commands
+            # is not described as running them.
+            self.commands_enabled = self.get_arg(args, False)
         except (IndexError, ValueError, AttributeError):
             pass
 
@@ -92,6 +96,7 @@ class Host:
             self.backspace_key,
             self.delete_key,
             self.term,
+            self.commands_enabled,
         )
 
 
@@ -141,6 +146,10 @@ class HostUtils:
         backspace_key = int(HostUtils.get_val(cp, section, "backspace-key", ERASE_BINDING_AUTO))
         delete_key = int(HostUtils.get_val(cp, section, "delete-key", ERASE_BINDING_AUTO))
         term = HostUtils.get_val(cp, section, "term", "")
+        # Written since #151. Before it the text was the flag -- the dialog cleared
+        # `commands` when the box was unticked -- so an entry with no key predates the
+        # split and its stored commands were being run.
+        commands_enabled = HostUtils.get_val(cp, section, "commands-enabled", commands != "")
         h = Host(
             group,
             name,
@@ -165,6 +174,7 @@ class HostUtils:
             backspace_key,
             delete_key,
             term,
+            commands_enabled,
         )
         return h
 
@@ -194,3 +204,4 @@ class HostUtils:
         cp.set(section, "backspace-key", host.backspace_key)
         cp.set(section, "delete-key", host.delete_key)
         cp.set(section, "term", host.term)
+        cp.set(section, "commands-enabled", host.commands_enabled)
