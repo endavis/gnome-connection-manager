@@ -12,13 +12,34 @@ is `conf.VERSION`.
 
 Keep `Host.clone`, `save_host_to_ini`, the `Whost` dialogs and import/export in step:
 adding an attribute means touching all four.
+
+Every record carries an `id` (ADR-0001). It is the one attribute not derived from what the
+user typed: identity used to be the `(group, name)` pair plus a section number that is
+renumbered on every write, so nothing outside a record could refer to a host and still be
+right after a rename.
 """
 
 from __future__ import annotations
 
 import configparser
+import secrets
 
 from gnome_connection_manager.utils import crypto
+
+HOST_ID_BYTES = 4
+
+
+def new_host_id():
+    """Mint a host id: eight random hex characters.
+
+    Random rather than sequential because GCM imports. `on_importar_servidores1_activate`
+    replaces the whole host list from an exported config whose ids were minted in another
+    install, so a counter would hand out values that are already in use here. Eight hex
+    characters do not collide in practice across a config holding tens to hundreds of
+    entries, and `ensure_unique_ids` catches it when they do (ADR-0001).
+    """
+    return secrets.token_hex(HOST_ID_BYTES)
+
 
 # int(Vte.EraseBinding.AUTO), measured as 0 against VTE 2.91. Held as a plain int so
 # this module needs no gi import; tests/test_hosts.py asserts it still matches the real
@@ -28,6 +49,9 @@ ERASE_BINDING_AUTO = 0
 
 class Host:
     def __init__(self, *args):
+        # Before the try: its bare except leaves every attribute after the failure
+        # unset, and an id is the one attribute no consumer should have to test for.
+        self.id = ""
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -53,12 +77,18 @@ class Host:
             self.backspace_key = self.get_arg(args, ERASE_BINDING_AUTO)
             self.delete_key = self.get_arg(args, ERASE_BINDING_AUTO)
             self.term = self.get_arg(args, "")
-            # Last on purpose: every caller passes the arguments positionally, so a new
-            # attribute goes on the end. Defaults False so a Host built with no commands
-            # is not described as running them.
+            # Positionally last before `id`: every caller passes the arguments
+            # positionally, so a new attribute goes on the end. Defaults False so a Host
+            # built with no commands is not described as running them.
             self.commands_enabled = self.get_arg(args, False)
+            # Last, for the same reason. Absent or empty means the record predates
+            # ADR-0001 and is minted one below, which is the whole of the migration: a
+            # config gets ids by being read, with no version bump and no separate pass.
+            self.id = self.get_arg(args, "")
         except (IndexError, ValueError, AttributeError):
             pass
+        if not self.id:
+            self.id = new_host_id()
 
     def get_arg(self, args, default):
         arg = args[self.i] if len(args) > self.i else default
@@ -72,6 +102,11 @@ class Host:
         return ",".join(self.tunnel)
 
     def clone(self):
+        """A copy of this record as a separate entry.
+
+        The id is deliberately not carried: a clone is a second host, and two entries
+        sharing an id is the thing `ensure_unique_ids` exists to undo.
+        """
         return Host(
             self.group,
             self.name,
@@ -150,6 +185,9 @@ class HostUtils:
         # `commands` when the box was unticked -- so an entry with no key predates the
         # split and its stored commands were being run.
         commands_enabled = HostUtils.get_val(cp, section, "commands-enabled", commands != "")
+        # Absent before ADR-0001. Host() mints one when this is empty, so reading an old
+        # config is the migration; the value lands in the file at the next write.
+        host_id = HostUtils.get_val(cp, section, "id", "")
         h = Host(
             group,
             name,
@@ -175,6 +213,7 @@ class HostUtils:
             delete_key,
             term,
             commands_enabled,
+            host_id,
         )
         return h
 
@@ -205,3 +244,28 @@ class HostUtils:
         cp.set(section, "delete-key", host.delete_key)
         cp.set(section, "term", host.term)
         cp.set(section, "commands-enabled", host.commands_enabled)
+        cp.set(section, "id", host.id)
+
+    @staticmethod
+    def ensure_unique_ids(hosts):
+        """Give every host a distinct id, reassigning the ones that collide.
+
+        `Host` mints an id for any record that arrives without one, so a fresh read is
+        already unique. This covers what a read cannot: gcm.conf is a text file people
+        edit and merge by hand, and an imported export carries ids minted in another
+        install. A repeated id would silently alias two entries the first time anything
+        looked a host up by one.
+
+        The first holder keeps the id and later ones are reassigned, so the outcome does
+        not depend on how often this runs. Returns the hosts that were reassigned.
+        """
+        seen = set()
+        reassigned = []
+        for host in hosts:
+            if not host.id or host.id in seen:
+                host.id = new_host_id()
+                while host.id in seen:
+                    host.id = new_host_id()
+                reassigned.append(host)
+            seen.add(host.id)
+        return reassigned

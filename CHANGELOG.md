@@ -18,6 +18,9 @@ the git log.
 - Pre-commit hooks, including conventional-commit enforcement
 - A private Xvfb for the tests that drive real GTK windows, so they no longer take over
   the developer's desktop
+- A stable `id` on every saved host, so a host can be referred to from outside its own
+  record and still be found after a rename or a move. Existing configurations get one
+  the first time they are read; nothing reads the field yet (ADR-0001)
 
 ### Changed
 - Custom-key parsing and font-scale clamping moved out of `app.py` into

@@ -235,3 +235,115 @@ def test_pre_151_entries_without_commands_are_not_enabled():
 
     assert loaded.commands == ""
     assert loaded.commands_enabled is False
+
+
+def test_every_host_is_born_with_an_id():
+    """No caller passes one, so the record has to mint it (ADR-0001)."""
+    host = make_sample_host()
+
+    assert host.id
+    assert len(host.id) == hosts.HOST_ID_BYTES * 2
+    assert all(c in "0123456789abcdef" for c in host.id)
+
+
+def test_ids_are_not_derived_from_the_record():
+    """Two hosts with identical fields are still two hosts."""
+    first = make_sample_host()
+    second = make_sample_host()
+
+    assert first.id != second.id
+
+
+def test_an_id_survives_the_ini_round_trip():
+    host = make_sample_host()
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    assert config.get("host 1", "id") == host.id
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+    assert loaded.id == host.id
+
+
+def test_a_config_written_before_adr_0001_gets_ids_by_being_read():
+    """The whole of the migration: no version bump, no separate pass."""
+    host = make_sample_host()
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    stored = reread(config)
+    stored.remove_option("host 1", "id")
+
+    loaded = hosts.HostUtils.load_host_from_ini(stored, "host 1", pwd="secret")
+
+    assert loaded.id
+    assert loaded.id != host.id
+
+
+def test_an_id_is_minted_even_when_parsing_fails_partway():
+    """`Host.__init__` swallows parse errors, so later attributes never get assigned.
+
+    `id` is set before that try for exactly this case -- nothing should have to test
+    whether a record has one.
+    """
+    broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
+
+    assert broken.id
+    assert not hasattr(broken, "type")
+
+
+def test_clone_takes_a_fresh_id():
+    """A clone is a second host, not the same host twice."""
+    host = make_sample_host()
+
+    cloned = host.clone()
+
+    assert cloned.id
+    assert cloned.id != host.id
+
+
+def test_ensure_unique_ids_reassigns_the_later_duplicate():
+    first, second = make_sample_host(), make_sample_host()
+    second.id = first.id
+
+    reassigned = hosts.HostUtils.ensure_unique_ids([first, second])
+
+    assert reassigned == [second]
+    assert second.id != first.id
+
+
+def test_ensure_unique_ids_leaves_distinct_ids_alone():
+    first, second = make_sample_host(), make_sample_host()
+    before = (first.id, second.id)
+
+    assert hosts.HostUtils.ensure_unique_ids([first, second]) == []
+    assert (first.id, second.id) == before
+
+
+def test_ensure_unique_ids_fills_in_a_cleared_id():
+    host = make_sample_host()
+    host.id = ""
+
+    assert hosts.HostUtils.ensure_unique_ids([host]) == [host]
+    assert host.id
+
+
+def test_ensure_unique_ids_is_stable_when_run_again():
+    """Running it twice must not keep churning ids, or nothing can rely on one."""
+    first, second = make_sample_host(), make_sample_host()
+    second.id = first.id
+    hosts.HostUtils.ensure_unique_ids([first, second])
+    settled = (first.id, second.id)
+
+    assert hosts.HostUtils.ensure_unique_ids([first, second]) == []
+    assert (first.id, second.id) == settled
+
+
+def test_ensure_unique_ids_separates_a_three_way_collision():
+    one, two, three = make_sample_host(), make_sample_host(), make_sample_host()
+    two.id = three.id = one.id
+
+    hosts.HostUtils.ensure_unique_ids([one, two, three])
+
+    assert len({one.id, two.id, three.id}) == 3

@@ -365,3 +365,84 @@ def test_load_config_refuses_a_key_an_application_accelerator_claims(
 
 def test_load_config_without_a_keys_section_is_fine(tmp_path, app_module, monkeypatch):
     assert _load_with_keys(tmp_path, app_module, monkeypatch, None) == {}
+
+
+def write_minimal_hosts_config(tmp_path, entries):
+    """A gcm.conf holding nothing but host sections.
+
+    `entries` is one dict of extra keys per host; everything else is filled in so the
+    sections parse. loadConfig tolerates the missing options/window/shortcuts sections.
+    """
+    config = configparser.RawConfigParser()
+    for index, extra in enumerate(entries, 1):
+        section = f"host {index}"
+        config.add_section(section)
+        config.set(section, "group", "ops")
+        config.set(section, "name", f"router{index}")
+        config.set(section, "host", f"router{index}.example.com")
+        config.set(section, "user", "netops")
+        config.set(section, "pass", "plaintext")
+        for key, value in extra.items():
+            config.set(section, key, value)
+    config_path = tmp_path / "gcm.conf"
+    with config_path.open("w") as handle:
+        config.write(handle)
+    return config_path
+
+
+def load_hosts(app_module, monkeypatch, config_path):
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_path))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module.crypto, "decrypt", lambda _pwd, value, **_kw: value)
+    object.__new__(app_module.Wmain).loadConfig()
+    return [host for hosts in app_module.groups.values() for host in hosts]
+
+
+def test_load_config_gives_ids_to_a_config_written_before_adr_0001(
+    tmp_path, app_module, monkeypatch
+):
+    path = write_minimal_hosts_config(tmp_path, [{}, {}, {}])
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert len(loaded) == 3
+    assert all(host.id for host in loaded)
+    assert len({host.id for host in loaded}) == 3
+
+
+def test_load_config_keeps_the_stored_ids(tmp_path, app_module, monkeypatch):
+    path = write_minimal_hosts_config(tmp_path, [{"id": "aaaa1111"}, {"id": "bbbb2222"}])
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert sorted(host.id for host in loaded) == ["aaaa1111", "bbbb2222"]
+
+
+def test_load_config_repairs_a_duplicate_id(tmp_path, app_module, monkeypatch):
+    """gcm.conf is a text file people edit and merge; a repeat would alias two entries."""
+    path = write_minimal_hosts_config(tmp_path, [{"id": "aaaa1111"}, {"id": "aaaa1111"}])
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert len({host.id for host in loaded}) == 2
+    assert "aaaa1111" in {host.id for host in loaded}
+
+
+def test_write_config_persists_the_host_id(tmp_path, app_module, monkeypatch):
+    config_file = tmp_path / "gcm.conf"
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_file))
+    monkeypatch.setattr(app_module.crypto, "encrypt", lambda _pwd, value: value)
+    host = make_host(app_module)
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": [host]})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 200)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: []
+    wmain.writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(config_file)
+    assert written.get("host 1", "id") == host.id

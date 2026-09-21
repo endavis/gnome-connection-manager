@@ -3208,6 +3208,12 @@ class Wmain(GladeComponent):
             except (configparser.Error, ValueError, AttributeError) as e:
                 logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
 
+        # Only now is the whole list known, so only now can a repeated id be seen. A
+        # record with no id of its own already has one by this point -- Host mints it.
+        reassigned = HostUtils.ensure_unique_ids(h for hs in groups.values() for h in hs)
+        for host in reassigned:
+            logger.warning("Reassigned a duplicate host id to %s/%s", host.group, host.name)
+
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
             nodes.append(self.treeModel.get_string_from_iter(iter))
@@ -4093,6 +4099,11 @@ class Wmain(GladeComponent):
             except (configparser.Error, ValueError, AttributeError) as e:
                 msgbox(f"{_('Archivo invalido')}: {e}")
                 return
+
+            # The import replaces the whole list, so these ids only need to be unique
+            # among themselves. Host mints one for any record that predates ADR-0001, so
+            # what is left is an exported file hand-edited or merged into a repeat.
+            HostUtils.ensure_unique_ids(h for hs in grupos.values() for h in hs)
             # sobreescribir lista de hosts
             global groups
             groups = grupos
@@ -4593,6 +4604,9 @@ class Whost(GladeComponent):
         for group in groups:
             self.cmbGroup.append_text(group)
         self.isNew = True
+        # Set here too so the attribute exists whatever init() is handed; only an edit
+        # gives it a value, and only an edit reads it.
+        self.oldId = ""
 
         self.chkDynamic = self.get_widget("chkDynamic")
         self.txtLocalPort = self.get_widget("txtLocalPort")
@@ -4660,6 +4674,9 @@ class Whost(GladeComponent):
         self.oldGroup = group
         self.txtName.set_text(host.name)
         self.oldName = host.name
+        # Saving builds a new Host rather than mutating this one, so the id has to be
+        # carried across by hand or the edit would look like a different record.
+        self.oldId = host.id
         self.txtDescription.set_text(host.description)
         self.txtHost.set_text(host.host)
         i = self.cmbType.get_model().get_iter_first()
@@ -4825,6 +4842,7 @@ class Whost(GladeComponent):
             delete_key,
             term,
             commands_enabled,
+            "" if self.isNew else self.oldId,
         )
 
         try:
