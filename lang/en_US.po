@@ -1816,3 +1816,15 @@ msgstr "Error importing hosts"
 
 msgid "Error al exportar servidores"
 msgstr "Error exporting hosts"
+
+msgid "New Folder"
+msgstr "New Folder"
+
+msgid "Rename Folder"
+msgstr "Rename Folder"
+
+msgid "A folder name cannot contain /"
+msgstr "A folder name cannot contain /"
+
+msgid "Delete folder"
+msgstr "Delete folder"

@@ -42,6 +42,21 @@ def new_folder_id(taken: Collection[str] = ()) -> str:
             return folder_id
 
 
+class FolderError(ValueError):
+    """An edit that would break the tree. `reason` is one of the constants below."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+EMPTY_NAME = "empty"
+NAME_HAS_SEPARATOR = "separator"
+NAME_TAKEN = "taken"
+INTO_ITSELF = "cycle"
+NO_SUCH_FOLDER = "unknown"
+
+
 class Folder:
     def __init__(self, folder_id: str, name: str, parent: str = ROOT) -> None:
         self.id = folder_id
@@ -63,6 +78,27 @@ class FolderTree:
             if folder.parent == parent and folder.name == name:
                 return folder
         return None
+
+    def children(self, parent: str) -> list[Folder]:
+        """The folders directly under `parent`, in the order the tree shows them."""
+        return sorted(
+            (folder for folder in self.folders.values() if folder.parent == parent),
+            key=lambda folder: folder.name,
+        )
+
+    def is_ancestor(self, ancestor: str, folder_id: str) -> bool:
+        """Whether `ancestor` is `folder_id` itself or any folder above it."""
+        seen = set()
+        while folder_id in self.folders and folder_id not in seen:
+            if folder_id == ancestor:
+                return True
+            seen.add(folder_id)
+            folder_id = self.folders[folder_id].parent
+        return False
+
+    def subtree(self, folder_id: str) -> set[str]:
+        """`folder_id` and every folder below it."""
+        return {other for other in self.folders if self.is_ancestor(folder_id, other)}
 
     def path_for(self, folder_id: str) -> str:
         """The `/`-joined names from the top down: what `host.group` holds."""
@@ -101,29 +137,13 @@ class FolderTree:
         A host's folder id wins when it names a folder. When it names nothing -- a record
         from before ADR-0002, a host the dialog has just built, or a folder merged away by
         repair() -- the host's `group` string is resolved instead, creating folders as
-        needed. That fallback is the whole of the migration.
+        needed. That fallback is the whole of the migration. A folder left with no hosts
+        stays: folders are records now, not a side effect of a path.
         """
         for host in hosts:
             if host.folder not in self.folders:
                 host.folder = self.ensure_path(host.group or "")
             host.group = self.path_for(host.folder)
-
-    def prune(self, keep: Iterable[str]) -> list[str]:
-        """Remove every folder with none of `keep` at or below it. Returns their ids.
-
-        Mirrors the old rule that a folder exists only while a host names it, so that
-        binding hosts to records changes nothing on screen. Creating a folder that stays
-        empty is a later phase of #154, and it retires this.
-        """
-        needed: set[str] = set()
-        for folder_id in keep:
-            while folder_id in self.folders and folder_id not in needed:
-                needed.add(folder_id)
-                folder_id = self.folders[folder_id].parent
-        removed = [folder_id for folder_id in self.folders if folder_id not in needed]
-        for folder_id in removed:
-            del self.folders[folder_id]
-        return removed
 
     def repair(self) -> list[str]:
         """Make the tree well formed, returning one entry per problem fixed.
@@ -172,6 +192,71 @@ class FolderTree:
                 return seen[key], folder
             seen[key] = folder
         return None
+
+    def check_name(self, parent: str, name: str, *, renaming: str | None = None) -> str:
+        """The name as it would be stored under `parent`, or FolderError saying why not.
+
+        The same rules repair() enforces on a hand-edited file, applied before the edit
+        instead of after it. `renaming` is the folder being renamed, which may keep its
+        own name.
+        """
+        name = name.strip()
+        if not name:
+            raise FolderError(EMPTY_NAME)
+        if SEPARATOR in name:
+            raise FolderError(NAME_HAS_SEPARATOR)
+        self._check_free(parent, name, renaming)
+        return name
+
+    def _check_free(self, parent: str, name: str, moving: str | None) -> None:
+        existing = self.child_named(parent, name)
+        if existing is not None and existing.id != moving:
+            raise FolderError(NAME_TAKEN)
+
+    def _check_parent(self, parent: str) -> None:
+        if parent != ROOT and parent not in self.folders:
+            raise FolderError(NO_SUCH_FOLDER)
+
+    def add(self, parent: str, name: str) -> Folder:
+        self._check_parent(parent)
+        folder = Folder(new_folder_id(self.folders), self.check_name(parent, name), parent)
+        self.folders[folder.id] = folder
+        return folder
+
+    def rename(self, folder_id: str, name: str) -> None:
+        folder = self._get(folder_id)
+        folder.name = self.check_name(folder.parent, name, renaming=folder_id)
+
+    def move(self, folder_id: str, parent: str) -> None:
+        """Refile a folder, with everything below it, under `parent`.
+
+        Only the collision rule is checked for the name: a folder read from an old
+        file may carry an empty name, and moving it should not demand a rename.
+        """
+        self.check_move(folder_id, parent)
+        self.folders[folder_id].parent = parent
+
+    def check_move(self, folder_id: str, parent: str) -> None:
+        """What move() would refuse, without moving: a drag asks on every motion."""
+        folder = self._get(folder_id)
+        self._check_parent(parent)
+        if self.is_ancestor(folder_id, parent):
+            raise FolderError(INTO_ITSELF)
+        self._check_free(parent, folder.name, folder_id)
+
+    def remove(self, folder_id: str) -> set[str]:
+        """Delete a folder and every folder below it. Returns the ids removed."""
+        self._get(folder_id)
+        doomed = self.subtree(folder_id)
+        for other in doomed:
+            del self.folders[other]
+        return doomed
+
+    def _get(self, folder_id: str) -> Folder:
+        try:
+            return self.folders[folder_id]
+        except KeyError:
+            raise FolderError(NO_SUCH_FOLDER) from None
 
     @classmethod
     def load(cls, cp: configparser.RawConfigParser) -> tuple[FolderTree, list[str]]:

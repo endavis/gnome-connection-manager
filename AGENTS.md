@@ -46,8 +46,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   merges same-named siblings. `FolderTree.bind` files each host: its folder id wins when
   it resolves, and otherwise its `group` is resolved, which is the whole migration.
   `app.py` runs it through `sync_folders`, called from `updateTree` and `writeConfig`, so
-  the code that edits `groups` by path needed no change. Until a later phase of #154,
-  `prune` keeps the old rule that a folder lasts only while a host is in it.
+  the code that edits `groups` by path needed no change. A folder outlives its last host.
+  Edits go through `add`, `rename`, `move` and `remove`, which raise `FolderError` rather
+  than break a rule; `check_move` asks without moving, since a drag asks on every motion.
+  In the tree widget a folder row is one with no host in it (`is_folder_row`), not one
+  with children -- an empty folder has none. Collapsed folders are saved by id in
+  `collapsed-folder-ids`, beside the positional `collapsed-folders` older builds read
+  unguarded: `Gtk.TreePath.new_from_string` raises `TypeError` on an id.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -200,6 +205,12 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Modify UI in `data/ui/gnome-connection-manager.glade` and ensure widget IDs still match the
   handler names (e.g. `on_btnConnect_clicked`). `GladeComponent` normalizes names.
 - CSS tweaks go in `data/style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3.
+- Dragging in the server tree is GtkTreeView's model drag with a target of GCM's own,
+  `GCM_TREE_ROW`: GTK highlights the row under the pointer and opens a folder hovered
+  over, but never moves a row itself -- `on_treeServers_drag_data_received` refiles the
+  record and redraws. A refused spot is vetoed in `on_treeServers_drag_motion` by
+  `Gdk.drag_status(context, 0, time)` *and returning True*. Measured with real pointer
+  input under Xvfb: return False instead and the refused drop is delivered anyway.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating

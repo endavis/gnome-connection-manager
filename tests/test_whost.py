@@ -480,7 +480,7 @@ def test_adding_a_host_gives_it_a_new_id(monkeypatch, app_module):
     assert app_module.groups["ops"][0].id
 
 
-def test_moving_a_host_in_the_dialog_refiles_it_and_drops_the_old_folder(monkeypatch, app_module):
+def test_moving_a_host_in_the_dialog_refiles_it_and_keeps_the_old_folder(monkeypatch, app_module):
     stored = make_stored_host(app_module, commands="", enabled=False)
     monkeypatch.setattr(app_module, "groups", {"ops": [stored]})
     app_module.sync_folders()
@@ -502,5 +502,20 @@ def test_moving_a_host_in_the_dialog_refiles_it_and_drops_the_old_folder(monkeyp
 
     moved = app_module.groups["netops/core"][0]
     assert app_module.folders.path_for(moved.folder) == "netops/core"
-    assert old_folder not in app_module.folders.folders
+    assert app_module.folders.path_for(old_folder) == "ops"
     assert list(app_module.groups) == ["netops/core"]
+
+
+def test_the_group_list_offers_every_folder_including_empty_ones(monkeypatch, app_module):
+    """Filing a host in an empty folder is the point of having one."""
+    stored = make_stored_host(app_module, commands="", enabled=False)
+    stored.group = "ops/prod"
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": [stored]})
+    app_module.sync_folders()
+    app_module.folders.add(app_module.ROOT_FOLDER, "archive")
+    offered: list = []
+    combo = types.SimpleNamespace(remove_all=lambda: offered.clear(), append_text=offered.append)
+
+    app_module.Whost.list_folders_in(combo)
+
+    assert offered == ["archive", "ops", "ops/prod"]

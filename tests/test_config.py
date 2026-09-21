@@ -179,6 +179,7 @@ def test_write_config_persists_conf_window_hosts_and_shortcuts(tmp_path, app_mod
     wmain.hpMain = hp_stub
     wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
     wmain.get_collapsed_nodes = lambda: ["0", "2"]
+    wmain.get_collapsed_folder_ids = lambda: []
 
     wmain.writeConfig()
 
@@ -441,6 +442,7 @@ def test_write_config_persists_the_host_id(tmp_path, app_module, monkeypatch):
     wmain.hpMain = types.SimpleNamespace(get_position=lambda: 200)
     wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
     wmain.get_collapsed_nodes = lambda: []
+    wmain.get_collapsed_folder_ids = lambda: []
     wmain.writeConfig()
 
     written = configparser.RawConfigParser()
@@ -476,6 +478,7 @@ def test_write_config_persists_the_folder_tree_and_reloads_it_unchanged(
     wmain.hpMain = types.SimpleNamespace(get_position=lambda: 200)
     wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
     wmain.get_collapsed_nodes = lambda: []
+    wmain.get_collapsed_folder_ids = lambda: []
     wmain.writeConfig()
 
     written = configparser.RawConfigParser()
@@ -513,3 +516,26 @@ def test_renaming_a_folder_record_moves_every_host_below_it(tmp_path, app_module
     load_hosts(app_module, monkeypatch, path)
 
     assert sorted(app_module.groups) == ["new", "new/sub"]
+
+
+def test_collapsed_folders_are_saved_by_id_beside_the_old_row_positions(
+    tmp_path, app_module, monkeypatch
+):
+    """Ids for this build; positions stay for an older one, which raises on an id."""
+    path = write_minimal_hosts_config(tmp_path, [{"group": "ops"}])
+    load_hosts(app_module, monkeypatch, path)
+    assert app_module.conf.COLLAPSED_FOLDER_IDS is None
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 200)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: ["0"]
+    wmain.get_collapsed_folder_ids = lambda: ["ab12cd34", "ef56ab78"]
+    wmain.writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(path)
+    assert written.get("window", "collapsed-folders") == "0"
+    assert written.get("window", "collapsed-folder-ids") == "ab12cd34,ef56ab78"
+    load_hosts(app_module, monkeypatch, path)
+    assert app_module.conf.COLLAPSED_FOLDER_IDS == "ab12cd34,ef56ab78"

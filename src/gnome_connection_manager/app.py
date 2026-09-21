@@ -105,7 +105,13 @@ from gnome_connection_manager.utils import (  # noqa: E402
     urlregex,
     vtehtml,
 )
-from gnome_connection_manager.utils.folders import FolderTree  # noqa: E402
+from gnome_connection_manager.utils.folders import (  # noqa: E402
+    NAME_HAS_SEPARATOR,
+    NAME_TAKEN,
+    FolderError,
+    FolderTree,
+)
+from gnome_connection_manager.utils.folders import ROOT as ROOT_FOLDER  # noqa: E402
 from gnome_connection_manager.utils.hosts import Host, HostUtils  # noqa: E402
 from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     build_log_prefix,
@@ -446,14 +452,13 @@ shortcuts: dict = {}
 def sync_folders():
     """Bind every host to a folder record and rebuild `groups` from the result.
 
-    Every edit to the host list -- the dialog, delete, duplicate, import -- mutates
-    `groups` by path and then calls updateTree, so doing this there keeps those callers
-    as they were. Pruning keeps today's rule that a folder lasts only while a host is in
-    it; creating empty folders is a later phase of #154.
+    Every edit to the host list -- the dialog, delete, duplicate, import, a drag --
+    changes `groups` or a folder record and then calls updateTree, so doing this there
+    keeps those callers simple. A folder whose last host has gone stays: folders are
+    records now, not a side effect of some host's path.
     """
     hosts = [host for group_hosts in groups.values() for host in group_hosts]
     folders.bind(hosts)
-    folders.prune({host.folder for host in hosts})
     groups.clear()
     for host in hosts:
         groups.setdefault(host.group, []).append(host)
@@ -551,6 +556,10 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     AUTO_CLOSE_TAB = 0
     CYCLE_TABS = True
     COLLAPSED_FOLDERS: str | None = ""
+    # Folder ids, comma-separated. None until a build that files folders by id has saved:
+    # COLLAPSED_FOLDERS holds row positions instead, which an older build still reads --
+    # and would crash on an id, since Gtk.TreePath.new_from_string raises on one.
+    COLLAPSED_FOLDER_IDS: str | None = None
     LEFT_PANEL_WIDTH = 100
     CHECK_UPDATES = True
     WINDOW_WIDTH = -1
@@ -616,6 +625,7 @@ CONFIG_OPTIONS = (
     ("RAW_SESSION_LOG", "options", "raw-session-log", bool),
     ("APP_TITLE", "options", "app-title", str),
     ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
+    ("COLLAPSED_FOLDER_IDS", "window", "collapsed-folder-ids", str),
     ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
     ("WINDOW_WIDTH", "window", "window-width", int),
     ("WINDOW_HEIGHT", "window", "window-height", int),
@@ -2247,7 +2257,7 @@ class Wmain(GladeComponent):
         elif item == "H":  # COPY HOST ADDRESS TO CLIPBOARD
             if self.treeServers.get_selection().get_selected()[
                 1
-            ] is not None and not self.treeModel.iter_has_child(
+            ] is not None and not self.is_folder_row(
                 self.treeServers.get_selection().get_selected()[1]
             ):
                 host = self.treeModel.get_value(
@@ -2260,7 +2270,7 @@ class Wmain(GladeComponent):
         elif item == "D":  # DUPLICATE HOST
             if self.treeServers.get_selection().get_selected()[
                 1
-            ] is not None and not self.treeModel.iter_has_child(
+            ] is not None and not self.is_folder_row(
                 self.treeServers.get_selection().get_selected()[1]
             ):
                 selected = self.treeServers.get_selection().get_selected()[1]
@@ -2473,9 +2483,19 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.add-host")
         menuItem.show()
 
+        self.popupMenuFolder.mnuNewFolder = menuItem = Gtk.MenuItem(label=_("New Folder"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.new-folder")
+        menuItem.show()
+
         self.popupMenuFolder.mnuEdit = menuItem = Gtk.MenuItem(label=_("Editar"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.edit-host")
+        menuItem.show()
+
+        self.popupMenuFolder.mnuRenameFolder = menuItem = Gtk.MenuItem(label=_("Rename Folder"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.rename-folder")
         menuItem.show()
 
         self.popupMenuFolder.mnuDel = menuItem = Gtk.MenuItem(label=_("Eliminar"))
@@ -3120,7 +3140,8 @@ class Wmain(GladeComponent):
     def initLeftPane(self):
         global groups
 
-        self.treeModel = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_PYOBJECT, str, str)
+        # name, host (None on a folder row), stock icon, background, folder id ("" on a host)
+        self.treeModel = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_PYOBJECT, str, str, str)
         self.treeServers.set_model(self.treeModel)
 
         self.treeServers.set_level_indentation(5)
@@ -3143,6 +3164,19 @@ class Wmain(GladeComponent):
         self.treeServers.set_has_tooltip(True)
         self.treeServers.connect("query-tooltip", self.on_treeServers_tooltip)
         self.treeServers.connect("key-press-event", self.on_treeServers_key_press)
+
+        # GtkTreeView's model drag, with a target of our own so it never moves a row
+        # itself: the handlers refile the host or folder and redraw. Measured with real
+        # pointer input under Xvfb -- a drop arrives with the row and position it landed
+        # on, and a drag-motion that refuses a spot makes the drop fail outright.
+        target = [Gtk.TargetEntry.new("GCM_TREE_ROW", Gtk.TargetFlags.SAME_WIDGET, 0)]
+        self.treeServers.enable_model_drag_source(
+            Gdk.ModifierType.BUTTON1_MASK, target, Gdk.DragAction.MOVE
+        )
+        self.treeServers.enable_model_drag_dest(target, Gdk.DragAction.MOVE)
+        self.treeServers.connect("drag-data-get", self.on_treeServers_drag_data_get)
+        self.treeServers.connect("drag-motion", self.on_treeServers_drag_motion)
+        self.treeServers.connect("drag-data-received", self.on_treeServers_drag_data_received)
         self.wMain.connect("notify::is-active", self.on_window_active_changed)
         self.loadConfig()
         self.updateTree()
@@ -3150,6 +3184,9 @@ class Wmain(GladeComponent):
     def on_treeServers_key_press(self, widget, event, *args):
         if event.keyval == Gdk.KEY_Delete:
             self.on_btnDel_clicked(None)
+            return True
+        if event.keyval == Gdk.KEY_F2:
+            self.rename_selected_folder()
             return True
         return False
 
@@ -3253,12 +3290,36 @@ class Wmain(GladeComponent):
         self.treeModel.foreach(self.is_node_collapsed, nodes)
         return nodes
 
+    def get_collapsed_folder_ids(self):
+        ids: list = []
+
+        def visit(model, path, iter_):
+            if self.is_folder_row(iter_) and not self.treeServers.row_expanded(path):
+                ids.append(self.folder_id_at(iter_))
+
+        self.treeModel.foreach(visit)
+        return ids
+
     def set_collapsed_nodes(self):
         self.treeServers.expand_all()
-        if self.treeModel.get_iter_first():
-            for node in conf.COLLAPSED_FOLDERS.split(","):
+        if not self.treeModel.get_iter_first():
+            return
+        if conf.COLLAPSED_FOLDER_IDS is None:
+            # First start after upgrading: the only record is row positions.
+            for node in (conf.COLLAPSED_FOLDERS or "").split(","):
                 if node != "":
                     self.treeServers.collapse_row(Gtk.TreePath.new_from_string(node))
+            return
+        wanted = set(filter(None, conf.COLLAPSED_FOLDER_IDS.split(",")))
+        paths: list = []
+
+        def visit(model, path, iter_):
+            if self.is_folder_row(iter_) and self.folder_id_at(iter_) in wanted:
+                paths.append(path.copy())
+
+        self.treeModel.foreach(visit)
+        for path in paths:
+            self.treeServers.collapse_row(path)
 
     def servers_background_color(self):
         self.color_index += 1
@@ -3269,52 +3330,60 @@ class Wmain(GladeComponent):
         sync_folders()
 
         if conf.COLLAPSED_FOLDERS is None:
-            conf.COLLAPSED_FOLDERS = ",".join(self.get_collapsed_nodes())
+            # Not the first render: keep whatever the user has collapsed since.
+            conf.COLLAPSED_FOLDER_IDS = ",".join(self.get_collapsed_folder_ids())
 
         self.menuServers.foreach(self.menuServers.remove)
         self.treeModel.clear()
 
-        iconHost = "gtk-network"
-        iconDir = "gtk-directory"
-        grupos = sorted(groups.keys(), reverse=True)
-        # grupos.sort(lambda x,y: cmp(y,x))
+        hosts_by_folder: dict = {}
+        for group_hosts in groups.values():
+            for host in group_hosts:
+                hosts_by_folder.setdefault(host.folder, []).append(host)
+        # The servers menu is for connecting, so it leaves out folders with no host below.
+        occupied = {
+            folder_id
+            for host_folder in hosts_by_folder
+            for folder_id in folders.folders
+            if folders.is_ancestor(folder_id, host_folder)
+        }
+        self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, hosts_by_folder, occupied)
 
-        for grupo in grupos:
-            group = None
-            path = ""
-            menuNode = self.menuServers
+        self.set_collapsed_nodes()
+        conf.COLLAPSED_FOLDERS = None
+        self.update_row_color()
 
-            for folder in grupo.split("/"):
-                path = path + "/" + folder
-                row = self.get_folder(self.treeModel, "", path)
-                if row is None:
-                    group = self.treeModel.prepend(group, [folder, None, iconDir, "#fff"])
-                else:
-                    group = row.iter
-
-                menu = self.get_folder_menu(self.menuServers, "", path)
-                if menu is None:
-                    menu = Gtk.MenuItem(label=folder)
-                    menuNode.prepend(menu)
-                    menuNode = Gtk.Menu()
-                    menu.set_submenu(menuNode)
-                    menu.show()
-                else:
-                    menuNode = menu
-
-            groups[grupo].sort(key=operator.attrgetter("name"))
-            for host in groups[grupo]:
-                self.treeModel.append(group, [host.name, host, iconHost, "#fff"])
+    def add_folder_rows(self, parent_id, parent_row, parent_menu, hosts_by_folder, occupied):
+        """Subfolders first, then hosts, each in name order -- the order the tree kept
+        when it was drawn from path strings."""
+        for folder in folders.children(parent_id):
+            row = self.treeModel.append(
+                parent_row, [folder.name, None, "gtk-directory", "#fff", folder.id]
+            )
+            submenu = parent_menu
+            if folder.id in occupied:
+                item = Gtk.MenuItem(label=folder.name)
+                submenu = Gtk.Menu()
+                item.set_submenu(submenu)
+                item.show()
+                parent_menu.append(item)
+            self.add_folder_rows(folder.id, row, submenu, hosts_by_folder, occupied)
+            for host in sorted(hosts_by_folder.get(folder.id, []), key=operator.attrgetter("name")):
+                self.treeModel.append(row, [host.name, host, "gtk-network", "#fff", ""])
                 mnuItem = Gtk.MenuItem(label=host.name)
                 mnuItem.show()
                 mnuItem.connect(
                     "activate", lambda arg, nb, h: self.addTab(nb, h), self.nbConsole, host
                 )
-                menuNode.append(mnuItem)
+                submenu.append(mnuItem)
 
-        self.set_collapsed_nodes()
-        conf.COLLAPSED_FOLDERS = None
-        self.update_row_color()
+    def is_folder_row(self, iter_):
+        """Folder rows carry no host. This used to be asked as iter_has_child, which
+        mistakes an empty folder -- possible now -- for a host."""
+        return self.treeModel.get_value(iter_, 1) is None
+
+    def folder_id_at(self, iter_):
+        return self.treeModel.get_value(iter_, 4)
 
     def update_row_color(self, node=None):
         # custom method to get alternating row colors in treeview, as that is not possible with gtk3
@@ -3343,26 +3412,6 @@ class Wmain(GladeComponent):
             self.treeModel[i][3] = self.servers_background_color()
             self.update_row_color(i)
             i = self.treeModel.iter_next(i)
-
-    def get_folder(self, obj, folder, path):
-        if not obj:
-            return None
-        for row in obj:
-            if path == folder + "/" + row[0]:
-                return row
-            i = self.get_folder(row.iterchildren(), folder + "/" + row[0], path)
-            if i:
-                return i
-
-    def get_folder_menu(self, obj, folder, path):
-        if not obj or not isinstance(obj, (Gtk.Menu, Gtk.MenuItem)):
-            return None
-        for item in obj.get_children():
-            if path == folder + "/" + item.get_label():
-                return item.get_submenu()
-            i = self.get_folder_menu(item.get_submenu(), folder + "/" + item.get_label(), path)
-            if i:
-                return i
 
     def writeConfig(self):
         global groups
@@ -3409,6 +3458,7 @@ class Wmain(GladeComponent):
         collapsed_folders = ",".join(self.get_collapsed_nodes())
         cp.add_section("window")
         cp.set("window", "collapsed-folders", collapsed_folders)
+        cp.set("window", "collapsed-folder-ids", ",".join(self.get_collapsed_folder_ids()))
         cp.set("window", "left-panel-width", self.hpMain.get_position())
         cp.set("window", "window-width", -1 if self.wMain.is_maximized() else conf.WINDOW_WIDTH)
         cp.set("window", "window-height", -1 if self.wMain.is_maximized() else conf.WINDOW_HEIGHT)
@@ -3979,7 +4029,7 @@ class Wmain(GladeComponent):
 
     def get_selected_host(self):
         iter_ = self.get_context_tree_iter()
-        if iter_ is None or self.treeModel.iter_has_child(iter_):
+        if iter_ is None or self.is_folder_row(iter_):
             return None
         return self.treeModel.get_value(iter_, 1)
 
@@ -4008,6 +4058,166 @@ class Wmain(GladeComponent):
         groups.setdefault(group, []).append(newhost)
         self.updateTree()
         self.writeConfig()
+
+    def selected_tree_folder(self):
+        """The folder the selection is in: a folder row's own, a host row's folder, or
+        the top level when nothing is selected."""
+        iter_ = self.treeServers.get_selection().get_selected()[1]
+        if iter_ is None:
+            return ROOT_FOLDER
+        if self.is_folder_row(iter_):
+            return self.folder_id_at(iter_)
+        return self.treeModel.get_value(iter_, 1).folder
+
+    def folder_error_text(self, error, parent, name):
+        if error.reason == NAME_HAS_SEPARATOR:
+            return _("A folder name cannot contain /")
+        if error.reason == NAME_TAKEN:
+            return "{} [{}] {} [{}]".format(
+                _("El nombre"), name.strip(), _("ya existe para el grupo"), folders.path_for(parent)
+            )
+        return None
+
+    def apply_folder_edit(self, edit, parent, name):
+        """Run one folder edit; say why when the tree refuses it. True if it happened."""
+        try:
+            edit()
+        except FolderError as error:
+            text = self.folder_error_text(error, parent, name)
+            if text is None:
+                logger.error("Folder edit refused: %s", error.reason)
+            else:
+                msgbox(text)
+            return False
+        self.updateTree()
+        self.writeConfig()
+        return True
+
+    def new_folder(self):
+        parent = self.selected_tree_folder()
+        name = inputbox(_("New Folder"), _("Ingrese nuevo nombre"), parent=self.window)
+        if not name or not name.strip():
+            return
+        created: list = []
+        if self.apply_folder_edit(lambda: created.append(folders.add(parent, name)), parent, name):
+            self.select_folder_row(created[0].id)
+
+    def rename_selected_folder(self):
+        iter_ = self.treeServers.get_selection().get_selected()[1]
+        if iter_ is None or not self.is_folder_row(iter_):
+            return
+        folder = folders.folders[self.folder_id_at(iter_)]
+        name = inputbox(
+            _("Rename Folder"), _("Ingrese nuevo nombre"), folder.name, parent=self.window
+        )
+        if not name or not name.strip() or name.strip() == folder.name:
+            return
+        if self.apply_folder_edit(lambda: folders.rename(folder.id, name), folder.parent, name):
+            self.select_folder_row(folder.id)
+
+    def select_folder_row(self, folder_id):
+        """Show a folder after a redraw, opening whatever it sits in."""
+        found: list = []
+
+        def visit(model, path, iter_):
+            if self.is_folder_row(iter_) and self.folder_id_at(iter_) == folder_id:
+                found.append(path.copy())
+                return True
+            return False
+
+        self.treeModel.foreach(visit)
+        if found:
+            self.treeServers.expand_to_path(found[0])
+            self.treeServers.set_cursor(found[0], None, False)
+
+    def dragged_tree_item(self):
+        """("host", Host) or ("folder", id) for the row being dragged. GtkTreeView
+        selects a row on the press that starts a drag, so it is the selection."""
+        iter_ = self.treeServers.get_selection().get_selected()[1]
+        if iter_ is None:
+            return None
+        if self.is_folder_row(iter_):
+            return ("folder", self.folder_id_at(iter_))
+        return ("host", self.treeModel.get_value(iter_, 1))
+
+    def drop_target(self, x, y):
+        """The folder a drop at (x, y) lands in: into a folder row, or beside it into
+        its parent; into a host row's own folder; or the top level below every row."""
+        dest = self.treeServers.get_dest_row_at_pos(x, y)
+        if dest is None:
+            return ROOT_FOLDER
+        path, position = dest
+        iter_ = self.treeModel.get_iter(path)
+        if not self.is_folder_row(iter_):
+            return self.treeModel.get_value(iter_, 1).folder
+        folder_id = self.folder_id_at(iter_)
+        if position in (Gtk.TreeViewDropPosition.BEFORE, Gtk.TreeViewDropPosition.AFTER):
+            return folders.folders[folder_id].parent
+        return folder_id
+
+    def drop_refusal(self, item, target):
+        """None when `item` may land in `target`, otherwise the reason it may not."""
+        kind, subject = item
+        if kind == "host":
+            if target == ROOT_FOLDER:
+                return "hosts live in folders"
+            if target == subject.folder:
+                return "already there"
+            if any(
+                h.name == subject.name and h.folder == target for hs in groups.values() for h in hs
+            ):
+                return NAME_TAKEN
+            return None
+        if target == folders.folders[subject].parent:
+            return "already there"
+        try:
+            folders.check_move(subject, target)
+        except FolderError as error:
+            return error.reason
+        return None
+
+    def on_treeServers_drag_data_get(self, widget, context, data, info, time):
+        item = self.dragged_tree_item()
+        if item is not None:
+            kind, subject = item
+            key = subject.id if kind == "host" else subject
+            data.set(data.get_target(), 8, f"{kind}:{key}".encode())
+
+    def on_treeServers_drag_motion(self, widget, context, x, y, time):
+        item = self.dragged_tree_item()
+        if item is None or self.drop_refusal(item, self.drop_target(x, y)) is not None:
+            # Returning True keeps GtkTreeView from accepting the spot itself.
+            Gdk.drag_status(context, 0, time)
+            widget.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
+            return True
+        return False  # GtkTreeView highlights the row, and opens a folder hovered over
+
+    def decode_dragged_item(self, raw):
+        kind, _sep, key = (raw or b"").decode(errors="replace").partition(":")
+        if kind == "folder" and key in folders.folders:
+            return ("folder", key)
+        if kind == "host":
+            for group_hosts in groups.values():
+                for host in group_hosts:
+                    if host.id == key:
+                        return ("host", host)
+        return None
+
+    def on_treeServers_drag_data_received(self, widget, context, x, y, data, info, time):
+        # The row is ours to move; GtkTreeView's own handler would try to insert one.
+        widget.stop_emission_by_name("drag-data-received")
+        item = self.decode_dragged_item(data.get_data())
+        target = self.drop_target(x, y)
+        accepted = item is not None and self.drop_refusal(item, target) is None
+        if accepted:
+            kind, subject = item
+            if kind == "host":
+                subject.folder = target
+            else:
+                folders.move(subject, target)
+            self.updateTree()
+            self.writeConfig()
+        Gtk.drag_finish(context, accepted, False, time)
 
     def expand_all_groups(self):
         self.treeServers.expand_all()
@@ -4255,9 +4465,7 @@ class Wmain(GladeComponent):
     # -- Wmain.on_btnConnect_clicked {
     def on_btnConnect_clicked(self, widget, *args):
         if self.treeServers.get_selection().get_selected()[1] is not None:
-            if not self.treeModel.iter_has_child(
-                self.treeServers.get_selection().get_selected()[1]
-            ):
+            if not self.is_folder_row(self.treeServers.get_selection().get_selected()[1]):
                 self.on_tvServers_row_activated(self.treeServers)
             else:
                 selected = self.treeServers.get_selection().get_selected()[1]
@@ -4279,7 +4487,7 @@ class Wmain(GladeComponent):
         if self.treeServers.get_selection().get_selected()[1] is not None:
             selected = self.treeServers.get_selection().get_selected()[1]
             group = self.get_group(selected)
-            if self.treeModel.iter_has_child(self.treeServers.get_selection().get_selected()[1]):
+            if self.is_folder_row(self.treeServers.get_selection().get_selected()[1]):
                 selected = self.treeServers.get_selection().get_selected()[1]
                 group = self.treeModel.get_value(selected, 0)
                 parent_group = self.get_group(selected)
@@ -4304,7 +4512,7 @@ class Wmain(GladeComponent):
     def on_bntEdit_clicked(self, widget, *args):
         if self.treeServers.get_selection().get_selected()[
             1
-        ] is not None and not self.treeModel.iter_has_child(
+        ] is not None and not self.is_folder_row(
             self.treeServers.get_selection().get_selected()[1]
         ):
             selected = self.treeServers.get_selection().get_selected()[1]
@@ -4318,9 +4526,7 @@ class Wmain(GladeComponent):
     # -- Wmain.on_btnDel_clicked {
     def on_btnDel_clicked(self, widget, *args):
         if self.treeServers.get_selection().get_selected()[1] is not None:
-            if not self.treeModel.iter_has_child(
-                self.treeServers.get_selection().get_selected()[1]
-            ):
+            if not self.is_folder_row(self.treeServers.get_selection().get_selected()[1]):
                 # Eliminar solo el nodo
                 name = self.treeModel.get_value(
                     self.treeServers.get_selection().get_selected()[1], 0
@@ -4336,22 +4542,21 @@ class Wmain(GladeComponent):
                     self.updateTree()
             else:
                 # Eliminar todo el grupo
-                group = self.get_group(
-                    self.treeModel.iter_children(self.treeServers.get_selection().get_selected()[1])
+                folder_id = self.folder_id_at(self.treeServers.get_selection().get_selected()[1])
+                doomed = folders.subtree(folder_id)
+                has_hosts = any(h.folder in doomed for hs in groups.values() for h in hs)
+                question = (
+                    _("Confirma que desea eliminar todos los hosts del grupo")
+                    if has_hosts
+                    else _("Delete folder")
                 )
                 if (
-                    msgconfirm(
-                        "{} [{}]?".format(
-                            _("Confirma que desea eliminar todos los hosts del grupo"), group
-                        )
-                    )
+                    msgconfirm(f"{question} [{folders.path_for(folder_id)}]?")
                     == Gtk.ResponseType.OK
                 ):
-                    with contextlib.suppress(KeyError):
-                        del groups[group]
-                    for h in dict(groups):
-                        if h.startswith(group + "/"):
-                            del groups[h]
+                    folders.remove(folder_id)
+                    for path in groups:
+                        groups[path] = [h for h in groups[path] if h.folder not in doomed]
                     self.updateTree()
         self.writeConfig()
 
@@ -4503,7 +4708,7 @@ class Wmain(GladeComponent):
     # -- Wmain.on_tvServers_row_activated {
     def on_tvServers_row_activated(self, widget, *args):
         self.row_activated = True
-        if not self.treeModel.iter_has_child(widget.get_selection().get_selected()[1]):
+        if not self.is_folder_row(widget.get_selection().get_selected()[1]):
             selected = widget.get_selection().get_selected()[1]
             host = self.treeModel.get_value(selected, 1)
             self.addTab(self.nbConsole, host)
@@ -4527,21 +4732,27 @@ class Wmain(GladeComponent):
             pthinfo = self.treeServers.get_path_at_pos(x, y)
             if pthinfo is None:
                 self.set_context_tree_path(None)
+                # The menu's actions work on the selection, and "New Folder" here means
+                # the top level -- so a click on blank space selects nothing.
+                self.treeServers.get_selection().unselect_all()
                 self.popupMenuFolder.mnuDel.hide()
                 self.popupMenuFolder.mnuEdit.hide()
                 self.popupMenuFolder.mnuCopyAddress.hide()
                 self.popupMenuFolder.mnuDup.hide()
+                self.popupMenuFolder.mnuRenameFolder.hide()
             else:
                 path, col, cellx, celly = pthinfo
                 self.set_context_tree_path(path)
-                if self.treeModel.iter_children(self.treeModel.get_iter(path)):
+                if self.is_folder_row(self.treeModel.get_iter(path)):
                     self.popupMenuFolder.mnuEdit.hide()
                     self.popupMenuFolder.mnuCopyAddress.hide()
                     self.popupMenuFolder.mnuDup.hide()
+                    self.popupMenuFolder.mnuRenameFolder.show()
                 else:
                     self.popupMenuFolder.mnuEdit.show()
                     self.popupMenuFolder.mnuCopyAddress.show()
                     self.popupMenuFolder.mnuDup.show()
+                    self.popupMenuFolder.mnuRenameFolder.hide()
                 self.popupMenuFolder.mnuDel.show()
                 self.treeServers.grab_focus()
                 self.treeServers.set_cursor(path, col, 0)
@@ -4637,9 +4848,7 @@ class Whost(GladeComponent):
             value=22, lower=1, upper=65535, step_increment=1, page_increment=10
         )
         self.txtPort.set_adjustment(txtPortAdjustment)
-        self.cmbGroup.remove_all()
-        for group in groups:
-            self.cmbGroup.append_text(group)
+        self.list_folders_in(self.cmbGroup)
         self.isNew = True
         # Set here too so the attribute exists whatever init() is handed; only an edit
         # gives it a value, and only an edit reads it.
@@ -4701,6 +4910,13 @@ class Whost(GladeComponent):
     # -- Whost.new }
 
     # -- Whost custom methods {
+    @staticmethod
+    def list_folders_in(combo):
+        """Every folder's path, empty ones included -- filing a host in one is the point."""
+        combo.remove_all()
+        for path in sorted(folders.path_for(folder_id) for folder_id in folders.folders):
+            combo.append_text(path)
+
     def init(self, group, host=None):
         self.cmbGroup.get_children()[0].set_text(group)
         if host is None:
@@ -6563,6 +6779,8 @@ class GcmApplication(Gtk.Application):
         )
         self._create_action("copy-address", self._on_action_copy_address)
         self._create_action("duplicate-host", self._on_action_duplicate_host)
+        self._create_action("new-folder", self._on_action_new_folder)
+        self._create_action("rename-folder", self._on_action_rename_folder)
         self._create_action("expand-groups", self._on_action_expand_groups)
         self._create_action("collapse-groups", self._on_action_collapse_groups)
         self._create_stateful_action("toggle-panel", conf.SHOW_PANEL, self._on_toggle_panel, ["F9"])
@@ -6689,6 +6907,10 @@ class GcmApplication(Gtk.Application):
         host_section.append(_("Delete Host"), "app.delete")
         host_section.append(_("Duplicate Host"), "app.duplicate-host")
         servers_menu.append_section(None, host_section)
+        folder_section = Gio.Menu()
+        folder_section.append(_("New Folder"), "app.new-folder")
+        folder_section.append(_("Rename Folder"), "app.rename-folder")
+        servers_menu.append_section(None, folder_section)
         address_section = Gio.Menu()
         address_section.append(_("Copy Address"), "app.copy-address")
         servers_menu.append_section(None, address_section)
@@ -6960,6 +7182,14 @@ class GcmApplication(Gtk.Application):
         if self._controller is not None:
             self._controller.duplicate_selected_host()
             self._controller.clear_context_tree_path()
+
+    def _on_action_new_folder(self, action, _param):
+        if self._controller is not None:
+            self._controller.new_folder()
+
+    def _on_action_rename_folder(self, action, _param):
+        if self._controller is not None:
+            self._controller.rename_selected_folder()
 
     def _on_action_expand_groups(self, action, _param):
         if self._controller is not None:
