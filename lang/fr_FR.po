@@ -1667,6 +1667,9 @@ msgstr ""
 msgid "Rename Folder"
 msgstr ""
 
+msgid "Sort by Name"
+msgstr ""
+
 msgid "A folder name cannot contain /"
 msgstr ""
 

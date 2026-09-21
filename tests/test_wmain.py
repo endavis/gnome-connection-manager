@@ -221,6 +221,7 @@ class FolderTreeView:
         self.store = store
         self.selected = None
         self.dest = None
+        self.pressed = None
         self.collapsed: set = set()
         self.cursor = None
         self.expanded_to: list = []
@@ -235,6 +236,9 @@ class FolderTreeView:
 
     def get_dest_row_at_pos(self, _x, _y):
         return self.dest
+
+    def get_path_at_pos(self, _x, _y):
+        return None if self.pressed is None else (self.pressed, None, 0, 0)
 
     def set_drag_dest_row(self, path, pos):
         self.dest_row = (path, pos)
@@ -347,6 +351,7 @@ def make_wmain_for_tree(app_module, monkeypatch, groups=None):
     wmain.addTab = lambda nb, host: None
     wmain.writes = 0
     wmain.writeConfig = lambda: setattr(wmain, "writes", wmain.writes + 1)
+    wmain._drag_source_path = None
     return wmain
 
 
@@ -1580,6 +1585,17 @@ def test_terminal_context_menu_offers_the_clipboard_actions(app_module):
         "select-all",
         "copy-all",
     } <= actions
+
+
+def test_the_tree_menu_offers_the_folder_commands(app_module):
+    """Right-click on the tree is where folders are managed from."""
+    source = Path(app_module.__file__).read_text()
+    body = source.split("self.popupMenuFolder = Gtk.Menu()", 1)[1]
+    body = body.split("self.popupMenuTab = Gtk.Menu()", 1)[0]
+
+    assert {"new-folder", "rename-folder", "sort-folder"} <= set(
+        re.findall(r'"app\.([a-z-]+)"', body)
+    )
 
 
 def test_right_click_paste_goes_through_the_policy(monkeypatch, app_module):
@@ -3400,50 +3416,69 @@ def aim(wmain, name, position):
 
 
 @pytest.mark.parametrize(
-    ("row", "position", "lands_in"),
+    ("row", "position", "lands"),
     [
-        ("prod", DROP.INTO_OR_BEFORE, "ops/prod"),
-        ("prod", DROP.INTO_OR_AFTER, "ops/prod"),
-        ("prod", DROP.BEFORE, "ops"),
-        ("prod", DROP.AFTER, "ops"),
-        ("ops", DROP.AFTER, ""),
-        ("web", DROP.BEFORE, "ops/prod"),
-        ("web", DROP.INTO_OR_AFTER, "ops/prod"),
-        (None, None, ""),
+        ("prod", DROP.INTO_OR_BEFORE, ("ops/prod", None, False)),
+        ("prod", DROP.INTO_OR_AFTER, ("ops/prod", None, False)),
+        ("prod", DROP.BEFORE, ("ops", "prod", False)),
+        ("prod", DROP.AFTER, ("ops", "prod", True)),
+        ("ops", DROP.AFTER, ("", "ops", True)),
+        ("web", DROP.BEFORE, ("ops/prod", "web", False)),
+        ("web", DROP.AFTER, ("ops/prod", "web", True)),
+        ("web", DROP.INTO_OR_AFTER, ("ops/prod", None, False)),
+        (None, None, ("", None, False)),
     ],
 )
-def test_drop_target(monkeypatch, app_module, row, position, lands_in):
+def test_drop_target(monkeypatch, app_module, row, position, lands):
+    """The edge of a row is a place beside it; the middle is its folder, or the host's."""
     monkeypatch.setattr(app_module.Gtk, "TreeViewDropPosition", DROP)
     wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/web")
     aim(wmain, row, position)
 
-    assert app_module.folders.path_for(wmain.drop_target(0, 0)) == lands_in
+    folder, beside, after = wmain.drop_target(0, 0)
+
+    assert (app_module.folders.path_for(folder), beside and beside.name, after) == lands
 
 
 def folder_id(app_module, path):
     return next(f for f in app_module.folders.folders if app_module.folders.path_for(f) == path)
 
 
+def child_named(app_module, folder, name):
+    """The host or folder called `name` directly inside `folder`, as the tree has it."""
+    return next(c for c in app_module.folder_contents()[folder] if c.name == name)
+
+
 @pytest.mark.parametrize(
     ("kind", "subject", "target", "refused"),
     [
-        ("host", "web", "ops/prod", "already there"),
-        ("host", "web", "", "hosts live in folders"),
-        ("host", "web", "home", "taken"),
-        ("host", "web", "ops", None),
-        ("folder", "ops/prod", "ops/prod", "cycle"),
-        ("folder", "ops", "ops/prod", "cycle"),
-        ("folder", "ops/prod", "ops", "already there"),
-        ("folder", "home", "ops/prod", None),
-        ("folder", "ops/prod", "", None),
+        ("host", "web", ("ops/prod", None, False), "already there"),
+        ("host", "web", ("ops/prod", "web", False), "already there"),
+        ("host", "web", ("ops/prod", "db", True), "already there"),
+        ("host", "web", ("ops/prod", "db", False), None),
+        ("host", "web", ("", None, False), "hosts live in folders"),
+        ("host", "web", ("home", None, False), "taken"),
+        ("host", "web", ("ops", None, False), None),
+        ("folder", "ops/prod", ("ops/prod", None, False), "cycle"),
+        ("folder", "ops", ("ops/prod", None, False), "cycle"),
+        ("folder", "ops", ("ops", "prod", False), "cycle"),
+        ("folder", "ops/prod", ("ops", None, False), "already there"),
+        ("folder", "home", ("ops/prod", None, False), None),
+        ("folder", "home", ("ops/prod", "db", False), None),
+        ("folder", "ops/prod", ("", None, False), None),
+        ("folder", "home", ("", "ops", True), None),
+        ("folder", "home", ("", "ops", False), "already there"),
     ],
 )
 def test_drop_refusal(monkeypatch, app_module, kind, subject, target, refused):
-    wmain, made = drawn_tree(app_module, monkeypatch, "ops/prod/web", "home/web")
-    target_id = folder_id(app_module, target) if target else app_module.ROOT_FOLDER
+    """A spot that would leave everything where it is counts as already there."""
+    wmain, made = drawn_tree(app_module, monkeypatch, "ops/prod/web", "ops/prod/db", "home/web")
+    path, beside, after = target
+    folder = folder_id(app_module, path) if path else app_module.ROOT_FOLDER
+    spot = (folder, beside and child_named(app_module, folder, beside), after)
     item = ("host", made[0]) if kind == "host" else ("folder", folder_id(app_module, subject))
 
-    assert wmain.drop_refusal(item, target_id) == refused
+    assert wmain.drop_refusal(item, spot) == refused
 
 
 class DragData:
@@ -3465,13 +3500,29 @@ def test_drag_data_names_the_dragged_row_by_id(monkeypatch, app_module):
     wmain, (web,) = drawn_tree(app_module, monkeypatch, "ops/web")
     data = DragData()
 
-    wmain.treeServers.selected = wmain.treeModel.find("web")[1]
+    wmain._drag_source_path = wmain.treeModel.find("web")[0]
     wmain.on_treeServers_drag_data_get(None, None, data, 0, 0)
     assert data.sent == ("GCM_TREE_ROW", 8, f"host:{web.id}".encode())
 
-    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    wmain._drag_source_path = wmain.treeModel.find("ops")[0]
     wmain.on_treeServers_drag_data_get(None, None, data, 0, 0)
     assert data.sent[2] == f"folder:{web.folder}".encode()
+
+
+def test_a_drag_carries_the_pressed_row_not_the_selection(monkeypatch, app_module):
+    """Measured with real pointer input: a press on a folder's expander arrow starts a
+    drag without selecting the folder, and the selection then held another row."""
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/db", "home/nas")
+    press = types.SimpleNamespace(type=app_module.Gdk.EventType.BUTTON_PRESS, button=1, x=5, y=9)
+    wmain.treeServers.selected = wmain.treeModel.find("home")[1]
+
+    wmain.treeServers.pressed = wmain.treeModel.find("prod")[0]
+    wmain.on_tvServers_button_press_event(wmain.treeServers, press)
+    assert wmain.dragged_tree_item() == ("folder", folder_id(app_module, "ops/prod"))
+
+    wmain.treeServers.pressed = None
+    wmain.on_tvServers_button_press_event(wmain.treeServers, press)
+    assert wmain.dragged_tree_item() is None
 
 
 @pytest.mark.parametrize("payload", [b"", b"host:nobody", b"folder:nothing", b"bogus"])
@@ -3543,7 +3594,7 @@ def test_a_refused_drop_changes_nothing_and_reports_failure(monkeypatch, app_mod
 def test_drag_motion_refuses_a_spot_itself_and_leaves_a_good_one_to_gtk(monkeypatch, app_module):
     _finished, statuses = drag_recorders(monkeypatch, app_module)
     wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/db", "home/nas")
-    wmain.treeServers.selected = wmain.treeModel.find("ops")[1]
+    wmain._drag_source_path = wmain.treeModel.find("ops")[0]
 
     aim(wmain, "prod", DROP.INTO_OR_BEFORE)
     assert wmain.on_treeServers_drag_motion(wmain.treeServers, "ctx", 0, 0, 7) is True
@@ -3553,6 +3604,133 @@ def test_drag_motion_refuses_a_spot_itself_and_leaves_a_good_one_to_gtk(monkeypa
     aim(wmain, "home", DROP.INTO_OR_BEFORE)
     assert wmain.on_treeServers_drag_motion(wmain.treeServers, "ctx", 0, 0, 8) is False
     assert statuses == [("ctx", 0, 7)]
+
+
+def drop_here(wmain, payload):
+    """Deliver a drop of `payload` wherever aim() last pointed the fake drag."""
+    wmain.on_treeServers_drag_data_received(
+        wmain.treeServers, "ctx", 0, 0, DragData(payload.encode()), 0, 7
+    )
+
+
+def test_dropping_on_the_edge_of_a_row_puts_the_host_there(monkeypatch, app_module):
+    finished, _statuses = drag_recorders(monkeypatch, app_module)
+    wmain, (a, b, c) = drawn_tree(app_module, monkeypatch, "ops/a", "ops/b", "ops/c")
+    aim(wmain, "a", DROP.BEFORE)
+
+    drop_here(wmain, f"host:{c.id}")
+
+    assert wmain.treeModel.shape() == [("ops", ["c", "a", "b"])]
+    assert menu_shape(wmain.menuServers) == [("ops", ["c", "a", "b"])]
+    assert [h.position for h in (a, b, c)] == [1, 2, 0]
+    assert finished == [("ctx", True, False, 7)]
+    assert wmain.writes == 1
+
+
+def test_a_folder_can_be_placed_among_hosts(monkeypatch, app_module):
+    drag_recorders(monkeypatch, app_module)
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/a", "ops/b", "ops/prod/db")
+    aim(wmain, "a", DROP.AFTER)
+
+    drop_here(wmain, f"folder:{folder_id(app_module, 'ops/prod')}")
+
+    assert wmain.treeModel.shape() == [("ops", ["a", ("prod", ["db"]), "b"])]
+
+
+@pytest.mark.parametrize(("arranged", "drawn"), [(False, ["a", "y", "z"]), (True, ["z", "y", "a"])])
+def test_a_host_dropped_on_a_folder_goes_to_the_end_only_of_an_arranged_one(
+    monkeypatch, app_module, arranged, drawn
+):
+    """Dropping on a folder is not arranging it: one in name order stays in name order."""
+    drag_recorders(monkeypatch, app_module)
+    wmain, (z, y, a) = drawn_tree(app_module, monkeypatch, "ops/z", "ops/y", "home/a")
+    if arranged:
+        z.position, y.position = 0, 1
+        wmain.updateTree()
+    aim(wmain, "ops", DROP.INTO_OR_AFTER)
+
+    drop_here(wmain, f"host:{a.id}")
+
+    assert wmain.treeModel.shape() == [("home", []), ("ops", drawn)]
+    assert a.position == (2 if arranged else None)
+
+
+def test_the_folder_a_host_leaves_closes_the_gap_or_goes_back_to_name_order(
+    monkeypatch, app_module
+):
+    drag_recorders(monkeypatch, app_module)
+    wmain, (a, b, c, _nas) = drawn_tree(
+        app_module, monkeypatch, "ops/a", "ops/b", "ops/c", "home/nas"
+    )
+    c.position, a.position, b.position = 0, 1, 2
+    wmain.updateTree()
+    aim(wmain, "home", DROP.INTO_OR_BEFORE)
+
+    drop_here(wmain, f"host:{a.id}")
+    assert (c.position, b.position) == (0, 1)
+
+    drop_here(wmain, f"host:{c.id}")
+    assert b.position is None
+
+
+def test_collapsed_folders_stay_collapsed_through_a_reorder(monkeypatch, app_module):
+    """Collapse state is keyed by folder id, so moving rows around it changes nothing."""
+    drag_recorders(monkeypatch, app_module)
+    wmain, _made = drawn_tree(app_module, monkeypatch, "ops/prod/db", "ops/web", "home/nas")
+    wmain.treeServers.collapse_row(wmain.treeModel.find("prod")[0])
+    wmain.treeServers.collapse_row(wmain.treeModel.find("home")[0])
+    aim(wmain, "ops", DROP.AFTER)
+
+    drop_here(wmain, f"folder:{folder_id(app_module, 'home')}")
+
+    assert [node.row[0] for node in wmain.treeModel.roots] == ["ops", "home"]
+    collapsed = {wmain.treeModel.get_iter(p).row[0] for p in wmain.treeServers.collapsed}
+    assert collapsed == {"prod", "home"}
+
+
+@pytest.mark.parametrize("selected", ["ops", "y"])
+def test_sort_by_name_hands_one_folder_back_to_name_order(monkeypatch, app_module, selected):
+    """The selected folder, or a selected host's: its subfolders keep their own order."""
+    wmain, (z, y, x, w) = drawn_tree(
+        app_module, monkeypatch, "ops/z", "ops/y", "ops/sub/x", "ops/sub/w"
+    )
+    z.position, y.position = 0, 1
+    app_module.folders.folders[folder_id(app_module, "ops/sub")].position = 2
+    x.position, w.position = 0, 1
+    wmain.updateTree()
+    assert wmain.treeModel.shape() == [("ops", ["z", "y", ("sub", ["x", "w"])])]
+    wmain.treeServers.selected = wmain.treeModel.find(selected)[1]
+
+    wmain.sort_selected_folder()
+    wmain.sort_selected_folder()
+
+    assert wmain.treeModel.shape() == [("ops", [("sub", ["x", "w"]), "y", "z"])]
+    assert wmain.writes == 1
+
+
+@pytest.mark.parametrize(
+    ("arranged", "drawn"),
+    [
+        (True, ["b", "b (copy)", "a", "b (backup)"]),
+        (False, ["a", "b", "b (backup)", "b (copy)"]),
+    ],
+)
+def test_a_duplicate_sits_after_its_original_only_in_an_arranged_folder(
+    monkeypatch, app_module, arranged, drawn
+):
+    """In name order the copy sorts in like any new host -- here after `b (backup)`,
+    which placing it beside its original would not have respected."""
+    wmain, (a, b, backup) = drawn_tree(app_module, monkeypatch, "ops/a", "ops/b", "ops/b (backup)")
+    if arranged:
+        b.position, a.position, backup.position = 0, 1, 2
+        wmain.updateTree()
+    wmain.treeServers.selected = wmain.treeModel.find("b")[1]
+    wmain._context_tree_path = None
+    wmain.get_group = lambda _iter: "ops"
+
+    wmain.duplicate_selected_host()
+
+    assert wmain.treeModel.shape() == [("ops", drawn)]
 
 
 def test_collapsed_folders_are_recorded_and_restored_by_id(monkeypatch, app_module):
@@ -3601,6 +3779,7 @@ def test_folder_fakes_offer_only_what_gtk_has():
     for name in (
         "get_selection",
         "get_dest_row_at_pos",
+        "get_path_at_pos",
         "set_drag_dest_row",
         "stop_emission_by_name",
         "expand_all",

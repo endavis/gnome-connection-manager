@@ -421,6 +421,15 @@ def test_every_action_is_reachable_from_a_menu(app_module):
     )
 
 
+def test_every_menu_entry_names_a_registered_action(app_module):
+    """The other direction: an item bound to an action nobody registered is drawn greyed
+    out with nothing to say why. Covers the popups too, which bind by set_action_name."""
+    actions, _reachable = _menu_sources(app_module)
+    named = set(re.findall(r'"app\.([a-z-]+)"', Path(app_module.__file__).read_text()))
+
+    assert named - actions == set()
+
+
 def test_donate_stays_out_of_the_menus(app_module):
     """Deliberately absent. Do not reintroduce it while completing the menus (#36)."""
     _actions, reachable = _menu_sources(app_module)

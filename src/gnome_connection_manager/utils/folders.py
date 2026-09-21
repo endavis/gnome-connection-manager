@@ -13,6 +13,11 @@ them change, and an older GCM can still read the file. The cache is only faithfu
 by anything keyed on the string. Hence the two naming rules the repair pass enforces --
 no ``/`` inside a name, and no two siblings with the same one.
 
+Order is kept sparsely. A ``position`` on a folder or a host places it among its siblings,
+subfolders and hosts together, and a folder whose children carry none is drawn in name
+order -- as every folder was before ordering existed. ``number`` decides when positions
+are kept.
+
 Pure: no GTK and no configuration globals, so it is tested directly rather than through
 the ``gi`` stub in tests/conftest.py.
 """
@@ -57,14 +62,100 @@ INTO_ITSELF = "cycle"
 NO_SUCH_FOLDER = "unknown"
 
 
+def parse_position(text: str | None) -> int | None:
+    """A stored position, or None when it is absent or not a whole number.
+
+    A position only orders siblings, so an unreadable one costs nothing but its place:
+    the record sorts with the ones that have none.
+    """
+    if text is None:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
 class Folder:
-    def __init__(self, folder_id: str, name: str, parent: str = ROOT) -> None:
+    def __init__(
+        self, folder_id: str, name: str, parent: str = ROOT, position: int | None = None
+    ) -> None:
         self.id = folder_id
         self.name = name
         self.parent = parent
+        # Where it sits among its parent's children, or None for name order; see number().
+        self.position = position
 
     def __repr__(self) -> str:
         return f"Folder({self.id!r}, {self.name!r}, parent={self.parent!r})"
+
+
+def by_name(children: Iterable[Folder | Host]) -> list[Folder | Host]:
+    """The order of a folder nobody has arranged: subfolders, then hosts, each by name.
+
+    It is the order the tree was always drawn in, so a config with no positions in it
+    looks exactly as it did before ordering existed.
+    """
+    return sorted(children, key=lambda child: (not isinstance(child, Folder), child.name))
+
+
+def ordered(children: Iterable[Folder | Host]) -> list[Folder | Host]:
+    """`children` in the order the tree draws them: by position, then the rest by name."""
+    children = list(children)
+    placed = sorted(
+        (child for child in children if child.position is not None),
+        key=lambda child: (child.position or 0, not isinstance(child, Folder), child.name),
+    )
+    return placed + by_name(child for child in children if child.position is None)
+
+
+def arranged(
+    order: list[Folder | Host],
+    item: Folder | Host,
+    beside: Folder | Host | None = None,
+    *,
+    after: bool = False,
+) -> list[Folder | Host]:
+    """`order` with `item` moved next to `beside`, or to the end. Changes nothing.
+
+    `order` is one folder's children as drawn; `item` may be among them (a reorder) or
+    not (a move in from elsewhere).
+    """
+    rest = [child for child in order if child is not item]
+    index = len(rest) if beside is None else rest.index(beside) + (1 if after else 0)
+    rest.insert(index, item)
+    return rest
+
+
+def number(order: list[Folder | Host]) -> None:
+    """Store `order` as positions -- or as none at all, when it is name order anyway.
+
+    That keeps a position meaning "the user put this here". A folder in name order stays
+    in name order as hosts are added to it, and one arranged back into name order goes
+    back to sorting itself.
+    """
+    keep = order != by_name(order)
+    for position, child in enumerate(order):
+        child.position = position if keep else None
+
+
+def place(
+    order: list[Folder | Host],
+    item: Folder | Host,
+    beside: Folder | Host | None = None,
+    *,
+    after: bool = False,
+) -> None:
+    """File `item` among `order`, one folder's children as the tree draws them.
+
+    Next to `beside` when given. Otherwise at the end of a folder the user has arranged,
+    and at its place by name in one they have not: dropping a host on a folder should
+    not be what turns that folder's order into a manual one.
+    """
+    if beside is None and all(child.position is None for child in order if child is not item):
+        item.position = None
+        return
+    number(arranged(order, item, beside, after=after))
 
 
 class FolderTree:
@@ -79,12 +170,19 @@ class FolderTree:
                 return folder
         return None
 
-    def children(self, parent: str) -> list[Folder]:
-        """The folders directly under `parent`, in the order the tree shows them."""
-        return sorted(
-            (folder for folder in self.folders.values() if folder.parent == parent),
-            key=lambda folder: folder.name,
-        )
+    def contents(self, hosts: Iterable[Host]) -> dict[str, list[Folder | Host]]:
+        """Each folder's children -- subfolders and hosts together -- as the tree draws
+        them, keyed by folder id, with `ROOT` for the top level. Changes nothing.
+
+        Hosts are filed by `host.folder`, so bind them first. A folder with no children
+        has no entry.
+        """
+        contents: dict[str, list[Folder | Host]] = {}
+        for folder in self.folders.values():
+            contents.setdefault(folder.parent, []).append(folder)
+        for host in hosts:
+            contents.setdefault(host.folder, []).append(host)
+        return {parent: ordered(children) for parent, children in contents.items()}
 
     def is_ancestor(self, ancestor: str, folder_id: str) -> bool:
         """Whether `ancestor` is `folder_id` itself or any folder above it."""
@@ -234,7 +332,10 @@ class FolderTree:
         file may carry an empty name, and moving it should not demand a rename.
         """
         self.check_move(folder_id, parent)
-        self.folders[folder_id].parent = parent
+        folder = self.folders[folder_id]
+        if folder.parent != parent:
+            # A position orders a folder among its siblings, and these are new ones.
+            folder.parent, folder.position = parent, None
 
     def check_move(self, folder_id: str, parent: str) -> None:
         """What move() would refuse, without moving: a drag asks on every motion."""
@@ -276,6 +377,7 @@ class FolderTree:
                 folder_id,
                 cp.get(section, "name", fallback=""),
                 cp.get(section, "parent", fallback=ROOT),
+                parse_position(cp.get(section, "position", fallback=None)),
             )
         return tree, tree.repair()
 
@@ -285,3 +387,5 @@ class FolderTree:
             cp.add_section(section)
             cp.set(section, "name", folder.name)
             cp.set(section, "parent", folder.parent)
+            if folder.position is not None:
+                cp.set(section, "position", str(folder.position))

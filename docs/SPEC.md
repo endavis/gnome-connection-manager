@@ -42,6 +42,9 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
   itself or a host dropped beside another of the same name
 - Folders are records with an id, not a path: create, rename and delete them, and an
   empty folder persists
+- User-defined order: within a folder, subfolders and hosts share one order, set by
+  dropping an item on the line between two rows. A folder nobody arranges stays in name
+  order -- subfolders, then hosts -- and Sort by Name puts one back into it
 - Collapsible groups with persisted expand/collapse state, keyed by folder id
 - Context menu: connect, edit, delete, duplicate, copy address
 - Expand all / collapse all
@@ -385,7 +388,7 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Connect
 - Copy address to clipboard
 - Add host to group
-- New folder / Rename folder (`F2`)
+- New folder / Rename folder (`F2`) / Sort by name
 - Edit / Delete / Duplicate host
 - Expand all / Collapse all
 
