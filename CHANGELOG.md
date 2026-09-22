@@ -100,3 +100,6 @@ the git log.
   setting is changed, and GCM lists such values in a notice when it starts
 - Renaming the tab of a session that had ended made it look live again: the grey,
   struck-through label went back to plain text
+- Once more lines had been printed than Buffer size holds, View buffer and Save buffer
+  to file left out the newest output, the screen included, and opened with an empty
+  line for every line dropped. They now hold the same lines as Copy All
