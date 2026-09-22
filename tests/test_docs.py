@@ -56,6 +56,38 @@ def test_documented_menu_column_matches_terminal_actions(app_module):
         )
 
 
+def _rebind_example():
+    """The `[shortcuts]` block the guide gives for rebinding a shortcut, verbatim."""
+    after = DOC.read_text().split("To rebind", 1)[1]
+    return after.split("```ini\n", 1)[1].split("```", 1)[0]
+
+
+def test_the_rebinding_example_rebinds(tmp_path, app_module, monkeypatch):
+    """The example had the key and the command the wrong way round from the day it was
+    written, and nothing said so: a reversed line is an option GCM never looks up (#165).
+    So the block is loaded as it stands, through the real loadConfig."""
+    block = _rebind_example()
+    header, line = [text for text in block.splitlines() if text.strip()]
+    assert header == "[shortcuts]"
+    tokens = {command: token for command, token, _key in app_module.SHORTCUT_DEFAULTS}
+    defaults = {command: key for command, _token, key in app_module.SHORTCUT_DEFAULTS}
+    left, right = (part.strip() for part in line.split("=", 1))
+    # whichever side names a command, so a reversed example fails rather than errors
+    command, key = (left, right) if left in tokens else (right, left)
+    assert command in tokens, f"the example names no command: {line}"
+    assert key != defaults[command], "an example that keeps the default rebinds nothing"
+
+    config = tmp_path / "gcm.conf"
+    config.write_text(block)
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    object.__new__(app_module.Wmain).loadConfig()
+
+    assert app_module.shortcuts.get(key) == tokens[command]
+    assert app_module.shortcuts.get(defaults[command]) != tokens[command]
+
+
 def test_documented_application_accelerators_are_real(app_module):
     """The second table lists fixed accelerators; each must exist in do_startup."""
     source = Path(app_module.__file__).read_text()
