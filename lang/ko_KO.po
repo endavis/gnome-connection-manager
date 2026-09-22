@@ -1795,7 +1795,7 @@ msgstr ""
 msgid "Guardar transcripción"
 msgstr ""
 
-msgid "Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."
+msgid "Esta sesión no tiene grabación. Active «Grabar la sesión en crudo» en Preferencias y abra una sesión nueva."
 msgstr ""
 
 msgid "Reconstruyendo transcripción"

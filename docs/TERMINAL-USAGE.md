@@ -120,12 +120,17 @@ framing.
 The session log records what the terminal *displayed*, so anything redrawn in place —
 a progress bar, a full-screen application's frames — collapses to its final state.
 
-Raw recording captures the byte stream instead, exactly as it arrived:
+Raw recording captures the byte stream instead, exactly as it arrived. Turn it on with
+**Record the raw session** on the General tab of Preferences. It applies to sessions
+opened after that; one already running is not recorded. In `gcm.conf` the setting is:
 
 ```ini
 [options]
 raw-session-log = true
 ```
+
+Edit that with GCM closed. GCM writes `[options]` from memory whenever it saves, so an
+edit made while it runs is written over.
 
 It writes two files alongside the text log, numbered independently of it:
 
@@ -164,7 +169,7 @@ tab's right-click menu; from a tab it transcribes *that* tab's session, so you d
 have to switch to a console first.
 
 It replays the recording through a hidden terminal, so it only works on a session that
-was recorded: turn on `raw-session-log` before the session, not after. The transcript is
+was recorded: turn recording on before the session, not after. The transcript is
 offered as a text file beside the recording.
 
 It is worth knowing what it can and cannot recover:

@@ -78,3 +78,6 @@ the git log.
   cannot read is now kept aside as `gcm.conf.unreadable-<time>` first
 - The terminal guide's example for rebinding a shortcut put the key where the command
   goes, so following it changed nothing and nothing said why
+- Save Transcript on a session with no recording said to turn on `raw-session-log` in
+  `gcm.conf`, which never takes effect while GCM runs. It now names the checkbox that has
+  been in Preferences all along, Record the raw session
