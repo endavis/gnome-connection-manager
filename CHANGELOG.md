@@ -87,3 +87,8 @@ the git log.
 - The terminal guide's paste example put a `;` comment after each value, which GCM reads
   as part of the value. Copied as written, all three settings were rejected and the
   defaults used
+- The terminal's menu could not be opened with default settings: right-click pastes, and
+  nothing else opened it, though the terminal guide sent readers there. Ctrl+right-click
+  now opens it whether or not right-click pastes; it used to paste like a plain one
+- The terminal guide named the View buffer menu item by its Spanish source string,
+  Ver buffer
