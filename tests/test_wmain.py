@@ -2794,92 +2794,159 @@ def test_file_line_pattern_matches_only_real_locations():
 
 
 class BufferTerminal:
-    def __init__(self, range_text="", screen_text="", lower=0, upper=0):
-        self.range_text = range_text
-        self.screen_text = screen_text
-        self._lower, self._upper = lower, upper
+    """Rows numbered the way VTE 0.76 numbers them, each point measured (#179).
+
+    Row numbers count from the start of the session and carry on once the oldest rows
+    are dropped, so the rows held start at `first`, not 0. The cursor is reported in
+    those numbers. The vertical adjustment is not: it runs from 0 to the number of rows
+    held, counted down to the bottom of the screen. get_text_range_format answers every
+    row it is asked for, and a row VTE does not hold, on either side, comes back as an
+    empty line. `screen` is what get_text_format answers, per format.
+    """
+
+    def __init__(self, app_module, held=(), first=0, cursor=None, rows=24, top=None, screen=None):
+        self._formats = app_module.Vte.Format
+        self.held = list(held)
+        self.first = first
+        after = first + len(self.held)
+        self.cursor = after - 1 if cursor is None else cursor
+        self.rows = rows
+        # The screen's top row. By default the screen ends with the last row held.
+        self.top = max(first, after - rows) if top is None else top
+        self.screen = screen or {}
         self.range_calls = []
+        self.screen_calls = []
         self.selected = []
 
+    def _name(self, fmt):
+        return "html" if fmt == self._formats.HTML else "text"
+
+    def get_cursor_position(self):
+        return 0, self.cursor
+
+    def get_row_count(self):
+        return self.rows
+
     def get_vadjustment(self):
-        return types.SimpleNamespace(get_lower=lambda: self._lower, get_upper=lambda: self._upper)
+        upper = self.top + self.rows - self.first
+        return types.SimpleNamespace(get_lower=lambda: 0, get_upper=lambda: upper)
 
     def get_text_range_format(self, fmt, srow, scol, erow, ecol):
-        self.range_calls.append((srow, scol, erow, ecol))
-        return self.range_text
+        self.range_calls.append((self._name(fmt), srow, scol, erow, ecol))
+        text = "".join(
+            (self.held[row - self.first] if 0 <= row - self.first < len(self.held) else "") + "\n"
+            for row in range(srow, erow)
+        )
+        return f"<pre>{text}</pre>" if self._name(fmt) == "html" else text
 
     def get_text_format(self, fmt):
-        return self.screen_text
+        self.screen_calls.append(self._name(fmt))
+        return self.screen.get(self._name(fmt), "")
 
     def select_all(self):
         self.selected.append("all")
 
 
-def test_buffer_text_reads_the_real_row_bounds(app_module):
-    terminal = BufferTerminal(range_text="a\nb\nc\n", lower=0, upper=401)
+def test_buffer_terminal_fake_matches_real_vte_api():
+    """Guards against the fake offering methods Vte.Terminal lacks."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Vte", "2.91")
+    from gi.repository import Vte
+
+    for name in (
+        "get_cursor_position",
+        "get_row_count",
+        "get_vadjustment",
+        "get_text_range_format",
+        "get_text_format",
+        "select_all",
+    ):
+        assert hasattr(BufferTerminal, name), f"fake is missing {name}"
+        assert hasattr(Vte.Terminal, name), f"Vte.Terminal has no {name}"
+
+
+# 12000 lines printed into a 10000-row buffer, as measured for #179: rows 0..2001 have
+# been dropped, and the prompt is on row 12001, the bottom of a 46-row screen.
+OVERFLOWED = [str(n) for n in range(2002, 12001)] + ["$"]
+
+
+def test_buffer_text_reads_every_row_before_any_is_dropped(app_module):
+    terminal = BufferTerminal(app_module, held=["a", "b", "c", ""])
 
     assert app_module.terminal_buffer_text(terminal) == "a\nb\nc"
-    assert terminal.range_calls == [(0, 0, 401, 0)]
+
+
+def test_buffer_text_keeps_the_newest_rows_once_the_oldest_are_dropped(app_module):
+    """The adjustment read 0..10000 with the cursor on row 12001. Taken as row numbers it
+    gave 2002 empty lines, then 2002..9999, and nothing newer -- the screen included."""
+    terminal = BufferTerminal(app_module, held=OVERFLOWED, first=2002, rows=46)
+
+    assert app_module.terminal_buffer_text(terminal) == "\n".join(OVERFLOWED)
+
+
+def test_buffer_text_keeps_rows_below_the_cursor(app_module):
+    """A program drawing under its prompt -- an agent CLI's footer below its input box --
+    leaves the cursor above the last row held."""
+    held = OVERFLOWED + ["y", "z", ""]
+    terminal = BufferTerminal(app_module, held=held, first=2002, cursor=12001, rows=46)
+
+    assert app_module.terminal_buffer_text(terminal) == "\n".join(held).rstrip()
+
+
+def test_buffer_text_starts_at_the_oldest_row_with_the_prompt_at_the_top(app_module):
+    """After a clear the prompt is on the screen's top row, and the rows held begin up to
+    a screen later than the cursor alone allows for. The empty lines VTE answers for the
+    rows in between must not open the text."""
+    cursor = 2002 + len(OVERFLOWED) - 1
+    terminal = BufferTerminal(app_module, held=OVERFLOWED, first=2002, rows=46, top=cursor)
+
+    assert app_module.terminal_buffer_text(terminal) == "\n".join(OVERFLOWED)
+
+
+def test_buffer_html_reads_exactly_the_rows_the_text_does(app_module):
+    """The styled viewer trims empty lines at the end but not at the start, so the HTML
+    is read over the rows the text found, not over the window around them."""
+    cursor = 2002 + len(OVERFLOWED) - 1
+    terminal = BufferTerminal(app_module, held=OVERFLOWED, first=2002, rows=46, top=cursor)
+
+    html = app_module.terminal_buffer_html(terminal)
+
+    assert html == "<pre>" + "\n".join(OVERFLOWED) + "\n</pre>"
+    assert terminal.range_calls[-1] == ("html", 2002, 0, 2002 + len(OVERFLOWED), 0)
 
 
 def test_buffer_text_never_disturbs_the_selection(app_module):
     """select_all()+get_text_selected_full() would work, but destroys the user's selection."""
-    terminal = BufferTerminal(range_text="a\n", lower=0, upper=10)
+    terminal = BufferTerminal(app_module, held=OVERFLOWED, first=2002, rows=46)
 
     app_module.terminal_buffer_text(terminal)
+    app_module.terminal_buffer_html(terminal)
 
     assert terminal.selected == []
 
 
 def test_buffer_text_falls_back_to_the_visible_screen(app_module):
-    """The alternate screen has no scrollback, so the range comes back empty."""
-    terminal = BufferTerminal(range_text="   \n  ", screen_text="ALT-0\nALT-1\n", lower=0, upper=7)
+    """With nothing readable in the range, the visible screen is all there is."""
+    terminal = BufferTerminal(app_module, held=["   ", "  ", ""], screen={"text": "ALT-0\nALT-1\n"})
 
     assert app_module.terminal_buffer_text(terminal) == "ALT-0\nALT-1"
 
 
 def test_buffer_text_handles_a_tuple_return(app_module):
     """Older VTE returns (text, attrs) from the range call."""
-    terminal = BufferTerminal(lower=0, upper=3)
+    terminal = BufferTerminal(app_module, held=["x", "y"])
     terminal.get_text_range_format = lambda *a: ("x\ny\n", None)
 
     assert app_module.terminal_buffer_text(terminal) == "x\ny"
 
 
 # -- the viewer must not go blank on the alternate screen (#107) -------------
-
-
-class FormatTerminal:
-    """A terminal that answers each format separately, the way VTE does.
-
-    The alternate screen is the case that matters. The vertical adjustment still
-    describes rows there, but the range export cannot read them back -- measured on VTE
-    0.76, it answers with newlines and nothing else -- so only get_text_format() holds
-    the content a full-screen application put on screen.
-    """
-
-    def __init__(self, app_module, ranges=None, screens=None, lower=0, upper=0):
-        self._formats = app_module.Vte.Format
-        self.ranges = ranges or {}
-        self.screens = screens or {}
-        self._lower, self._upper = lower, upper
-        self.screen_calls = []
-        self.range_calls = []
-
-    def _name(self, fmt):
-        return "html" if fmt == self._formats.HTML else "text"
-
-    def get_vadjustment(self):
-        return types.SimpleNamespace(get_lower=lambda: self._lower, get_upper=lambda: self._upper)
-
-    def get_text_range_format(self, fmt, srow, scol, erow, ecol):
-        self.range_calls.append((self._name(fmt), srow, scol, erow, ecol))
-        return self.ranges.get(self._name(fmt), "")
-
-    def get_text_format(self, fmt):
-        self.screen_calls.append(self._name(fmt))
-        return self.screens.get(self._name(fmt), "")
-
+#
+# The range used to come back as empty rows on the alternate screen, and these fall
+# throughs to the visible screen kept the viewer from going blank. The cause was #179:
+# the range was asked for by the adjustment's numbers, which miss every row of the
+# alternate screen. Asked for by the cursor's, the range holds that screen (the real-VTE
+# test below). The fall through stays for a range with nothing readable in it.
 
 # What VTE hands back for a range of empty rows: markup around nothing but newlines.
 BLANK_ROWS_HTML = "<pre>\n\n\n\n</pre>"
@@ -2887,43 +2954,29 @@ ALT_SCREEN_HTML = '<pre><font color="#00C000">ALT row</font>\n</pre>'
 
 
 def test_buffer_html_falls_back_to_the_visible_screen(app_module):
-    """Its text twin already falls through here; without the same fall through the
-    viewer rendered a full-screen application as a page of empty rows."""
-    terminal = FormatTerminal(
-        app_module,
-        ranges={"html": BLANK_ROWS_HTML},
-        screens={"html": ALT_SCREEN_HTML},
-        lower=0,
-        upper=12,
-    )
+    """Its text twin falls through here too; without it the viewer rendered a
+    full-screen application as a page of empty rows."""
+    terminal = BufferTerminal(app_module, held=["", "", "", ""], screen={"html": ALT_SCREEN_HTML})
 
     assert app_module.terminal_buffer_html(terminal) == ALT_SCREEN_HTML
 
 
 def test_buffer_html_keeps_the_range_when_it_carries_text(app_module):
     """The scrollback is the point of the viewer; the screen is only the fallback."""
-    scrollback = "<pre>scrollback line\n</pre>"
-    terminal = FormatTerminal(
-        app_module,
-        ranges={"html": scrollback},
-        screens={"html": ALT_SCREEN_HTML},
-        lower=0,
-        upper=401,
+    terminal = BufferTerminal(
+        app_module, held=["scrollback line"], screen={"html": ALT_SCREEN_HTML}
     )
 
-    assert app_module.terminal_buffer_html(terminal) == scrollback
-    assert terminal.range_calls == [("html", 0, 0, 401, 0)]
+    assert app_module.terminal_buffer_html(terminal) == "<pre>scrollback line\n</pre>"
     assert terminal.screen_calls == [], "the screen must not be read when rows exist"
 
 
-def test_buffer_html_and_text_agree_on_the_alternate_screen(app_module):
+def test_buffer_html_and_text_agree_when_the_range_is_blank(app_module):
     """The two exports promise the same rows and differ only in attributes."""
-    terminal = FormatTerminal(
+    terminal = BufferTerminal(
         app_module,
-        ranges={"html": BLANK_ROWS_HTML, "text": "\n\n\n\n"},
-        screens={"html": ALT_SCREEN_HTML, "text": "ALT row\n"},
-        lower=0,
-        upper=12,
+        held=["", "", "", ""],
+        screen={"html": ALT_SCREEN_HTML, "text": "ALT row\n"},
     )
 
     html = app_module.terminal_buffer_html(terminal)
@@ -2936,16 +2989,14 @@ def test_buffer_html_and_text_agree_on_the_alternate_screen(app_module):
 
 def test_buffer_html_returns_none_when_nothing_has_text(app_module):
     """A genuinely empty terminal must still let the caller fall back to plain text."""
-    terminal = FormatTerminal(
-        app_module, ranges={"html": BLANK_ROWS_HTML}, screens={"html": ""}, lower=0, upper=4
-    )
+    terminal = BufferTerminal(app_module, held=["", "", "", ""], screen={"html": ""})
 
     assert app_module.terminal_buffer_html(terminal) is None
 
 
 def test_buffer_html_handles_a_tuple_return(app_module):
     """Older VTE returns (text, attrs) from the range call."""
-    terminal = FormatTerminal(app_module, lower=0, upper=3)
+    terminal = BufferTerminal(app_module, held=["x"])
     terminal.get_text_range_format = lambda *a: ("<pre>x\n</pre>", None)
 
     assert app_module.terminal_buffer_html(terminal) == "<pre>x\n</pre>"
@@ -3174,6 +3225,74 @@ def test_buffer_viewer_shows_the_alternate_screen_against_real_vte():
     pytest.importorskip("gi", reason="PyGObject not available")
     result = subprocess.run(
         [sys.executable, "-c", _ALT_SCREEN_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+# The in-process tests describe how VTE numbers rows; this checks VTE still does. A
+# 100-row buffer overflowed three times over, then the two layouts that leave the
+# cursor short of the bottom of the screen (#179). What VTE holds is read the way Copy
+# All reads it, which is exact and which the viewer must not use: it takes the selection.
+_OVERFLOW_SCRIPT = """
+import os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, GLib, Vte
+from gnome_connection_manager import app
+
+term = Vte.Terminal(); term.set_scrollback_lines(100); term.set_size(80, 24)
+win = Gtk.Window(); win.set_default_size(700, 400); win.add(term); win.show_all()
+
+def pump(ms=400):
+    loop = GLib.MainLoop(); GLib.timeout_add(ms, lambda: (loop.quit(), False)[1]); loop.run()
+
+def check(label):
+    term.select_all()
+    held = term.get_text_selected_full(Vte.Format.TEXT)[0].lstrip("\\n").rstrip()
+    term.unselect_all()
+    text = app.terminal_buffer_text(term)
+    assert text == held, (label, text[:30], text[-30:], held[:30], held[-30:])
+    html = app.terminal_buffer_html(term)
+    styled = app.vtehtml.plain_text(app.vtehtml.parse_vte_html(html))
+    assert styled.rstrip() == held, (label, styled[:30], held[:30])
+    viewer = app.BufferViewer(None, term, label)
+    viewer.show_all()
+    for _ in range(50): Gtk.main_iteration_do(False)
+    shown = viewer.get_all_text()
+    viewer.destroy()
+    assert shown.rstrip() == held, (label, shown[:30], held[:30])
+    return held
+
+pump(500)
+term.feed("".join("%d\\r\\n" % n for n in range(1, 301)).encode())
+pump()
+held = check("overflowed")
+assert held.split("\\n")[0] != "1" and held.endswith("300"), (held[:30], held[-30:])
+term.feed(b"prompt\\r\\ny\\r\\nz\\r\\n\\x1b[3A")
+pump()
+assert check("rows below the cursor").endswith("z")
+term.feed(b"\\x1b[H\\x1b[2Jtop")
+pump()
+assert check("prompt at the top").endswith("top")
+
+win.destroy()
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_buffer_text_and_viewer_hold_what_vte_holds_after_overflow_against_real_vte():
+    """View buffer and Save buffer lost the newest rows once the scrollback overflowed."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _OVERFLOW_SCRIPT],
         capture_output=True,
         text=True,
         cwd=Path(__file__).resolve().parents[1],

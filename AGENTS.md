@@ -172,7 +172,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - **Measure, don't assume.** Write throwaway probes against real GTK/VTE — `DISPLAY=:0`
   works under WSLg. Assumptions about VTE behavior have been wrong far more often than right:
   VTE 0.76 does not emit `increase-font-size` on Ctrl+scroll, it clamps `set_font_scale()` to
-  0.25–4.0 itself, and a line selection reaches the clipboard as `text\n\n`.
+  0.25–4.0 itself, and a line selection reaches the clipboard as `text\n\n`. Its row
+  numbers keep counting once the scrollback drops the oldest rows, while the vertical
+  adjustment starts again from 0: read as row numbers, the adjustment hid the newest
+  output from View buffer (#179). The cursor is reported in the numbering
+  `get_text_range_format` takes; the adjustment is not.
 - **Mutation-test new tests.** Revert the fix and confirm the test fails. This has caught
   several tests that passed against broken code.
 - **Verify what is rendered, not what the model says.** A menubar was once "verified" by

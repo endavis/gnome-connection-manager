@@ -30,11 +30,21 @@ HTML = (
 
 
 class Snapshot:
+    """Three rows on a three-row screen, the cursor on the last, numbered as VTE numbers
+    them. The range is found from the cursor and the plain text before the HTML is read
+    (#179), so the text has to answer too."""
+
+    def get_cursor_position(self):
+        return 0, 2
+
+    def get_row_count(self):
+        return 3
+
     def get_vadjustment(self):
         return type("A", (), {"get_lower": lambda s: 0, "get_upper": lambda s: 3})()
 
     def get_text_range_format(self, fmt, *args):
-        return HTML if fmt == app.Vte.Format.HTML else "ignored"
+        return HTML if fmt == app.Vte.Format.HTML else "plain\nRED BOLD BG UL\na & b <tag>\n"
 
     def get_text_format(self, fmt):
         return "ignored"

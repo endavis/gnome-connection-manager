@@ -843,25 +843,46 @@ def terminal_colors(terminal):
     return foreground or contrasting_foreground(background_rgba), background
 
 
-def _buffer_range(terminal, fmt):
-    """The scrollback rows in one format, or None when the range cannot be read.
+def _exported(result):
+    """The text of a VTE export; older VTE returns (text, attributes)."""
+    return (result[0] if isinstance(result, tuple) else result) or ""
 
-    Uses the vertical adjustment for the real row bounds. The obvious alternative --
-    select_all() then get_text_selected_full() -- destroys whatever the user had
-    selected; this leaves it untouched. An unbounded range is not an option either:
-    asking for more rows than exist pads the result with thousands of blank lines.
+
+def _buffer_range(terminal, fmt):
+    """The rows VTE holds in one format, or None when they are blank or unreadable.
+
+    VTE numbers rows from the start of the session and keeps counting once it drops the
+    oldest, but the vertical adjustment runs from 0 to the number of rows held, counted
+    down to the bottom of the screen. Read as row numbers, the adjustment asked for rows
+    long gone and stopped short of the newest once the scrollback overflowed (#179). The
+    cursor is reported in the numbering get_text_range_format takes: the rows held end
+    within a screen below it, and start no earlier than it less the rows held. VTE
+    answers a row it does not hold with an empty line, so that window is safe to ask
+    for, and the empty lines at each end of the text say where the rows really are. The
+    HTML is read over those.
+
+    select_all() then get_text_selected_full() would find the rows too, but destroys
+    whatever the user had selected; this leaves it untouched.
     """
     adjustment = terminal.get_vadjustment() if hasattr(terminal, "get_vadjustment") else None
     if adjustment is None:
         return None
     try:
-        result = terminal.get_text_range_format(
-            fmt, int(adjustment.get_lower()), 0, int(adjustment.get_upper()), 0
-        )
+        _column, cursor = terminal.get_cursor_position()
+        held = int(adjustment.get_upper() - adjustment.get_lower())
+        first, end = max(0, cursor + 1 - held), cursor + terminal.get_row_count()
+        text = _exported(terminal.get_text_range_format(Vte.Format.TEXT, first, 0, end, 0))
+        rows = text.lstrip("\n")
+        if not rows.strip():
+            return None
+        if fmt == Vte.Format.TEXT:
+            return rows
+        first += len(text) - len(rows)
+        end -= max(0, len(rows) - len(rows.rstrip("\n")) - 1)
+        return _exported(terminal.get_text_range_format(fmt, first, 0, end, 0))
     except Exception:
         logger.debug("Range extraction failed, falling back to the visible screen")
         return None
-    return result[0] if isinstance(result, tuple) else result
 
 
 def _buffer_screen(terminal, fmt):
@@ -880,10 +901,12 @@ def terminal_buffer_html(terminal):
     Same rows and same bounds as terminal_buffer_text, including its fall through to the
     visible screen, so the two agree on content and differ only in whether attributes
     come along. Without that fall through the viewer showed a full-screen application as
-    a page of empty rows (#107): on the alternate screen the adjustment still describes
-    rows the range export cannot read back, and it answers with newlines and nothing
-    else. Blankness has to be judged on the text the export carries, not on its length --
-    the empty answer is 23 bytes of markup wrapping 12 newlines.
+    a page of empty rows (#107). The range came back empty there because it was read by
+    the adjustment's numbers, which miss every row of the alternate screen -- the fault
+    #179 found in the scrollback. Read by the cursor's, the range holds that screen, and
+    the fall through remains for a range with nothing readable in it. Blankness has to be
+    judged on the text the export carries, not on its length -- the empty answer is 23
+    bytes of markup wrapping 12 newlines.
     """
     html = _buffer_range(terminal, Vte.Format.HTML)
     if not vtehtml.plain_text(vtehtml.parse_vte_html(html)).strip():
@@ -896,7 +919,7 @@ def terminal_buffer_text(terminal):
     text = _buffer_range(terminal, Vte.Format.TEXT)
     if text and text.strip():
         return text.rstrip()
-    # Alternate screen: no scrollback exists, so the visible screen is all there is.
+    # Nothing readable in the range, so the visible screen is all there is.
     return (_buffer_screen(terminal, Vte.Format.TEXT) or "").rstrip()
 
 
