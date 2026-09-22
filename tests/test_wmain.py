@@ -2214,45 +2214,261 @@ def test_a_rerendered_tab_follows_the_title_setting_both_ways(app_module, monkey
     assert shown() == "  prod-web-01: htop  "
 
 
-class ScrollbackTerminal:
-    """Records set_scrollback_lines, which the real Vte.Terminal has (checked below)."""
+class PreferencesTerminal:
+    """Records, in order, what Preferences sets on a terminal. The real Vte.Terminal has
+    each of these methods (checked below)."""
 
-    def __init__(self):
-        self.scrollback = None
+    def __init__(self, host=None):
+        self.host = host
+        self.calls = []
+
+    def set_word_char_exceptions(self, exceptions):
+        self.calls.append(("word chars", exceptions))
 
     def set_scrollback_lines(self, lines):
-        self.scrollback = lines
+        self.calls.append(("scrollback", lines))
+
+    def set_colors(self, foreground, background, palette):
+        spec = lambda colour: None if colour is None else colour.spec  # noqa: E731
+        size = None if palette is None else len(palette)
+        self.calls.append(("colours", spec(foreground), spec(background), size))
+
+    def set_color_background(self, background):
+        self.calls.append(("background", background.spec, round(background.alpha, 2)))
+
+    def set_font(self, font):
+        self.calls.append(("font", font))
+
+    def set_audible_bell(self, audible):
+        self.calls.append(("bell", audible))
+
+    def set(self, name):
+        return [call for call in self.calls if call[0] == name]
 
 
-def test_scrollback_terminal_fake_matches_real_vte():
+def test_preferences_terminal_fake_matches_real_vte():
     gi = pytest.importorskip("gi", reason="PyGObject not available")
     gi.require_version("Vte", "2.91")
     from gi.repository import Vte
 
-    assert hasattr(Vte.Terminal, "set_scrollback_lines")
+    for name in (
+        "set_word_char_exceptions",
+        "set_scrollback_lines",
+        "set_colors",
+        "set_color_background",
+        "set_font",
+        "set_audible_bell",
+    ):
+        assert hasattr(PreferencesTerminal, name), f"fake is missing {name}"
+        assert hasattr(Vte.Terminal, name), f"Vte.Terminal has no {name}"
 
 
-def test_preferences_reach_every_open_console(app_module, monkeypatch):
-    """Buffer size was set only when addTab made a terminal, and a tab rendered the
-    program's title only when the title changed (#174). Two panes, as a split leaves."""
-    terminal_class = type("Terminal", (ScrollbackTerminal, app_module.Vte.Terminal), {})
-    monkeypatch.setattr(app_module.conf, "BUFFER_LINES", 123)
+@pytest.fixture
+def preferences(app_module, monkeypatch):
+    """Preferences as a user might leave them, and a Wmain to apply them. Colours are
+    parsed into records the fake can report, and a font description is its text."""
+    for name, value in {
+        "BUFFER_LINES": 123,
+        "WORD_SEPARATORS": "-A-",
+        "FONT_COLOR": "#FFFF00",
+        "BACK_COLOR": "#0000FF",
+        "FONT": "Monospace 21",
+        "BELL_AUDIBLE": 0,
+        "TRANSPARENCY": 0,
+    }.items():
+        monkeypatch.setattr(app_module.conf, name, value)
+    monkeypatch.setattr(
+        app_module, "parse_color_rgba", lambda spec: types.SimpleNamespace(spec=spec, alpha=1.0)
+    )
+    monkeypatch.setattr(app_module.Pango, "FontDescription", lambda text: text, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = types.SimpleNamespace(transparency=False)
+    return wmain
+
+
+def test_preferences_reach_every_open_console(app_module, preferences):
+    """addTab applied these only when it made a terminal, and a tab rendered the program's
+    title only when the title changed (#174, #181). Two panes, as a split leaves."""
+    terminal_class = type("Terminal", (PreferencesTerminal, app_module.Vte.Terminal), {})
+    own = types.SimpleNamespace(font_color="#FFFFFF", back_color="#00AA00")
     rendered = []
 
-    def console(name):
-        terminal = terminal_class()
+    def console(name, host=None):
+        terminal = terminal_class(host)
         page = types.SimpleNamespace(get_children=lambda: [terminal])
         label = types.SimpleNamespace(render_label=lambda: rendered.append(name))
         return terminal, types.SimpleNamespace(page=page, label=label)
 
-    (first, one), (second, two), (third, three) = console("a"), console("b"), console("c")
-    wmain = object.__new__(app_module.Wmain)
-    wmain.open_console_groups = lambda: [("left", [one, two]), ("right", [three])]
+    (first, one), (second, two), (third, three) = console("a"), console("b", own), console("c")
+    preferences.open_console_groups = lambda: [("left", [one, two]), ("right", [three])]
 
-    wmain.apply_settings_to_open_consoles()
+    preferences.apply_settings_to_open_consoles()
 
-    assert [first.scrollback, second.scrollback, third.scrollback] == [123, 123, 123]
+    for terminal in (first, second, third):
+        assert terminal.set("word chars") == [("word chars", "-A-")]
+        assert terminal.set("scrollback") == [("scrollback", 123)]
+        assert terminal.set("font") == [("font", "Monospace 21")]
+        assert terminal.set("bell") == [("bell", False)]
+    assert first.set("colours") == third.set("colours") == [("colours", "#FFFF00", "#0000FF", 16)]
+    assert second.set("colours") == [("colours", "#FFFFFF", "#00AA00", 16)], "a host's own win"
     assert rendered == ["a", "b", "c"]
+
+
+def test_default_colours_put_an_open_console_back_to_vte_s_own(
+    app_module, preferences, monkeypatch
+):
+    """A new console with the default colours never had set_colors called. An open one has
+    to be given None to get there: measured, that draws what a new terminal draws."""
+    monkeypatch.setattr(app_module.conf, "FONT_COLOR", "")
+    monkeypatch.setattr(app_module.conf, "BACK_COLOR", "")
+    terminal = PreferencesTerminal()
+
+    preferences.apply_preferences_to_terminal(terminal)
+
+    assert terminal.set("colours") == [("colours", None, None, None)]
+
+
+def test_a_host_needs_both_colours_to_keep_its_own(preferences):
+    terminal = PreferencesTerminal(types.SimpleNamespace(font_color="#FFFFFF", back_color=""))
+
+    preferences.apply_preferences_to_terminal(terminal)
+
+    assert terminal.set("colours") == [("colours", "#FFFF00", "#0000FF", 16)]
+
+
+@pytest.mark.parametrize(
+    ("foreground", "background", "expected"),
+    [("#FFFF00", "#0000FF", "#0000FF"), ("", "", "#000000")],
+)
+def test_transparency_goes_on_after_the_colours(
+    app_module, preferences, monkeypatch, foreground, background, expected
+):
+    """set_colors resets the background's alpha -- measured -- so it has to come first."""
+    monkeypatch.setattr(app_module.conf, "FONT_COLOR", foreground)
+    monkeypatch.setattr(app_module.conf, "BACK_COLOR", background)
+    monkeypatch.setattr(app_module.conf, "TRANSPARENCY", 30)
+    preferences.wMain.transparency = True
+    terminal = PreferencesTerminal()
+
+    preferences.apply_preferences_to_terminal(terminal)
+
+    names = [call[0] for call in terminal.calls]
+    assert names.index("colours") < names.index("background")
+    assert terminal.set("background") == [("background", expected, 0.7)]
+
+
+def test_transparency_needs_a_screen_that_can_show_it(app_module, preferences, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "TRANSPARENCY", 30)
+    terminal = PreferencesTerminal()
+
+    preferences.apply_preferences_to_terminal(terminal)
+
+    assert terminal.set("background") == []
+
+
+def test_the_default_font_is_monospace_and_stays_unwritten(app_module, preferences, monkeypatch):
+    """addTab used to write "monospace" into conf.FONT when it was empty. Preferences
+    treats the two alike, so reading it is enough."""
+    monkeypatch.setattr(app_module.conf, "FONT", "")
+    terminal = PreferencesTerminal()
+
+    preferences.apply_preferences_to_terminal(terminal)
+
+    assert terminal.set("font") == [("font", "monospace")]
+    assert app_module.conf.FONT == ""
+
+
+def test_addtab_sets_nothing_preferences_decides_itself(app_module):
+    """One method sets these for a new console and an open one alike. A setter that
+    addTab kept for itself would reach only the consoles opened after a change."""
+    source = inspect.getsource(app_module.Wmain.addTab)
+
+    assert "self.apply_preferences_to_terminal(v)" in source
+    for setter in (
+        "set_word_char_exceptions",
+        "set_scrollback_lines",
+        "set_colors",
+        "set_color_background",
+        "set_font(",
+        "set_audible_bell",
+    ):
+        assert setter not in source, f"addTab calls {setter} itself"
+
+
+# The fakes above record calls; this checks what real terminals end up with, through a
+# real Wmain: a console opened before Preferences changes, one whose host has colours of
+# its own, and one opened after. HOME is redirected so this can never touch a real ~/.gcm.
+_PREFERENCES_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False); time.sleep(0.005)
+
+app.wMain = wmain = app.Wmain(application=None)
+wmain.wMain.show_all()
+
+def open_console(host):
+    wmain.addTab(wmain.nbConsole, host)
+    pump()
+    notebook = wmain.nbConsole
+    return notebook.get_nth_page(notebook.get_n_pages() - 1).get_children()[0]
+
+def look(term):
+    return (
+        term.get_font().to_string(),
+        term.get_audible_bell(),
+        term.get_word_char_exceptions(),
+        term.get_color_background_for_draw().to_string(),
+    )
+
+own = app.Host("", "own colours")
+own.font_color, own.back_color = "#FFFFFF", "#00AA00"
+before, hosted = open_console("local"), open_console(own)
+before.set_font_scale(2.0)
+
+app.conf.FONT, app.conf.BELL_AUDIBLE, app.conf.WORD_SEPARATORS = "Monospace 21", 0, "-A-"
+app.conf.FONT_COLOR, app.conf.BACK_COLOR = "#FFFF00", "#0000FF"
+wmain.apply_settings_to_open_consoles()
+pump()
+after = open_console("local")
+
+expected = ("Monospace 21", False, "-A-", "rgb(0,0,255)")
+assert look(before) == expected, look(before)
+assert look(after) == expected, look(after)
+assert look(hosted) == ("Monospace 21", False, "-A-", "rgb(0,170,0)"), look(hosted)
+assert before.get_font_scale() == 2.0, "the zoom must survive a new font"
+
+app.conf.FONT_COLOR = app.conf.BACK_COLOR = ""
+wmain.apply_settings_to_open_consoles()
+pump()
+fresh = open_console("local")
+assert look(before)[3] == look(after)[3] == look(fresh)[3] == "rgb(0,0,0)", look(before)
+assert look(hosted)[3] == "rgb(0,170,0)", look(hosted)
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_open_consoles_look_like_new_ones_after_preferences_against_real_gtk():
+    """Font, colours, word separators and the bell reached only new consoles (#181)."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _PREFERENCES_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
 
 
 # Split and Unsplit move a console into another notebook, and its tab label carries

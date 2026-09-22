@@ -52,6 +52,8 @@ the git log.
 - Buffer size and Show the program title in the tab now reach the consoles already open
   when Preferences is closed with OK, not only the ones opened afterwards. Shrinking the
   buffer drops the oldest lines of a session that holds more
+- So do the font, the colours, Transparency, Word separator and Audible bell. A host with
+  colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
 - Unticking the checkbox on a host's Commands page discarded the commands when the

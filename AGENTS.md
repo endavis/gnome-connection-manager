@@ -293,8 +293,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `CONFIG_OPTIONS`, `writeConfig`, glade widgets, the preferences dialog, menus, export/import,
   and translations. `docs/TERMINAL-USAGE.md` names a setting by the label Preferences draws
   for it, and `tests/test_docs.py` fails when the two part, so relabelling a control means
-  changing the guide too. A setting `addTab` applies when it makes a terminal reaches the
-  consoles already open only if `apply_settings_to_open_consoles` applies it too (#174).
+  changing the guide too. A setting Preferences decides for a console belongs in
+  `Wmain.apply_preferences_to_terminal`, which `addTab` calls for a new console and
+  `apply_settings_to_open_consoles` for each open one, so a change reaches both (#174,
+  #181). A test fails if `addTab` sets one itself.
 - The expect script assumes `/usr/bin/ssh` and `/usr/bin/telnet`; if touching authentication,
   check the regexes and resize trap in `data/scripts/ssh.expect`.
 
