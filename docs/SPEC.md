@@ -378,6 +378,8 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Cluster mode
 
 ### Terminal Context Menu
+Opened by right-click, or by Ctrl+right-click while right-click pastes (the default).
+
 - Copy / Paste / Copy & Paste
 - Select all / Copy all
 - Save buffer

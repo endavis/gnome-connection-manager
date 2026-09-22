@@ -11,6 +11,7 @@ import gettext
 import inspect
 import logging
 import re
+import types
 from pathlib import Path
 
 import pytest
@@ -120,18 +121,20 @@ def _options(app_module):
     }
 
 
-def _preference_labels(app_module):
-    """Each conf attribute Preferences has a control for, mapped to its English label.
-
-    Read from the compiled catalog the application loads, as the refusal tests in
-    test_transcript.py do, so a stale catalog fails here too.
-    """
-    source = inspect.getsource(app_module.Wconfig.new)
-    english = gettext.translation(
+def _english(app_module):
+    """The compiled English catalog the application loads, as the refusal tests in
+    test_transcript.py read it, so a stale catalog fails here too."""
+    return gettext.translation(
         app_module.domain_name,
         localedir=Path(app_module.__file__).parents[2] / "lang",
         languages=["en"],
     )
+
+
+def _preference_labels(app_module):
+    """Each conf attribute Preferences has a control for, mapped to its English label."""
+    source = inspect.getsource(app_module.Wconfig.new)
+    english = _english(app_module)
     pairs = re.findall(r'_\(\s*"([^"]+)"\s*\),\s*"conf\.(\w+)"', source)
     return {attr: english.gettext(msgid) for msgid, attr in pairs}
 
@@ -228,6 +231,73 @@ def test_an_example_given_with_its_defaults_shows_the_defaults(app_module):
                 assert _parsed(kind, value) == default, f"{heading}: {key} defaults to {default}"
                 checked += 1
     assert checked, "no example is given with its defaults; drop this test or the phrase"
+
+
+def test_the_guide_gives_labels_as_english_draws_them(app_module):
+    """The guide named the View buffer item by its Spanish msgid, "Ver buffer" (#172). A
+    bold phrase that is a msgid with a different English translation is the source
+    string, not what an English reader sees."""
+    english = _english(app_module)
+    source_strings = []
+    for phrase in re.findall(r"\*\*(.+?)\*\*", DOC.read_text(), re.S):
+        for part in re.split(r"\s*→\s*", " ".join(phrase.split())):
+            if english.gettext(part) != part:
+                source_strings.append(f"{part!r} is drawn as {english.gettext(part)!r}")
+    assert not source_strings, source_strings
+
+
+# How the guide spells each modifier the handler could test for.
+_MODIFIER_NAMES = {"CONTROL_MASK": "Ctrl", "SHIFT_MASK": "Shift", "MOD1_MASK": "Alt"}
+
+
+def _menu_modifiers(app_module, monkeypatch):
+    """The modifiers that make a right-click open the terminal's menu while right-click
+    pastes, found by trying each on the real handler."""
+    monkeypatch.setattr(app_module.conf, "PASTE_ON_RIGHT_CLICK", 1)
+    opened = []
+    wmain = object.__new__(app_module.Wmain)
+    wmain.terminal_paste = lambda _terminal: None
+    wmain.set_context_terminal = lambda _terminal: opened.append(True)
+    switch = types.SimpleNamespace(set_sensitive=lambda _value: None)
+    wmain.popupMenu = types.SimpleNamespace(
+        mnuCopy=switch, mnuSplitH=switch, mnuSplitV=switch, popup=lambda *_args: None
+    )
+    notebook = types.SimpleNamespace(get_n_pages=lambda: 1)
+    notebook.get_parent = lambda: notebook
+    terminal = types.SimpleNamespace(get_has_selection=lambda: False, get_parent=lambda: notebook)
+    names = []
+    for mask, name in _MODIFIER_NAMES.items():
+        state = getattr(app_module.Gdk.ModifierType, mask)
+        event = types.SimpleNamespace(
+            type=app_module.Gdk.EventType.BUTTON_PRESS,
+            button=3,
+            x=0,
+            y=0,
+            time=0,
+            get_state=lambda state=state: state,
+        )
+        opened.clear()
+        wmain.on_terminal_click(terminal, event)
+        if opened:
+            names.append(name)
+    return names
+
+
+def test_the_guide_says_how_to_open_the_terminals_menu(app_module, monkeypatch):
+    """Right-click pastes by default, so a guide that sent readers to "the right-click
+    menu" sent them nowhere (#171). The section on the menu names the modifier that
+    opens it, found on the real handler, and every other mention links to that section
+    -- except a tab's right-click menu, which is another menu and always opens."""
+    names = _menu_modifiers(app_module, monkeypatch)
+    assert len(names) == 1, f"expected one modifier to open the menu, found {names}"
+    section = " ".join(dict(_guide_sections())["## The terminal's menu"].split())
+    assert f"**{names[0]}+right-click**" in section
+
+    text = " ".join(DOC.read_text().split())
+    text = text.replace("[the terminal's menu](#the-terminals-menu)", "")
+    assert "the terminal's menu" not in text, "link each mention to the section"
+    others = [word for word in re.findall(r"(\S+) right-click menus?", text) if word != "tab's"]
+    assert not others, f"a right-click menu the guide does not say how to open: {others}"
 
 
 def test_documented_application_accelerators_are_real(app_module):

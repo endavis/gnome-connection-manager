@@ -101,11 +101,18 @@ The `-NNN` counter distinguishes repeated sessions on the same day. Each log ope
 header naming the host and where it connected (`user@host:port`), so a file stays
 identifiable after it is moved or renamed.
 
+## The terminal's menu
+
+A terminal has a menu of actions on it, and several sections below point to it. While
+**Paste on right click** is ticked on the General tab of Preferences, as it is by
+default, a right-click pastes, and **Ctrl+right-click** opens the menu. Untick it and a
+plain right-click opens the menu too.
+
 ## Pasting
 
 Paste is `Ctrl+Shift+V`, or a right-click while **Paste on right click** is ticked on the
-General tab of Preferences, as it is by default. Untick it and a right-click opens the
-menu instead.
+General tab of Preferences, as it is by default. Untick it and a right-click opens
+[the terminal's menu](#the-terminals-menu) instead.
 
 Pasted text that ends in a newline submits itself the moment it lands, which turns a
 prompt you meant to review into a command that already ran. GCM strips trailing newlines
@@ -113,8 +120,9 @@ before delivering a paste. Multi-line content still pastes as multiple lines; on
 final terminator is removed.
 
 Large or multi-line pastes show a preview first, so a wrong clipboard does not flood the
-session. **Paste as One Line** in the Edit and right-click menus joins the lines instead,
-for when you want a multi-line snippet to arrive as one command.
+session. **Paste as One Line**, in the Edit menu and [the terminal's
+menu](#the-terminals-menu), joins the lines instead, for when you want a multi-line
+snippet to arrive as one command.
 
 The stripping is **Strip the trailing newline when pasting** on the General tab of
 Preferences, and the preview is **Confirm pasting more than N lines (0 disables)** and
@@ -184,9 +192,9 @@ sessions are spawned exactly as before.
 
 A recording is faithful but not readable. **Save Transcript** rebuilds a linear log of
 what was actually displayed — what you usually want after a session with a full-screen
-application in it. It is in the Edit menu, in the terminal's right-click menu, and in a
-tab's right-click menu; from a tab it transcribes *that* tab's session, so you do not
-have to switch to a console first.
+application in it. It is in the Edit menu, in [the terminal's
+menu](#the-terminals-menu), and in a tab's right-click menu; from a tab it transcribes
+*that* tab's session, so you do not have to switch to a console first.
 
 It replays the recording through a hidden terminal, so it only works on a session that
 was recorded: turn recording on before the session, not after. The transcript is
@@ -248,8 +256,8 @@ terminal, **including a remote host**:
 
 ## Viewing the buffer without the mouse
 
-`Ctrl+Shift+F`, **Edit → View Buffer**, or **Ver buffer** in the right-click menu opens the
-scrollback in a plain text window.
+`Ctrl+Shift+F`, **Edit → View Buffer**, or **View buffer** in [the terminal's
+menu](#the-terminals-menu) opens the scrollback in a plain text window.
 
 This is the answer when selection is awkward: an application holding the mouse cannot
 interfere, ordinary keyboard selection works, and `Ctrl+A` / `Ctrl+C` do what you expect.

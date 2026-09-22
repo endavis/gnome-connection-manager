@@ -1611,12 +1611,56 @@ def test_right_click_paste_goes_through_the_policy(monkeypatch, app_module):
     terminal = ClipboardTerminal()
     terminal.get_parent = NotebookAncestor
     _clipboard(monkeypatch, app_module, "echo hi\n")
-    event = types.SimpleNamespace(type=app_module.Gdk.EventType.BUTTON_PRESS, button=3, x=0, y=0)
 
-    wmain.on_terminal_click(terminal, event)
+    wmain.on_terminal_click(terminal, _right_click_event(app_module))
 
     assert terminal.pasted_text == ["echo hi"]
     assert terminal.pasted == 0
+
+
+def _right_click_event(app_module, state=0):
+    """A button-3 press. `get_state()` returns the mask itself, as it does on the
+    Gdk.EventButton a real handler receives -- unlike Gdk.Event, whose returns a tuple."""
+    return types.SimpleNamespace(
+        type=app_module.Gdk.EventType.BUTTON_PRESS,
+        button=3,
+        x=0,
+        y=0,
+        time=0,
+        get_state=lambda: state,
+    )
+
+
+@pytest.mark.parametrize(
+    ("paste_on_right_click", "ctrl", "opens_menu"),
+    [(1, False, False), (1, True, True), (0, False, True), (0, True, True)],
+)
+def test_ctrl_right_click_opens_the_menu_even_while_right_click_pastes(
+    monkeypatch, app_module, paste_on_right_click, ctrl, opens_menu
+):
+    """Right-click pastes by default, and nothing else opened the terminal's menu, so it
+    could not be reached at all while the guide sent readers to it (#171)."""
+    monkeypatch.setattr(app_module.conf, "PASTE_ON_RIGHT_CLICK", paste_on_right_click)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
+    monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
+    popped = []
+    sensitive = types.SimpleNamespace(set_sensitive=lambda _v: None)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.popupMenu = types.SimpleNamespace(
+        mnuCopy=sensitive,
+        mnuSplitH=sensitive,
+        mnuSplitV=sensitive,
+        popup=lambda *args: popped.append(args),
+    )
+    terminal = ClipboardTerminal()
+    terminal.get_parent = NotebookAncestor
+    _clipboard(monkeypatch, app_module, "echo hi\n")
+    state = app_module.Gdk.ModifierType.CONTROL_MASK if ctrl else 0
+
+    assert wmain.on_terminal_click(terminal, _right_click_event(app_module, state)) is True
+
+    assert bool(popped) is opens_menu
+    assert terminal.pasted_text == ([] if opens_menu else ["echo hi"])
 
 
 class BellTabLabel:

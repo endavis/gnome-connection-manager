@@ -1807,7 +1807,10 @@ class Wmain(GladeComponent):
 
     def on_terminal_click(self, widget, event, *args):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
-            if conf.PASTE_ON_RIGHT_CLICK:
+            # Ctrl+right-click opens the menu even while right-click pastes, which it does
+            # by default. Nothing else opens this menu, so without it the menu could not be
+            # reached at all, while the guide sent readers to it for actions (#171).
+            if conf.PASTE_ON_RIGHT_CLICK and not event.get_state() & Gdk.ModifierType.CONTROL_MASK:
                 self.terminal_paste(widget)
             else:
                 self.set_context_terminal(widget)
