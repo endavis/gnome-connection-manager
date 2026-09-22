@@ -59,6 +59,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   on every folder -- so a config nobody arranges carries no positions at all.
   `FolderTree.contents` gives each folder's children as drawn; `place` files an item
   beside a sibling, or into a folder: at the end of an arranged one, by name otherwise.
+- `src/gnome_connection_manager/utils/configfile.py` – how gcm.conf and an imported export
+  are read, by `loadConfig`, the import dialog, and `require_readable_config`, which
+  `main()` runs before the window exists (#161). A hand merge of two copies repeats
+  sections -- both number their hosts from `[host 1]` -- and strict configparser refuses
+  that. `read_config` keeps a repeated host or folder section as a record of its own,
+  drops one that is a verbatim copy, and merges a repeated singleton section. A folder id
+  that named two records comes back in `ambiguous_folders`, and `refile_ambiguous_hosts`
+  files the hosts naming it by their `group` path instead. Anything else it cannot read
+  raises `UnreadableError`, and GCM refuses to start rather than start empty. Do not go
+  back to `cp.read`: it skips a file it cannot open, so GCM came up with no hosts and
+  wrote that over the file when the window closed.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -172,6 +183,7 @@ Practices below have each caught real bugs in this repo. They are worth the time
 ## Configuration & Data Flow
 - User data lives in `~/.gcm/`: `gcm.conf` (INI) holds options, window state, shortcuts, and
   serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
+  It is read through `configfile.load`, never `cp.read` -- see the module entry above.
 - `.gcm.key` stores the per-user passphrase used by `pyaes`. `load_encryption_key` and
   `initialise_encyption_key` manage it; respect permissions (0600).
 - Configuration defaults live in the `conf` class in `app.py`. Every stored option is

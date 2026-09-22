@@ -166,7 +166,7 @@ siblings, and every folder keeps a distinct path. The restriction lifts only if
 
 **Repeated folder ids cannot occur.** The repair pass was described as reassigning a
 duplicate id. A folder's id is its section name, and configparser refuses a repeated
-section, so there is nothing to reassign.
+section, so there is nothing to reassign. (Superseded by the #161 amendment below.)
 
 **`position` arrives with ordering.** Phases 1 and 2 write `name` and `parent` only.
 `position` comes in phase 4 with the ordering that reads it, rather than as a field
@@ -266,17 +266,43 @@ asked for a test of the duplicate-id repair; the test now shows configparser ref
 repeated section, as the amendment above says. Measured while closing #154, the cost is
 larger than that note implies: such a file does not load at all. `loadConfig` raises
 `DuplicateSectionError` during startup and no window opens. configparser refuses a
-repeated host section the same way, so this predates ADR-0002.
+repeated host section the same way, so this predates ADR-0002. (Fixed by #161; see the
+amendment below.)
 
 **Downgrading loses the order, not the hosts.** Measured on a copy of a real config, an
 older build opens a file with positions in it and draws name order. From reading its
 code, its next save writes no positions.
+
+### 2026-09-21, reading a hand-merged gcm.conf (#161)
+
+The two notes above on repeated sections describe strict configparser. gcm.conf and an
+imported export are now read through `configfile.read_config`, which is lenient only
+where leniency loses nothing, so a file that repeats a folder id loads.
+
+**The repeat becomes a folder of its own.** It gets a fresh id; a verbatim copy of a
+record already read is dropped instead. Two records under one id come from two copies of
+the same folder, and when they differ, one copy renamed or moved it. Picking either would
+silently move the other copy's hosts. Keeping both shows the disagreement in the tree,
+where a drag settles it. `repair` still merges same-named siblings, so a repeat that
+differs only in `position` folds back into the original -- measured, reported as a
+duplicate sibling.
+
+**Hosts naming the id are filed by their `group`.** The id cannot say which record a host
+meant, but the path saved beside it records which folder it was drawn under.
+`refile_ambiguous_hosts` clears the id, and `bind` resolves the path, as it does for a
+config written before this ADR. So the repair pass still never sees a duplicate id, the
+property the phase 1 note relied on, by a different route.
+
+A file that cannot be read in full -- a line configparser cannot place, bytes that do not
+decode, no permission to open it -- no longer starts GCM at all. It used to start with no
+window, or, for a file it could not open, empty, writing that over the file on close.
 
 ## Related Issues
 
 - Issue #154: Replace the group path string with a real folder tree
 - Issue #153: Add a stable id to every host record
 - Issue #155: Record the host-id and folder-tree decisions as ADRs
+- Issue #161: An unreadable gcm.conf leaves GCM with no window, or empties it on close
 
 ## Related Documentation
 

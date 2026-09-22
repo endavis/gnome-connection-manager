@@ -3247,6 +3247,23 @@ def test_importing_a_file_with_a_repeated_id_separates_them(monkeypatch, tmp_pat
     assert len({h.id for h in imported}) == 2
 
 
+def test_importing_a_hand_merged_export_keeps_every_host(monkeypatch, tmp_path, app_module):
+    """Two exports pasted together repeat every section. Strict parsing refused that, and
+    the import said only that the file was invalid (#161)."""
+    first, second = make_host(app_module), make_host(app_module)
+    second.name = "switch"
+
+    imported = export_then_import(
+        monkeypatch,
+        tmp_path,
+        app_module,
+        [first, second],
+        mangle=lambda text: text + "\n" + text.replace("name = switch", "name = firewall"),
+    )
+
+    assert sorted(h.name for h in imported) == sorted([first.name, "firewall", "switch"])
+
+
 def test_a_folder_outlives_its_last_host(monkeypatch, app_module):
     """ADR-0002: folders are records, not a side effect of some host's path."""
     kept, moved = hosts_named(app_module, "ops/web", "ops/old/db")
