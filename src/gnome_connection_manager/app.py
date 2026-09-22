@@ -3938,15 +3938,18 @@ class Wmain(GladeComponent):
             return None
         raw_path = getattr(terminal, "raw_path", None)
         if not raw_path or not Path(raw_path).exists():
-            # `raw-session-log` is off by default and has no preference UI, and the
-            # recording is opened when the session spawns -- so turning it on does
-            # nothing for sessions already running. Say both, or the message reads as
-            # a failure rather than as something the reader can act on.
+            # Recording is off by default, and a recording is opened when the session
+            # spawns -- so turning it on does nothing for sessions already running. Say
+            # where to turn it on and that it takes a new session, or the message reads
+            # as a failure rather than as something the reader can act on. Where is the
+            # checkbox in Preferences, named by its label. This once said gcm.conf, and
+            # an edit there while GCM runs never takes effect: the running GCM does not
+            # read it again, and its next save writes the old value back (#166).
             # One string literal, not two joined: the i18n guard matches a single
             # quoted argument, so a concatenated msgid silently escapes the check.
             msgbox(
                 _(
-                    "Esta sesión no tiene grabación. Active «raw-session-log» en gcm.conf y abra una sesión nueva."
+                    "Esta sesión no tiene grabación. Active «Grabar la sesión en crudo» en Preferencias y abra una sesión nueva."
                 ),
                 self.wMain,
             )

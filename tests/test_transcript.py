@@ -7,9 +7,11 @@ The numbers quoted here were measured by replaying real recordings -- made throu
 
 from __future__ import annotations
 
+import gettext
 import inspect
 import re
 import types
+from pathlib import Path
 
 import pytest
 
@@ -399,23 +401,51 @@ def test_saving_a_transcript_refuses_a_session_that_was_never_recorded(app_modul
     assert said, "refusing silently reads as the feature being broken"
 
 
-def test_the_refusal_says_what_to_do_about_it(app_module):
-    """`raw-session-log` is off by default, has no preference UI, and is read at spawn.
-
-    A reader who is told only that there is no recording has no way to get one: the
-    preference lives in gcm.conf, and turning it on does nothing for a session that is
-    already running.
-    """
+def refusal_and_checkbox(app_module):
+    """The refusal's msgid, and the label Preferences draws for the recording checkbox."""
     source = inspect.getsource(app_module.Wmain.save_session_transcript)
     # \s* around the literal, matching the i18n guard in test_i18n.py: the formatter is
     # free to wrap a long msgbox call across lines, and a pattern that only matched
     # `_("...")` on one line silently stopped seeing this message when it did.
     message = [s for s in re.findall(r'_\(\s*"([^"]+)"\s*\)', source) if "grabación" in s]
-
+    prefs = inspect.getsource(app_module.Wconfig.new)
+    label = re.findall(r'_\(\s*"([^"]+)"\s*\),\s*"conf\.RAW_SESSION_LOG"', prefs)
     assert message, "the refusal must be a translatable string"
-    assert "raw-session-log" in message[0], "say which preference"
-    assert "gcm.conf" in message[0], "say where it lives"
-    assert "nueva" in message[0], "say that it takes a new session"
+    assert len(label) == 1, "Preferences should draw one checkbox for recording"
+    return message[0], label[0]
+
+
+def test_the_refusal_says_what_to_do_about_it(app_module):
+    """Recording is off by default and read at spawn, so a reader told only that there is
+    no recording has no way to get one: say where to turn it on, and that it takes a new
+    session.
+
+    Where is Preferences. The message used to say gcm.conf, believing the setting had no
+    preference UI; it had one from the start, and an edit to gcm.conf made while GCM runs
+    never takes effect -- the running GCM does not read it again, and its next save writes
+    the old value back (#166). So the message names the checkbox by the label drawn for it.
+    """
+    message, label = refusal_and_checkbox(app_module)
+
+    assert label.split(" (")[0] in message, "name the checkbox as Preferences draws it"
+    assert "Preferencias" in message, "say where it is"
+    assert "gcm.conf" not in message, "an edit there while GCM runs never takes effect"
+    assert "nueva" in message, "say that it takes a new session"
+
+
+def test_the_refusal_names_the_checkbox_in_english_too(app_module):
+    """An English reader sees the translations, which have to agree with each other too.
+    Read from the compiled catalog the application loads, so a stale one fails here."""
+    message, label = refusal_and_checkbox(app_module)
+    english = gettext.translation(
+        app_module.domain_name,
+        localedir=Path(app_module.__file__).parents[2] / "lang",
+        languages=["en"],
+    )
+
+    assert english.gettext(label).split(" (")[0] in english.gettext(message)
+    assert "Preferences" in english.gettext(message)
+    assert "gcm.conf" not in english.gettext(message)
 
 
 def test_an_empty_recording_says_so_instead_of_doing_nothing(app_module, monkeypatch, tmp_path):
