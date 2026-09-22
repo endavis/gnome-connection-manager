@@ -406,6 +406,10 @@ To rebind, set the key against the command name:
 CTRL+SHIFT+B = copy_all
 ```
 
+GCM writes `[shortcuts]` from what it holds in memory every time it saves, and closing the
+window is a save. So edit it with GCM closed, or use Preferences: an edit made while GCM
+runs is written over.
+
 If a shortcut appears to do nothing, check whether your desktop or OS claims that
 combination first — a global hotkey is consumed before GCM ever sees the key, and
 `Ctrl+Shift+<letter>` combinations are a common source of this. Rebinding to a free
@@ -426,6 +430,11 @@ ALT+RETURN = \x1b\r
 ```
 
 Key names follow `[shortcuts]`. Values may use `\n`, `\r`, `\t` and `\xNN` escapes.
+
+GCM reads `[keys]` only when it starts. Its saves keep the section as they find it in the
+file, so you can edit it while GCM runs, and the change takes effect at the next start. A
+save does rewrite the section's layout: key names come back in lower case, which GCM reads
+the same way, and comments are dropped.
 
 Which sequence an application wants varies, so there is no useful default — `\n` is the
 common choice for "newline rather than submit", but check what yours expects.

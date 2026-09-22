@@ -70,6 +70,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   raises `UnreadableError`, and GCM refuses to start rather than start empty. Do not go
   back to `cp.read`: it skips a file it cannot open, so GCM came up with no hosts and
   wrote that over the file when the window closed.
+  A save starts from the file too (#163). `carried_config` in `app.py` reads it as it is
+  on disk, and `unwritten` strips what the save writes: `WRITTEN_SECTIONS`, and host and
+  folder records by `RECORD_PREFIXES`. What is left survives -- `[keys]`, which people
+  write by hand, and any section GCM does not know. A section added to `writeConfig`
+  belongs in `WRITTEN_SECTIONS`, or the next save finds it already there and fails; a new
+  kind of record belongs in `RECORD_PREFIXES`, or a deleted one comes back. A file that
+  cannot be read at save time is kept aside under `aside_path`, never written over. And
+  never read `gcm.conf.tmp`: it is the save's own output, and one left behind by an
+  interrupted save made every later save fail.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -183,7 +192,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
 ## Configuration & Data Flow
 - User data lives in `~/.gcm/`: `gcm.conf` (INI) holds options, window state, shortcuts, and
   serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
-  It is read through `configfile.load`, never `cp.read` -- see the module entry above.
+  It is read through `configfile.load`, never `cp.read`, and a save starts from it rather
+  than from nothing -- see the module entry above.
 - `.gcm.key` stores the per-user passphrase used by `pyaes`. `load_encryption_key` and
   `initialise_encyption_key` manage it; respect permissions (0600).
 - Configuration defaults live in the `conf` class in `app.py`. Every stored option is

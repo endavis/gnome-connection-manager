@@ -69,3 +69,10 @@ the git log.
 - A `gcm.conf` that cannot be read in full now stops GCM before its window opens, with a
   message saying what is wrong and where. One it could not open at all used to start it
   empty, and closing the window then wrote that empty list over the file
+- Saving dropped the `[keys]` section from `gcm.conf`, so a custom key sequence lasted one
+  session. A save now keeps every section GCM does not write itself, read from the file
+  as it is on disk, so a `[keys]` edit made while GCM runs survives too
+- A `gcm.conf.tmp` left behind by an interrupted save made every later save fail, so each
+  session's changes were lost at close, with the error only on stderr
+- A save wrote over a `gcm.conf` broken by hand while GCM ran, losing the edit. A file it
+  cannot read is now kept aside as `gcm.conf.unreadable-<time>` first
