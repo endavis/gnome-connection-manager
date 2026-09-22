@@ -103,3 +103,6 @@ the git log.
 - Once more lines had been printed than Buffer size holds, View buffer and Save buffer
   to file left out the newest output, the screen included, and opened with an empty
   line for every line dropped. They now hold the same lines as Copy All
+- Split and Unsplit reset the tabs they moved. The title the program had set, a rename,
+  the grey strikethrough of an ended session and its Reopen menu item, and the marks
+  the bell and the cluster window leave were all lost. A tab now moves with its label

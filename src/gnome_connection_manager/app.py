@@ -3789,6 +3789,20 @@ class Wmain(GladeComponent):
             else:
                 self.wMain.set_title(conf.APP_TITLE or app_name)
 
+    def move_page(self, page, notebook):
+        """Move a console to the end of another notebook, taking its tab label along.
+
+        The label holds more than its text: the title the program set, a rename, whether
+        the session has ended, and the marks the bell and the cluster window leave on it.
+        Split and Unsplit used to build a fresh label from get_text(), and a tab lost all
+        of that on the way to its new pane (#180).
+        """
+        label = page.get_parent().get_tab_label(page)
+        page.get_parent().remove(page)
+        notebook.append_page(page, label)
+        notebook.set_tab_reorderable(page, True)
+        notebook.set_tab_detachable(page, True)
+
     def split_notebook(self, direction):
         csp = self.current.get_parent() if self.current is not None else None
         cnb = csp.get_parent() if csp is not None else None
@@ -3822,16 +3836,7 @@ class Wmain(GladeComponent):
             cp.add(hp)
             hp.add1(cnb)
 
-            text = cnb.get_tab_label(csp).get_text()
-
-            csp.get_parent().remove(csp)
-            nb.add(csp)
-            csp = nb.get_nth_page(0)
-
-            tab = NotebookTabLabel(text, nb, csp, self.popupMenuTab)
-            nb.set_tab_label(csp, tab_label=tab)
-            nb.set_tab_reorderable(csp, True)
-            nb.set_tab_detachable(csp, True)
+            self.move_page(csp, nb)
 
             hp.add2(nb)
             nb.show()
@@ -4815,15 +4820,7 @@ class Wmain(GladeComponent):
         while wid is not None:
             # Mover los tabs al notebook principal
             while wid.get_n_pages() != 0:
-                csp = wid.get_nth_page(0)
-                text = wid.get_tab_label(csp).get_text()
-                csp.get_parent().remove(csp)
-                self.nbConsole.add(csp)
-                csp = self.nbConsole.get_nth_page(self.nbConsole.get_n_pages() - 1)
-                tab = NotebookTabLabel(text, self.nbConsole, csp, self.popupMenuTab)
-                self.nbConsole.set_tab_label(csp, tab_label=tab)
-                self.nbConsole.set_tab_reorderable(csp, True)
-                self.nbConsole.set_tab_detachable(csp, True)
+                self.move_page(wid.get_nth_page(0), self.nbConsole)
             wid = self.find_notebook(self.hpMain, self.nbConsole)
         self.on_tab_focus(
             self.nbConsole, self.nbConsole.get_nth_page(self.nbConsole.get_current_page())
