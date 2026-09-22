@@ -399,11 +399,12 @@ through the shortcut editor in Preferences.
 | `Ctrl+0` | `zoom_reset` | yes |
 | `Alt+1`–`Alt+9` | `console_1`–`console_9` | no |
 
-To rebind, set the key against the command name:
+To rebind, give the command its new key. The command goes on the left, the key on the
+right:
 
 ```ini
 [shortcuts]
-CTRL+SHIFT+B = copy_all
+copy_all = CTRL+SHIFT+B
 ```
 
 GCM writes `[shortcuts]` from what it holds in memory every time it saves, and closing the
@@ -429,7 +430,8 @@ SHIFT+RETURN = \n
 ALT+RETURN = \x1b\r
 ```
 
-Key names follow `[shortcuts]`. Values may use `\n`, `\r`, `\t` and `\xNN` escapes.
+Key names are spelled as in `[shortcuts]`, but here the key goes on the left, where
+`[shortcuts]` puts the command. Values may use `\n`, `\r`, `\t` and `\xNN` escapes.
 
 GCM reads `[keys]` only when it starts. Its saves keep the section as they find it in the
 file, so you can edit it while GCM runs, and the change takes effect at the next start. A

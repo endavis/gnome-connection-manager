@@ -76,3 +76,5 @@ the git log.
   session's changes were lost at close, with the error only on stderr
 - A save wrote over a `gcm.conf` broken by hand while GCM ran, losing the edit. A file it
   cannot read is now kept aside as `gcm.conf.unreadable-<time>` first
+- The terminal guide's example for rebinding a shortcut put the key where the command
+  goes, so following it changed nothing and nothing said why
