@@ -22,6 +22,12 @@ worse: GCM writes its host list over the file when the window closes.
 A save starts from the file too (#163): `unwritten` strips the sections a save writes from
 memory and leaves the rest -- [keys], which people write by hand -- to be carried across.
 
+An option whose value cannot be read comes back from `read_option` with the default and an
+`Unread` record of what the file said. Until #173 the next save wrote that default over the
+line, so the value was gone from the file with only a line on stderr to say so;
+`put_back_unread` writes the text back instead, for as long as the setting still holds the
+value used in its place.
+
 Pure of GTK and of configuration globals, so it is tested directly.
 """
 
@@ -54,6 +60,16 @@ class Reading(NamedTuple):
     kept_apart: int  # repeated host or folder sections kept as records of their own
     dropped: int  # repeats that were verbatim copies
     ambiguous_folders: frozenset[str]  # folder ids that named more than one record
+
+
+class Unread(NamedTuple):
+    """An option the file gives a value that cannot be read, and the value used instead."""
+
+    section: str
+    option: str
+    text: str  # the value as the file has it
+    used: object  # the default read_option returned in its place
+    reason: str  # configparser's or int()'s own words
 
 
 def header(line: str) -> str | None:
@@ -159,6 +175,46 @@ def unwritten(config: configparser.RawConfigParser) -> configparser.RawConfigPar
         if section in WRITTEN_SECTIONS or section.startswith(RECORD_PREFIXES):
             config.remove_section(section)
     return config
+
+
+def read_option(
+    config: configparser.RawConfigParser, section: str, option: str, kind: type, default: object
+) -> tuple[object, Unread | None]:
+    """One option's value, read as `kind`, and an `Unread` if the file's value cannot be.
+
+    An absent option is not unread: a file written before the option existed simply has
+    none, and takes the default without comment. A `str` option always reads.
+    """
+    try:
+        if kind is bool:
+            return config.getboolean(section, option), None
+        if kind is int:
+            return config.getint(section, option), None
+        return config.get(section, option), None
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        return default, None
+    except (configparser.Error, ValueError) as error:
+        return default, Unread(section, option, config.get(section, option), default, str(error))
+
+
+def put_back_unread(
+    config: configparser.RawConfigParser,
+    unread: list[Unread],
+    current: dict[tuple[str, str], object],
+) -> list[Unread]:
+    """Write each unread option's text back over the value a save put in its place, while
+    the setting still holds the value used instead of it, and return those put back.
+
+    `current` maps (section, option) to the setting's value now. One that has moved on
+    was changed since -- in Preferences, say -- and that value is the one to keep; its
+    record is dropped, so setting it back to the default later writes the default.
+    """
+    kept = []
+    for record in unread:
+        if current.get((record.section, record.option)) == record.used:
+            config.set(record.section, record.option, record.text)
+            kept.append(record)
+    return kept
 
 
 def aside_path(path: Path, stamp: str) -> Path:

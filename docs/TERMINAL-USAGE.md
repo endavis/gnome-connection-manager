@@ -9,7 +9,9 @@ Where a section gives an `[options]` line of `~/.gcm/gcm.conf`, it also names th
 in Preferences that sets it. Edit `[options]` only with GCM closed: GCM writes that
 section from memory whenever it saves, and closing the window is a save, so an edit made
 while it runs is written over. Leave comments out too: a save drops them, and `;` after a
-value is read as part of the value rather than as a comment.
+value is read as part of the value rather than as a comment. A value GCM cannot read, such
+as that, is listed in a notice when GCM starts. The setting stays at its default, and the
+line is kept as written until you correct it or change the setting in Preferences.
 
 ## Selecting text
 

@@ -92,3 +92,6 @@ the git log.
   now opens it whether or not right-click pastes; it used to paste like a plain one
 - The terminal guide named the View buffer menu item by its Spanish source string,
   Ver buffer
+- A value in `gcm.conf` that GCM could not read was replaced by the default at the next
+  save, with only a line on stderr to say so. The line is now kept as written until the
+  setting is changed, and GCM lists such values in a notice when it starts

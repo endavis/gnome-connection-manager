@@ -79,6 +79,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   cannot be read at save time is kept aside under `aside_path`, never written over. And
   never read `gcm.conf.tmp`: it is the save's own output, and one left behind by an
   interrupted save made every later save fail.
+  A single value that cannot be read comes back from `read_option` as an `Unread` beside
+  the default (#173). `loadConfig` keeps those from `[options]` in `unread_options`,
+  `writeConfig` writes their text back through `put_back_unread` while each setting still
+  holds that default, and `report_unread_options` lists them once the window is up. Not
+  `[window]`: that is GCM's record of its own window, and a save writes the window as it is.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the

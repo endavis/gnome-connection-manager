@@ -676,13 +676,15 @@ def test_require_readable_config_refuses_on_stderr_without_a_display(
 
 
 class RefusalDialog:
-    """Records what require_readable_config shows. Its methods are checked against the
-    real Gtk.MessageDialog below."""
+    """Records a message dialog: require_readable_config's, and the notice of values that
+    could not be read. Its methods are checked against the real Gtk.MessageDialog below."""
 
     shown: list = []
 
     def __init__(self, **kwargs):
         self.text = kwargs["text"]
+        self.message_type = kwargs["message_type"]
+        self.parent = kwargs.get("parent")
         self.detail = None
 
     def format_secondary_text(self, text):
@@ -898,3 +900,103 @@ def test_a_save_keeps_a_file_it_cannot_open_aside(tmp_path, app_module, monkeypa
     aside.chmod(0o600)
     assert aside.read_text() == before
     assert saved_sections(path).get("host 1", "name") == "router1"
+
+
+# -- values that cannot be read (#173) --------------------------------------------
+
+
+def with_options(tmp_path, *lines):
+    """A minimal gcm.conf with these lines in [options]."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    with path.open("a") as handle:
+        handle.write("\n[options]\n" + "".join(f"{line}\n" for line in lines))
+    return path
+
+
+def test_a_value_gcm_cannot_read_survives_a_save(tmp_path, app_module, monkeypatch):
+    """Measured before the fix: GCM used the default, said so only on stderr, and closing
+    the window wrote the default over the line."""
+    path = with_options(tmp_path, "paste-confirm-lines = 7 ; x", "bell-audible = maybe")
+    load_hosts(app_module, monkeypatch, path)
+    assert app_module.conf.PASTE_CONFIRM_LINES == 5
+
+    save_config(app_module)
+    save_config(app_module)
+
+    saved = saved_sections(path)
+    assert saved.get("options", "paste-confirm-lines") == "7 ; x"
+    assert saved.get("options", "bell-audible") == "maybe"
+
+
+def test_a_setting_changed_since_is_saved_as_changed(tmp_path, app_module, monkeypatch):
+    """Preferences sets the value; that is the one to keep. And set back to the default
+    afterwards, the default is saved rather than the old text coming back."""
+    path = with_options(tmp_path, "paste-confirm-lines = 7 ; x")
+    load_hosts(app_module, monkeypatch, path)
+
+    app_module.conf.PASTE_CONFIRM_LINES = 9
+    save_config(app_module)
+    assert saved_sections(path).get("options", "paste-confirm-lines") == "9"
+
+    app_module.conf.PASTE_CONFIRM_LINES = 5
+    save_config(app_module)
+    assert saved_sections(path).get("options", "paste-confirm-lines") == "5"
+
+
+def test_an_unreadable_window_value_is_saved_as_the_window_is(tmp_path, app_module, monkeypatch):
+    """[window] is GCM's record of its own window, not a setting anyone chose: a save
+    writes what the window is now."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    with path.open("a") as handle:
+        handle.write("\n[window]\nshow-panel = maybe\n")
+    load_hosts(app_module, monkeypatch, path)
+
+    save_config(app_module)
+
+    assert app_module.unread_options == []
+    assert saved_sections(path).getboolean("window", "show-panel") is True
+
+
+def test_the_window_reports_each_value_it_could_not_read(tmp_path, app_module, monkeypatch):
+    path = with_options(tmp_path, "paste-confirm-lines = 7 ; x", "bell-audible = maybe")
+    load_hosts(app_module, monkeypatch, path)
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = object()
+
+    assert wmain.report_unread_options() is False
+
+    [dialog] = RefusalDialog.shown
+    assert dialog.parent is wmain.wMain
+    assert dialog.message_type == app_module.Gtk.MessageType.WARNING
+    assert "could not be read" in dialog.text
+    assert "paste-confirm-lines = 7 ; x  (expects a whole number)" in dialog.detail
+    assert "bell-audible = maybe  (expects true or false)" in dialog.detail
+    assert "Preferences" in dialog.detail
+
+
+def test_the_window_says_nothing_when_every_value_reads(tmp_path, app_module, monkeypatch):
+    load_hosts(app_module, monkeypatch, with_options(tmp_path, "paste-confirm-lines = 7"))
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+
+    assert object.__new__(app_module.Wmain).report_unread_options() is False
+    assert RefusalDialog.shown == []
+
+
+def test_activation_reports_once(app_module, monkeypatch):
+    """After the window and any tabs asked for are up; and only once, though activation
+    can come again."""
+    scheduled = []
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda func, *args: scheduled.append(func))
+    monkeypatch.setattr(app_module, "sync_shortcut_accels", lambda: None)
+    application = app_module.GcmApplication()
+    application._controller = types.SimpleNamespace(
+        get_widget=lambda _name: None, report_unread_options=lambda: False
+    )
+
+    application.do_activate()
+    application.do_activate()
+
+    assert scheduled == [application._controller.report_unread_options]
