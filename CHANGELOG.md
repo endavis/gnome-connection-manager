@@ -81,3 +81,9 @@ the git log.
 - Save Transcript on a session with no recording said to turn on `raw-session-log` in
   `gcm.conf`, which never takes effect while GCM runs. It now names the checkbox that has
   been in Preferences all along, Record the raw session
+- The terminal guide gave only a `gcm.conf` line for settings that have a control in
+  Preferences, and an edit to that file while GCM runs is written over. It now names each
+  control and says whether a change applies straight away or to sessions opened after it
+- The terminal guide's paste example put a `;` comment after each value, which GCM reads
+  as part of the value. Copied as written, all three settings were rejected and the
+  defaults used

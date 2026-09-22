@@ -5,18 +5,27 @@ inside the tab. Most of what looks like broken copy/paste is a full-screen appli
 holding the mouse, or the alternate screen having no scrollback of its own. This page
 covers both, plus the shortcut table and how to change it.
 
+Where a section gives an `[options]` line of `~/.gcm/gcm.conf`, it also names the control
+in Preferences that sets it. Edit `[options]` only with GCM closed: GCM writes that
+section from memory whenever it saves, and closing the window is a save, so an edit made
+while it runs is written over. Leave comments out too: a save drops them, and `;` after a
+value is read as part of the value rather than as a comment.
+
 ## Selecting text
 
 Click and drag selects, as in any terminal. `Ctrl+Shift+C` copies the selection.
 
-Set **`auto-copy-selection`** if you would rather skip that second step — every selection
-goes to the clipboard the moment you finish dragging, and `Ctrl+Shift+C` becomes
-unnecessary. It is off by default:
+Tick **Copy selection to clipboard** on the General tab of Preferences if you would
+rather skip that second step — every selection goes to the clipboard the moment you
+finish dragging, and `Ctrl+Shift+C` becomes unnecessary. It is off by default, and
+turning it on applies straight away, in sessions already open too. In `gcm.conf`:
 
 ```ini
 [options]
 auto-copy-selection = true
 ```
+
+Edit that with GCM closed.
 
 ### When an application has taken the mouse
 
@@ -28,9 +37,9 @@ rather than selecting text, and it looks like selection has stopped working.
 reporting and hands the drag back to the terminal.
 
 What you get is an ordinary terminal selection, not a special mode: `Ctrl+Shift+C`
-copies it, `auto-copy-selection` picks it up on its own if you have that on, and it
-behaves like any other selection everywhere else. The only unusual part is the `Shift`
-needed to make it.
+copies it, **Copy selection to clipboard** in Preferences picks it up on its own if you
+have that ticked, and it behaves like any other selection everywhere else. The only
+unusual part is the `Shift` needed to make it.
 
 Not every full-screen application does this — see [What agent CLIs
 do](#what-agent-clis-do) below. If plain dragging already selects, nothing has taken the
@@ -70,11 +79,12 @@ When you need the full record of a session, use the application's own export —
 `/export` command, a session transcript, or a `--print` style flag — rather than the
 terminal's scrollback.
 
-GCM's own **session logging** (per host, or `log-local` for local consoles) records what
-the terminal receives, so it captures ordinary command output but is subject to the same
-limitation for full-screen applications.
+GCM's own **session logging** (per host, or **Log local console sessions** in Preferences
+for local consoles) records what the terminal receives, so it captures ordinary command
+output but is subject to the same limitation for full-screen applications.
 
-Logs are laid out under `log-path` (default `~/.gcm/logs`) mirroring your host tree:
+Logs are laid out under **Logs path** in Preferences (default `~/.gcm/logs`), mirroring
+your host tree:
 
 ```
 <log-path>/<group>/<host name>/<user>-<YYYYMMDD>-<NNN>.log
@@ -93,7 +103,9 @@ identifiable after it is moved or renamed.
 
 ## Pasting
 
-Paste is `Ctrl+Shift+V`, or right-click if `paste-right-click` is on.
+Paste is `Ctrl+Shift+V`, or a right-click while **Paste on right click** is ticked on the
+General tab of Preferences, as it is by default. Untick it and a right-click opens the
+menu instead.
 
 Pasted text that ends in a newline submits itself the moment it lands, which turns a
 prompt you meant to review into a command that already ran. GCM strips trailing newlines
@@ -104,12 +116,20 @@ Large or multi-line pastes show a preview first, so a wrong clipboard does not f
 session. **Paste as One Line** in the Edit and right-click menus joins the lines instead,
 for when you want a multi-line snippet to arrive as one command.
 
+The stripping is **Strip the trailing newline when pasting** on the General tab of
+Preferences, and the preview is **Confirm pasting more than N lines (0 disables)** and
+**Confirm pasting more than N bytes (0 disables)**. A change to any of these, or to
+**Paste on right click**, applies straight away, in sessions already open too. In
+`gcm.conf`, with their defaults:
+
 ```ini
 [options]
-paste-strip-trailing-newline = true   ; drop trailing newlines
-paste-confirm-lines = 5               ; preview above this many lines; 0 disables
-paste-confirm-bytes = 8192            ; preview above this many bytes; 0 disables
+paste-strip-trailing-newline = true
+paste-confirm-lines = 5
+paste-confirm-bytes = 8192
 ```
+
+Edit that with GCM closed.
 
 Applications that support bracketed paste are told the content is a paste rather than
 typing, which stops a shell from executing each line as it arrives. GCM preserves that
@@ -201,16 +221,22 @@ OSC 52. `tmux` (with `set-clipboard on`), neovim, helix and lazygit all use it �
 how a copy inside a full-screen application reaches your desktop clipboard, including
 over SSH.
 
-VTE does not implement OSC 52, so this is **off by default**:
+VTE does not implement OSC 52, so this is **off by default**. Turn it on with **Let
+applications write to the clipboard (OSC 52)** on the General tab of Preferences.
+
+With it on, sessions run under a small relay process that watches the output for the
+sequence and hands the payload to GCM. With it off, sessions are spawned exactly as
+before — the relay is not involved at all. So turning it on applies to sessions opened
+after that: one already running was not started under the relay. Turning it off stops
+clipboard writes immediately, including from sessions that were already running when it
+was on. In `gcm.conf`:
 
 ```ini
 [options]
 osc52-clipboard = true
 ```
 
-With it on, sessions run under a small relay process that watches the output for the
-sequence and hands the payload to GCM. With it off, sessions are spawned exactly as
-before — the relay is not involved at all.
+Edit that with GCM closed.
 
 Two deliberate restrictions, because the sequence is written by whatever runs in the
 terminal, **including a remote host**:
@@ -219,9 +245,6 @@ terminal, **including a remote host**:
   clipboard *back* to the application. GCM never answers, as most terminals do not — a
   remote host must not be able to read your clipboard.
 - **Only the clipboard and primary selections are honoured.** Cut buffers are ignored.
-
-Turning the preference off stops clipboard writes immediately, including from sessions
-that were already running when it was on.
 
 ## Viewing the buffer without the mouse
 
@@ -264,12 +287,16 @@ tab's tooltip.
 
 **Renaming a tab wins.** Once you rename a tab, programs stop changing its label.
 
-Turn the behaviour off entirely with:
+Turn the behaviour off entirely by unticking **Show the program title in the tab** on the
+General tab of Preferences. That applies straight away, though a tab already open keeps
+the title it shows until its program sets a new one. In `gcm.conf`:
 
 ```ini
 [options]
 tab-title-from-terminal = false
 ```
+
+Edit that with GCM closed.
 
 The title is display only. It never affects where sessions are logged, what a cloned tab
 connects to, or which console a cluster command targets — those all use the tab's identity,
@@ -334,12 +361,16 @@ in exactly as it came, without quoting, since it is text rather than a path.
 Compilers, linters, test runners and AI CLIs all print locations like
 `src/app.py:42` or `src/app.py:42:7`. Ctrl+click one to open it in your editor.
 
+Which editor is **Editor command** on the General tab of Preferences: a template in which
+`{file}`, `{line}` and `{col}` are substituted. A change applies straight away, in
+sessions already open too. In `gcm.conf`:
+
 ```ini
 [options]
 editor-command = code --goto {file}:{line}:{col}
 ```
 
-`{file}`, `{line}` and `{col}` are substituted. With no template set, GCM uses `$VISUAL`
+Edit that with GCM closed. With no template set, GCM uses `$VISUAL`
 or `$EDITOR` with the `+LINE` convention that vi, vim, nano and emacs understand, and
 falls back to `xdg-open` — which cannot jump to a line.
 
@@ -364,12 +395,16 @@ across restarts. To change the font itself, use Preferences.
 
 ## Scrollback
 
-The scrollback buffer defaults to 10000 lines and is configurable from 1 to 1,000,000:
+Set how many lines the scrollback buffer holds with **Buffer size** on the General tab of
+Preferences, from 1 to 1,000,000. A change applies to sessions opened after it; one
+already open keeps the size it started with. In `gcm.conf`, with its default:
 
 ```ini
 [options]
 buffer-lines = 10000
 ```
+
+Edit that with GCM closed.
 
 Depth costs very little memory — the buffer is paged out to a compressed temporary file
 rather than held in RAM, so raising it further is cheap. It applies to the primary screen
@@ -517,11 +552,11 @@ terminal fault:
   is not supported by the compositor
 ```
 
-**Turn on `osc52-clipboard` and the copy works anyway.** Copilot tries several backends in
-order — OSC 52, `clip.exe` on WSL, `wl-copy`, `xclip`, then a native module — and the OSC
-52 write is the *first* of them, gated only on stdout being a terminal. It has already
-happened by the time the message appears. What failed is the last attempt in the chain,
-and the message is about that one.
+**Turn on [OSC 52](#letting-applications-set-the-clipboard-osc-52) and the copy works
+anyway.** Copilot tries several backends in order — OSC 52, `clip.exe` on WSL, `wl-copy`,
+`xclip`, then a native module — and the OSC 52 write is the *first* of them, gated only
+on stdout being a terminal. It has already happened by the time the message appears.
+What failed is the last attempt in the chain, and the message is about that one.
 
 The reason the last attempt cannot succeed is that copilot only reaches for `xclip` when
 `DISPLAY` is set and `WAYLAND_DISPLAY` is not. WSLg sets both, so it skips the one backend
