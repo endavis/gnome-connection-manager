@@ -6,6 +6,10 @@ find_back, which defaults to CTRL+H -- so the user-facing table gets a guard.
 
 from __future__ import annotations
 
+import configparser
+import gettext
+import inspect
+import logging
 import re
 from pathlib import Path
 
@@ -86,6 +90,144 @@ def test_the_rebinding_example_rebinds(tmp_path, app_module, monkeypatch):
 
     assert app_module.shortcuts.get(key) == tokens[command]
     assert app_module.shortcuts.get(defaults[command]) != tokens[command]
+
+
+def _guide_sections():
+    """The guide cut at every heading, as (heading, body) pairs."""
+    parts = re.split(r"^(#{2,6} .+)$", DOC.read_text(), flags=re.M)
+    return list(zip(parts[1::2], parts[2::2], strict=True))
+
+
+def _options_examples(body):
+    """Each `[options]` block a section gives: the line leading into it, the block as
+    written, and its settings as (key, value) pairs."""
+    examples = []
+    for lead, block in re.findall(r"([^\n]*)\n\n```ini\n(.*?)```", body, re.S):
+        header, *lines = block.splitlines()
+        if header == "[options]":
+            settings = [line.split("=", 1) for line in lines if "=" in line]
+            pairs = [(key.strip(), value.strip()) for key, value in settings]
+            examples.append((lead, block, pairs))
+    return examples
+
+
+def _options(app_module):
+    """Each key GCM reads from `[options]`, mapped to its conf attribute and type."""
+    return {
+        option: (attr, kind)
+        for attr, section, option, kind in app_module.CONFIG_OPTIONS
+        if section == "options"
+    }
+
+
+def _preference_labels(app_module):
+    """Each conf attribute Preferences has a control for, mapped to its English label.
+
+    Read from the compiled catalog the application loads, as the refusal tests in
+    test_transcript.py do, so a stale catalog fails here too.
+    """
+    source = inspect.getsource(app_module.Wconfig.new)
+    english = gettext.translation(
+        app_module.domain_name,
+        localedir=Path(app_module.__file__).parents[2] / "lang",
+        languages=["en"],
+    )
+    pairs = re.findall(r'_\(\s*"([^"]+)"\s*\),\s*"conf\.(\w+)"', source)
+    return {attr: english.gettext(msgid) for msgid, attr in pairs}
+
+
+def _parsed(kind, value):
+    """What an `[options]` value means, read strictly: no inline comment survives this."""
+    if kind is bool:
+        return configparser.RawConfigParser.BOOLEAN_STATES[value.lower()]
+    return kind(value)
+
+
+def test_the_guide_names_each_setting_as_preferences_draws_it(app_module):
+    """The guide gave only the gcm.conf key for settings Preferences has a control for,
+    and an edit to gcm.conf while GCM runs is written over by its next save (#169).
+    So wherever the guide names an `[options]` key, in an example or in its prose, the
+    same section names the control, in bold and in the words the dialog draws: relabel a
+    control and this fails.
+
+    A label is compared up to its parenthetical, which the prose may drop -- "Record the
+    raw session" for "Record the raw session (includes escape sequences)".
+    """
+    options = _options(app_module)
+    labels = _preference_labels(app_module)
+    named = 0
+    for heading, body in _guide_sections():
+        prose = re.sub(r"```.*?```", "", body, flags=re.S)
+        keys = set(re.findall(r"`([a-z0-9-]+)`", prose)) & options.keys()
+        keys |= {key for *_, settings in _options_examples(body) for key, _value in settings}
+        text = " ".join(body.split())
+        for key in sorted(keys):
+            assert key in options, f"{heading}: `{key}` is not an option GCM reads"
+            attr, _kind = options[key]
+            assert attr in labels, f"{heading}: `{key}` has no control in Preferences to name"
+            label = labels[attr].split(" (")[0]
+            assert f"**{label}" in text, f"{heading}: names `{key}` but not **{labels[attr]}**"
+            assert "Preferences" in text, f"{heading}: say that **{label}** is in Preferences"
+            named += 1
+    assert named, "the guide names no [options] setting at all; the test is misreading it"
+
+
+def test_each_options_example_says_when_it_applies_and_to_close_gcm_first():
+    """A reader changing a setting needs to know whether a session already open sees the
+    change. And an example on its own was a trap: GCM writes `[options]` from memory
+    whenever it saves, so an edit made while it runs is written over (#166, #169)."""
+    sections = [(heading, body) for heading, body in _guide_sections() if _options_examples(body)]
+    assert sections, "the guide gives no [options] example at all"
+    for heading, body in sections:
+        text = " ".join(body.split())
+        assert "with GCM closed" in text, f"{heading}: say to edit gcm.conf with GCM closed"
+        assert re.search(r"straight away|opened after|next start", text), (
+            f"{heading}: say whether a change applies straight away, to sessions opened "
+            "after it, or at the next start"
+        )
+
+
+def test_each_options_example_loads_as_written(tmp_path, app_module, monkeypatch, caplog):
+    """The pasting example had a `; comment` after each value. `;` only starts a comment
+    at the beginning of a line, so all three values were rejected and the defaults used,
+    with nothing but a log line to say so (#169). So each example is loaded through the
+    real loadConfig, and has to set what it says."""
+    options = _options(app_module)
+    examples = [
+        (block, settings)
+        for _heading, body in _guide_sections()
+        for _lead, block, settings in _options_examples(body)
+    ]
+    assert examples, "the guide gives no [options] example at all"
+    config = tmp_path / "gcm.conf"
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    for block, settings in examples:
+        config.write_text(block)
+        caplog.clear()
+        with caplog.at_level(logging.ERROR, logger="gnome_connection_manager"):
+            object.__new__(app_module.Wmain).loadConfig()
+        assert not caplog.records, caplog.text
+        for key, value in settings:
+            attr, kind = options[key]
+            assert getattr(app_module.conf, attr) == _parsed(kind, value), f"{key} = {value}"
+
+
+def test_an_example_given_with_its_defaults_shows_the_defaults(app_module):
+    """ "With their defaults" is a claim about the code, and a number in prose drifts."""
+    options = _options(app_module)
+    checked = 0
+    for heading, body in _guide_sections():
+        for lead, _block, settings in _options_examples(body):
+            if not re.search(r"with (its default|their defaults):$", lead):
+                continue
+            for key, value in settings:
+                attr, kind = options[key]
+                default = getattr(app_module.conf, attr)
+                assert _parsed(kind, value) == default, f"{heading}: {key} defaults to {default}"
+                checked += 1
+    assert checked, "no example is given with its defaults; drop this test or the phrase"
 
 
 def test_documented_application_accelerators_are_real(app_module):

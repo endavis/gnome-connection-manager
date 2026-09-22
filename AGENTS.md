@@ -277,7 +277,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   instead of duplicating behavior — they already handle edge cases across VTE versions.
 - When adding UI controls or config fields, keep these in sync: defaults (`conf`),
   `CONFIG_OPTIONS`, `writeConfig`, glade widgets, the preferences dialog, menus, export/import,
-  and translations.
+  and translations. `docs/TERMINAL-USAGE.md` names a setting by the label Preferences draws
+  for it, and `tests/test_docs.py` fails when the two part, so relabelling a control means
+  changing the guide too.
 - The expect script assumes `/usr/bin/ssh` and `/usr/bin/telnet`; if touching authentication,
   check the regexes and resize trap in `data/scripts/ssh.expect`.
 
