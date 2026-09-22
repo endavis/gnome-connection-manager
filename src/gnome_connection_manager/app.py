@@ -268,6 +268,28 @@ domain_name = "gcm-lang"
 
 # these colors are defined in vte sourcecode, but there is no way to read them (vte.cc 0.60.1, line 2371)
 DEFAULT_BGCOLOR = "#000000"
+# The palette a console gets with colours of its own. With the default colours it keeps
+# VTE's, as it always has.
+TERMINAL_PALETTE = (
+    # background
+    "#000000",
+    "#CC0000",
+    "#4E9A06",
+    "#C4A000",
+    "#3465A4",
+    "#75507B",
+    "#06989A",
+    "#D3D7CF",
+    # foreground
+    "#555753",
+    "#EF2929",
+    "#8AE234",
+    "#FCE94F",
+    "#729FCF",
+    "#729FCF",
+    "#34E2E2",
+    "#EEEEEC",
+)
 DEFAULT_FGCOLOR = "#C0C0C0"
 
 HSPLIT = 0
@@ -2081,6 +2103,37 @@ class Wmain(GladeComponent):
             for notebook in self.collect_notebooks(self.hpMain)
         ]
 
+    def apply_preferences_to_terminal(self, terminal):
+        """Set on one terminal everything Preferences decides about a console (#181).
+
+        addTab calls this for a new console, and apply_settings_to_open_consoles for each
+        open one when Preferences closes with OK, so the two come out the same. A host's
+        own colours win when it sets both. Without colours set_colors is still called,
+        with None: that draws exactly what a new terminal draws, and undoes any colours
+        and transparency given before -- both measured. set_font leaves a console's zoom
+        alone, since VTE keeps the scale apart from the font.
+        """
+        host = getattr(terminal, "host", None)
+        fcolor = getattr(host, "font_color", "") or ""
+        bcolor = getattr(host, "back_color", "") or ""
+        if not fcolor or not bcolor:
+            fcolor, bcolor = conf.FONT_COLOR, conf.BACK_COLOR
+        terminal.set_word_char_exceptions(conf.WORD_SEPARATORS)
+        terminal.set_scrollback_lines(conf.BUFFER_LINES)
+        if fcolor and bcolor:
+            palette = [parse_color_rgba(colour) for colour in TERMINAL_PALETTE]
+            terminal.set_colors(parse_color_rgba(fcolor), parse_color_rgba(bcolor), palette)
+        else:
+            terminal.set_colors(None, None, None)
+        if conf.TRANSPARENCY > 0 and self.wMain.transparency:
+            # set_opacity only works if the parent is transparent too, so the background
+            # carries the alpha instead. After set_colors, which would reset it.
+            background = parse_color_rgba(bcolor if bcolor else DEFAULT_BGCOLOR)
+            background.alpha = 1 - (conf.TRANSPARENCY / 100)
+            terminal.set_color_background(background)
+        terminal.set_font(Pango.FontDescription(conf.FONT or "monospace"))
+        terminal.set_audible_bell(bool(conf.BELL_AUDIBLE))
+
     def apply_settings_to_open_consoles(self):
         """Give the consoles already open the settings Preferences has just stored (#174).
 
@@ -2093,7 +2146,7 @@ class Wmain(GladeComponent):
             for entry in entries:
                 children = entry.page.get_children() if entry.page is not None else []
                 if children and isinstance(children[0], Vte.Terminal):
-                    children[0].set_scrollback_lines(conf.BUFFER_LINES)
+                    self.apply_preferences_to_terminal(children[0])
                 if hasattr(entry.label, "render_label"):
                     entry.label.render_label()
 
@@ -3070,8 +3123,6 @@ class Wmain(GladeComponent):
     def addTab(self, notebook, host):
         try:
             v = Vte.Terminal()
-            v.set_word_char_exceptions(conf.WORD_SEPARATORS)
-            v.set_scrollback_lines(conf.BUFFER_LINES)
             if (Vte.MAJOR_VERSION, Vte.MINOR_VERSION) >= (0, 50):
                 v.set_allow_hyperlink(True)
             self.registerUrlRegexes(v)
@@ -3091,44 +3142,7 @@ class Wmain(GladeComponent):
             # directory. Keep this the first thing done with the normalised host.
             v.host = host
 
-            fcolor = host.font_color
-            bcolor = host.back_color
-            if fcolor == "" or fcolor is None or bcolor == "" or bcolor is None:
-                fcolor = conf.FONT_COLOR
-                bcolor = conf.BACK_COLOR
-
-            palette_components = [
-                # background
-                "#000000",
-                "#CC0000",
-                "#4E9A06",
-                "#C4A000",
-                "#3465A4",
-                "#75507B",
-                "#06989A",
-                "#D3D7CF",
-                # foreground
-                "#555753",
-                "#EF2929",
-                "#8AE234",
-                "#FCE94F",
-                "#729FCF",
-                "#729FCF",
-                "#34E2E2",
-                "#EEEEEC",
-            ]
-
-            palette = []
-            for components in palette_components:
-                color = parse_color_rgba(components)
-                palette.append(color)
-
-            if len(fcolor) > 0 and len(bcolor) > 0:
-                v.set_colors(parse_color_rgba(fcolor), parse_color_rgba(bcolor), palette)
-
-            if len(conf.FONT) == 0:
-                conf.FONT = "monospace"
-            v.set_font(Pango.FontDescription(conf.FONT))
+            self.apply_preferences_to_terminal(v)
 
             scrollPane = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
             scrollbar = Gtk.Scrollbar().new(Gtk.Orientation.VERTICAL, v.get_vadjustment())
@@ -3139,7 +3153,6 @@ class Wmain(GladeComponent):
                 f"  {host.name}  ", self.nbConsole, scrollPane, self.popupMenuTab
             )
 
-            v.set_audible_bell(bool(conf.BELL_AUDIBLE))
             v.connect("bell", self.on_terminal_bell)
             v.connect("child-exited", lambda *args: self.on_terminal_child_exited(v, tab))
             v.connect("focus", self.on_tab_focus)
@@ -3157,15 +3170,6 @@ class Wmain(GladeComponent):
             # way to ask for a zoom, so honour them if anything ever does.
             v.connect("increase-font-size", self.terminal_zoom_in)
             v.connect("decrease-font-size", self.terminal_zoom_out)
-
-            if conf.TRANSPARENCY > 0 and self.wMain.transparency:
-                # v.set_opacity(1 - (conf.TRANSPARENCY / 100)) #possibly a bug in gtk3, set_opacity only works if parent is transparent too (worked just fine in gtk2),
-                # the workaround is to set the background color with alpha channel
-
-                # if bcolor is not set, then use default background color
-                c = parse_color_rgba(bcolor if bcolor else DEFAULT_BGCOLOR)
-                c.alpha = 1 - (conf.TRANSPARENCY / 100)
-                v.set_color_background(c)
 
             v.set_backspace_binding(host.backspace_key)
             v.set_delete_binding(host.delete_key)

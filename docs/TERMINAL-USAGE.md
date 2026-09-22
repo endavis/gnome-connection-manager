@@ -401,7 +401,8 @@ no shell configuration.
 
 Zoom applies to **one terminal**, not the whole application, so a wide log in one tab does
 not shrink the shell in the next. The scale is limited to 0.25x–4.0x and is not saved
-across restarts. To change the font itself, use Preferences.
+across restarts. To change the font itself, use Preferences: a change applies straight
+away, in consoles already open too, and each keeps its zoom.
 
 ## Scrollback
 
