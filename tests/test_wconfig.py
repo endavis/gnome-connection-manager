@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -222,3 +226,141 @@ def test_a_preference_containing_a_quote_round_trips(app_module, monkeypatch):
     setattr(owner, attribute, 'has "quotes" inside')
 
     assert app_module.conf.WORD_SEPARATORS == 'has "quotes" inside'
+
+
+# -- the window centring idle must not outlive its window (#175) -------------
+
+
+class CenteringWindow:
+    """The window methods center_window uses. The real Gtk.Window has each (checked below).
+
+    A destroyed window reports no GdkWindow and is no longer visible, both measured on
+    GTK 3; a hidden one keeps its GdkWindow.
+    """
+
+    def __init__(self, gdk_window=None, visible=True):
+        self._gdk_window = gdk_window
+        self._visible = visible
+        self.moved = []
+
+    def get_window(self):
+        return self._gdk_window
+
+    def get_visible(self):
+        return self._visible
+
+    def get_screen(self):
+        return types.SimpleNamespace(
+            get_monitor_at_window=lambda _window: 0,
+            get_monitor_geometry=lambda _monitor: types.SimpleNamespace(
+                x=100, y=50, width=1000, height=800
+            ),
+        )
+
+    def get_size(self):
+        return (400, 300)
+
+    def move(self, x, y):
+        self.moved.append((x, y))
+
+    def destroy(self):
+        self._gdk_window = None
+        self._visible = False
+
+
+def test_centering_window_fake_matches_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("get_window", "get_visible", "get_screen", "get_size", "move", "destroy"):
+        assert hasattr(CenteringWindow, name), f"fake is missing {name}"
+        assert hasattr(Gtk.Window, name), f"Gtk.Window has no {name}"
+
+
+def _queued_centring(app_module, monkeypatch, window):
+    """center_window's idle callback, and the window it was given."""
+    queued = []
+    monkeypatch.setattr(
+        app_module.GLib, "idle_add", lambda callback, *a, **k: queued.append(callback)
+    )
+    wconfig = object.__new__(app_module.Wconfig)
+    wconfig.main_widget = window
+    wconfig.center_window()
+
+    assert len(queued) == 1, "center_window must queue exactly one idle"
+    return queued[0]
+
+
+def _window(app_module, **kwargs):
+    return type("Window", (CenteringWindow, app_module.Gtk.Window), {})(**kwargs)
+
+
+def test_centering_waits_for_a_window_gtk_has_not_made_yet(app_module, monkeypatch):
+    window = _window(app_module)
+
+    assert _queued_centring(app_module, monkeypatch, window)() is True
+    assert window.moved == []
+
+
+def test_centering_stops_once_the_window_is_destroyed(app_module, monkeypatch):
+    """It asked to run again for as long as there was no GdkWindow, and a destroyed
+    window never gets one. Gtk.events_pending() then never went false, and every
+    `while Gtk.events_pending()` loop ran for good -- addTab's among them (#175)."""
+    window = _window(app_module)
+    move_to_center = _queued_centring(app_module, monkeypatch, window)
+
+    window.destroy()
+
+    assert move_to_center() is False
+    assert window.moved == []
+
+
+def test_centering_centres_on_the_monitor_once_there_is_a_window(app_module, monkeypatch):
+    window = _window(app_module, gdk_window=object())
+
+    assert _queued_centring(app_module, monkeypatch, window)() is False
+    assert window.moved == [(100 + (1000 - 400) // 2, 50 + (800 - 300) // 2)]
+
+
+# The idle is GTK's to run, and the hang was GCM's own event loops spinning on it. Only
+# a real dialog on a real main loop shows that. HOME is redirected so this can never
+# touch a real ~/.gcm.
+_CENTERING_SCRIPT = """
+import os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+app.wMain = wmain = app.Wmain(application=None)
+prefs = app.Wconfig()
+prefs.get_widget("wConfig").destroy()
+
+# addTab waits like this, and so do four other places. An idle that outlives its window
+# keeps events_pending() true, and none of them ever return.
+for _ in range(2000):
+    if not Gtk.events_pending():
+        break
+    Gtk.main_iteration_do(False)
+else:
+    raise AssertionError("still pending: the centring idle outlived the window it centres")
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_preferences_closed_at_once_leaves_nothing_pending_against_real_gtk():
+    """Destroying Preferences before its first idle ran hung the next new tab."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _CENTERING_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout

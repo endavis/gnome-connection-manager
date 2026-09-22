@@ -108,3 +108,6 @@ the git log.
 - Split and Unsplit reset the tabs they moved. The title the program had set, a rename,
   the grey strikethrough of an ended session and its Reopen menu item, and the marks
   the bell and the cluster window leave were all lost. A tab now moves with its label
+- Closing the Preferences window in the instant it opened left a repeating idle behind,
+  and GCM froze the next time a console was opened. A probe found it; no user is known
+  to have hit it
