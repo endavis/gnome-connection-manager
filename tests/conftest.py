@@ -297,7 +297,7 @@ def app_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     gtk_module.CellEditable = make_gtk_class("GtkCellEditable")
     gtk_module.CellRendererText = make_gtk_class("GtkCellRendererText")
     gtk_module.ButtonsType = types.SimpleNamespace(OK=1, OK_CANCEL=2)
-    gtk_module.MessageType = types.SimpleNamespace(ERROR=0, QUESTION=1)
+    gtk_module.MessageType = types.SimpleNamespace(ERROR=0, QUESTION=1, WARNING=2)
     gtk_module.ResponseType = types.SimpleNamespace(OK=1, CANCEL=2)
     gtk_module.events_pending = lambda: False
 

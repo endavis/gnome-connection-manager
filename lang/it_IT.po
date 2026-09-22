@@ -1758,3 +1758,15 @@ msgstr ""
 
 msgid "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
 msgstr ""
+
+msgid "Some settings in gcm.conf could not be read, so each is at its default."
+msgstr ""
+
+msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
+msgstr ""
+
+msgid "expects true or false"
+msgstr ""
+
+msgid "expects a whole number"
+msgstr ""

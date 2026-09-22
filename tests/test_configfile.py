@@ -291,3 +291,78 @@ def test_aside_path_never_names_a_file_that_exists(tmp_path):
     assert first.name == "gcm.conf.unreadable-20260921-120000"
     assert second.name == "gcm.conf.unreadable-20260921-120000-2"
     assert third.name == "gcm.conf.unreadable-20260921-120000-3"
+
+
+# -- values that cannot be read (#173) --------------------------------------------
+
+
+def options(text):
+    return configfile.read_config(f"[options]\n{text}").config
+
+
+@pytest.mark.parametrize(
+    ("line", "kind", "default"),
+    [("bell-audible = maybe", bool, 1), ("paste-confirm-lines = 7 ; x", int, 5)],
+)
+def test_read_option_reports_a_value_it_cannot_read(line, kind, default):
+    """`;` after a value is part of it, so `7 ; x` is no number: the guide's own paste
+    example produced exactly this until #169."""
+    option, text = (part.strip() for part in line.split("=", 1))
+
+    value, unread = configfile.read_option(options(line), "options", option, kind, default)
+
+    assert value == default
+    assert unread is not None
+    assert (unread.section, unread.option, unread.text, unread.used) == (
+        "options",
+        option,
+        text,
+        default,
+    )
+    assert unread.reason
+
+
+@pytest.mark.parametrize(
+    ("line", "kind", "expected"),
+    [
+        ("bell-audible = false", bool, False),
+        ("buffer-lines = 500", int, 500),
+        ("term = vt100", str, "vt100"),
+    ],
+)
+def test_read_option_reads_a_good_value(line, kind, expected):
+    option = line.split("=", 1)[0].strip()
+
+    assert configfile.read_option(options(line), "options", option, kind, None) == (expected, None)
+
+
+def test_read_option_takes_an_absent_option_silently():
+    """A file written before an option existed has no line for it: not an error."""
+    config = options("buffer-lines = 500\n")
+
+    assert configfile.read_option(config, "options", "bell-audible", bool, 1) == (1, None)
+    assert configfile.read_option(config, "window", "show-panel", bool, 1) == (1, None)
+
+
+def test_put_back_unread_keeps_the_text_while_the_setting_holds_the_default():
+    """What a save wrote in the line's place is the default, since that is what GCM has
+    been using; the text goes back over it."""
+    config = options("paste-confirm-lines = 5\n")
+    unread = configfile.Unread("options", "paste-confirm-lines", "7 ; x", 5, "why")
+
+    kept = configfile.put_back_unread(config, [unread], {("options", "paste-confirm-lines"): 5})
+
+    assert config.get("options", "paste-confirm-lines") == "7 ; x"
+    assert kept == [unread]
+
+
+def test_put_back_unread_leaves_a_setting_changed_since():
+    """Changed in Preferences, the setting has a value of its own, which the save has just
+    written. The record goes, so a later change back to the default writes the default."""
+    config = options("paste-confirm-lines = 9\n")
+    unread = configfile.Unread("options", "paste-confirm-lines", "7 ; x", 5, "why")
+
+    kept = configfile.put_back_unread(config, [unread], {("options", "paste-confirm-lines"): 9})
+
+    assert config.get("options", "paste-confirm-lines") == "9"
+    assert kept == []

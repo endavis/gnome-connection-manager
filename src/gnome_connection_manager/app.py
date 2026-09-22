@@ -484,6 +484,10 @@ groups: dict = {}
 # else reads; sync_folders() re-derives it from these after every change.
 folders = FolderTree()
 shortcuts: dict = {}
+# [options] values gcm.conf gives that could not be read, so each setting is at its
+# default. writeConfig writes their text back rather than the default, until a setting
+# is changed (#173); the window reports them when it opens.
+unread_options: list = []
 
 
 def sync_folders():
@@ -935,26 +939,19 @@ def read_config_option(cp, section, option, kind, default):
 
     Options are read individually so that a single absent or malformed entry cannot
     discard every setting after it, which would then be written back over the user's
-    file on the next save.
+    file on the next save. The malformed entry itself comes back as a
+    `configfile.Unread` beside the default, so the save can keep it too (#173).
     """
-    try:
-        if kind is bool:
-            return cp.getboolean(section, option)
-        if kind is int:
-            return cp.getint(section, option)
-        return cp.get(section, option)
-    except (configparser.NoSectionError, configparser.NoOptionError):
-        # Absent from a config written by an older version, or no config at all.
-        return default
-    except (configparser.Error, ValueError) as e:
+    value, unread = configfile.read_option(cp, section, option, kind, default)
+    if unread:
         logger.error(
             "%s: [%s] %s: %s",
             _("Entrada invalida en archivo de configuracion"),
             section,
             option,
-            e,
+            unread.reason,
         )
-        return default
+    return value, unread
 
 
 def msgbox(text: str, parent: Gtk.Window | None = None) -> None:
@@ -3303,8 +3300,42 @@ class Wmain(GladeComponent):
         except (configparser.NoSectionError, configparser.NoOptionError):
             scuts[default] = name
 
+    def report_unread_options(self):
+        """Say which [options] values in gcm.conf could not be read (#173).
+
+        Each of those settings is at its default, and the log line that said so reached
+        nobody who had not started GCM from a terminal. Run from an idle once the window is
+        up, hence the False.
+        """
+        if not unread_options:
+            return False
+        kinds = {(section, option): kind for _attr, section, option, kind in CONFIG_OPTIONS}
+        expects = {bool: _("expects true or false"), int: _("expects a whole number")}
+        lines = [
+            f"{unread.option} = {unread.text}  ({expects[kinds[unread.section, unread.option]]})"
+            for unread in unread_options
+        ]
+        dialog = Gtk.MessageDialog(
+            parent=self.wMain,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("Some settings in gcm.conf could not be read, so each is at its default."),
+        )
+        dialog.format_secondary_text(
+            "{}\n\n{}".format(
+                "\n".join(lines),
+                _(
+                    "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
+                ),
+            )
+        )
+        dialog.run()
+        dialog.destroy()
+        return False
+
     def loadConfig(self):
-        global groups, folders
+        global groups, folders, unread_options
 
         # main() has already refused a file that cannot be read at all (#161). What is
         # left to handle is what a hand merge leaves behind, which reads without loss.
@@ -3320,8 +3351,14 @@ class Wmain(GladeComponent):
             )
 
         # Leer configuracion general
+        unread_options = []
         for attr, section, option, kind in CONFIG_OPTIONS:
-            setattr(conf, attr, read_config_option(cp, section, option, kind, getattr(conf, attr)))
+            value, unread = read_config_option(cp, section, option, kind, getattr(conf, attr))
+            setattr(conf, attr, value)
+            # Only [options] holds settings someone chose. [window] is GCM's own record of
+            # the window, and a save writes what the window is now.
+            if unread and section == "options":
+                unread_options.append(unread)
         conf.APP_TITLE = conf.APP_TITLE or app_name
 
         # setup shortcuts
@@ -3519,7 +3556,7 @@ class Wmain(GladeComponent):
             i = self.treeModel.iter_next(i)
 
     def writeConfig(self):
-        global groups
+        global groups, unread_options
 
         # Start from the file being replaced, less what this save writes, so a section GCM
         # never writes survives -- [keys] (#163). Never from gcm.conf.tmp: that is this
@@ -3561,6 +3598,13 @@ class Wmain(GladeComponent):
         cp.set("options", "osc52-clipboard", conf.OSC52_ENABLED)
         cp.set("options", "raw-session-log", conf.RAW_SESSION_LOG)
         cp.set("options", "app-title", conf.APP_TITLE or app_name)
+        # A value that could not be read stays as written while its setting still holds
+        # the default used in its place, rather than the default replacing it (#173).
+        current = {
+            (section, option): getattr(conf, attr)
+            for attr, section, option, _kind in CONFIG_OPTIONS
+        }
+        unread_options = configfile.put_back_unread(cp, unread_options, current)
 
         collapsed_folders = ",".join(self.get_collapsed_nodes())
         cp.add_section("window")
@@ -6891,6 +6935,7 @@ class GcmApplication(Gtk.Application):
         )
         self._controller = None
         self._pending_cli = []
+        self._reported_unread = False
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -7106,6 +7151,11 @@ class GcmApplication(Gtk.Application):
         if self._pending_cli:
             self._controller.open_cli_targets(self._pending_cli)
             self._pending_cli.clear()
+        if not self._reported_unread:
+            # Last, so the notice opens over the window it concerns, and after any tabs
+            # asked for: addTab runs the main loop, and would run the notice mid-way.
+            self._reported_unread = True
+            GLib.idle_add(self._controller.report_unread_options)
 
     def do_command_line(self, command_line):
         arguments = command_line.get_arguments()[1:]

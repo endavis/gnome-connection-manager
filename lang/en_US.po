@@ -1837,3 +1837,15 @@ msgstr "GCM could not read its configuration file, so it has not started."
 
 msgid "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
 msgstr "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
+
+msgid "Some settings in gcm.conf could not be read, so each is at its default."
+msgstr "Some settings in gcm.conf could not be read, so each is at its default."
+
+msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
+msgstr "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
+
+msgid "expects true or false"
+msgstr "expects true or false"
+
+msgid "expects a whole number"
+msgstr "expects a whole number"
