@@ -5783,7 +5783,11 @@ class Wconfig(GladeComponent):
         def move_to_center():
             gdk_window = window.get_window()
             if not gdk_window:
-                return True
+                # Wait for one, but only while there is still a window to wait for. A
+                # destroyed window never gets a GdkWindow back -- measured -- so asking
+                # to run again would keep Gtk.events_pending() true for good, and every
+                # `while Gtk.events_pending()` loop with it, addTab's included (#175).
+                return window.get_visible()
             screen = window.get_screen()
             monitor = screen.get_monitor_at_window(gdk_window)
             if monitor < 0:

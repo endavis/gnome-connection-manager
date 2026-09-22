@@ -297,6 +297,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `Wmain.apply_preferences_to_terminal`, which `addTab` calls for a new console and
   `apply_settings_to_open_consoles` for each open one, so a change reaches both (#174,
   #181). A test fails if `addTab` sets one itself.
+- GCM waits for GTK with `while Gtk.events_pending(): Gtk.main_iteration()` in five
+  places, `addTab` among them. A callback that keeps asking to run again keeps
+  `events_pending()` true, and every one of those loops with it, so a repeating idle
+  must stop once what it waits for can no longer arrive. A Preferences window destroyed
+  before `move_to_center` first ran froze the whole application (#175).
 - The expect script assumes `/usr/bin/ssh` and `/usr/bin/telnet`; if touching authentication,
   check the regexes and resize trap in `data/scripts/ssh.expect`.
 
