@@ -49,6 +49,9 @@ the git log.
   directly rather than through the `gi` stub that hid a real fault in it
 - Python floor raised from 3.8 to 3.12, matching what was actually being used and tested
 - Default branch renamed from `master` to `main`
+- Buffer size and Show the program title in the tab now reach the consoles already open
+  when Preferences is closed with OK, not only the ones opened afterwards. Shrinking the
+  buffer drops the oldest lines of a session that holds more
 
 ### Fixed
 - Unticking the checkbox on a host's Commands page discarded the commands when the
@@ -95,3 +98,5 @@ the git log.
 - A value in `gcm.conf` that GCM could not read was replaced by the default at the next
   save, with only a line on stderr to say so. The line is now kept as written until the
   setting is changed, and GCM lists such values in a notice when it starts
+- Renaming the tab of a session that had ended made it look live again: the grey,
+  struck-through label went back to plain text
