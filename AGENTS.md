@@ -253,6 +253,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   measured the same way, a press on a folder's expander arrow starts a drag without
   selecting the folder. `drop_target` reads the edge of a row as a place beside it and
   the middle as that row's folder.
+- A console's tab label is a `NotebookTabLabel`, and it holds state its text does not:
+  the title the program set, a rename, whether the session has ended, and the marks the
+  bell and the cluster window leave. Move a console between notebooks with
+  `Wmain.move_page`, which takes the label along. Split and Unsplit used to build a new
+  one from `get_text()`, and every moved tab lost all of that (#180).
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating

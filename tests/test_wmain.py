@@ -2255,6 +2255,108 @@ def test_preferences_reach_every_open_console(app_module, monkeypatch):
     assert rendered == ["a", "b", "c"]
 
 
+# Split and Unsplit move a console into another notebook, and its tab label carries
+# more than its text (#180). Only real notebooks show what survives the move, so drive
+# a real Wmain in a subprocess. HOME is redirected so this can never touch a real ~/.gcm,
+# and SHELL is one whose prompt sets no title of its own to race the test's.
+_SPLIT_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False); time.sleep(0.005)
+
+app.conf.TAB_TITLE_FROM_TERMINAL = 1
+app.conf.AUTO_CLOSE_TAB = 0
+app.wMain = wmain = app.Wmain(application=None)
+wmain.wMain.show_all()
+
+def open_console():
+    wmain.addTab(wmain.nbConsole, "local")
+    pump()
+    notebook = wmain.nbConsole
+    return notebook.get_nth_page(notebook.get_n_pages() - 1).get_children()[0]
+
+def tab(term):
+    page = term.get_parent()
+    return page.get_parent().get_tab_label(page)
+
+def look(term):
+    page = term.get_parent()
+    notebook, context = page.get_parent(), tab(term).get_style_context()
+    return (
+        tab(term).label.get_label(),
+        tab(term).is_active,
+        context.has_class("attention"),
+        context.has_class("selected"),
+        notebook.get_tab_reorderable(page) and notebook.get_tab_detachable(page),
+    )
+
+def split(term):
+    page = term.get_parent()
+    before = page.get_parent()
+    before.set_current_page(before.page_num(page))
+    wmain.current = term
+    wmain.split_notebook(app.HSPLIT)
+    pump()
+    assert page.get_parent() is not before, "the split did not move the console"
+
+def unsplit(term):
+    wmain.on_btnUnsplit_clicked(None)
+    pump()
+    assert term.get_parent().get_parent() is wmain.nbConsole, "unsplit left it behind"
+
+titled, renamed, ended, spare = (open_console() for _ in range(4))
+titled.feed(b"\\x1b]0;TITLE\\x07")
+tab(titled).set_selected(True)  # the cluster window's mark
+tab(renamed).rename("mine")
+tab(ended).mark_tab_as_closed()
+pump()
+STRUCK = "<span color='darkgray' strikethrough='true'>  local  </span>"
+
+split(titled)
+assert look(titled) == ("  local: TITLE  ", True, False, True, True), look(titled)
+tab(titled).set_attention(True)  # the bell, in its own pane, while GCM is in the background
+unsplit(titled)
+assert look(titled) == ("  local: TITLE  ", True, True, True, True), look(titled)
+
+split(renamed)
+renamed.feed(b"\\x1b]0;LATER\\x07"); pump()
+assert look(renamed)[0] == "  mine  ", look(renamed)
+unsplit(renamed)
+renamed.feed(b"\\x1b]0;LATER STILL\\x07"); pump()
+assert look(renamed)[0] == "  mine  ", look(renamed)
+
+split(ended)
+assert look(ended)[:2] == (STRUCK, False), look(ended)
+unsplit(ended)
+assert look(ended)[:2] == (STRUCK, False), look(ended)
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_split_and_unsplit_keep_what_the_tab_shows_against_real_gtk():
+    """A moved tab lost its program title, its rename, its ended state and its marks."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _SPLIT_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 def test_set_terminal_title_sanitises_before_rendering(app_module, monkeypatch):
     """The label is fed straight into set_markup elsewhere, so it must arrive clean."""
     monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
