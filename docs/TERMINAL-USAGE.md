@@ -298,8 +298,8 @@ tab's tooltip.
 **Renaming a tab wins.** Once you rename a tab, programs stop changing its label.
 
 Turn the behaviour off entirely by unticking **Show the program title in the tab** on the
-General tab of Preferences. That applies straight away, though a tab already open keeps
-the title it shows until its program sets a new one. In `gcm.conf`:
+General tab of Preferences. That applies straight away, in tabs already open too, and
+ticking it again brings their titles back. In `gcm.conf`:
 
 ```ini
 [options]
@@ -406,8 +406,9 @@ across restarts. To change the font itself, use Preferences.
 ## Scrollback
 
 Set how many lines the scrollback buffer holds with **Buffer size** on the General tab of
-Preferences, from 1 to 1,000,000. A change applies to sessions opened after it; one
-already open keeps the size it started with. In `gcm.conf`, with its default:
+Preferences, from 1 to 1,000,000. A change applies straight away, in sessions already open
+too. Shrinking it below what a session holds drops that session's oldest lines at once,
+and raising it again does not bring them back. In `gcm.conf`, with its default:
 
 ```ini
 [options]

@@ -2058,6 +2058,22 @@ class Wmain(GladeComponent):
             for notebook in self.collect_notebooks(self.hpMain)
         ]
 
+    def apply_settings_to_open_consoles(self):
+        """Give the consoles already open the settings Preferences has just stored (#174).
+
+        addTab sets the scrollback size when it makes a terminal, and a tab renders the
+        program's title only when the title changes, so both reached only consoles opened
+        afterwards. VTE drops the oldest rows at once when the size shrinks below what a
+        session holds -- measured, and raising it again does not bring them back.
+        """
+        for _notebook, entries in self.open_console_groups():
+            for entry in entries:
+                children = entry.page.get_children() if entry.page is not None else []
+                if children and isinstance(children[0], Vte.Terminal):
+                    children[0].set_scrollback_lines(conf.BUFFER_LINES)
+                if hasattr(entry.label, "render_label"):
+                    entry.label.render_label()
+
     def create_console_menu_item(self, entry):
         """One console's row, marked when it is the console holding the keyboard."""
         item = Gtk.CheckMenuItem(label="")
@@ -5901,6 +5917,7 @@ class Wconfig(GladeComponent):
 
         # Update servers window colors
         wMain.updateTree()
+        wMain.apply_settings_to_open_consoles()
 
         # Recrear menu de comandos personalizados
         wMain.populateCommandsMenu()
@@ -6633,11 +6650,8 @@ class NotebookTabLabel(Gtk.HBox):
             self.widget_.destroy()
 
     def mark_tab_as_closed(self):
-        self.label.set_markup(
-            "<span color='darkgray' strikethrough='true'>"
-            f"{GLib.markup_escape_text(self.label.get_text())}</span>"
-        )
         self.is_active = False
+        self.render_label()
         if conf.AUTO_CLOSE_TAB != 0:
             if conf.AUTO_CLOSE_TAB == 2:
                 terminal = (
@@ -6650,8 +6664,8 @@ class NotebookTabLabel(Gtk.HBox):
             self.close_tab(self.widget_)
 
     def mark_tab_as_active(self):
-        self.label.set_markup(GLib.markup_escape_text(self.label.get_text()))
         self.is_active = True
+        self.render_label()
 
     def get_text(self):
         """The tab's identity, not what it currently renders.
@@ -6680,7 +6694,15 @@ class NotebookTabLabel(Gtk.HBox):
         text = self.title
         if conf.TAB_TITLE_FROM_TERMINAL and not self.renamed and self.terminal_title:
             text = f"  {self.title.strip()}: {self.terminal_title}  "
-        self.label.set_text(text)
+        if self.is_active:
+            self.label.set_text(text)
+        else:
+            # A session that has ended stays greyed and struck through. set_text would
+            # clear the markup, and Preferences re-renders every tab on OK (#174).
+            self.label.set_markup(
+                "<span color='darkgray' strikethrough='true'>"
+                f"{GLib.markup_escape_text(text)}</span>"
+            )
         self.set_tooltip_text(text.strip())
 
     def popupmenu(self, widget, event, label):

@@ -2157,6 +2157,7 @@ def _tab_label(app_module, title="  prod-web-01  "):
     tab.title = title
     tab.terminal_title = ""
     tab.renamed = False
+    tab.is_active = True
     tab.label = StubLabel()
     tab.label.set_text(title)
     tab.set_tooltip_text = lambda _text: None
@@ -2181,6 +2182,77 @@ def test_tab_title_is_ignored_when_the_preference_is_off(app_module, monkeypatch
     tab.set_terminal_title("npm run build")
 
     assert tab.label.get_text() == "  prod-web-01  "
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_a_rerendered_tab_follows_the_title_setting_both_ways(app_module, monkeypatch, closed):
+    """Preferences re-renders every tab on OK (#174), so the setting has to reach a tab
+    in both directions from what it already stored -- and a session that has ended must
+    stay greyed and struck through, which set_text alone would clear."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    monkeypatch.setattr(app_module.conf, "AUTO_CLOSE_TAB", 0)
+    # Real GLib provides this; test_glib_really_provides_markup_escape_text checks.
+    monkeypatch.setattr(app_module.GLib, "markup_escape_text", lambda t: t, raising=False)
+    tab = _tab_label(app_module)
+    tab.set_terminal_title("htop")
+    if closed:
+        tab.mark_tab_as_closed()
+
+    def shown():
+        if closed:
+            assert tab.label.markup is not None and "strikethrough='true'" in tab.label.markup
+            return re.sub(r"<[^>]+>", "", tab.label.markup)
+        assert tab.label.markup is None
+        return tab.label.get_text()
+
+    assert shown() == "  prod-web-01: htop  "
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 0)
+    tab.render_label()
+    assert shown() == "  prod-web-01  "
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab.render_label()
+    assert shown() == "  prod-web-01: htop  "
+
+
+class ScrollbackTerminal:
+    """Records set_scrollback_lines, which the real Vte.Terminal has (checked below)."""
+
+    def __init__(self):
+        self.scrollback = None
+
+    def set_scrollback_lines(self, lines):
+        self.scrollback = lines
+
+
+def test_scrollback_terminal_fake_matches_real_vte():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Vte", "2.91")
+    from gi.repository import Vte
+
+    assert hasattr(Vte.Terminal, "set_scrollback_lines")
+
+
+def test_preferences_reach_every_open_console(app_module, monkeypatch):
+    """Buffer size was set only when addTab made a terminal, and a tab rendered the
+    program's title only when the title changed (#174). Two panes, as a split leaves."""
+    terminal_class = type("Terminal", (ScrollbackTerminal, app_module.Vte.Terminal), {})
+    monkeypatch.setattr(app_module.conf, "BUFFER_LINES", 123)
+    rendered = []
+
+    def console(name):
+        terminal = terminal_class()
+        page = types.SimpleNamespace(get_children=lambda: [terminal])
+        label = types.SimpleNamespace(render_label=lambda: rendered.append(name))
+        return terminal, types.SimpleNamespace(page=page, label=label)
+
+    (first, one), (second, two), (third, three) = console("a"), console("b"), console("c")
+    wmain = object.__new__(app_module.Wmain)
+    wmain.open_console_groups = lambda: [("left", [one, two]), ("right", [three])]
+
+    wmain.apply_settings_to_open_consoles()
+
+    assert [first.scrollback, second.scrollback, third.scrollback] == [123, 123, 123]
+    assert rendered == ["a", "b", "c"]
 
 
 def test_set_terminal_title_sanitises_before_rendering(app_module, monkeypatch):

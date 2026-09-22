@@ -99,6 +99,8 @@ class WmainStub:
         self.tree_calls = 0
         self.cmd_calls = 0
         self.write_calls = 0
+        self.conf = None  # the test's conf, read back when the consoles are given it
+        self.applied_buffer_lines = None
 
     def get_widget(self, name: str):
         if name == "btnDonate":
@@ -113,6 +115,9 @@ class WmainStub:
 
     def writeConfig(self):
         self.write_calls += 1
+
+    def apply_settings_to_open_consoles(self):
+        self.applied_buffer_lines = self.conf.BUFFER_LINES
 
 
 def make_wconfig(app_module):
@@ -162,10 +167,14 @@ def test_wconfig_on_okbutton_updates_conf_shortcuts(monkeypatch, app_module):
 
     donate_button = DonateButton()
     wmain_stub = WmainStub(donate_button)
+    wmain_stub.conf = conf
     monkeypatch.setattr(app_module, "wMain", wmain_stub, raising=False)
     monkeypatch.setattr(app_module, "shortcuts", {})
 
     wconfig.on_okbutton1_clicked(None)
+
+    # The open consoles are given the settings once they are stored, not before (#174).
+    assert wmain_stub.applied_buffer_lines == 4096
 
     assert conf.STARTUP_LOCAL is True
     assert conf.BUFFER_LINES == 4096
