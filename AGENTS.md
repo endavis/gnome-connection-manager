@@ -146,7 +146,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   what Copy All copies, pasting, font zoom, session log layout, the shortcut table.
 - `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
 - `docs/SPEC.md` – feature specification. §14 holds a measured analysis of a possible
-  Qt/PySide6 port (conclusion: don't, for terminal ergonomics).
+  Qt/PySide6 port (conclusion: don't, for terminal ergonomics). Every figure in its Effort
+  section is re-measured by `tests/test_docs.py`, so one cannot be restated without
+  measuring it -- the share rewritten stood at 85% against a true 77% for want of that.
 
 ## Dependencies & Environment
 - Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91`, and `expect`.

@@ -534,16 +534,20 @@ those improvements "in the rewrite instead" means building the substrate first.
 
 #### Effort
 
-Measured from the current tree: `app.py` is 7,491 lines with ~465 direct toolkit calls
-(321 `Gtk.`, 107 `Gdk.`, 37 `Vte.`), plus 2,401 lines of Glade and 19,833 lines of tests.
-Toolkit-free logic (`conf`, `Host`, `HostUtils`, encryption, and the `utils` package) is
-roughly 800 lines, so about 85% of the application is rewritten, before the new scope this
-spec adds.
+Measured from the current tree: `app.py` is 7,497 lines with ~467 direct toolkit calls
+(323 `Gtk.`, 107 `Gdk.`, 37 `Vte.`), plus 2,401 lines of Glade and 20,387 lines of tests.
+The code that imports no toolkit — `relay.py`, the `utils` package and the entry points —
+is 2,222 lines, and the `conf` class inside `app.py` another 45. So about 77% of the
+application is rewritten, before the new scope this spec adds.
 
-These figures have grown substantially since first measured — `app.py` by 54% and the tests
-by 843% — which strengthens rather than weakens the conclusion below: there is more to
-rebuild than when the recommendation was made, and more test coverage that a port would
-have to re-earn.
+These figures have grown substantially since first measured in 490670f, when `app.py` was
+4,865 lines and the tests were 2,104: `app.py` by 54% and the tests by 869%. That
+strengthens rather than weakens the conclusion below: there is more to rebuild than when
+the recommendation was made, and more test coverage that a port would have to re-earn.
+
+`tests/test_docs.py` re-measures every figure above, except the two from 490670f, which it
+checks against the growth stated beside them. The share rewritten sat at 85% against a true
+77% until someone re-measured it by hand, which is the reason.
 
 | Work | Estimate |
 |---|---|
@@ -556,7 +560,8 @@ have to re-earn.
 | Test suite rewrite | 1-2 weeks |
 
 Approximately 3-6 months of focused solo work. The line counts are measured; the durations
-are judgement, not measurement. The terminal row dominates the total under any assumptions.
+are judgement, not measurement. The terminal row dominates the total under any assumptions,
+and the test-suite row was judged when the suite was a tenth of its present size.
 
 #### What the port genuinely buys
 
