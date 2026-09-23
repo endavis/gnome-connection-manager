@@ -257,7 +257,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   the title the program set, a rename, whether the session has ended, and the marks the
   bell and the cluster window leave. Move a console between notebooks with
   `Wmain.move_page`, which takes the label along. Split and Unsplit used to build a new
-  one from `get_text()`, and every moved tab lost all of that (#180).
+  one from `get_text()`, and every moved tab lost all of that (#180). Dragging a tab
+  into another pane is GTK's own notebook drag, not GCM code: measured with real
+  pointer input, the drop carries the same label object across, still reorderable and
+  detachable, so the tab keeps everything it was showing (#186). GCM's `page-added`
+  and `page-removed` handlers do run on a drop, which is what the test there covers.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating

@@ -2573,6 +2573,100 @@ def test_split_and_unsplit_keep_what_the_tab_shows_against_real_gtk():
     assert "OK" in result.stdout
 
 
+# Dragging a tab into another pane is GTK's own notebook drag-and-drop rather than GCM
+# code. Measured with real pointer input: the drop carries the same NotebookTabLabel
+# across, still reorderable and detachable, and the tab keeps everything it was showing
+# (#186). What GCM owns there are its page-added and page-removed handlers, which run on
+# a drop like any other move. So this moves pages the way a drop does -- detach, then
+# insert with the label they already had -- and checks the handlers leave the label
+# alone. It does not re-check GTK's own drag: that needs synthetic pointer input, and
+# python-xlib is not a dependency of this project.
+_DRAG_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False); time.sleep(0.005)
+
+app.conf.TAB_TITLE_FROM_TERMINAL = 1
+app.conf.AUTO_CLOSE_TAB = 0
+app.wMain = wmain = app.Wmain(application=None)
+wmain.wMain.show_all()
+
+def open_console():
+    wmain.addTab(wmain.nbConsole, "local")
+    pump()
+    notebook = wmain.nbConsole
+    return notebook.get_nth_page(notebook.get_n_pages() - 1).get_children()[0]
+
+def tab(term):
+    page = term.get_parent()
+    return page.get_parent().get_tab_label(page)
+
+def look(term):
+    return (tab(term).label.get_label(), tab(term).is_active,
+            tab(term).get_style_context().has_class("selected"))
+
+def drop(term, notebook):
+    page = term.get_parent()
+    label = page.get_parent().get_tab_label(page)
+    page.get_parent().detach_tab(page)
+    notebook.append_page(page, label)
+    pump()
+
+titled, renamed, ended, pane = (open_console() for _ in range(4))
+titled.feed(b"\\x1b]0;TITLE\\x07")
+tab(titled).set_selected(True)  # the cluster window's mark
+tab(renamed).rename("mine")
+tab(ended).mark_tab_as_closed()
+pump()
+
+# A pane of its own to drop into.
+page = pane.get_parent()
+wmain.nbConsole.set_current_page(wmain.nbConsole.page_num(page))
+wmain.current = pane
+wmain.split_notebook(app.HSPLIT)
+pump()
+target = pane.get_parent().get_parent()
+assert target is not wmain.nbConsole, "the split did not make a second notebook"
+
+labels = {term: tab(term) for term in (titled, renamed, ended)}
+for term in (titled, renamed, ended):
+    drop(term, target)
+    assert term.get_parent().get_parent() is target, "the page did not move"
+    assert tab(term) is labels[term], "the label that arrived is not the one that left"
+
+assert look(titled) == ("  local: TITLE  ", True, True), look(titled)
+renamed.feed(b"\\x1b]0;LATER\\x07"); pump()
+assert look(renamed)[0] == "  mine  ", look(renamed)
+STRUCK = "<span color='darkgray' strikethrough='true'>  local  </span>"
+assert look(ended)[:2] == (STRUCK, False), look(ended)
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_a_tab_moved_between_notebooks_keeps_its_label_against_real_gtk():
+    """A dropped tab must arrive with the label it left with, state and all (#186)."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _DRAG_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 def test_set_terminal_title_sanitises_before_rendering(app_module, monkeypatch):
     """The label is fed straight into set_markup elsewhere, so it must arrive clean."""
     monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
