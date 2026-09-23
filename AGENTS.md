@@ -94,7 +94,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `<log_dir>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`, plus the containment check that
   keeps a free-text group from escaping the log root. Two sanitizers on purpose —
   `sanitize_log_name` guards a filesystem path, `sanitize_tab_title` guards a widget that
-  ends at `set_markup`. Pure of GTK and of configuration: the log root is an argument, and
+  ends at `set_markup`. `truncate_tab_label` is a third thing again: it cuts the whole
+  composed label at `TAB_LABEL_MAX = 30` so one tab does not push its neighbours behind the
+  notebook's scroll arrows, which `sanitize_tab_title`'s per-title 40 cannot do -- the host
+  name and a rename are part of the label too (#190). A cut, not a Pango ellipsis: measured,
+  an ellipsized label reports the ellipsis as its minimum width and the tab collapses to
+  34px, and `set_width_chars` as a floor then pads a `Local` tab out from 66px to 223px.
+  Pure of GTK and of configuration: the log root is an argument, and
   `app.py` keeps a `session_file_for` wrapper that supplies `conf.LOG_PATH`.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the two shortcut decisions that need
   no widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
@@ -257,7 +263,13 @@ Practices below have each caught real bugs in this repo. They are worth the time
   the middle as that row's folder.
 - A console's tab label is a `NotebookTabLabel`, and it holds state its text does not:
   the title the program set, a rename, whether the session has ended, and the marks the
-  bell and the cluster window leave. Move a console between notebooks with
+  bell and the cluster window leave. Three texts, and they differ: `get_text()` is the
+  identity (host name or rename) that clone, cluster consoles and `move_page` read,
+  `get_display_text()` is the whole composed label, and the widget draws that cut to
+  `TAB_LABEL_MAX` (#190). Everything with room for the long form -- the tooltip, the
+  open-console list, the rename and close dialogs -- must take one of the first two, never
+  `self.label.get_text()`, which is the cut one. `render_label` is the single place that
+  composes and cuts, so the constructor goes through it too. Move a console between notebooks with
   `Wmain.move_page`, which takes the label along. Split and Unsplit used to build a new
   one from `get_text()`, and every moved tab lost all of that (#180). Dragging a tab
   into another pane is GTK's own notebook drag, not GCM code: measured with real

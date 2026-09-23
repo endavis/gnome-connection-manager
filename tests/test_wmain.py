@@ -2160,7 +2160,9 @@ def _tab_label(app_module, title="  prod-web-01  "):
     tab.is_active = True
     tab.label = StubLabel()
     tab.label.set_text(title)
-    tab.set_tooltip_text = lambda _text: None
+    tab.full_text = title.strip()
+    tab.tooltips = []
+    tab.set_tooltip_text = tab.tooltips.append
     return tab
 
 
@@ -2667,15 +2669,116 @@ def test_a_tab_moved_between_notebooks_keeps_its_label_against_real_gtk():
     assert "OK" in result.stdout
 
 
+_TAB_CAP_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+from gnome_connection_manager.utils import logpaths
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False); time.sleep(0.005)
+
+app.conf.TAB_TITLE_FROM_TERMINAL = 1
+app.conf.AUTO_CLOSE_TAB = 0
+app.wMain = wmain = app.Wmain(application=None)
+wmain.wMain.show_all()
+wmain.wMain.resize(1400, 900)
+pump()
+
+notebook = wmain.nbConsole
+def tab(index):
+    return notebook.get_tab_label(notebook.get_nth_page(index))
+
+# How many tabs of this width the strip holds. A scrolled-out tab keeps its old
+# allocation rather than a zero one, so ask what a tab wants instead of what it got.
+def fit():
+    return notebook.get_allocation().width // tab(first).get_preferred_width()[1]
+
+TITLE = "systemctl status postgresql on node 3"
+FULL = "local: " + TITLE
+first = notebook.get_n_pages()  # Wmain opens a console of its own before any of these
+for _ in range(8):
+    wmain.addTab(wmain.nbConsole, "local")
+    pump(0.2)
+    notebook.get_nth_page(notebook.get_n_pages() - 1).get_children()[0].feed(
+        b"\\x1b]0;" + TITLE.encode() + b"\\x07"
+    )
+pump(0.6)
+
+shown = tab(first).label.get_text()
+assert shown == "  " + logpaths.truncate_tab_label(FULL) + "  ", repr(shown)
+assert len(shown.strip()) == logpaths.TAB_LABEL_MAX, repr(shown)
+assert shown.endswith("\u2026  "), repr(shown)
+
+# The full text survives where there is room for it: the tooltip and the console list.
+assert tab(first).get_tooltip_text() == FULL, repr(tab(first).get_tooltip_text())
+assert tab(first).get_display_text() == FULL, repr(tab(first).get_display_text())
+assert tab(first).get_text() == "  local  ", repr(tab(first).get_text())
+
+capped = fit()
+
+# Now render exactly as GCM did before #190 and count again.
+app.truncate_tab_label = lambda text: text
+for i in range(notebook.get_n_pages()):
+    tab(i).render_label()
+pump(0.6)
+uncapped = fit()
+assert tab(first).label.get_text() == "  " + FULL + "  ", repr(tab(first).label.get_text())
+assert capped > uncapped, "the cap put no more tabs on the strip: %s vs %s" % (capped, uncapped)
+
+# A long host name is cut the moment the tab is built, before any title arrives.
+app.truncate_tab_label = logpaths.truncate_tab_label
+LONG_HOST = "some-really-long-hostname.example.internal"
+wmain.addTab(wmain.nbConsole, LONG_HOST)
+pump(0.4)
+built = tab(notebook.get_n_pages() - 1)
+assert built.label.get_text() == "  " + logpaths.truncate_tab_label(LONG_HOST) + "  ", repr(
+    built.label.get_text()
+)
+assert built.get_tooltip_text() == LONG_HOST, repr(built.get_tooltip_text())
+
+# A short label is left exactly as it was -- no padding out to the cap.
+app.conf.TAB_TITLE_FROM_TERMINAL = 0
+short = tab(first)
+short.render_label()
+pump(0.2)
+assert short.label.get_text() == "  local  ", repr(short.label.get_text())
+assert short.get_tooltip_text() == "local", repr(short.get_tooltip_text())
+
+print("OK", capped, uncapped)
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real window")
+def test_a_long_tab_label_is_cut_and_puts_more_tabs_on_the_strip_against_real_gtk():
+    """#190: the stub cannot show this -- it is a question of what GTK allocates."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _TAB_CAP_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=180,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 def test_set_terminal_title_sanitises_before_rendering(app_module, monkeypatch):
     """The label is fed straight into set_markup elsewhere, so it must arrive clean."""
     monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
-    tab = _tab_label(app_module)
+    tab = _tab_label(app_module, "  web-01  ")  # short, so the cap stays out of this
 
     tab.set_terminal_title("  bell\x07here   and\x1bescape  ")
 
     assert tab.terminal_title == "bellhere andescape"
-    assert tab.label.get_text() == "  prod-web-01: bellhere andescape  "
+    assert tab.label.get_text() == "  web-01: bellhere andescape  "
 
 
 def test_set_terminal_title_truncates_before_rendering(app_module, monkeypatch):
@@ -2686,6 +2789,146 @@ def test_set_terminal_title_truncates_before_rendering(app_module, monkeypatch):
 
     assert len(tab.terminal_title) == logpaths.TAB_TITLE_MAX
     assert tab.label.get_text().endswith("…  ")
+
+
+# -- the label is cut to fit the tab strip (#190) ---------------------------
+
+
+def _rendered(tab):
+    return tab.label.get_text()
+
+
+def test_a_long_label_is_cut_for_the_strip_and_kept_in_the_tooltip(app_module, monkeypatch):
+    """The tab is as wide as its text, so the neighbours pay for a long one."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module, "  prod-db-eu-west-1a  ")
+
+    tab.set_terminal_title("systemctl status postgresql")
+
+    full = "prod-db-eu-west-1a: systemctl status postgresql"
+    assert _rendered(tab).strip() == logpaths.truncate_tab_label(full)
+    assert len(_rendered(tab).strip()) == logpaths.TAB_LABEL_MAX
+    assert _rendered(tab).endswith("…  ")
+    assert tab.tooltips[-1] == full, "the tooltip is the only place the rest survives"
+    assert tab.get_display_text() == full
+
+
+def test_a_label_that_fits_is_not_touched(app_module, monkeypatch):
+    """No padding out to the cap, and no ellipsis on a tab that was already short."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module, "  web-01  ")
+
+    tab.set_terminal_title("htop")
+
+    assert _rendered(tab) == "  web-01: htop  "
+    assert tab.tooltips[-1] == "web-01: htop"
+
+
+def test_a_long_host_name_alone_is_cut(app_module, monkeypatch):
+    """The cap has to cover the name on its own, not only host-plus-title."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 0)
+    name = "some-really-long-hostname.example.internal"
+    tab = _tab_label(app_module, f"  {name}  ")
+
+    tab.render_label()
+
+    assert _rendered(tab).strip() == logpaths.truncate_tab_label(name)
+    assert tab.tooltips[-1] == name
+
+
+def test_a_long_rename_is_cut_on_the_tab_but_stays_the_identity(app_module, monkeypatch):
+    """get_text() feeds clone, cluster consoles and move_page; it must stay whole."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module)
+
+    tab.rename("a name far longer than any tab strip can show")
+
+    assert tab.get_text() == "  a name far longer than any tab strip can show  "
+    assert len(_rendered(tab).strip()) == logpaths.TAB_LABEL_MAX
+    assert _rendered(tab).endswith("…  ")
+
+
+def test_an_ended_session_is_cut_inside_its_markup(app_module, monkeypatch):
+    """The struck-through branch renders separately, so it needs the cap of its own."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module, "  prod-db-eu-west-1a  ")
+    tab.is_active = False
+    # The gi stub's GLib returns a dummy for markup_escape_text, so catch what it is
+    # handed: the point is that the cut text, not the whole label, is what gets escaped.
+    escaped = []
+    monkeypatch.setattr(
+        app_module.GLib, "markup_escape_text", lambda text: escaped.append(text) or text
+    )
+
+    tab.set_terminal_title("systemctl status postgresql")
+
+    assert escaped[-1].strip() == logpaths.truncate_tab_label(
+        "prod-db-eu-west-1a: systemctl status postgresql"
+    )
+    assert escaped[-1].endswith("…  ")
+    assert tab.label.markup.startswith("<span color='darkgray' strikethrough='true'>")
+    assert tab.tooltips[-1] == "prod-db-eu-west-1a: systemctl status postgresql"
+
+
+def test_closing_a_tab_asks_about_the_tab_not_the_cut_label(app_module, monkeypatch):
+    """A confirmation quoting "prod-db-eu-…" names nothing the user recognises."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    monkeypatch.setattr(app_module.conf, "CONFIRM_ON_CLOSE_TAB", 1)
+    tab = _tab_label(app_module, "  prod-db-eu-west-1a  ")
+    tab.set_terminal_title("systemctl status postgresql")
+    asked = []
+    monkeypatch.setattr(app_module, "msgconfirm", lambda text: asked.append(text))
+    tab.close_tab = lambda _widget: None
+
+    app_module.NotebookTabLabel.on_close_tab(tab, None, None)
+
+    assert asked and "prod-db-eu-west-1a" in asked[0]
+    assert "…" not in asked[0]
+
+
+def test_rename_offers_the_tab_name_not_the_cut_label(app_module, monkeypatch):
+    """Prefilling with the drawn label would type the ellipsis back in as the name (#190)."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    tab = _tab_label(app_module, "  prod-db-eu-west-1a  ")
+    tab.set_terminal_title("systemctl status postgresql")
+    notebook = types.SimpleNamespace(
+        emit=lambda *args: None, get_current_page=lambda: 0, get_nth_page=lambda _n: None
+    )
+    tab.get_parent = lambda: notebook
+    tab.label.get_parent = lambda: types.SimpleNamespace(get_parent=lambda: tab)
+    offered = []
+    monkeypatch.setattr(
+        app_module, "inputbox", lambda *args, **kwargs: offered.append(args[2]) or None
+    )
+    wmain = object.__new__(app_module.Wmain)
+    wmain.popupMenuTab = types.SimpleNamespace(label=tab.label)
+    wmain.window = None
+
+    app_module.Wmain.on_popupmenu(wmain, None, "R")
+
+    assert offered == ["prod-db-eu-west-1a"]
+
+
+def test_middle_click_close_asks_about_the_tab_not_the_cut_label(app_module, monkeypatch):
+    """The other confirmation, on the other close path (#190)."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    monkeypatch.setattr(app_module.conf, "CONFIRM_ON_CLOSE_TAB_MIDDLE", 1)
+    tab = _tab_label(app_module, "  prod-db-eu-west-1a  ")
+    tab.set_terminal_title("systemctl status postgresql")
+    tab.widget_ = object()
+    closed: list = []
+    tab.close_tab = closed.append
+    asked = []
+    monkeypatch.setattr(
+        app_module, "msgconfirm", lambda text: asked.append(text) or app_module.Gtk.ResponseType.OK
+    )
+    event = types.SimpleNamespace(type=app_module.Gdk.EventType.BUTTON_PRESS, button=2)
+
+    app_module.NotebookTabLabel.popupmenu(tab, None, event, tab.label)
+
+    assert asked and "prod-db-eu-west-1a" in asked[0]
+    assert "\u2026" not in asked[0]
+    assert closed == [tab.widget_]
 
 
 def test_manual_rename_becomes_identity_and_outranks_later_titles(app_module, monkeypatch):
@@ -2791,7 +3034,7 @@ def test_a_program_set_title_cannot_reach_the_log_path(tmp_path, app_module, mon
     monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
     wmain = object.__new__(app_module.Wmain)
 
-    tab = _tab_label(app_module)
+    tab = _tab_label(app_module, "  web-01  ")  # short: the point is the title reaching it
     tab.set_terminal_title("../../../../tmp/pwned")
     assert "pwned" in tab.label.get_text()  # the label really did take the title
 

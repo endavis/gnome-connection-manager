@@ -32,6 +32,10 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- A tab's label is cut at 30 characters, so one long name no longer pushes the other tabs
+  behind the scroll arrows at the ends of the tab strip. The cut is only what is drawn:
+  the tooltip and the open-console list still give the whole label, and renaming or
+  closing a tab asks about the tab's own name
 - Collapsed folders in the server tree are remembered by folder rather than by row
   position, so a change in the shape of the tree no longer leaves the wrong folders
   collapsed. The positional setting is still written for older versions

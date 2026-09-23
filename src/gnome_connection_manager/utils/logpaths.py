@@ -7,7 +7,9 @@ group is free text that becomes directory segments, and a tab title arrives over
 from whatever is running in the terminal, including a remote host.
 
 Two sanitizers, deliberately different: `sanitize_log_name` guards a filesystem path,
-`sanitize_tab_title` guards a widget that ends at ``set_markup``.
+`sanitize_tab_title` guards a widget that ends at ``set_markup``. `truncate_tab_label`
+is neither: it bounds the whole composed label so a tab does not crowd its neighbours
+off the strip, and it is here because it is the same kind of pure decision.
 
 Pure of GTK and of configuration -- the log root is an argument, not a `conf` read -- so
 it is tested directly rather than through the `gi` stub in tests/conftest.py (#139). It
@@ -53,6 +55,29 @@ def sanitize_tab_title(title):
     if len(text) > TAB_TITLE_MAX:
         text = text[: TAB_TITLE_MAX - 1].rstrip() + "\u2026"
     return text
+
+
+TAB_LABEL_MAX = 30
+
+
+def truncate_tab_label(text):
+    """Cut a composed tab label down to what a tab strip can show (#190).
+
+    A different job from sanitize_tab_title, which bounds one untrusted title: this
+    bounds the whole label, host name and rename included, because a tab is as wide as
+    its text and the ones that no longer fit go behind the notebook's scroll arrows.
+    Measured at 1400px with twelve consoles open: three tabs reachable at 56 characters,
+    five at this cap.
+
+    A cut rather than Pango ellipsis on purpose. An ellipsized label reports the
+    ellipsis as its minimum width, which collapses the tab to 34px; giving it
+    set_width_chars as a floor then pads every short tab out to the cap, taking a
+    ``Local`` tab from 66px to 223px.
+    """
+    text = text or ""
+    if len(text) <= TAB_LABEL_MAX:
+        return text
+    return text[: TAB_LABEL_MAX - 1].rstrip() + "…"
 
 
 def sanitize_log_segments(group):
