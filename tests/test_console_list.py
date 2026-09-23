@@ -853,11 +853,15 @@ def test_set_attention_records_the_flag_it_styles(app_module):
     assert label.needs_attention is False and "attention" not in classes
 
 
-def test_get_display_text_returns_what_the_tab_renders(app_module):
-    """render_label puts host and terminal title here; get_text() holds the identity."""
+def test_get_display_text_returns_the_whole_label(app_module):
+    """The list has room the tab strip has not, and the part the strip cuts is the part
+    that tells two sessions of the same program apart (#190)."""
     label = object.__new__(app_module.NotebookTabLabel)
     label.title = "  web-01  "
-    label.label = types.SimpleNamespace(get_text=lambda: "  web-01: htop  ")
+    label.full_text = "web-01: systemctl status postgresql"
+    label.label = types.SimpleNamespace(get_text=lambda: "  web-01: systemctl status…  ")
 
-    assert app_module.NotebookTabLabel.get_display_text(label) == "  web-01: htop  "
+    assert app_module.NotebookTabLabel.get_display_text(label) == (
+        "web-01: systemctl status postgresql"
+    )
     assert app_module.NotebookTabLabel.get_text(label) == "  web-01  "

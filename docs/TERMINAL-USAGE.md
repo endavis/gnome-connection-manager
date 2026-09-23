@@ -292,8 +292,14 @@ prod-web-01: ✳ Claude Code
 ```
 
 The host name always stays in front, so tabs remain identifiable — several sessions of the
-same tool would otherwise look identical. Titles are truncated, and the full text is in the
-tab's tooltip.
+same tool would otherwise look identical.
+
+**Labels are cut at 30 characters,** ending in `…`, because a tab is as wide as its text and
+the tabs that no longer fit go behind the arrows at the ends of the tab strip. The cut is
+only what is drawn: hover a tab and the tooltip gives the whole label, the open-console list
+(the ▾ button at the right of the tab strip) lists it in full, and renaming or closing a tab
+asks about the tab's own name, never the shortened one. A label that already fits is left
+exactly as it is.
 
 **Renaming a tab wins.** Once you rename a tab, programs stop changing its label.
 

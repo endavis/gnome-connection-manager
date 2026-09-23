@@ -169,3 +169,40 @@ def test_sanitize_tab_title_truncates():
 
     assert len(out) == logpaths.TAB_TITLE_MAX
     assert out.endswith("…")
+
+
+# -- the whole label, cut to what a tab strip can show (#190) ---------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "web-01",
+        "web-01: npm run build",
+        "z" * logpaths.TAB_LABEL_MAX,
+        "",
+        None,
+    ],
+)
+def test_truncate_tab_label_leaves_what_already_fits(raw):
+    """Including the label that is exactly the cap: a cut there would be gratuitous."""
+    assert logpaths.truncate_tab_label(raw) == (raw or "")
+
+
+def test_truncate_tab_label_cuts_what_does_not_fit():
+    out = logpaths.truncate_tab_label("y" * 300)
+
+    assert len(out) == logpaths.TAB_LABEL_MAX
+    assert out.endswith("…")
+
+
+def test_truncate_tab_label_does_not_leave_a_dangling_space():
+    """A cut that lands mid-gap would render as "name …"."""
+    out = logpaths.truncate_tab_label("a" * 28 + "  tail")
+
+    assert out == "a" * 28 + "…"
+
+
+def test_the_label_cap_is_tighter_than_the_title_cap():
+    """sanitize_tab_title bounds one untrusted title; this bounds the whole label."""
+    assert logpaths.TAB_LABEL_MAX < logpaths.TAB_TITLE_MAX

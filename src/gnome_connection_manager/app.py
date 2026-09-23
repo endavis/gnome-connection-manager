@@ -122,6 +122,7 @@ from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     next_session_file,
     sanitize_log_name,
     sanitize_tab_title,
+    truncate_tab_label,
 )
 from gnome_connection_manager.utils.shortcuts import (  # noqa: E402
     FONT_SCALE_STEP,
@@ -2467,14 +2468,15 @@ class Wmain(GladeComponent):
                 self.writeConfig()
             return True
         elif item == "R":  # RENAME TAB
+            tab = self.popupMenuTab.label.get_parent().get_parent()
             text = inputbox(
                 _("Renombrar consola"),
                 _("Ingrese nuevo nombre"),
-                self.popupMenuTab.label.get_text().strip(),
+                tab.get_text().strip(),
                 parent=self.window,
             )
             if text is not None and text != "":
-                self.popupMenuTab.label.get_parent().get_parent().rename(text)
+                tab.rename(text)
                 nb = self.popupMenuTab.label.get_parent().get_parent().get_parent()
                 nb.emit(
                     "switch-page", nb.get_nth_page(nb.get_current_page()), nb.get_current_page()
@@ -6604,6 +6606,8 @@ class NotebookTabLabel(Gtk.HBox):
         # keeps returning the identity, because callers use it to clone tabs, name cluster
         # consoles and move pages between notebooks.
         self.terminal_title = ""
+        # The whole label as composed, before it is cut to fit the tab strip (#190).
+        self.full_text = title.strip()
         # A deliberate rename outranks anything a program sets afterwards.
         self.renamed = False
         self.owner = owner_
@@ -6612,7 +6616,6 @@ class NotebookTabLabel(Gtk.HBox):
         self.eb.connect("button-press-event", self.popupmenu, label)
         label.halign = 0
         label.valign = 0.5
-        label.set_text(title)
         self.eb.add(label)
         self.pack_start(self.eb, True, True, 0)
         label.show()
@@ -6634,6 +6637,9 @@ class NotebookTabLabel(Gtk.HBox):
         close_btn.show_all()
         self.is_active = True
         self.needs_attention = False
+        # Through render_label rather than set_text, so the cap applies to a long host
+        # name as well as to a title a program sets later (#190).
+        self.render_label()
         self.eb.add_events(
             Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK
         )  # let the scroll-event pass through
@@ -6661,7 +6667,8 @@ class NotebookTabLabel(Gtk.HBox):
     def on_close_tab(self, widget, notebook, *args):
         if (
             conf.CONFIRM_ON_CLOSE_TAB
-            and msgconfirm("{} [{}]?".format(_("Cerrar consola"), self.label.get_text().strip()))
+            # The label may be cut for the tab strip; the confirmation names the tab (#190).
+            and msgconfirm("{} [{}]?".format(_("Cerrar consola"), self.get_text().strip()))
             != Gtk.ResponseType.OK
         ):
             return True
@@ -6705,8 +6712,13 @@ class NotebookTabLabel(Gtk.HBox):
         return self.title
 
     def get_display_text(self):
-        """What the tab currently renders, as opposed to get_text()'s identity."""
-        return self.label.get_text()
+        """The whole label -- identity plus any program title -- not get_text()'s identity.
+
+        What the tab *renders* may be shorter: it is cut to fit the tab strip (#190).
+        Readers of this want the long form, because the part that is cut is the part
+        that tells two sessions of the same program apart.
+        """
+        return self.full_text
 
     def rename(self, title):
         """Manual rename. Becomes the identity and pins the label against later titles."""
@@ -6719,9 +6731,13 @@ class NotebookTabLabel(Gtk.HBox):
         self.render_label()
 
     def render_label(self):
-        text = self.title
+        full = self.title.strip()
         if conf.TAB_TITLE_FROM_TERMINAL and not self.renamed and self.terminal_title:
-            text = f"  {self.title.strip()}: {self.terminal_title}  "
+            full = f"{full}: {self.terminal_title}"
+        # The tab is as wide as its text, so a long one pushes its neighbours behind the
+        # notebook's scroll arrows. The tooltip keeps the whole thing (#190).
+        self.full_text = full
+        text = f"  {truncate_tab_label(full)}  "
         if self.is_active:
             self.label.set_text(text)
         else:
@@ -6731,7 +6747,7 @@ class NotebookTabLabel(Gtk.HBox):
                 "<span color='darkgray' strikethrough='true'>"
                 f"{GLib.markup_escape_text(text)}</span>"
             )
-        self.set_tooltip_text(text.strip())
+        self.set_tooltip_text(full)
 
     def popupmenu(self, widget, event, label):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
@@ -6793,9 +6809,7 @@ class NotebookTabLabel(Gtk.HBox):
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 2:
             if (
                 conf.CONFIRM_ON_CLOSE_TAB_MIDDLE
-                and msgconfirm(
-                    "{} [{}]?".format(_("Cerrar consola"), self.label.get_text().strip())
-                )
+                and msgconfirm("{} [{}]?".format(_("Cerrar consola"), self.get_text().strip()))
                 != Gtk.ResponseType.OK
             ):
                 return True
