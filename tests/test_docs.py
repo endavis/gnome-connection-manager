@@ -6,6 +6,7 @@ find_back, which defaults to CTRL+H -- so the user-facing table gets a guard.
 
 from __future__ import annotations
 
+import ast
 import configparser
 import gettext
 import inspect
@@ -504,7 +505,9 @@ _FIGURE_TOLERANCE = 0.20
 
 
 def _documented_figure(pattern):
-    found = re.search(pattern, SPEC.read_text())
+    """Whitespace is collapsed first: the prose wraps, so a figure and the words that
+    identify it land on the same line only by luck."""
+    found = re.search(pattern, re.sub(r"\s+", " ", SPEC.read_text()))
     assert found, f"SPEC.md no longer states a figure matching {pattern!r}"
     return int(found.group(1).replace(",", ""))
 
@@ -513,21 +516,70 @@ def _line_count(relative):
     return len((REPO / relative).read_text(encoding="utf-8", errors="replace").splitlines())
 
 
+APP = "src/gnome_connection_manager/app.py"
+
+# The modules the port would carry over are the ones that never reach for the toolkit.
+_IMPORTS_TOOLKIT = re.compile(r"(?m)^import gi\b|gi\.repository")
+
+
+def _test_lines():
+    return sum(_line_count(path.relative_to(REPO)) for path in (REPO / "tests").rglob("*.py"))
+
+
+def _toolkit_calls(name):
+    return len(re.findall(rf"\b{name}\.", (REPO / APP).read_text()))
+
+
+def _toolkit_free_lines():
+    return sum(
+        _line_count(path.relative_to(REPO))
+        for path in sorted((REPO / "src").rglob("*.py"))
+        if not _IMPORTS_TOOLKIT.search(path.read_text(encoding="utf-8"))
+    )
+
+
+def _conf_class_lines():
+    """`conf` is plain defaults, so it carries over even though app.py does not."""
+    tree = ast.parse((REPO / APP).read_text())
+    found = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "conf"]
+
+    assert found, "app.py no longer defines a `conf` class at module level"
+    conf = found[0]
+
+    assert conf.end_lineno is not None, "ast gave the class no end line"
+    return conf.end_lineno - conf.lineno + 1
+
+
+def _growth(baseline_pattern, actual):
+    """How far a figure has come since it was first measured (490670f). The baseline is
+    history, so it is read from the prose beside it rather than measured again -- what is
+    checked is that the percentage still follows from the baseline and the tree."""
+    return round(100 * (actual / _documented_figure(baseline_pattern) - 1))
+
+
 @pytest.mark.parametrize(
     ("pattern", "measure"),
     [
+        (r"`app\.py` is ([\d,]+) lines", lambda: _line_count(APP)),
         (
-            r"`app\.py` is ([\d,]+) lines",
-            lambda: _line_count("src/gnome_connection_manager/app.py"),
+            r"~([\d,]+) direct toolkit calls",
+            lambda: sum(map(_toolkit_calls, ("Gtk", "Gdk", "Vte"))),
         ),
+        (r"\(([\d,]+) `Gtk\.`", lambda: _toolkit_calls("Gtk")),
+        (r"([\d,]+) `Gdk\.`", lambda: _toolkit_calls("Gdk")),
+        (r"([\d,]+) `Vte\.`", lambda: _toolkit_calls("Vte")),
         (
             r"([\d,]+) lines of Glade",
             lambda: _line_count("data/ui/gnome-connection-manager.glade"),
         ),
+        (r"([\d,]+) lines of tests", _test_lines),
+        (r"is ([\d,]+) lines, and the `conf` class", _toolkit_free_lines),
+        (r"`conf` class inside `app\.py` another ([\d,]+)", _conf_class_lines),
         (
-            r"([\d,]+) lines of tests",
-            lambda: sum(_line_count(p.relative_to(REPO)) for p in (REPO / "tests").rglob("*.py")),
+            r"`app\.py` by ([\d,]+)%",
+            lambda: _growth(r"`app\.py` was ([\d,]+) lines", _line_count(APP)),
         ),
+        (r"the tests by ([\d,]+)%", lambda: _growth(r"the tests were ([\d,]+)", _test_lines())),
     ],
 )
 def test_spec_effort_figures_are_still_roughly_true(pattern, measure):
@@ -538,6 +590,25 @@ def test_spec_effort_figures_are_still_roughly_true(pattern, measure):
     drift = abs(actual - documented) / max(actual, 1)
     assert drift <= _FIGURE_TOLERANCE, (
         f"SPEC.md says {documented:,} but the tree has {actual:,} ({drift:.0%} out); re-measure §14"
+    )
+
+
+# The share rewritten is a ratio of the figures above, so the relative allowance they use
+# would wave through the 85% that stood against a true 77%. Three points is around 300
+# lines moving between app.py and the modules that import no toolkit.
+_SHARE_TOLERANCE = 3
+
+
+def test_spec_effort_share_rewritten_is_still_roughly_true():
+    """The one figure in §14 that had actually drifted, and the one the section rests on."""
+    documented = _documented_figure(r"about ([\d,]+)% of the application is rewritten")
+    carried = _toolkit_free_lines() + _conf_class_lines()
+    total = sum(_line_count(path.relative_to(REPO)) for path in (REPO / "src").rglob("*.py"))
+    actual = round(100 * (1 - carried / total))
+
+    assert abs(actual - documented) <= _SHARE_TOLERANCE, (
+        f"SPEC.md says {documented}% of the application is rewritten, but {carried:,} of "
+        f"{total:,} lines carry over, making it {actual}%; re-measure §14"
     )
 
 
