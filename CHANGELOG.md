@@ -79,6 +79,12 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- `docs/TABLE_OF_CONTENTS.md` had a "For Users" section listing eight documents about
+  pyproject-template and none about GCM, because it filters on frontmatter and none of this
+  project's nine documents had any. They have it now, under headings of their own -- Using
+  GCM and Working on GCM -- with the template's list kept separately and labelled as what it
+  is. `mkdocs.yml` was missing the hosts-and-folders guide and the ADRs; tests now hold the
+  nav and the docs directory to each other
 - The README no longer writes the version out -- twice, in prose and in an `apt install`
   command, outside the test that keeps the other four copies in step. `make deb` names the
   file it wrote, and the install command takes a glob

@@ -176,6 +176,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   carry a reason. Four settings had shipped with a control and no mention anywhere before
   the second direction existed.
 - `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
+- **A new document under `docs/` needs three things**, and `tests/test_docs.py` checks each:
+  YAML frontmatter with `title`, `description`, `audience` and `tags` including `gcm`; an
+  entry in `mkdocs.yml`'s hand-written `nav`; and `uv run python tools/generate_doc_toc.py`
+  run so `docs/TABLE_OF_CONTENTS.md` picks it up (a pre-commit hook does this too). Quote
+  the `title` and `description`: a colon in an unquoted YAML scalar makes `safe_load` raise,
+  and the generator swallows that and treats the file as having no frontmatter at all (#198).
+  `audience: users` belongs to the vendored template documents and means users *of the
+  template*; GCM's own user guides are `gcm-users`, and the TOC sections for GCM follow the
+  `gcm-guide` and `gcm-dev` tags rather than an audience.
 - `docs/SPEC.md` – feature specification. §14 holds a measured analysis of a possible
   Qt/PySide6 port (conclusion: don't, for terminal ergonomics). Every figure in its Effort
   section is re-measured by `tests/test_docs.py`, so one cannot be restated without

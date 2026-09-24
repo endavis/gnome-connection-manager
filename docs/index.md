@@ -1,3 +1,14 @@
+---
+title: "Gnome Connection Manager"
+description: "What GCM is, and where to start reading"
+audience:
+  - gcm-users
+tags:
+  - gcm
+  - gcm-guide
+  - overview
+---
+
 # Gnome Connection Manager
 
 A tabbed SSH and telnet connection manager for GTK 3 desktop environments.
@@ -13,7 +24,7 @@ rather than by pip — see [Developing](DEVELOPING.md) for the package list.
 | [Hosts and folders](HOSTS-AND-FOLDERS.md) | The server tree: making and moving folders, putting it in order, and what export and import carry |
 | [Developing](DEVELOPING.md) | Setting up an environment, the task runner, and running the tests |
 | [Project structure](PROJECT_STRUCTURE.md) | What lives where |
-| [Specification](SPEC.md) | Behaviour the implementation is held to |
+| [Specification](SPEC.md) | Behaviour the implementation is held to, written as a spec for a Qt 6 port that is **not** being built |
 
 ## Template tooling
 

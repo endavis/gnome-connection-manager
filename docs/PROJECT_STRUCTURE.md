@@ -1,3 +1,15 @@
+---
+title: "Gnome Connection Manager - Modern Project Structure"
+description: "What lives where, and where the modernization work stands"
+audience:
+  - contributors
+tags:
+  - gcm
+  - gcm-dev
+  - development
+  - structure
+---
+
 # Gnome Connection Manager - Modern Project Structure
 
 ## ✅ Completed Setup

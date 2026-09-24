@@ -1,3 +1,15 @@
+---
+title: "ADR-0001: A stable id on every host record"
+description: "Why each saved host carries a random id, and what that makes possible"
+audience:
+  - contributors
+tags:
+  - gcm
+  - gcm-dev
+  - adr
+  - hosts
+---
+
 # ADR-0001: A stable id on every host record
 
 ## Status

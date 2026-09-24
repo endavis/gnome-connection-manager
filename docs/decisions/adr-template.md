@@ -1,3 +1,15 @@
+---
+title: "ADR template"
+description: "The skeleton doit adr copies for a new architecture decision record; not a decision itself"
+audience:
+  - contributors
+tags:
+  - gcm
+  - gcm-dev
+  - adr
+  - template
+---
+
 # ADR-NNNN: Title
 
 ## Status
