@@ -71,6 +71,19 @@ def test_every_declared_version_agrees() -> None:
     assert len(set(declared.values())) == 1, f"version drift: {declared}"
 
 
+def test_the_readme_does_not_write_the_version_out() -> None:
+    """Four files carry the version and a test keeps them in step. The README was a fifth,
+    twice over, in prose and in an apt command -- outside that test and so free to rot the
+    moment the others moved (#194). `make deb` prints the name it wrote; the README says so
+    and installs with a glob."""
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    version = _declared_versions()["pyproject.toml"]
+
+    assert version not in readme, (
+        f"README.md writes the version ({version}) out; let `make deb` name the file instead"
+    )
+
+
 # -- importing the app must not block or exit (#118) -------------------------
 
 _IMPORT_PROBE = """

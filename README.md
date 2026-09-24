@@ -1,30 +1,68 @@
 # Gnome Connection Manager (GCM)
 
-A tabbed SSH and telnet connection manager for GTK 3 desktop environments.
+A tabbed SSH, telnet and local-shell manager for GTK 3 desktops. Keep your hosts in a
+folder tree, open them in tabs and split panes, and get sensible terminal behaviour —
+copy and paste that does not fight you, session logging, and shortcuts you can change.
+
+![The GCM window: a folder tree of hosts on the left, four console tabs on the right](docs/images/screenshot.png)
 
 Requires Python 3.12+ and GTK 3.
 
 ---
 
-## Documentation
+## What it does
 
-- [Using terminals in GCM](docs/TERMINAL-USAGE.md) - selection when an application
-  has taken the mouse, what Copy All copies, pasting, session recording and transcripts,
-  OSC 52, the buffer viewer, tab titles, font zoom, the shortcut table, and what GCM does
-  with a `gcm.conf` it cannot read
-- [Hosts and folders in GCM](docs/HOSTS-AND-FOLDERS.md) - the server tree: making and
-  moving folders, ordering it, and what export and import carry
-- [Developing](docs/DEVELOPING.md) and [Project structure](docs/PROJECT_STRUCTURE.md)
+**Connections**
 
-## Installation
+- SSH, Telnet and local shell sessions, each in a tab, with horizontal and vertical splits
+- Passwords stored encrypted, plus private keys, SSH agent forwarding, X11 forwarding,
+  compression and a keep-alive interval
+- Port forwarding per host: local forwards and dynamic (SOCKS) forwards, several at a time
+- Cluster mode: type once and send it to every console you have selected
+- Commands sent automatically after login, with a delay syntax, and a checkbox that turns
+  them off without discarding them
 
-### From a pre-built .deb
+**Organising hosts**
 
-> **Note:** No pre-built packages are available yet. Please build from source using the instructions below.
+- A folder tree you can nest as deep as you like, rearranged by dragging, or sorted back
+  to name order one folder at a time
+- Per-host terminal type, colours, and backspace/delete behaviour
+- Import and export the whole list, encrypted with a password you choose
+
+**Terminals**
+
+- Session logs per host, laid out to mirror your folder tree; optional raw recording that
+  replays as a readable transcript
+- A searchable buffer viewer, in colour, for reading scrollback without the mouse
+- Copy and paste that does not clobber the clipboard, with optional OSC 52 so a program on
+  the far end can set it
+- `Ctrl+click` a `file:line` in output to open it in your editor
+- Drop files on a terminal to insert shell-quoted paths
+- Per-terminal font zoom, and tab labels that follow the program's title
+- Every shortcut configurable, plus custom byte sequences bound to keys of your choice
 
 ---
 
-## Building from source
+## Documentation
+
+- [Using terminals in GCM](docs/TERMINAL-USAGE.md) — selection when an application has
+  taken the mouse, what Copy All copies, pasting, session recording and transcripts, OSC 52,
+  the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does
+  with a `gcm.conf` it cannot read
+- [Hosts and folders in GCM](docs/HOSTS-AND-FOLDERS.md) — the server tree: making and moving
+  folders, putting it in the order you want, and what export and import carry
+- [Developing](docs/DEVELOPING.md) and [Project structure](docs/PROJECT_STRUCTURE.md) — how
+  to set up an environment, and what lives where
+- [Architecture decisions](docs/decisions/) — the records behind host ids and the folder tree
+- [Specification](docs/SPEC.md) — a statement of behaviour, written as a spec for a Qt 6
+  port that is **not** being built. Its own §14 measures the port and concludes against it,
+  so read the behaviour and ignore the framework
+
+---
+
+## Installation
+
+No pre-built packages are published yet, so build from source.
 
 ### 1. Install build tools
 
@@ -33,26 +71,20 @@ sudo apt install git ruby ruby-dev build-essential gettext python3-pip -y
 sudo gem install fpm
 ```
 
-### 2. Clone the repository
+### 2. Clone and build
 
 ```bash
 git clone <this repository>
-
 cd gnome-connection-manager
-```
-
-### 3. Build the .deb
-
-```bash
 make deb
 ```
 
-This produces `gnome-connection-manager_1.2.2_all.deb` in the current directory.
+`make deb` prints the name of the package it wrote to the current directory.
 
-### 4. Install
+### 3. Install
 
 ```bash
-sudo apt install ./gnome-connection-manager_1.2.2_all.deb
+sudo apt install ./gnome-connection-manager_*_all.deb
 ```
 
 ### Runtime dependencies (resolved automatically by apt)
@@ -69,48 +101,6 @@ sudo apt install ./gnome-connection-manager_1.2.2_all.deb
 
 ---
 
-## Development setup
-
-GCM uses [uv](https://github.com/astral-sh/uv) for dependency management and [doit](https://pydoit.org/) as a task runner. doit is a dev dependency, so `uv sync` installs it -- there is nothing separate to install.
-
-```bash
-# Install uv (modern Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Create development environment
-uv venv --system-site-packages
-uv sync --extra dev
-
-# Prefer doit for day-to-day commands
-doit launch   # Launch the app
-doit check    # Format, lint, typecheck, tests
-doit test     # Run the pytest suite
-
-# Or run directly via uv
-uv run python -m gnome_connection_manager
-```
-
-**Development status:**
-- Phase 1 Code Quality: complete
-- Phase 2 Modernization: GTK refactors and logging/tests in progress
-- Phase 3 GTK4 Migration: future
-
-See [docs/DEVELOPING.md](docs/DEVELOPING.md) for the full development guide and [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for project status.
-
----
-
-## Running from source (quick start)
-
-```bash
-git clone <this repository>
-cd gnome-connection-manager
-uv venv --system-site-packages
-uv sync
-doit launch
-```
-
----
-
 ## Configuration
 
 GCM stores its configuration in `~/.config/gcm/gcm.conf`, honouring `$XDG_CONFIG_HOME`
@@ -118,8 +108,11 @@ where that is set. An installation that already has `~/.gcm/` from an older vers
 on using it, in place — nothing is copied or moved, and moving the directory yourself is
 all it takes to switch.
 
-Preferences covers the settings; [Using terminals in GCM](docs/TERMINAL-USAGE.md) describes
-the few that are edited by hand, and how to edit them safely.
+Preferences covers the settings. A few are edited in the file by hand — the `[keys]` block
+has no dialog at all — and GCM writes `[options]` from memory whenever it saves, closing
+the window included, so **edit the file with GCM closed** or your change will be written
+over. [Using terminals in GCM](docs/TERMINAL-USAGE.md) gives each setting with its
+Preferences control, and says what GCM does with a file it cannot read.
 
 ### Language
 
@@ -134,6 +127,38 @@ LANG=en_US.UTF-8 gnome-connection-manager
 ```bash
 GCM_LOG_LEVEL=DEBUG gnome-connection-manager
 ```
+
+The first line it prints names the configuration directory in use.
+
+---
+
+## Running from source
+
+GCM uses [uv](https://github.com/astral-sh/uv) for dependency management and
+[doit](https://pydoit.org/) as a task runner. doit is a dev dependency, so `uv sync`
+installs it — there is nothing separate to install.
+
+```bash
+git clone <this repository>
+cd gnome-connection-manager
+uv venv --system-site-packages
+uv sync --extra dev
+doit launch
+```
+
+Day to day:
+
+```bash
+doit launch   # Launch the app
+doit check    # Format, lint, typecheck, tests
+doit test     # Run the pytest suite
+doit list     # Every task
+```
+
+See [docs/DEVELOPING.md](docs/DEVELOPING.md) for the full development guide,
+[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for the layout and where the work
+stands, and [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for the issue-branch-PR
+workflow.
 
 ---
 

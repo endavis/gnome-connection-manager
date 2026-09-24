@@ -229,7 +229,13 @@ Practices below have each caught real bugs in this repo. They are worth the time
   real configuration directory -- and note that HOME alone no longer settles which one
   that is, so unset `XDG_CONFIG_HOME` along with it. Give it a scratch `DISPLAY` too — a
   real one puts a GCM window over whatever the developer is doing and steals focus for the
-  whole timeout. `pytest` already starts its own Xvfb (`pytest_configure` in
+  whole timeout. **`DISPLAY` alone is not enough under WSLg**: GTK prefers Wayland whenever
+  `WAYLAND_DISPLAY` is set, so the window opens on the real desktop and the Xvfb screen
+  stays black. Measured while taking the README screenshot -- `xwininfo -root -tree` on the
+  scratch display reported `0 children` for thirty seconds. Unset `WAYLAND_DISPLAY` and set
+  `GDK_BACKEND=x11`, which is what `pytest_configure` does for the same reason, and unset
+  `GDK_SCALE`/`GDK_DPI_SCALE` with them if you are measuring geometry. `pytest` already
+  starts its own Xvfb (`pytest_configure` in
   `tests/conftest.py`); do the same here rather than reusing `:0`, which is only for
   probes that must measure the real compositor.
 
