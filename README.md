@@ -109,7 +109,13 @@ doit launch
 
 ## Configuration
 
-GCM stores its configuration in `~/.gcm/gcm.conf`. No manual editing needed.
+GCM stores its configuration in `~/.config/gcm/gcm.conf`, honouring `$XDG_CONFIG_HOME`
+where that is set. An installation that already has `~/.gcm/` from an older version goes
+on using it, in place — nothing is copied or moved, and moving the directory yourself is
+all it takes to switch.
+
+Preferences covers the settings; [Using terminals in GCM](docs/TERMINAL-USAGE.md) describes
+the few that are edited by hand, and how to edit them safely.
 
 ### Language
 

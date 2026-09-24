@@ -32,6 +32,12 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- Configuration lives in `~/.config/gcm/` on a new installation, honouring
+  `$XDG_CONFIG_HOME` where it is set. One that already has `~/.gcm/` goes on using it, in
+  place: nothing is copied or moved, and moving the directory yourself is all it takes to
+  switch. `.gcm.key` and the default log root follow `gcm.conf`, and an existing
+  installation's logs stay where they are, since its log path is written into `gcm.conf`
+  on every save
 - A tab's label is cut at 30 characters, so one long name no longer pushes the other tabs
   behind the scroll arrows at the ends of the tab strip. The cut is only what is drawn:
   the tooltip and the open-console list still give the whole label, and renaming or

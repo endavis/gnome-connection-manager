@@ -99,6 +99,7 @@ def bindtextdomain(app_name, locale_dir=None):
 
 from gnome_connection_manager.utils import (  # noqa: E402
     configfile,
+    configpaths,
     crypto,
     logpaths,
     transcript,
@@ -181,6 +182,46 @@ def require_expect() -> None:
     sys.exit(1)
 
 
+def require_config_dir() -> None:
+    """Create the configuration directory, having already chosen which one it is.
+
+    The choosing happens at import (`CONFIG_DIRECTORY`), the creating here, and they are
+    apart on purpose: a directory created before the choice satisfies the rule that looks
+    for it, so ``~/.config/gcm`` created eagerly would make ``~/.gcm`` unreachable for
+    every later start (#192). This also keeps importing the module free of side effects,
+    which is why the expect check moved out of import as well (#118).
+
+    A failure here is fatal and said plainly, the way the other two startup checks say
+    theirs: without the directory nothing can be saved, and finding that out at the first
+    write means finding out through a dialog, with a window full of hosts that cannot be
+    kept.
+    """
+    try:
+        configpaths.ensure(CONFIG_DIRECTORY.path)
+    except OSError as error:
+        message = _("GCM could not create its configuration directory, so it has not started.")
+        detail = f"{CONFIG_DIRECTORY.path}\n\n{error}"
+        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            dialog = Gtk.MessageDialog(
+                modal=True,
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text=message,
+            )
+            dialog.format_secondary_text(detail)
+            dialog.run()
+            dialog.destroy()
+        else:
+            print(f"{message}\n{detail}", file=sys.stderr)
+        sys.exit(1)
+    logger.debug(
+        "configuration directory %s (%s), pre-XDG location %s",
+        CONFIG_DIRECTORY.path,
+        CONFIG_DIRECTORY.source,
+        CONFIG_DIRECTORY.legacy,
+    )
+
+
 def require_readable_config() -> None:
     """Refuse to start on a gcm.conf that cannot be read, saying what is wrong and where.
 
@@ -258,12 +299,12 @@ assert Path(USERHOME_DIR).is_dir(), (
     f"FATAL: Could not locate home directory '{USERHOME_DIR}' for the current user"
 )
 
-CONFIG_DIR = USERHOME_DIR + "/.gcm"
+# Chosen here, created in main(): see utils/configpaths.py for why the order matters.
+# Importing this module must not create anything (#118, #192).
+CONFIG_DIRECTORY = configpaths.resolve(Path(USERHOME_DIR), os.environ)
+CONFIG_DIR = str(CONFIG_DIRECTORY.path)
 CONFIG_FILE = CONFIG_DIR + "/gcm.conf"
 KEY_FILE = CONFIG_DIR + "/.gcm.key"
-
-if not Path(CONFIG_DIR).exists():
-    Path(CONFIG_DIR).mkdir(parents=True)
 
 domain_name = "gcm-lang"
 
@@ -1414,6 +1455,9 @@ def initialise_encyption_key() -> None:
     # are untouched -- this only changes how a new one is made (bandit B311).
     enc_passwd = secrets.token_hex(16)
     try:
+        # See writeConfig: the directory is main()'s job, but this must not depend on
+        # main() having run -- the failure below is a modal dialog (#118).
+        configpaths.ensure(CONFIG_DIRECTORY.path)
         with os.fdopen(os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
             f.write(enc_passwd)
     except (OSError, PermissionError) as e:
@@ -3682,6 +3726,10 @@ class Wmain(GladeComponent):
                 cp.set("shortcuts", f"command{i}", shortcuts[s].replace("\n", "\\n"))
                 i = i + 1
 
+        # main() has made it already; this is for every other way in. A write into a
+        # directory that is not there fails, and each of these failures ends at a modal
+        # dialog nobody may be there to click (#118).
+        configpaths.ensure(CONFIG_DIRECTORY.path)
         with Path(CONFIG_FILE + ".tmp").open("w") as f:
             cp.write(f)
         Path(CONFIG_FILE + ".tmp").rename(CONFIG_FILE)
@@ -7500,6 +7548,7 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv
     require_expect()
+    require_config_dir()
     require_readable_config()
     application = GcmApplication()
     return application.run(argv)

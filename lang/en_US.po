@@ -1832,6 +1832,9 @@ msgstr "A folder name cannot contain /"
 msgid "Delete folder"
 msgstr "Delete folder"
 
+msgid "GCM could not create its configuration directory, so it has not started."
+msgstr "GCM could not create its configuration directory, so it has not started."
+
 msgid "GCM could not read its configuration file, so it has not started."
 msgstr "GCM could not read its configuration file, so it has not started."
 
