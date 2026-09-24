@@ -1,3 +1,16 @@
+---
+title: "Using terminals in GCM"
+description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read"
+audience:
+  - gcm-users
+tags:
+  - gcm
+  - gcm-guide
+  - terminal
+  - clipboard
+  - shortcuts
+---
+
 # Using terminals in GCM
 
 Copy, paste, selection and scrollback behave differently depending on what is running

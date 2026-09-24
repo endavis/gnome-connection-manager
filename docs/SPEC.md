@@ -1,3 +1,14 @@
+---
+title: "Connection Manager - Feature Specification"
+description: "A statement of behaviour, written as a spec for a Qt 6 port that is not being built"
+audience:
+  - contributors
+tags:
+  - gcm
+  - gcm-dev
+  - specification
+---
+
 # Connection Manager - Feature Specification
 
 !!! warning "This describes a port that is not being built"

@@ -1,3 +1,14 @@
+---
+title: "Development Guide"
+description: "Setting up an environment, the task runner, and running the tests"
+audience:
+  - contributors
+tags:
+  - gcm
+  - gcm-dev
+  - development
+---
+
 # Development Guide
 
 This guide covers the modern Python project structure for Gnome Connection Manager.

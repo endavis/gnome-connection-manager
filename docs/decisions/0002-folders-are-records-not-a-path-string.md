@@ -1,3 +1,15 @@
+---
+title: "ADR-0002: Folders are records, not a path string"
+description: "Why the folder tree is stored as records keyed by id, with group kept as a derived path"
+audience:
+  - contributors
+tags:
+  - gcm
+  - gcm-dev
+  - adr
+  - folders
+---
+
 # ADR-0002: Folders are records, not a path string
 
 ## Status

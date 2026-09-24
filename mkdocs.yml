@@ -101,9 +101,14 @@ validation:
 nav:
   - Home: index.md
   - Terminal usage: TERMINAL-USAGE.md
+  - Hosts and folders: HOSTS-AND-FOLDERS.md
   - Developing: DEVELOPING.md
   - Project structure: PROJECT_STRUCTURE.md
   - Specification: SPEC.md
+  - Decisions:
+      - A stable id on every host record: decisions/0001-a-stable-id-on-every-host-record.md
+      - Folders are records, not a path string: decisions/0002-folders-are-records-not-a-path-string.md
+      - ADR template: decisions/adr-template.md
   - Contents: TABLE_OF_CONTENTS.md
   - Development:
       - Tooling roles: development/tooling-roles.md

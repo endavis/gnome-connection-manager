@@ -1,3 +1,15 @@
+---
+title: "Hosts and folders in GCM"
+description: "The server tree: making and moving folders, putting it in the order you want, and what export and import carry"
+audience:
+  - gcm-users
+tags:
+  - gcm
+  - gcm-guide
+  - hosts
+  - folders
+---
+
 # Hosts and folders in GCM
 
 The panel on the left is the server tree: folders, and the hosts filed under them. This
