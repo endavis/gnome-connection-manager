@@ -84,6 +84,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [GitHub Repository Settings](development/github-repository-settings.md) - Complete reference for all GitHub repository settings the template expects
 - [Gnome Connection Manager](index.md)
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md)
+- [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md)
 - [install_tools Framework](development/install-tools-framework.md)
 - [Keeping Up to Date](template/updates.md) - Stay in sync with improvements to the pyproject-template
 - [LSP Tool and Diagnostic Noise](development/ai/lsp-tool.md) - What the LSP tool gives an AI agent, why pyright diagnostics arrive stale, and the two opt-outs agents can flip on themselves

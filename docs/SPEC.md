@@ -1,5 +1,21 @@
 # Connection Manager - Feature Specification
 
+!!! warning "This describes a port that is not being built"
+
+    This page specifies a hypothetical Qt 6 / PySide6 rewrite, not the program you are
+    running. GCM is GTK 3 and VTE, Linux only, and keeps its hosts in an INI file — where
+    this page says `QTreeView`, `QTabWidget`, SQLite, TOML or
+    `~/.config/connection-manager/`, none of that exists.
+
+    §14 measures what the port would cost and concludes not to do it. The behaviour
+    sections are still useful as a statement of what GCM does, because they were written
+    from it, but read them as a specification the implementation is held to rather than as
+    a description of how it works.
+
+    For what the program actually does, see
+    [Using terminals in GCM](TERMINAL-USAGE.md) and
+    [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md).
+
 A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 
 **Target platforms:** Linux, macOS, Windows
