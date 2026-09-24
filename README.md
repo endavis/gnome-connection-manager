@@ -9,7 +9,11 @@ Requires Python 3.12+ and GTK 3.
 ## Documentation
 
 - [Using terminals in GCM](docs/TERMINAL-USAGE.md) - selection when an application
-  has taken the mouse, what Copy All copies, pasting, font zoom, and the shortcut table
+  has taken the mouse, what Copy All copies, pasting, session recording and transcripts,
+  OSC 52, the buffer viewer, tab titles, font zoom, the shortcut table, and what GCM does
+  with a `gcm.conf` it cannot read
+- [Hosts and folders in GCM](docs/HOSTS-AND-FOLDERS.md) - the server tree: making and
+  moving folders, ordering it, and what export and import carry
 - [Developing](docs/DEVELOPING.md) and [Project structure](docs/PROJECT_STRUCTURE.md)
 
 ## Installation

@@ -34,6 +34,21 @@ auto-copy-selection = true
 
 Edit that with GCM closed.
 
+Double-clicking selects a word. What counts as one word is set by **Word separator** on
+the General tab of Preferences, which despite its name holds the characters that count
+as *part of* a word, over and above letters and digits. GCM's default includes `/`, `.`,
+`:`, `@` and `~`, so a double-click takes a whole path, URL or `user@host` rather than
+stopping at the first punctuation. In `gcm.conf`, with its default:
+
+```ini
+[options]
+word-separators = -A-Za-z0-9,./?%&#:_=+@~
+```
+
+Edit that with GCM closed; through Preferences it applies straight away, in sessions
+already open too. Emptying it hands the decision back to VTE's own idea of a word, which
+stops at punctuation.
+
 ### When an application has taken the mouse
 
 Full-screen applications can enable mouse reporting, which routes click and drag to the
@@ -74,6 +89,31 @@ can see.
 
 Your primary-screen scrollback is not lost while a full-screen application runs — it is
 only unreachable. Quitting the application switches back and the scrollback is intact.
+
+## Copying when nothing is selected
+
+`Ctrl+Shift+C` with nothing selected does nothing at all by default, and that is on
+purpose: an unguarded copy would take the clipboard over and serve an empty string,
+destroying whatever was on it.
+
+Tick **Copy screen if there is no selection** on the General tab of Preferences and the
+copy falls back to the visible screen instead. That is the case it exists for: inside a
+full-screen application the mouse belongs to the program, so there is often no selection
+to make, and the visible screen is all there is to take anyway. It is off by default. In
+`gcm.conf`, with its default:
+
+```ini
+[options]
+copy-screen-if-no-selection = 0
+```
+
+Edit that with GCM closed; through Preferences it applies straight away, in sessions
+already open too.
+
+It is a fallback on **Copy**, not a separate command — there is no menu item and no
+shortcut of its own — and it never disturbs a selection you do have: with something
+selected, Copy copies the selection exactly as before. Trailing blank space is trimmed
+off what it takes.
 
 ## What cannot be recovered
 
@@ -362,6 +402,44 @@ key you actually use. They address a position *within one pane*, which is why th
 restarts under each heading once you have split the window — with a split, the list groups
 consoles by pane and tells you which pane each one is in.
 
+## When a terminal rings the bell
+
+A program in a tab you are not watching can ask for attention by ringing the bell —
+`\a` — which is what a long build, a finished test run or an agent CLI waiting on a
+question typically does.
+
+GCM does three separate things with it, each with its own control on the General tab of
+Preferences:
+
+| Preferences | Default | What it does |
+|---|---|---|
+| **Mark tab when the bell rings** | on | Draws the tab's label bold until you look at it, and flags the window in the taskbar if GCM is not the active window |
+| **Notify when the bell rings** | off | Raises a desktop notification, *The session requires attention*, naming the tab. Only when GCM is not the active window |
+| **Audible bell** | on | Lets the terminal make the sound |
+
+In `gcm.conf`, with their defaults:
+
+```ini
+[options]
+bell-mark-tab = 1
+bell-notify = 0
+bell-audible = 1
+```
+
+Edit those with GCM closed; through Preferences they apply straight away, in sessions
+already open too.
+
+A bell in the tab you are already watching, in a window that already has focus, is
+ignored — there is nothing to draw your attention to. Everywhere else the mark stays
+until you switch to that tab, and the [open-console list](#finding-a-console-among-many)
+shows the same mark in bold, so a bell is still findable once the tab has scrolled off
+the strip.
+
+The desktop notification needs a notification service to be running. Without one nothing
+is raised and nothing is said about it — under WSLg, for instance, there is no
+notifications daemon, so **Notify when the bell rings** has no effect there and the tab
+mark is what you have.
+
 ## Dropping files onto a terminal
 
 Drag a file from a file manager onto a terminal and its path is inserted at the cursor,
@@ -596,3 +674,55 @@ env -u WAYLAND_DISPLAY copilot
 
 It then uses X11 through XWayland and the native write succeeds. Do not unset the variable
 globally — other applications need it.
+
+## When GCM will not start
+
+GCM refuses to start on a `gcm.conf` it cannot read in full, and says so:
+
+> **GCM could not read its configuration file, so it has not started.**
+>
+> Source contains parsing errors: '/home/you/.config/gcm/gcm.conf'
+> &nbsp;&nbsp;&nbsp;&nbsp;[line  3]: 'this line has no equals sign'
+>
+> Nothing has been changed. Correct the file, or move it aside to start with an empty
+> configuration.
+
+It refuses on purpose. Starting with an empty tree is the worse outcome: GCM writes its
+host list to that file whenever the window closes, so an empty start would write the
+empty tree over whatever the file still held. Nothing has been changed when you see this
+message, and correcting the offending line — or moving the file aside and starting fresh —
+is all that is needed.
+
+With no display the same text goes to standard error instead of a dialog, because a modal
+dialog nobody can click is a hang rather than a message.
+
+The other refusal is the configuration directory itself: **GCM could not create its
+configuration directory, so it has not started.** That means the path is not writable, or
+something that is not a directory is in the way.
+
+### What it does not refuse
+
+| In the file | What happens |
+|---|---|
+| The same section twice, from two copies merged by hand | Read. Each repeat is kept as an entry of its own, an exact duplicate is dropped, and a line on standard error says how many of each |
+| A value that cannot be read, such as `buffer-lines = lots` | That one setting stays at its default and the line is left as written. A notice lists them once the window is up |
+| `[keys]`, or any section GCM does not know | Carried across every save untouched |
+
+A save starts from the file as it is on disk rather than from memory, which is what lets
+a `[keys]` block you wrote by hand survive. If the file cannot be read at that moment, GCM
+renames it `gcm.conf.unreadable-<YYYYMMDD-HHMMSS>` and writes a new one beside it, rather
+than writing over something it could not understand.
+
+### Finding out which directory is in use
+
+There are two possible locations — see the top of this page — and `GCM_LOG_LEVEL=DEBUG`
+names the one in use on the first line it prints:
+
+```console
+$ GCM_LOG_LEVEL=DEBUG gnome-connection-manager
+... DEBUG gnome_connection_manager: configuration directory /home/you/.config/gcm (new), pre-XDG location /home/you/.gcm
+```
+
+The word in brackets says which rule chose it: `xdg` for `~/.config/gcm` because it was
+already there, `legacy` for `~/.gcm` because it was, and `new` for a first run that
+created one.

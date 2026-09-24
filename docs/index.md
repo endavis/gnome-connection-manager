@@ -9,7 +9,8 @@ rather than by pip — see [Developing](DEVELOPING.md) for the package list.
 
 | | |
 |---|---|
-| [Terminal usage](TERMINAL-USAGE.md) | Selection when an application has taken the mouse, what Copy All copies, pasting, font zoom, and the shortcut table |
+| [Terminal usage](TERMINAL-USAGE.md) | What happens inside a tab: selection, copy and paste, session recording and transcripts, OSC 52, the buffer viewer, tab titles, font zoom, the shortcut table, and what GCM does with a `gcm.conf` it cannot read |
+| [Hosts and folders](HOSTS-AND-FOLDERS.md) | The server tree: making and moving folders, putting it in order, and what export and import carry |
 | [Developing](DEVELOPING.md) | Setting up an environment, the task runner, and running the tests |
 | [Project structure](PROJECT_STRUCTURE.md) | What lives where |
 | [Specification](SPEC.md) | Behaviour the implementation is held to |

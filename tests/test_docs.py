@@ -18,6 +18,26 @@ from pathlib import Path
 import pytest
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "TERMINAL-USAGE.md"
+# The user-facing guides between them, for the settings check below.
+GUIDES = (DOC, DOC.with_name("HOSTS-AND-FOLDERS.md"))
+
+# Settings Preferences draws a control for that no guide names, and why not. Every one of
+# these predates the documentation this list was written with (#193); nothing added since
+# belongs here without a reason that survives being read aloud. Documenting one means
+# deleting its line, not editing it.
+UNDOCUMENTED_SETTINGS = {
+    "auto-close-tab": "what happens to a tab when its session ends; window behaviour",
+    "check-updates": "whether GCM phones home at startup; nothing to do with a terminal",
+    "confirm-close-tab": "confirmation dialogs, application behaviour",
+    "confirm-close-tab-middle": "confirmation dialogs, application behaviour",
+    "confirm-exit": "confirmation dialogs, application behaviour",
+    "cycle-tabs": "whether Next Console wraps at the end; window behaviour",
+    "disable-hosts-stripes": "striping in the server tree; appearance of the panel",
+    "donate": "whether the donate button is shown",
+    "startup-local": "whether a local console opens at startup",
+    "transparency": "terminal background transparency; belongs in the terminal guide",
+    "update-title": "whether the window title follows the console; window behaviour",
+}
 
 # Symbols the doc spells the way a user reads them, mapped to GDK's key names.
 _DISPLAY_TO_KEYNAME = {"=": "EQUAL", "-": "MINUS", ",": "COMMA"}
@@ -176,6 +196,43 @@ def test_the_guide_names_each_setting_as_preferences_draws_it(app_module):
     assert named, "the guide names no [options] setting at all; the test is misreading it"
 
 
+def test_every_setting_preferences_draws_is_named_in_a_guide(app_module):
+    """The other direction from the test above, which is the one that was missing.
+
+    Every check ran guide -> code: a setting the guide mentioned had to name its control,
+    its example had to load, its default had to be the real one. Nothing ran code -> guide,
+    so a setting could ship with a control in Preferences and no mention anywhere and pass
+    every test. Four did -- Copy screen if there is no selection and the three bell
+    settings -- and were found by hand rather than by this suite (#193).
+
+    UNDOCUMENTED_SETTINGS is the deliberate remainder. Adding a line to it is a decision
+    about a reader, so it needs a reason; the assertion below refuses a blank one.
+    """
+    options = _options(app_module)
+    labels = _preference_labels(app_module)
+    guides = " ".join(" ".join(path.read_text(encoding="utf-8").split()) for path in GUIDES)
+    key_for = {attr: key for key, (attr, _kind) in options.items()}
+
+    for key, reason in sorted(UNDOCUMENTED_SETTINGS.items()):
+        assert key in options, f"UNDOCUMENTED_SETTINGS names `{key}`, which GCM does not read"
+        assert reason.strip(), f"{key}: say why it is left out"
+
+    missing = sorted(
+        key_for[attr]
+        for attr, label in labels.items()
+        if key_for[attr] not in UNDOCUMENTED_SETTINGS
+        and key_for[attr] not in guides
+        and label not in guides
+    )
+    assert not missing, (
+        "settings with a control in Preferences that no guide names by key or by label: "
+        f"{missing}. Document them, or add each to UNDOCUMENTED_SETTINGS with a reason."
+    )
+
+    documented = sorted(key for key in UNDOCUMENTED_SETTINGS if key in guides)
+    assert not documented, f"documented after all, so drop from UNDOCUMENTED_SETTINGS: {documented}"
+
+
 def test_each_options_example_says_when_it_applies_and_to_close_gcm_first():
     """A reader changing a setting needs to know whether a session already open sees the
     change. And an example on its own was a trap: GCM writes `[options]` from memory
@@ -326,16 +383,19 @@ def test_documented_application_accelerators_are_real(app_module):
     assert not missing, f"documented accelerators that no action registers: {sorted(missing)}"
 
 
-def test_doc_is_linked_from_the_readme():
+@pytest.mark.parametrize("guide", [path.name for path in GUIDES])
+def test_each_guide_is_linked_from_the_readme(guide):
+    """A guide nobody links to is a guide nobody finds."""
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
 
-    assert "docs/TERMINAL-USAGE.md" in readme
+    assert f"docs/{guide}" in readme
 
 
 # -- internal links must land on a heading that exists ----------------------
 
 _MARKDOWN_DOCS = [
     "docs/TERMINAL-USAGE.md",
+    "docs/HOSTS-AND-FOLDERS.md",
     "docs/SPEC.md",
     "docs/DEVELOPING.md",
     "docs/PROJECT_STRUCTURE.md",

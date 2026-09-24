@@ -12,6 +12,13 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- `docs/HOSTS-AND-FOLDERS.md`: the server tree, written for a user. Making, renaming and
+  deleting folders (and what deleting one takes with it), where a drop lands and which
+  drops are refused, the order a folder keeps and how Sort by Name gives it back, host
+  ids, and what export and import carry
+- The terminal guide now covers **Copy screen if there is no selection**, the three bell
+  settings and the window flag, **Word separator**, and what GCM does with a `gcm.conf` it
+  cannot read -- including why it refuses to start rather than start empty
 - Continuous integration, for the first time: tests, linting, type checking, security
   scanning and a dependency audit on every pull request
 - `doit` as the task runner, replacing `just`
@@ -32,6 +39,9 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- `docs/SPEC.md` says at the top that it specifies a Qt 6 port that is not being built, so
+  it can no longer be mistaken for a description of the program. It was the only account of
+  folders anywhere
 - Configuration lives in `~/.config/gcm/` on a new installation, honouring
   `$XDG_CONFIG_HOME` where it is set. One that already has `~/.gcm/` goes on using it, in
   place: nothing is copied or moved, and moving the directory yourself is all it takes to

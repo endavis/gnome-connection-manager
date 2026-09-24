@@ -162,8 +162,19 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   numbers its own decisions from 9001; a project's own start at 0001.
 
 ## Documentation
-- `docs/TERMINAL-USAGE.md` – user-facing: selection when an application has taken the mouse,
-  what Copy All copies, pasting, font zoom, session log layout, the shortcut table.
+- `docs/TERMINAL-USAGE.md` – user-facing, everything inside a tab: selection and what a
+  word is, copy when nothing is selected, pasting, session logs and raw recording, OSC 52,
+  the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does
+  with a `gcm.conf` it cannot read.
+- `docs/HOSTS-AND-FOLDERS.md` – user-facing, everything in the server tree: making,
+  renaming and deleting folders, what a drop does where, the order a folder keeps, host
+  ids, and export/import. Written because the only account of folders was `docs/SPEC.md`,
+  which specifies a Qt port that is not being built (#193).
+- Every setting Preferences draws a control for must be named in one of those two, by its
+  `gcm.conf` key or by its label. `tests/test_docs.py` enforces both directions now:
+  guide to code, and code to guide against `UNDOCUMENTED_SETTINGS`, whose entries each
+  carry a reason. Four settings had shipped with a control and no mention anywhere before
+  the second direction existed.
 - `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
 - `docs/SPEC.md` – feature specification. §14 holds a measured analysis of a possible
   Qt/PySide6 port (conclusion: don't, for terminal ergonomics). Every figure in its Effort
