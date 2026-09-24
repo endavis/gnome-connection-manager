@@ -373,3 +373,12 @@ def test_writing_the_config_creates_the_directory_itself(app_module, monkeypatch
     wmain.writeConfig()
 
     assert Path(app_module.CONFIG_FILE).exists()
+
+
+def test_the_suite_does_not_inherit_xdg_config_home() -> None:
+    """A stray `$XDG_CONFIG_HOME` is absolute, so it survives a redirected HOME and points
+    the tests at the real `~/.config/gcm` -- including the ones that build a real Wmain,
+    which writes `.gcm.key` there. `pytest_configure` pops it; this is here so it cannot be
+    dropped quietly. GitHub's runners set it, which is how it was found.
+    """
+    assert "XDG_CONFIG_HOME" not in os.environ

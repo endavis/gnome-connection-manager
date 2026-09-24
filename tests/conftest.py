@@ -90,6 +90,13 @@ def _start_xvfb():
 
 def pytest_configure(config):
     global _xvfb_process
+    # Before any of the display handling, and before every early return below: HOME alone
+    # no longer settles which directory GCM configures itself from (#192). A stray
+    # XDG_CONFIG_HOME is absolute, so it survives a redirected HOME and sends the tests at
+    # the real ~/.config/gcm -- and the real-GTK tests build a Wmain, which writes
+    # .gcm.key. GitHub's runners set it; so do some desktops. Popping it here reaches the
+    # subprocess tests too, which inherit this environment and set only HOME themselves.
+    os.environ.pop("XDG_CONFIG_HOME", None)
     if os.environ.get("GCM_TEST_REAL_DISPLAY"):
         return
     # Under xdist this hook runs in the controller and again in every worker. The
