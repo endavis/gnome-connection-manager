@@ -84,6 +84,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `writeConfig` writes their text back through `put_back_unread` while each setting still
   holds that default, and `report_unread_options` lists them once the window is up. Not
   `[window]`: that is GCM's record of its own window, and a save writes the window as it is.
+- `src/gnome_connection_manager/utils/configpaths.py` – which directory holds `gcm.conf` and
+  `.gcm.key` (#192). `resolve` takes `$XDG_CONFIG_HOME/gcm` if it is there, else `~/.gcm` if
+  it is there, else `$XDG_CONFIG_HOME/gcm` for the caller to create; `config_home` supplies
+  the `~/.config` default and ignores a value that is empty or relative, as the spec
+  requires. Nothing is migrated: relocating someone's hosts and the key that decrypts their
+  passwords, unasked, is the failure this must not have. `resolve` creates nothing and
+  `ensure` is the only thing that does, which is the whole of it -- a directory created
+  before the choice satisfies the rule that looks for it, so an eager `~/.config/gcm` would
+  put `~/.gcm` permanently out of reach. `app.py` resolves at import into `CONFIG_DIRECTORY`
+  and creates in `require_config_dir`, called from `main()` beside `require_expect` and
+  `require_readable_config`. `is_dir`, not `exists`, so a stray *file* named `.gcm` is not
+  chosen. Beware when mutation-testing that swap: the two names are the same length, so
+  `sed` leaves the file size unchanged and Python can serve a stale `.pyc` within the
+  same second.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
   (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
@@ -201,13 +215,17 @@ Practices below have each caught real bugs in this repo. They are worth the time
   elsewhere. Sweep every `get_widget("...")` id in the source against the glade.
 - **Run the app for tracebacks** with a throwaway HOME:
   `HOME=<tmpdir> timeout 12 uv run python -m gnome_connection_manager`. Never point it at a
-  real `~/.gcm`. Give it a scratch `DISPLAY` too — a real one puts a GCM window over
-  whatever the developer is doing and steals focus for the whole timeout. `pytest` already
-  starts its own Xvfb (`pytest_configure` in `tests/conftest.py`); do the same here rather
-  than reusing `:0`, which is only for probes that must measure the real compositor.
+  real configuration directory -- and note that HOME alone no longer settles which one
+  that is, so unset `XDG_CONFIG_HOME` along with it. Give it a scratch `DISPLAY` too — a
+  real one puts a GCM window over whatever the developer is doing and steals focus for the
+  whole timeout. `pytest` already starts its own Xvfb (`pytest_configure` in
+  `tests/conftest.py`); do the same here rather than reusing `:0`, which is only for
+  probes that must measure the real compositor.
 
 ## Configuration & Data Flow
-- User data lives in `~/.gcm/`: `gcm.conf` (INI) holds options, window state, shortcuts, and
+- User data lives in `~/.config/gcm/`, or in `~/.gcm/` where that was already there --
+  `src/gnome_connection_manager/utils/configpaths.py` decides which, and nothing is
+  migrated. `gcm.conf` (INI) holds options, window state, shortcuts, and
   serialized `Host` entries (`HostUtils.load_host_from_ini` / `HostUtils.save_host_to_ini`).
   It is read through `configfile.load`, never `cp.read`, and a save starts from it rather
   than from nothing -- see the module entry above.

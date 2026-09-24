@@ -5,8 +5,13 @@ inside the tab. Most of what looks like broken copy/paste is a full-screen appli
 holding the mouse, or the alternate screen having no scrollback of its own. This page
 covers both, plus the shortcut table and how to change it.
 
-Where a section gives an `[options]` line of `~/.gcm/gcm.conf`, it also names the control
-in Preferences that sets it. Edit `[options]` only with GCM closed: GCM writes that
+`gcm.conf` is in `~/.config/gcm/` — or wherever `$XDG_CONFIG_HOME` points — on a new
+installation. One that already had `~/.gcm/` from an older version goes on using it, in
+place: nothing is copied or moved, and moving the directory there yourself is all it takes
+to switch.
+
+Where a section gives an `[options]` line of that file, it also names the control in
+Preferences that sets it. Edit `[options]` only with GCM closed: GCM writes that
 section from memory whenever it saves, and closing the window is a save, so an edit made
 while it runs is written over. Leave comments out too: a save drops them, and `;` after a
 value is read as part of the value rather than as a comment. A value GCM cannot read, such
@@ -85,16 +90,16 @@ GCM's own **session logging** (per host, or **Log local console sessions** in Pr
 for local consoles) records what the terminal receives, so it captures ordinary command
 output but is subject to the same limitation for full-screen applications.
 
-Logs are laid out under **Logs path** in Preferences (default `~/.gcm/logs`), mirroring
-your host tree:
+Logs are laid out under **Logs path** in Preferences (default: a `logs` directory beside
+`gcm.conf`), mirroring your host tree:
 
 ```
 <log-path>/<group>/<host name>/<user>-<YYYYMMDD>-<NNN>.log
 ```
 
 ```
-~/.gcm/logs/Home Tech/OPNsense/OPNA/endavis/OPNA-TS/root-20260823-001.log
-~/.gcm/logs/1. Projects/pyproject-template/session-20260823-001.log
+~/.config/gcm/logs/Home Tech/OPNsense/OPNA/endavis/OPNA-TS/root-20260823-001.log
+~/.config/gcm/logs/1. Projects/pyproject-template/session-20260823-001.log
 ```
 
 The name comes from the **host entry**, never the tab label, so renaming a tab does not
@@ -430,7 +435,7 @@ only, for the reason described above.
 
 ## Keyboard shortcuts
 
-Every shortcut below is user-configurable under `[shortcuts]` in `~/.gcm/gcm.conf`, or
+Every shortcut below is user-configurable under `[shortcuts]` in `gcm.conf`, or
 through the shortcut editor in Preferences.
 
 | Default | Command | Also in a menu |

@@ -1763,6 +1763,9 @@ msgstr ""
 msgid "Delete folder"
 msgstr ""
 
+msgid "GCM could not create its configuration directory, so it has not started."
+msgstr ""
+
 msgid "GCM could not read its configuration file, so it has not started."
 msgstr ""
 
