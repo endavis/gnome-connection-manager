@@ -82,15 +82,17 @@ doit format    # Format code
 - [x] Code simplifications (13 fixed - ternary operators, context managers, etc.)
 - [x] Bugbear issues (5 fixed - lambda bindings, unused variables, etc.)
 
-**Progress:** 380 of 385 issues fixed (98.7% complete)
-**Ruff errors:** Reduced from 45 to 5 (89% improvement)
+**Progress:** complete. `ruff check src/ tests/ tools/` reports nothing, and `doit check`
+enforces that along with the formatter, so the figures that used to be quoted here are kept
+by the gate rather than by this page.
 
 #### Phase 2: Modernize (Future)
 - [x] Convert to GtkApplication framework (single-instance `GcmApplication` with action handling)
 - [x] Replace SimpleGladeApp with direct GtkBuilder (`GladeComponent` helper inside `app.py`)
 - [x] Add GAction/GMenu system (application/menubar exported through `Gio.Menu`)
 - [x] Proper logging instead of prints (structured logging via `logging`, configurable with `GCM_LOG_LEVEL`)
-- [ ] Add comprehensive test suite
+- [x] Add comprehensive test suite (`doit test`; `tests/conftest.py` stubs `gi`, and the
+      tests that need a real toolkit drive GTK and VTE under their own Xvfb)
 
 #### Phase 3: GTK4 (Long-term)
 - [ ] Port to GTK4
@@ -129,24 +131,25 @@ sudo dnf install python3-gobject gtk3 vte291 expect
 - Entry points configured in `pyproject.toml`
 - Import paths need updating in app.py (next step)
 
-### Remaining Code Quality Issues (5 total)
+### Remaining Code Quality Issues
 
-**Deferred to Phase 2 (Low Priority):**
+Both are deliberate, and `pyproject.toml` records the exemption rather than this page:
 - [ ] N801: Class name `conf` - Used extensively throughout codebase, requires widespread refactoring
 - [ ] SIM115: One file operation without context manager - Intentional design for logging (file must remain open)
 
-These 5 remaining issues are intentionally deferred as they either:
-1. Require extensive refactoring that's better suited for Phase 2
-2. Are false positives (logging file that must remain open)
-3. Are part of external library code (AES implementation)
+Both are intentionally deferred: `conf` is used throughout, so renaming it is a wide
+refactor for no behaviour change, and the logging file has to outlive the `with` block that
+would close it.
 
 **For Future Phases:**
 - [ ] Rename modules to follow Python naming conventions (Phase 2)
-- [ ] Add comprehensive test suite (Phase 2)
 - [ ] GTK deprecation warnings (will be addressed in GTK4 migration - Phase 3)
 - [ ] Complete type hint coverage (Ongoing)
 
 ---
 
-**Status:** ✅ Phase 1 is COMPLETE! 98.7% of code quality issues resolved (380 of 385).
-**Ruff errors reduced by 89%:** From 45 errors down to 5 intentionally deferred issues.
+**Status:** Phase 1 is complete and Phase 2 is most of the way there — the application
+framework, the menus, logging and the test suite are all in. What is left of Phase 2 is the
+module renaming; Phase 3, the GTK4 port, has not started. The lint and formatting gates are
+enforced by `doit check` rather than tracked here, because a number written into prose goes
+stale and this page's did.

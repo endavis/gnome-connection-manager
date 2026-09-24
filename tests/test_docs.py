@@ -391,6 +391,74 @@ def test_each_guide_is_linked_from_the_readme(guide):
     assert f"docs/{guide}" in readme
 
 
+# -- the front page has to say what GCM is, and stay true (#194) ------------
+
+README = Path(__file__).resolve().parents[1] / "README.md"
+
+
+def test_the_readme_says_what_gcm_does_before_how_to_build_it():
+    """A visitor met "A tabbed SSH and telnet connection manager" and then
+    `sudo apt install ruby`, with nothing in between about folders, cluster mode, port
+    forwarding, recording or any of the rest. The feature list has to come first, because
+    a reader who has to scroll past a build to find out what the thing is will not."""
+    body = README.read_text(encoding="utf-8")
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+
+    assert "## What it does" in headings, "the README has no feature list"
+    assert headings.index("## What it does") < headings.index("## Installation"), (
+        "the feature list comes after the build instructions"
+    )
+
+
+def test_the_readme_shows_the_application():
+    """A connection manager is a window; a front page for one should show it."""
+    body = README.read_text(encoding="utf-8")
+    images = re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", body)
+
+    assert images, "the README carries no screenshot"
+    for alt, target in images:
+        assert alt.strip(), f"{target} has no alt text"
+        assert (README.parent / target).is_file(), f"{target} does not exist"
+
+
+def test_the_readme_carries_no_phase_roadmap():
+    """It claimed "Phase 2 Modernization: GTK refactors and logging/tests in progress"
+    against a suite of more than a thousand tests. A roadmap on a front page rots faster
+    than anything else on it; PROJECT_STRUCTURE.md is where that belongs."""
+    body = README.read_text(encoding="utf-8")
+
+    assert not re.search(r"Phase \d", body), "the README carries a development roadmap again"
+
+
+def test_the_readme_links_every_doc_a_reader_would_want():
+    """SPEC.md and the ADRs existed and were linked from nowhere."""
+    body = README.read_text(encoding="utf-8")
+
+    for target in ("docs/SPEC.md", "docs/decisions/", ".github/CONTRIBUTING.md"):
+        assert target in body, f"the README does not link {target}"
+
+
+def test_the_readme_warns_that_the_spec_is_a_port_that_is_not_being_built():
+    """Linking SPEC.md without saying what it is sends the reader to a description of a
+    Qt 6 program that does not exist."""
+    body = " ".join(README.read_text(encoding="utf-8").split())
+    link = body[body.index("docs/SPEC.md") :][:400]
+
+    assert "not** being built" in link or "not being built" in link, (
+        "the README links SPEC.md without saying it specifies a port that is not being built"
+    )
+
+
+def test_no_doc_claims_the_test_suite_is_still_to_be_written():
+    """`docs/PROJECT_STRUCTURE.md` carried `- [ ] Add comprehensive test suite` unticked,
+    twice, against a suite this test is part of."""
+    structure = (Path(__file__).resolve().parents[1] / "docs" / "PROJECT_STRUCTURE.md").read_text()
+
+    assert "- [ ] Add comprehensive test suite" not in structure, (
+        "PROJECT_STRUCTURE.md still lists the test suite as unwritten"
+    )
+
+
 # -- internal links must land on a heading that exists ----------------------
 
 _MARKDOWN_DOCS = [

@@ -12,6 +12,9 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- The README says what GCM does, with a screenshot of the window and a feature list, before
+  it explains how to build it. It also links the specification and the architecture
+  decisions, which existed and were linked from nowhere
 - `docs/HOSTS-AND-FOLDERS.md`: the server tree, written for a user. Making, renaming and
   deleting folders (and what deleting one takes with it), where a drop lands and which
   drops are refused, the order a folder keeps and how Sort by Name gives it back, host
@@ -76,6 +79,13 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- The README no longer writes the version out -- twice, in prose and in an `apt install`
+  command, outside the test that keeps the other four copies in step. `make deb` names the
+  file it wrote, and the install command takes a glob
+- The README's development-phase roadmap claimed the test suite was still to be written,
+  as did `docs/PROJECT_STRUCTURE.md` in two places. The roadmap is gone from the front page
+  and the claims are corrected; the lint and test figures that used to be quoted are left
+  to `doit check`, which keeps them
 - Unticking the checkbox on a host's Commands page discarded the commands when the
   dialog was closed; the tick is now stored separately, so it only decides whether
   they run
