@@ -8,6 +8,7 @@ stubs all of `gi`.
 from __future__ import annotations
 
 import types
+from pathlib import Path
 
 import pytest
 
@@ -113,7 +114,7 @@ def test_next_session_stem_takes_the_first_number_no_session_file_uses(tmp_path)
     for taken in ("001.log", "002.raw", "003.timing"):
         (tmp_path / f"web-01-20260823-{taken}").write_text("x")
 
-    assert logpaths.next_session_stem(prefix) == f"{prefix}-004"
+    assert logpaths.next_session_stem(prefix, ".log") == f"{prefix}-004"
 
 
 # Spelled out rather than read from SESSION_SUFFIXES: parametrized over the constant, a
@@ -125,15 +126,57 @@ def test_next_session_stem_skips_a_number_any_earlier_file_holds(tmp_path, left_
     prefix = tmp_path / "session-20260925"
     (tmp_path / f"session-20260925-001{left_behind}").write_text("x")
 
-    assert logpaths.next_session_stem(prefix) == f"{prefix}-002"
+    assert logpaths.next_session_stem(prefix, ".raw") == f"{prefix}-002"
 
 
 def test_next_session_stem_falls_back_to_the_last_when_exhausted(tmp_path, monkeypatch):
     """Refusing to log because 999 sessions happened today would be worse."""
     monkeypatch.setattr(logpaths.Path, "exists", lambda self: True)
 
-    assert logpaths.next_session_stem(tmp_path / "busy-20260823") == (
+    assert logpaths.next_session_stem(tmp_path / "busy-20260823", ".raw") == (
         f"{tmp_path / 'busy-20260823'}-999"
+    )
+
+
+# -- the number is reserved as it is chosen (#202) ------------------------------
+
+
+def test_next_session_stem_reserves_the_number_it_chooses(tmp_path):
+    """The relay creates a recording about 35 ms after the spawn. Until something is on
+    disk, the next tab for the same host chooses the same number."""
+    prefix = tmp_path / "session-20260925"
+
+    first = logpaths.next_session_stem(prefix, ".raw")
+
+    assert Path(first + ".raw").read_bytes() == b"", "the reservation is an empty file"
+    assert logpaths.next_session_stem(prefix, ".raw") == f"{prefix}-002"
+
+
+def test_next_session_stem_yields_a_number_taken_after_it_looked(tmp_path, monkeypatch):
+    """GCM is not a unique application, so another instance can create the file between
+    the check and the create. That instance keeps the number, and its file is left as it
+    was -- not truncated, not appended to."""
+    prefix = tmp_path / "session-20260925"
+    theirs = tmp_path / "session-20260925-001.raw"
+    theirs.write_bytes(b"another instance's session")
+    # Every check finds nothing, as if each file appeared just after it was looked for.
+    monkeypatch.setattr(logpaths.Path, "exists", lambda self: False)
+
+    assert logpaths.next_session_stem(prefix, ".raw") == f"{prefix}-002"
+    assert theirs.read_bytes() == b"another instance's session"
+
+
+def test_next_session_stem_leaves_an_unwritable_directory_to_the_caller(tmp_path, monkeypatch):
+    """The caller's own open fails the same way and reports it where it always has; the
+    number is still returned, so that report names the file it could not write."""
+
+    def refuse(self, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(logpaths.Path, "touch", refuse)
+
+    assert logpaths.next_session_stem(tmp_path / "ro-20260925", ".log") == (
+        f"{tmp_path / 'ro-20260925'}-001"
     )
 
 
@@ -141,10 +184,12 @@ def test_session_stem_for_lays_the_session_out_under_its_host(tmp_path, monkeypa
     monkeypatch.setattr(logpaths.time, "strftime", lambda fmt: "20260823")
     terminal = types.SimpleNamespace(host=LogHost(group="Work", name="web-01", user="root"))
 
-    stem = logpaths.session_stem_for(terminal, tmp_path)
+    stem = logpaths.session_stem_for(terminal, tmp_path, ".log")
 
     assert stem == str(tmp_path / "Work" / "web-01" / "root-20260823-001")
-    assert (tmp_path / "Work" / "web-01").is_dir()
+    assert sorted(p.name for p in (tmp_path / "Work" / "web-01").iterdir()) == [
+        "root-20260823-001.log"
+    ]
 
 
 def test_session_stem_for_refuses_a_path_that_escapes(tmp_path, monkeypatch):
@@ -152,7 +197,7 @@ def test_session_stem_for_refuses_a_path_that_escapes(tmp_path, monkeypatch):
     monkeypatch.setattr(logpaths, "sanitize_log_name", lambda title: title)
     terminal = types.SimpleNamespace(host=LogHost(name="../escaped"))
 
-    assert logpaths.session_stem_for(terminal, tmp_path / "logs") is None
+    assert logpaths.session_stem_for(terminal, tmp_path / "logs", ".raw") is None
     assert not (tmp_path / "escaped").exists()
 
 

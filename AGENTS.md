@@ -119,7 +119,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   number it chose on the terminal as `session_stem`. A session's `.log`, `.raw` and
   `.timing` are opened at different times -- the recording again on every reconnect --
   and when each chose its own number, `002.log` sat beside `001.raw` (#200). A number is
-  free only while none of `SESSION_SUFFIXES` uses it.
+  free only while none of `SESSION_SUFFIXES` uses it, and choosing one creates the file
+  asked for, empty and exclusively: the relay creates a recording about 35 ms after the
+  spawn, and until then a second tab for the host took the same number (#202). So an
+  empty `.log` is a session's own reservation, not an earlier log to append to --
+  `set_terminal_logger` reads its size, not whether it exists.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the two shortcut decisions that need
   no widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, and `clamp_font_scale` with the VTE range it mirrors.

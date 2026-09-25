@@ -1019,12 +1019,15 @@ def session_file_for(terminal, suffix):
     spawned. Numbered one at a time, they drifted apart (#200). A reconnect keeps the
     number as well, so its recording carries on in the tab's file, as the text log does.
 
+    Choosing the number creates the file asked for, empty, so that no other session can
+    choose it before this one writes there (#202).
+
     The `conf.LOG_PATH` read lives here rather than in utils.logpaths so that nothing in
     that module has to know about configuration.
     """
     stem = getattr(terminal, "session_stem", None)
     if stem is None:
-        stem = logpaths.session_stem_for(terminal, conf.LOG_PATH)
+        stem = logpaths.session_stem_for(terminal, conf.LOG_PATH, suffix)
         if stem is None:
             return None
         terminal.session_stem = stem
@@ -3117,7 +3120,10 @@ class Wmain(GladeComponent):
                 return False
             try:
                 prepend = ""
-                if Path(filename).exists():
+                # Not whether it exists: when the log is what chose the number, choosing
+                # created it, empty, to reserve it (#202). When the recording chose, there is
+                # no log yet. Only a log with something in it is an earlier session's.
+                if Path(filename).exists() and Path(filename).stat().st_size:
                     msgbox("{}\n{}".format(_("Anexar el archivo de log existente"), filename))
                     prepend = "\n\n===== {} =====\n\n".format(
                         _("Fin del registro de sesión anterior")
