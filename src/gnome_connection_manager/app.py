@@ -118,9 +118,7 @@ from gnome_connection_manager.utils.folders import (  # noqa: E402
 from gnome_connection_manager.utils.folders import ROOT as ROOT_FOLDER  # noqa: E402
 from gnome_connection_manager.utils.hosts import Host, HostUtils  # noqa: E402
 from gnome_connection_manager.utils.logpaths import (  # noqa: E402
-    build_log_prefix,
     describe_log_session,
-    next_session_file,
     sanitize_log_name,
     sanitize_tab_title,
     truncate_tab_label,
@@ -1015,10 +1013,22 @@ def uris_to_terminal_text(uris):
 def session_file_for(terminal, suffix):
     """Path for one of a session's files, reading the log root from the config.
 
+    Every file a session writes shares one number, chosen the first time it needs any
+    of them and kept on the terminal. They are not opened together: the text log opens
+    with the tab or when logging is switched on, the recording each time the session is
+    spawned. Numbered one at a time, they drifted apart (#200). A reconnect keeps the
+    number as well, so its recording carries on in the tab's file, as the text log does.
+
     The `conf.LOG_PATH` read lives here rather than in utils.logpaths so that nothing in
     that module has to know about configuration.
     """
-    return logpaths.session_file_for(terminal, suffix, conf.LOG_PATH)
+    stem = getattr(terminal, "session_stem", None)
+    if stem is None:
+        stem = logpaths.session_stem_for(terminal, conf.LOG_PATH)
+        if stem is None:
+            return None
+        terminal.session_stem = stem
+    return stem + suffix
 
 
 def read_config_option(cp, section, option, kind, default):
@@ -3097,21 +3107,14 @@ class Wmain(GladeComponent):
             host = getattr(terminal, "host", None)
             title = sanitize_log_name(getattr(host, "name", "") or "")
             log_dir = Path(conf.LOG_PATH).expanduser()
-            prefix = build_log_prefix(
-                log_dir,
-                getattr(host, "group", "") or "",
-                getattr(host, "name", "") or "",
-                getattr(host, "user", "") or "",
-                time.strftime("%Y%m%d"),
-            )
-            if prefix is None:
+            # Through session_file_for, as the recording is, so the two share a number.
+            filename = session_file_for(terminal, ".log")
+            if filename is None:
                 logger.error("Refusing to write a log outside %s for host %r", log_dir, title)
                 msgbox("{}\n{}".format(_("Ruta de log invalida"), log_dir))
                 terminal.disconnect(terminal.log_handler_id)
                 del terminal.log_handler_id
                 return False
-            prefix.parent.mkdir(parents=True, exist_ok=True)
-            filename = next_session_file(prefix, ".log")
             try:
                 prepend = ""
                 if Path(filename).exists():

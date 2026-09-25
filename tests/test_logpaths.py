@@ -7,6 +7,8 @@ stubs all of `gi`.
 
 from __future__ import annotations
 
+import types
+
 import pytest
 
 from gnome_connection_manager.utils import logpaths
@@ -101,6 +103,57 @@ def test_build_log_prefix_puts_an_ungrouped_host_at_the_top_level(tmp_path):
     prefix = logpaths.build_log_prefix(tmp_path, "", "local", "", "20260823")
 
     assert prefix == tmp_path / "local" / "session-20260823"
+
+
+# -- a session's files share one number (#200) --------------------------------
+
+
+def test_next_session_stem_takes_the_first_number_no_session_file_uses(tmp_path):
+    prefix = tmp_path / "web-01-20260823"
+    for taken in ("001.log", "002.raw", "003.timing"):
+        (tmp_path / f"web-01-20260823-{taken}").write_text("x")
+
+    assert logpaths.next_session_stem(prefix) == f"{prefix}-004"
+
+
+# Spelled out rather than read from SESSION_SUFFIXES: parametrized over the constant, a
+# mutant that dropped ".raw" from it dropped the case that would have caught it.
+@pytest.mark.parametrize("left_behind", [".log", ".raw", ".timing"])
+def test_next_session_stem_skips_a_number_any_earlier_file_holds(tmp_path, left_behind):
+    """Numbered per suffix, a day that began without recording gave the next session
+    002.log beside 001.raw -- and a day that began with only a recording, the reverse."""
+    prefix = tmp_path / "session-20260925"
+    (tmp_path / f"session-20260925-001{left_behind}").write_text("x")
+
+    assert logpaths.next_session_stem(prefix) == f"{prefix}-002"
+
+
+def test_next_session_stem_falls_back_to_the_last_when_exhausted(tmp_path, monkeypatch):
+    """Refusing to log because 999 sessions happened today would be worse."""
+    monkeypatch.setattr(logpaths.Path, "exists", lambda self: True)
+
+    assert logpaths.next_session_stem(tmp_path / "busy-20260823") == (
+        f"{tmp_path / 'busy-20260823'}-999"
+    )
+
+
+def test_session_stem_for_lays_the_session_out_under_its_host(tmp_path, monkeypatch):
+    monkeypatch.setattr(logpaths.time, "strftime", lambda fmt: "20260823")
+    terminal = types.SimpleNamespace(host=LogHost(group="Work", name="web-01", user="root"))
+
+    stem = logpaths.session_stem_for(terminal, tmp_path)
+
+    assert stem == str(tmp_path / "Work" / "web-01" / "root-20260823-001")
+    assert (tmp_path / "Work" / "web-01").is_dir()
+
+
+def test_session_stem_for_refuses_a_path_that_escapes(tmp_path, monkeypatch):
+    """None rather than a path, and nothing created on the way to refusing."""
+    monkeypatch.setattr(logpaths, "sanitize_log_name", lambda title: title)
+    terminal = types.SimpleNamespace(host=LogHost(name="../escaped"))
+
+    assert logpaths.session_stem_for(terminal, tmp_path / "logs") is None
+    assert not (tmp_path / "escaped").exists()
 
 
 @pytest.mark.parametrize(

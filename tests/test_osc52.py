@@ -329,30 +329,6 @@ def test_relay_command_passes_only_the_destinations_that_are_wanted(app_module):
     assert "--clipboard-socket" not in neither and "--raw-log" not in neither
 
 
-def test_next_session_file_takes_the_first_free_number(tmp_path, app_module):
-    prefix = tmp_path / "web-01-20260823"
-    (tmp_path / "web-01-20260823-001.log").write_text("x")
-    (tmp_path / "web-01-20260823-002.log").write_text("x")
-
-    assert app_module.next_session_file(prefix, ".log").endswith("-003.log")
-
-
-def test_next_session_file_keeps_raw_and_text_numbering_independent(tmp_path, app_module):
-    prefix = tmp_path / "web-01-20260823"
-    (tmp_path / "web-01-20260823-001.log").write_text("x")
-
-    assert app_module.next_session_file(prefix, ".log").endswith("-002.log")
-    assert app_module.next_session_file(prefix, ".raw").endswith("-001.raw")
-
-
-def test_next_session_file_appends_to_the_last_when_exhausted(tmp_path, app_module, monkeypatch):
-    """Refusing to log because 999 sessions happened today would be worse."""
-    prefix = tmp_path / "busy-20260823"
-    monkeypatch.setattr(app_module.Path, "exists", lambda self: True, raising=False)
-
-    assert app_module.next_session_file(prefix, ".raw").endswith("-999.raw")
-
-
 def test_session_file_shares_the_text_log_identity(tmp_path, app_module, monkeypatch):
     monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
     monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260823")
@@ -494,6 +470,26 @@ def test_timing_accounts_for_every_byte_of_the_recording(tmp_path):
         offset += size
     assert rebuilt == written
     assert offset == len(data)
+
+
+def test_a_second_recorder_carries_on_in_the_same_files(tmp_path):
+    """A reconnect records into the files its tab began, so opening them must not
+    truncate either one, and the timing has to go on accounting for every byte (#200)."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw, timing = tmp_path / "s.raw", tmp_path / "s.timing"
+    written = [b"first connection\r\n", b"logout\r\n", b"second connection\r\n"]
+    first = RawRecorder(str(raw), str(timing))
+    for chunk in written[:2]:
+        first.write(chunk)
+    first.close()
+    second = RawRecorder(str(raw), str(timing))
+    second.write(written[2])
+    second.close()
+
+    assert raw.read_bytes() == b"".join(written)
+    sizes = [int(line.split()[1]) for line in timing.read_text().splitlines()]
+    assert sizes == [len(chunk) for chunk in written]
 
 
 def test_a_recording_without_timing_still_records(tmp_path):

@@ -1,10 +1,11 @@
 """Naming and layout for session log files.
 
 Sessions are laid out as ``<log_dir>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`` so the
-log tree mirrors the host tree, with ``.raw`` and ``.timing`` siblings when raw recording
-is on. Getting the names right is a containment problem as much as a cosmetic one: a
-group is free text that becomes directory segments, and a tab title arrives over OSC 0/2
-from whatever is running in the terminal, including a remote host.
+log tree mirrors the host tree, with ``.raw`` and ``.timing`` siblings under the same
+number when raw recording is on. Getting the names right is a containment problem as
+much as a cosmetic one: a group is free text that becomes directory segments, and a tab
+title arrives over OSC 0/2 from whatever is running in the terminal, including a remote
+host.
 
 Two sanitizers, deliberately different: `sanitize_log_name` guards a filesystem path,
 `sanitize_tab_title` guards a widget that ends at ``set_markup``. `truncate_tab_label`
@@ -126,24 +127,32 @@ def build_log_prefix(log_dir, group, name, user, stamp):
     return prefix
 
 
-def next_session_file(prefix, suffix):
-    """First free `<prefix>-NNN<suffix>`, falling back to the last on exhaustion.
+# Every file a session writes. A number is free only while none of them uses it.
+SESSION_SUFFIXES = (".log", ".raw", ".timing")
 
-    Appending to the final file is deliberate: refusing to log at all because 999
+
+def next_session_stem(prefix):
+    """First `<prefix>-NNN` no session file uses yet, falling back to the last on exhaustion.
+
+    One number for all of a session's files. Each file used to take the first number
+    free for its own suffix, so a day whose first session was not recorded gave the next
+    one 002.log beside 001.raw (#200).
+
+    Appending to the final files is deliberate: refusing to log at all because 999
     sessions happened on one day would be worse than a crowded file.
     """
     for index in range(1, 1000):
-        candidate = f"{prefix}-{index:03d}{suffix}"
-        if not Path(candidate).exists():
-            return candidate
-    return f"{prefix}-999{suffix}"
+        stem = f"{prefix}-{index:03d}"
+        if not any(Path(stem + suffix).exists() for suffix in SESSION_SUFFIXES):
+            return stem
+    return f"{prefix}-999"
 
 
-def session_file_for(terminal, suffix, log_path):
-    """Path for one of a session's files, sharing the text log's identity and layout.
+def session_stem_for(terminal, log_path):
+    """A new session's files, as one path without a suffix, sharing the text log's layout.
 
-    `log_path` is the caller's to supply -- it was `conf.LOG_PATH`, the one thing in
-    this module that read configuration (#139).
+    None when the path would escape `log_path`. That is the caller's to supply -- it
+    was `conf.LOG_PATH`, the one thing in this module that read configuration (#139).
     """
     host = getattr(terminal, "host", None)
     prefix = build_log_prefix(
@@ -156,7 +165,7 @@ def session_file_for(terminal, suffix, log_path):
     if prefix is None:
         return None
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    return next_session_file(prefix, suffix)
+    return next_session_stem(prefix)
 
 
 def describe_log_session(host):
