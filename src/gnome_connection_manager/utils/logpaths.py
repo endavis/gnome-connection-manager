@@ -14,8 +14,8 @@ off the strip, and it is here because it is the same kind of pure decision.
 
 Pure of GTK and of configuration -- the log root is an argument, not a `conf` read -- so
 it is tested directly rather than through the `gi` stub in tests/conftest.py (#139). It
-does touch the filesystem: existence checks, `resolve()` for the containment check, and
-one `mkdir`.
+does touch the filesystem: existence checks, `resolve()` for the containment check, one
+`mkdir`, and the empty file that reserves a session's number.
 """
 
 from __future__ import annotations
@@ -131,27 +131,47 @@ def build_log_prefix(log_dir, group, name, user, stamp):
 SESSION_SUFFIXES = (".log", ".raw", ".timing")
 
 
-def next_session_stem(prefix):
+def next_session_stem(prefix, claim):
     """First `<prefix>-NNN` no session file uses yet, falling back to the last on exhaustion.
 
     One number for all of a session's files. Each file used to take the first number
     free for its own suffix, so a day whose first session was not recorded gave the next
     one 002.log beside 001.raw (#200).
 
+    The number is reserved as it is chosen, by creating the `claim` file -- the one the
+    caller is about to write -- empty. The relay creates a recording only once it has
+    started, about 35 ms after the spawn, and until then two tabs for one host opened
+    together chose the same number and recorded into one file (#202). The create is
+    exclusive because GCM is not a unique application: another instance that creates the
+    same file between the check and the create keeps the number, and this one moves on.
+    Measured with four processes allocating at once, that is no number twice in 600. It
+    does not cover two instances claiming different files of one number -- a .log and a
+    .raw -- which takes different logging settings for the same host, at the same moment.
+
     Appending to the final files is deliberate: refusing to log at all because 999
     sessions happened on one day would be worse than a crowded file.
     """
     for index in range(1, 1000):
         stem = f"{prefix}-{index:03d}"
-        if not any(Path(stem + suffix).exists() for suffix in SESSION_SUFFIXES):
-            return stem
+        if any(Path(stem + suffix).exists() for suffix in SESSION_SUFFIXES):
+            continue
+        try:
+            Path(stem + claim).touch(exist_ok=False)
+        except FileExistsError:
+            continue
+        except OSError:
+            # Not this function's to report: the caller's own open fails the same way,
+            # and says so where it always has.
+            pass
+        return stem
     return f"{prefix}-999"
 
 
-def session_stem_for(terminal, log_path):
+def session_stem_for(terminal, log_path, claim):
     """A new session's files, as one path without a suffix, sharing the text log's layout.
 
-    None when the path would escape `log_path`. That is the caller's to supply -- it
+    Creates the `claim` file to reserve the number; see `next_session_stem`. None when
+    the path would escape `log_path`. That is the caller's to supply -- it
     was `conf.LOG_PATH`, the one thing in this module that read configuration (#139).
     """
     host = getattr(terminal, "host", None)
@@ -165,7 +185,7 @@ def session_stem_for(terminal, log_path):
     if prefix is None:
         return None
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    return next_session_stem(prefix)
+    return next_session_stem(prefix, claim)
 
 
 def describe_log_session(host):

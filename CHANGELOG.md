@@ -79,6 +79,9 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- Two tabs for one host opened together -- by naming it twice on the command line, say --
+  no longer record into the same `.raw` when text logging is off. Each takes a number of
+  its own
 - A session's raw recording and its timing file now take the same number as its text log.
   They were numbered separately, so after a session that was not recorded, the next one
   wrote `002.log` beside `001.raw`. A reconnected tab now adds to its recording instead of

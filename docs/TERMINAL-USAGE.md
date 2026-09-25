@@ -229,7 +229,8 @@ It writes two files alongside the text log, under the same number:
 
 A tab keeps its number while it is open, so reconnecting it adds to the same recording,
 the way its text log carries on in the same file. A new tab takes the first number that
-no `.log`, `.raw` or `.timing` file in that directory uses yet.
+no `.log`, `.raw` or `.timing` file in that directory uses yet, and creates its file at
+once, so two tabs opened together never share a number.
 
 The timing file is what makes the recording replayable. Concatenated bytes lose the
 write boundaries, and those are what separate one frame from the next — without them a

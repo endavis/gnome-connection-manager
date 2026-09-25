@@ -1833,15 +1833,16 @@ def test_session_file_for_wrapper_supplies_the_configured_log_path(
     """
     seen: dict[str, object] = {}
 
-    def fake(terminal, log_path):
-        seen.update(log_path=log_path)
+    def fake(terminal, log_path, claim):
+        seen.update(log_path=log_path, claim=claim)
         return "sentinel"
 
     monkeypatch.setattr(app_module.logpaths, "session_stem_for", fake)
     monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path / "logs"))
 
     assert app_module.session_file_for(types.SimpleNamespace(), ".raw") == "sentinel.raw"
-    assert seen == {"log_path": str(tmp_path / "logs")}
+    # The claim is the file asked for, so the one reserving the number is the one written.
+    assert seen == {"log_path": str(tmp_path / "logs"), "claim": ".raw"}
 
 
 def test_session_file_for_lands_under_the_configured_root(app_module, monkeypatch, tmp_path):
@@ -1995,6 +1996,81 @@ def test_a_reconnect_keeps_the_tabs_number_and_a_new_tab_takes_the_next(
     assert app_module.session_file_for(terminal, ".raw") == first
     other = LoggingTerminal(terminal.host)
     assert app_module.session_file_for(other, ".raw") == str(folder / "session-20260925-002.raw")
+
+
+# -- the number is reserved as it is chosen (#202) ------------------------------
+
+
+def test_two_tabs_for_one_host_opened_together_take_two_numbers(tmp_path, app_module, monkeypatch):
+    """Nothing written between the two, as when the relay has not started yet: it creates
+    a recording about 35 ms after the spawn, and both tabs recorded into one 001.raw."""
+    folder, first = logging_folder(tmp_path, app_module, monkeypatch)
+    second = LoggingTerminal(first.host)
+
+    paths = [app_module.session_file_for(t, ".raw") for t in (first, second)]
+
+    assert paths == [
+        str(folder / "session-20260925-001.raw"),
+        str(folder / "session-20260925-002.raw"),
+    ]
+
+
+def test_a_new_log_is_not_mistaken_for_an_earlier_one(tmp_path, app_module, monkeypatch):
+    """Choosing the number creates the log, empty. Read as an existing file, every new
+    session announced it was appending to an earlier one and wrote its end marker."""
+    said = []
+    monkeypatch.setattr(app_module, "msgbox", lambda text, *a, **k: said.append(text))
+    folder, terminal = logging_folder(tmp_path, app_module, monkeypatch)
+    wmain = object.__new__(app_module.Wmain)
+
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    assert said == []
+    assert (folder / "session-20260925-001.log").read_text().startswith("Session '")
+
+
+def test_appending_to_an_earlier_log_is_still_announced(tmp_path, app_module, monkeypatch):
+    """The last number is reused once all 999 are taken, and that log has a session in it."""
+    said = []
+    monkeypatch.setattr(app_module, "msgbox", lambda text, *a, **k: said.append(text))
+    folder, terminal = logging_folder(tmp_path, app_module, monkeypatch)
+    last = folder / "session-20260925-999.log"
+    last.write_text("the 999th session\n")
+    monkeypatch.setattr(
+        app_module.logpaths, "next_session_stem", lambda prefix, claim: str(last)[:-4]
+    )
+    wmain = object.__new__(app_module.Wmain)
+
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    assert len(said) == 1 and str(last) in said[0]
+    text = last.read_text()
+    assert text.startswith("the 999th session\n\n\n=====")
+    assert "Session '" in text.split("=====")[-1]
+
+
+def test_the_last_number_without_a_log_of_its_own_opens_one_quietly(
+    tmp_path, app_module, monkeypatch
+):
+    """Reused once all 999 are taken, the number may have a recording and no log. Its log
+    is new, not an earlier one -- and not one that cannot be opened, which is what
+    reading the size of a file that is not there would have made of it."""
+    said = []
+    monkeypatch.setattr(app_module, "msgbox", lambda text, *a, **k: said.append(text))
+    folder, terminal = logging_folder(tmp_path, app_module, monkeypatch)
+    (folder / "session-20260925-999.raw").write_bytes(b"a recording, and no log")
+    monkeypatch.setattr(
+        app_module.logpaths, "next_session_stem", lambda prefix, claim: f"{prefix}-999"
+    )
+    wmain = object.__new__(app_module.Wmain)
+
+    assert wmain.set_terminal_logger(terminal) is True
+    terminal.log.close()
+
+    assert said == []
+    assert (folder / "session-20260925-999.log").read_text().startswith("Session '")
 
 
 def test_addtab_sets_the_host_before_it_starts_logging(app_module):
@@ -2151,6 +2227,83 @@ def test_a_tabs_files_share_one_number_across_a_reconnect_against_real_gtk():
     pytest.importorskip("gi", reason="PyGObject not available")
     result = subprocess.run(
         [sys.executable, "-c", _ADDTAB_RECORDING_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+# #202: two tabs for one host, opened before either relay had created its recording,
+# both chose 001 and recorded into one file. Opened the way the command line opens them.
+_CLI_TWICE_RECORDING_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from pathlib import Path
+from gnome_connection_manager import app
+
+logs = Path(tempfile.mkdtemp())
+app.conf.LOG_PATH = str(logs)
+app.conf.RAW_SESSION_LOG = True
+stem = "admed-" + time.strftime("%Y%m%d")
+folder = logs / "Work" / "bastion"
+
+def pump(until, what):
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        if until():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for " + what)
+
+app.wMain = app.Wmain(application=None)
+host = app.Host("Work", "bastion", "", "", "admed")
+host.log = False  # the log would reserve the number itself, before the spawn
+app.groups["Work"] = [host]
+nb = app.wMain.nbConsole
+before = nb.get_n_pages()
+# What `gnome-connection-manager Work/bastion Work/bastion` does once the window is up.
+app.wMain.open_cli_targets(["Work/bastion", "Work/bastion"])
+tabs = [nb.get_nth_page(i).get_children()[0] for i in range(before, nb.get_n_pages())]
+assert len(tabs) == 2, "opened %d tabs" % len(tabs)
+raws = [Path(t.raw_path) for t in tabs]
+# Each terminal's own prompt, not the files: two tabs sharing one recording fill it as
+# soon as either relay starts. And nothing is typed before then, because the relay's
+# tty.setraw flushes input that arrived ahead of it.
+pump(lambda: all(t.get_cursor_position()[0] > 0 for t in tabs), "both prompts")
+pump(lambda: all(r.exists() and r.stat().st_size for r in raws), "both recordings")
+
+found = sorted(p.name for p in folder.iterdir())
+names = ("-001.raw", "-001.timing", "-002.raw", "-002.timing")
+expected = sorted(stem + suffix for suffix in names)
+assert found == expected, "found %r, expected %r" % (found, expected)
+# $((6*7)) so the echoed command line cannot satisfy the wait; only its output can.
+for n, t in enumerate(tabs):
+    app.vte_feed(t, "echo TAB%d_$((6*7))\\r" % n)
+pump(lambda: all(b"TAB%d_42" % n in r.read_bytes() for n, r in enumerate(raws)), "each tab")
+for n, raw in enumerate(raws):
+    assert b"TAB%d_42" % (1 - n) not in raw.read_bytes(), raw.name + " holds the other tab"
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_two_tabs_opened_together_record_apart_against_real_gtk():
+    """Mutation tested: run against the code before the reservation, five times out of
+    five it finds one 001.raw and 001.timing for the two tabs, what #202 was filed from."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _CLI_TWICE_RECORDING_SCRIPT],
         capture_output=True,
         text=True,
         cwd=Path(__file__).resolve().parents[1],
