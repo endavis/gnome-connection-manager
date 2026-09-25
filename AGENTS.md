@@ -115,7 +115,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   an ellipsized label reports the ellipsis as its minimum width and the tab collapses to
   34px, and `set_width_chars` as a floor then pads a `Local` tab out from 66px to 223px.
   Pure of GTK and of configuration: the log root is an argument, and
-  `app.py` keeps a `session_file_for` wrapper that supplies `conf.LOG_PATH`.
+  `app.py` keeps a `session_file_for` wrapper that supplies `conf.LOG_PATH` and keeps the
+  number it chose on the terminal as `session_stem`. A session's `.log`, `.raw` and
+  `.timing` are opened at different times -- the recording again on every reconnect --
+  and when each chose its own number, `002.log` sat beside `001.raw` (#200). A number is
+  free only while none of `SESSION_SUFFIXES` uses it.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the two shortcut decisions that need
   no widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, and `clamp_font_scale` with the VTE range it mirrors.
@@ -281,8 +285,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Session logs are named from the host entry, never the tab label:
   `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. The naming lives in
   `src/gnome_connection_manager/utils/logpaths.py`. Raw recording adds `.raw` beside
-  it plus a `.timing` sidecar; the stream alone is not replayable, because concatenation
-  discards the write boundaries that separate frames.
+  it plus a `.timing` sidecar, under the same number; the stream alone is not replayable,
+  because concatenation discards the write boundaries that separate frames. A tab keeps
+  its number, so a reconnect appends to its recording as its text log carries on.
 - Spawning changes shape when `osc52-clipboard` or `raw-session-log` is on: the command is
   wrapped so it runs under `relay.py`. With both off the spawn path is byte-for-byte what it
   was, which is the property that keeps the default safe. There are tests asserting it.

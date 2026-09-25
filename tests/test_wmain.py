@@ -1833,15 +1833,15 @@ def test_session_file_for_wrapper_supplies_the_configured_log_path(
     """
     seen: dict[str, object] = {}
 
-    def fake(terminal, suffix, log_path):
-        seen.update(suffix=suffix, log_path=log_path)
+    def fake(terminal, log_path):
+        seen.update(log_path=log_path)
         return "sentinel"
 
-    monkeypatch.setattr(app_module.logpaths, "session_file_for", fake)
+    monkeypatch.setattr(app_module.logpaths, "session_stem_for", fake)
     monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path / "logs"))
 
-    assert app_module.session_file_for(object(), ".raw") == "sentinel"
-    assert seen == {"suffix": ".raw", "log_path": str(tmp_path / "logs")}
+    assert app_module.session_file_for(types.SimpleNamespace(), ".raw") == "sentinel.raw"
+    assert seen == {"log_path": str(tmp_path / "logs")}
 
 
 def test_session_file_for_lands_under_the_configured_root(app_module, monkeypatch, tmp_path):
@@ -1919,6 +1919,84 @@ def test_set_terminal_logger_falls_back_when_the_connection_never_set_a_host(
     assert written[0] == tmp_path / "session" / "session-20260823-001.log"
 
 
+def test_set_terminal_logger_refuses_a_log_outside_the_log_path(tmp_path, app_module, monkeypatch):
+    """Nothing written, the handler it connected let go, and the refusal said aloud."""
+    said = []
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path / "logs"))
+    monkeypatch.setattr(app_module.logpaths, "sanitize_log_name", lambda title: title)
+    monkeypatch.setattr(app_module, "msgbox", lambda text, *a, **k: said.append(text))
+    wmain = object.__new__(app_module.Wmain)
+    terminal = LoggingTerminal(LogHost(name="../escaped"))
+
+    assert wmain.set_terminal_logger(terminal) is False
+    assert not hasattr(terminal, "log")
+    assert not hasattr(terminal, "log_handler_id")
+    assert ("disconnect", 1) in terminal.connected
+    assert said and str(tmp_path / "logs") in said[0]
+    assert not list(tmp_path.rglob("*.log"))
+
+
+# -- a session's files share one number (#200) ------------------------------
+
+
+def logging_folder(tmp_path, app_module, monkeypatch, earlier=None):
+    """1. Projects/pyproject-template as it was found, with `earlier` left by a session
+    before this one."""
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20260925")
+    folder = tmp_path / "1. Projects" / "pyproject-template"
+    folder.mkdir(parents=True)
+    if earlier:
+        (folder / f"session-20260925-001{earlier}").write_text("an earlier session\n")
+    return folder, LoggingTerminal(LogHost(group="1. Projects", name="pyproject-template"))
+
+
+def test_a_recording_takes_the_number_its_text_log_took(tmp_path, app_module, monkeypatch):
+    """What was found: a session that was not recorded, then one that was, gave
+    002.log beside 001.raw. The log opens with the tab and chose first; the recording
+    opens at spawn and chose again, among .raw files only."""
+    folder, terminal = logging_folder(tmp_path, app_module, monkeypatch, earlier=".log")
+    wmain = object.__new__(app_module.Wmain)
+
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    assert Path(terminal.log.name) == folder / "session-20260925-002.log"
+    assert app_module.session_file_for(terminal, ".raw") == str(folder / "session-20260925-002.raw")
+
+
+def test_a_log_switched_on_mid_session_takes_the_recordings_number(
+    tmp_path, app_module, monkeypatch
+):
+    """The other order: recording from the spawn, logging switched on from the menu later,
+    after a day that began with a recording only. That gave 001.log beside 002.raw."""
+    folder, terminal = logging_folder(tmp_path, app_module, monkeypatch, earlier=".raw")
+    wmain = object.__new__(app_module.Wmain)
+    raw = app_module.session_file_for(terminal, ".raw")
+    Path(raw).write_bytes(b"what the relay wrote")
+
+    wmain.set_terminal_logger(terminal)
+    terminal.log.close()
+
+    assert raw == str(folder / "session-20260925-002.raw")
+    assert Path(terminal.log.name) == folder / "session-20260925-002.log"
+
+
+def test_a_reconnect_keeps_the_tabs_number_and_a_new_tab_takes_the_next(
+    tmp_path, app_module, monkeypatch
+):
+    """vte_run asks again on every spawn. Numbering afresh split one tab's recording
+    across files while its log carried on in one; a number shared beyond the tab would
+    put two sessions in one file."""
+    folder, terminal = logging_folder(tmp_path, app_module, monkeypatch)
+    first = app_module.session_file_for(terminal, ".raw")
+    Path(first).write_bytes(b"first connection")
+
+    assert app_module.session_file_for(terminal, ".raw") == first
+    other = LoggingTerminal(terminal.host)
+    assert app_module.session_file_for(other, ".raw") == str(folder / "session-20260925-002.raw")
+
+
 def test_addtab_sets_the_host_before_it_starts_logging(app_module):
     """set_terminal_logger reads terminal.host to build the log path, so assigning
     v.host after the call sent every text log to <logs>/session/session-*.log --
@@ -1981,6 +2059,102 @@ def test_addtab_logs_into_the_host_directory_against_real_gtk():
         text=True,
         cwd=Path(__file__).resolve().parents[1],
         timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+# The same, for #200: a session that was not recorded, then one that was, gave 002.log
+# beside 001.raw. The unit tests above stand in for the two call sites; this drives the
+# real ones -- addTab opening the log, vte_run starting the relay that writes the
+# recording, and vte_run again for a reconnect, as Reopen and Ctrl+N do.
+_ADDTAB_RECORDING_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from pathlib import Path
+from gnome_connection_manager import app
+
+logs = Path(tempfile.mkdtemp())
+app.conf.LOG_PATH = str(logs)
+app.conf.RAW_SESSION_LOG = True
+stem = "admed-" + time.strftime("%Y%m%d")
+folder = logs / "Work" / "bastion"
+folder.mkdir(parents=True)
+(folder / (stem + "-001.log")).write_text("an earlier session, not recorded")
+
+def pump(until, what):
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        if until():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for " + what)
+
+app.wMain = app.Wmain(application=None)
+host = app.Host("Work", "bastion", "", "", "admed")
+host.log = True
+app.wMain.addTab(app.wMain.nbConsole, host)
+nb = app.wMain.nbConsole
+v = nb.get_nth_page(nb.get_n_pages() - 1).get_children()[0]
+raw, log = Path(v.raw_path), folder / (stem + "-002.log")
+timing = Path(app.timing_path_for(v.raw_path))
+
+def accounted():
+    counts = [int(line.split()[1]) for line in timing.read_text().splitlines() if line]
+    return sum(counts) == raw.stat().st_size
+
+def check_files(when):
+    found = sorted(p.name for p in folder.iterdir())
+    names = ("-001.log", "-002.log", "-002.raw", "-002.timing")
+    expected = sorted(stem + suffix for suffix in names)
+    assert found == expected, "%s: found %r, expected %r" % (when, found, expected)
+
+exited = []
+v.connect("child-exited", lambda *_: exited.append(True))
+# $((6*7)) so the echoed command line cannot satisfy the wait; only its output can.
+pump(lambda: raw.exists() and raw.stat().st_size > 0, "the relay to start recording")
+app.vte_feed(v, "echo FIRST_$((6*7))\\r")
+pump(lambda: b"FIRST_42" in raw.read_bytes(), "the first session's output")
+check_files("once the session was recording")
+app.vte_feed(v, "exit\\r")
+pump(lambda: exited, "the first session to end")
+recorded = raw.stat().st_size
+
+app.vte_run(v, app.SHELL)
+assert v.raw_path == str(raw), "the reconnect moved the recording to %s" % v.raw_path
+pump(lambda: raw.stat().st_size > recorded, "the reconnected session")
+app.vte_feed(v, "echo SECOND_$((6*7))\\r")
+pump(lambda: b"SECOND_42" in raw.read_bytes() and accounted(), "the second session's output")
+pump(lambda: v.log.flush() or "SECOND_42" in log.read_text(), "the text log to catch up")
+
+check_files("after the reconnect")
+data = raw.read_bytes()
+assert data.index(b"FIRST_42") < data.index(b"SECOND_42"), "the recording lost a session"
+text = log.read_text()
+assert text.index("FIRST_42") < text.index("SECOND_42"), "the text log lost a session"
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_a_tabs_files_share_one_number_across_a_reconnect_against_real_gtk():
+    """Mutation tested: with the recording numbered on its own again this reports
+    002.log beside 001.raw, the listing #200 was filed from."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _ADDTAB_RECORDING_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
     )
 
     assert result.returncode == 0, result.stderr[-2000:]

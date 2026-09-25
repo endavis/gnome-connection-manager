@@ -220,12 +220,16 @@ raw-session-log = true
 Edit that with GCM closed. GCM writes `[options]` from memory whenever it saves, so an
 edit made while it runs is written over.
 
-It writes two files alongside the text log, numbered independently of it:
+It writes two files alongside the text log, under the same number:
 
 ```
 <log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw      the bytes, exactly as they arrived
 <log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.timing   one line per write: <delay> <bytes>
 ```
+
+A tab keeps its number while it is open, so reconnecting it adds to the same recording,
+the way its text log carries on in the same file. A new tab takes the first number that
+no `.log`, `.raw` or `.timing` file in that directory uses yet.
 
 The timing file is what makes the recording replayable. Concatenated bytes lose the
 write boundaries, and those are what separate one frame from the next — without them a

@@ -79,6 +79,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A session's raw recording and its timing file now take the same number as its text log.
+  They were numbered separately, so after a session that was not recorded, the next one
+  wrote `002.log` beside `001.raw`. A reconnected tab now adds to its recording instead of
+  starting another, the way its text log already carries on in the same file
 - `docs/TABLE_OF_CONTENTS.md` had a "For Users" section listing eight documents about
   pyproject-template and none about GCM, because it filters on frontmatter and none of this
   project's nine documents had any. They have it now, under headings of their own -- Using
