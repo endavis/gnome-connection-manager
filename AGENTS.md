@@ -121,9 +121,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   and when each chose its own number, `002.log` sat beside `001.raw` (#200). A number is
   free only while none of `SESSION_SUFFIXES` uses it, and choosing one creates the file
   asked for, empty and exclusively: the relay creates a recording about 35 ms after the
-  spawn, and until then a second tab for the host took the same number (#202). So an
-  empty `.log` is a session's own reservation, not an earlier log to append to --
-  `set_terminal_logger` reads its size, not whether it exists.
+  spawn, and until then a second tab for the host took the same number (#202). The claim
+  is then checked against the number's other files and backed out of if one appeared:
+  the exclusive create settles two GCM instances claiming the same file, not one
+  claiming the `.log` while another claims the `.raw` (#204). So an empty `.log` is a
+  session's own reservation, not an earlier log to append to -- `set_terminal_logger`
+  reads its size, not whether it exists.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the two shortcut decisions that need
   no widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, and `clamp_font_scale` with the VTE range it mirrors.

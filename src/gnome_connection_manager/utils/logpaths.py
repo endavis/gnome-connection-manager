@@ -20,6 +20,7 @@ does touch the filesystem: existence checks, `resolve()` for the containment che
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from pathlib import Path
@@ -141,12 +142,14 @@ def next_session_stem(prefix, claim):
     The number is reserved as it is chosen, by creating the `claim` file -- the one the
     caller is about to write -- empty. The relay creates a recording only once it has
     started, about 35 ms after the spawn, and until then two tabs for one host opened
-    together chose the same number and recorded into one file (#202). The create is
-    exclusive because GCM is not a unique application: another instance that creates the
-    same file between the check and the create keeps the number, and this one moves on.
-    Measured with four processes allocating at once, that is no number twice in 600. It
-    does not cover two instances claiming different files of one number -- a .log and a
-    .raw -- which takes different logging settings for the same host, at the same moment.
+    together chose the same number and recorded into one file (#202).
+
+    GCM is not a unique application, so another instance can take the number between the
+    check and the create. When both claim the same file, the exclusive create settles it.
+    When they claim different files -- one the .log, the other the .raw -- both creates
+    succeed, so the claim is then checked against the number's other files, and backed
+    out of if one has appeared (#204). Whichever instance checks second sees the other's
+    file, so at most one keeps a number; both backing off leaves a gap, not a collision.
 
     Appending to the final files is deliberate: refusing to log at all because 999
     sessions happened on one day would be worse than a crowded file.
@@ -161,8 +164,12 @@ def next_session_stem(prefix, claim):
             continue
         except OSError:
             # Not this function's to report: the caller's own open fails the same way,
-            # and says so where it always has.
-            pass
+            # and says so where it always has. There is no claim to check.
+            return stem
+        if any(Path(stem + suffix).exists() for suffix in SESSION_SUFFIXES if suffix != claim):
+            with contextlib.suppress(OSError):
+                Path(stem + claim).unlink()
+            continue
         return stem
     return f"{prefix}-999"
 

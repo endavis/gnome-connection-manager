@@ -7,7 +7,11 @@ stubs all of `gi`.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import time
 import types
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -178,6 +182,75 @@ def test_next_session_stem_leaves_an_unwritable_directory_to_the_caller(tmp_path
     assert logpaths.next_session_stem(tmp_path / "ro-20260925", ".log") == (
         f"{tmp_path / 'ro-20260925'}-001"
     )
+
+
+# -- another instance's claim on a different file of the number (#204) ---------
+
+
+def test_next_session_stem_backs_out_of_a_number_claimed_through_another_file(
+    tmp_path, monkeypatch
+):
+    """Another instance created the .log between the check and this one's create of the
+    .raw. Both creates succeed, so only looking again finds it. The number is theirs:
+    this claim is removed, their file is left as it was, and the next number is taken."""
+    prefix = tmp_path / "session-20260925"
+    theirs = tmp_path / "session-20260925-001.log"
+    theirs.write_text("another instance's session\n")
+    real_exists = logpaths.Path.exists
+    looked = set()
+
+    def exists(self):
+        # The first look misses their file, as if it appeared just after.
+        if self == theirs and self not in looked:
+            looked.add(self)
+            return False
+        return real_exists(self)
+
+    monkeypatch.setattr(logpaths.Path, "exists", exists)
+
+    assert logpaths.next_session_stem(prefix, ".raw") == f"{prefix}-002"
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "session-20260925-001.log",
+        "session-20260925-002.raw",
+    ]
+    assert theirs.read_text() == "another instance's session\n"
+
+
+# Each allocates as a separate GCM would. The start is a shared deadline, slept towards
+# and then spun on, so the allocations overlap rather than run one process after another.
+_ALLOCATE = """
+import sys, time
+from pathlib import Path
+from gnome_connection_manager.utils import logpaths
+prefix, start, claim = Path(sys.argv[1]), float(sys.argv[2]), sys.argv[3]
+time.sleep(max(0.0, start - time.time() - 0.05))
+while time.time() < start:
+    pass
+for _ in range(100):
+    print(logpaths.next_session_stem(prefix, claim))
+"""
+
+
+def test_instances_allocating_at_once_never_share_a_number(tmp_path):
+    """GCM is not a unique application, so instances can choose numbers in one directory
+    at the same moment. Half of these claim a .log and half a .raw, the case the exclusive
+    create alone left open: measured without the second look, 56 to 79 numbers in 600
+    went to two processes (#204)."""
+    prefix = tmp_path / "session-20260925"
+    start = time.time() + 1.0
+    workers = [
+        subprocess.Popen(
+            [sys.executable, "-c", _ALLOCATE, str(prefix), str(start), claim],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        for claim in (".log", ".raw", ".log", ".raw")
+    ]
+    stems = [stem for worker in workers for stem in worker.communicate(timeout=120)[0].split()]
+
+    assert [worker.returncode for worker in workers] == [0, 0, 0, 0]
+    assert len(stems) == 400
+    assert sorted(stem for stem, n in Counter(stems).items() if n > 1) == []
 
 
 def test_session_stem_for_lays_the_session_out_under_its_host(tmp_path, monkeypatch):

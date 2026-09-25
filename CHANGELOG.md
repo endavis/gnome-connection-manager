@@ -79,6 +79,8 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- Two copies of GCM opening the same host at the same moment, one logging the session and
+  the other only recording it, can no longer give both sessions the same number
 - Two tabs for one host opened together -- by naming it twice on the command line, say --
   no longer record into the same `.raw` when text logging is off. Each takes a number of
   its own
