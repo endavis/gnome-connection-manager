@@ -6,6 +6,7 @@ import configparser
 import inspect
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -3812,6 +3813,75 @@ def test_close_console_follows_each_mode_against_real_gtk():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
+# A host with a stored password runs through ssh.expect. Real ssh, against a port that
+# does not answer, with no ssh configuration read, so the port is all that decides.
+_FAILED_CONNECTION_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, Vte
+from gnome_connection_manager import app
+
+app.conf.AUTO_CLOSE_TAB = 0
+
+def pump(until, what, limit=30):
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        if until():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for " + what)
+
+def settle(seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+app.wMain = app.Wmain(application=None)
+nb = app.wMain.nbConsole
+host = app.Host("Work", "unreachable", "", "127.0.0.1", "me", "not-a-password")
+host.port, host.keep_alive = "1", "0"
+host.extra_params = "-F /dev/null -o ConnectTimeout=2"
+app.wMain.addTab(nb, host)
+page = nb.get_nth_page(nb.get_n_pages() - 1)
+v, label = page.get_children()[0], nb.get_tab_label(page)
+assert v.command[0] == app.SSH_COMMAND, "not run through ssh.expect: %r" % (v.command[0],)
+pump(lambda: not label.is_active, "the connection to fail")
+settle(0.5)
+shown = v.get_text_format(Vte.Format.TEXT) or ""
+# Refused or timed out, depending on the machine; ssh starts both the same way.
+assert "ssh: connect to host 127.0.0.1 port 1" in shown, "the tab shows %r" % shown.strip()
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_a_failed_connection_shows_why_in_its_tab_against_real_gtk():
+    """A host with a stored password that could not connect left an empty tab: ssh.expect
+    kept ssh's error off the screen, and no pattern of its own matched it (#212). The
+    same host with no password runs ssh directly, which always showed it."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    for program in ("ssh", "expect"):
+        if shutil.which(program) is None:
+            pytest.skip(f"needs {program}")
+    result = subprocess.run(
+        [sys.executable, "-c", _FAILED_CONNECTION_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
     assert "OK" in result.stdout
 
 

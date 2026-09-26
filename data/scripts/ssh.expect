@@ -39,12 +39,17 @@ if { $connection == "telnet" } {
 
 eval spawn $cmd [ lrange $argv 1 [expr {$argc - 1}] ]
 
+# log_user 0 keeps what the program prints off the screen until a pattern below matches.
+# An error matches none of them, so eof prints what was read: without that, a connection
+# that failed left an empty tab and no reason (#212). No comments inside the block: there
+# a # line is read as a pattern.
 expect {
           -re "login:|sername:" { send "$user\n"; exp_continue; }
           $reg { send "$pass\n"; exec kill -WINCH [ pid ]; interact; }
           -re "Are you sure you want to continue connecting (yes/no.*)?" { send "yes\n"; exp_continue; }
           "Host key verification failed." { puts $expect_out(buffer); }
           timeout { interact; }
+          eof { puts -nonewline $expect_out(buffer); }
        }
 
 log_user 1
