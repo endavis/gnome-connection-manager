@@ -86,6 +86,12 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A console shortcut could act on a tab other than the one in use. Once a tab's menu had
+  been opened and dismissed, the next paste went into that tab, or Ctrl+W closed it,
+  though another tab was showing and had the keyboard. Clone, Reset and Reconnect by key
+  acted on the last tab whose menu had been opened, and did nothing before any had been.
+  A shortcut now acts on the tab showing in the pane you are typing in, and an item in a
+  tab's menu on that tab
 - The account of how stored passwords are encrypted, in `utils/crypto.py` and `AGENTS.md`,
   named the cipher mode as CTR. It is OFB. The two agree on the first 16 bytes only, so
   code written from that account would read a password shorter than 16 bytes and garble

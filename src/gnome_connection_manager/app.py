@@ -2355,9 +2355,13 @@ class Wmain(GladeComponent):
             notebook.next_page()
 
     def current_notebook(self):
-        """The notebook holding the focused terminal, or the main one."""
-        if self.current is not None:
-            pane = self.current.get_parent()
+        """The notebook the keyboard is in, else the last focused terminal's, else the main one.
+
+        The keyboard first: a click into a terminal does not update self.current, so after
+        a split it can name the other pane, and a shortcut went to that pane's tab (#219).
+        """
+        for terminal in (self.find_active_terminal(self.hpMain), self.current):
+            pane = terminal.get_parent() if terminal is not None else None
             if pane is not None and pane.get_parent() is not None:
                 return pane.get_parent()
         return self.nbConsole
@@ -2536,7 +2540,7 @@ class Wmain(GladeComponent):
                 self.writeConfig()
             return True
         elif item == "R":  # RENAME TAB
-            tab = self.popupMenuTab.label.get_parent().get_parent()
+            tab = self.get_context_tab_label()
             text = inputbox(
                 _("Renombrar consola"),
                 _("Ingrese nuevo nombre"),
@@ -2545,14 +2549,14 @@ class Wmain(GladeComponent):
             )
             if text is not None and text != "":
                 tab.rename(text)
-                nb = self.popupMenuTab.label.get_parent().get_parent().get_parent()
+                nb = tab.get_parent()
                 nb.emit(
                     "switch-page", nb.get_nth_page(nb.get_current_page()), nb.get_current_page()
                 )
             return True
         elif item == "RS" or item == "RS2":  # RESET CONSOLE
             if item == "RS":
-                tab = self.popupMenuTab.label.get_parent().get_parent()
+                tab = self.get_context_tab_label()
                 term = tab.widget_.get_children()[0]
             else:
                 term = self.popupMenu.terminal
@@ -2560,14 +2564,14 @@ class Wmain(GladeComponent):
             return True
         elif item == "RC" or item == "RC2":  # RESET AND CLEAR CONSOLE
             if item == "RC":
-                tab = self.popupMenuTab.label.get_parent().get_parent()
+                tab = self.get_context_tab_label()
                 term = tab.widget_.get_children()[0]
             else:
                 term = self.popupMenu.terminal
             term.reset(True, True)
             return True
         elif item == "RO":  # REOPEN SESION
-            tab = self.popupMenuTab.label.get_parent().get_parent()
+            tab = self.get_context_tab_label()
             term = tab.widget_.get_children()[0]
             if not hasattr(term, "command"):
                 # term.fork_command(SHELL)
@@ -2585,7 +2589,7 @@ class Wmain(GladeComponent):
             return True
         elif item == "CC" or item == "CC2":  # CLONE CONSOLE
             if item == "CC":
-                tab = self.popupMenuTab.label.get_parent().get_parent()
+                tab = self.get_context_tab_label()
                 term = tab.widget_.get_children()[0]
                 ntbk = tab.get_parent()
             else:
@@ -2602,7 +2606,7 @@ class Wmain(GladeComponent):
             return True
         elif item == "L" or item == "L2":  # ENABLE/DISABLE LOG
             if item == "L":
-                tab = self.popupMenuTab.label.get_parent().get_parent()
+                tab = self.get_context_tab_label()
                 term = tab.widget_.get_children()[0]
             else:
                 term = self.popupMenu.terminal
@@ -2779,7 +2783,7 @@ class Wmain(GladeComponent):
 
         # Menu contextual para tabs
         self.popupMenuTab = Gtk.Menu()
-        self.popupMenuTab.connect("hide", self.clear_context_tab_widget)
+        self.popupMenuTab.connect("hide", self.on_tab_menu_hide)
 
         self.popupMenuTab.mnuRename = menuItem = Gtk.MenuItem(label=_("Renombrar consola"))
         self.popupMenuTab.append(menuItem)
@@ -4351,12 +4355,32 @@ class Wmain(GladeComponent):
     def clear_context_tab_widget(self, *args):
         self._context_tab_widget = None
 
+    def on_tab_menu_hide(self, _menu):
+        """Forget the tab the menu was opened for, once the chosen item has used it (#219).
+
+        GTK hides a menu before the chosen item's action runs, measured, and that action
+        reads this context, so it goes from an idle callback rather than from here. This
+        used to clear the tab alone, and at once: the terminal stayed the target of the
+        next shortcut, so a paste or a Ctrl+W went to a tab nobody was looking at.
+        """
+        GLib.idle_add(self.forget_tab_menu_context)
+
+    def forget_tab_menu_context(self):
+        self.clear_context_tab_widget()
+        self.clear_context_terminal()
+        return False
+
     def get_context_tab_widget(self):
+        """The tab an action acts on: the one whose menu is open, else the tab in use.
+
+        The tab in use is the one showing in the pane the keyboard is in. This read the
+        main pane, whichever pane the keyboard was in after a split (#219).
+        """
         if self._context_tab_widget is not None:
             return self._context_tab_widget
-        if self.nbConsole.get_n_pages() == 0:
-            return None
-        return self.nbConsole.get_nth_page(self.nbConsole.get_current_page())
+        notebook = self.current_notebook()
+        position = notebook.get_current_page()
+        return notebook.get_nth_page(position) if position >= 0 else None
 
     def get_context_tab_label(self):
         widget = self.get_context_tab_widget()
@@ -4621,14 +4645,14 @@ class Wmain(GladeComponent):
             vte_feed(terminal, command)
 
     def trigger_popup_action(self, terminal_code, tab_code=None, *args):
-        if tab_code is not None and (
-            self._context_tab_widget is not None or self.nbConsole.get_n_pages() > 0
-        ):
-            if self._context_tab_widget is None:
-                widget = self.nbConsole.get_nth_page(self.nbConsole.get_current_page())
-                if widget is not None:
-                    self.set_context_tab_widget(widget)
-            self.on_popupmenu(None, tab_code, *args)
+        if tab_code is not None:
+            # The tab whose menu was opened, or else the tab in use. Not the label an
+            # earlier right-click left behind, which Clone and Reset by key once read:
+            # it acted on that tab, and raised before any tab's menu had opened (#219).
+            widget = self.get_context_tab_widget()
+            if widget is not None:
+                self.set_context_tab_widget(widget)
+                self.on_popupmenu(None, tab_code, *args)
         else:
             terminal = self.get_target_terminal()
             if terminal is None:
@@ -6919,7 +6943,6 @@ class NotebookTabLabel(Gtk.HBox):
             global wMain
             if wMain:
                 wMain.set_context_tab_widget(self.widget_)
-            self.popup.label = self.label
             if self.is_active:
                 self.popup.mnuReopen.hide()
             else:

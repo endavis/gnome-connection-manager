@@ -3541,13 +3541,12 @@ def test_rename_offers_the_tab_name_not_the_cut_label(app_module, monkeypatch):
         emit=lambda *args: None, get_current_page=lambda: 0, get_nth_page=lambda _n: None
     )
     tab.get_parent = lambda: notebook
-    tab.label.get_parent = lambda: types.SimpleNamespace(get_parent=lambda: tab)
     offered = []
     monkeypatch.setattr(
         app_module, "inputbox", lambda *args, **kwargs: offered.append(args[2]) or None
     )
     wmain = object.__new__(app_module.Wmain)
-    wmain.popupMenuTab = types.SimpleNamespace(label=tab.label)
+    wmain.get_context_tab_label = lambda: tab
     wmain.window = None
 
     app_module.Wmain.on_popupmenu(wmain, None, "R")

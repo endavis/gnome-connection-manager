@@ -373,6 +373,16 @@ Practices below have each caught real bugs in this repo. They are worth the time
   pointer input, the drop carries the same label object across, still reorderable and
   detachable, so the tab keeps everything it was showing (#186). GCM's `page-added`
   and `page-removed` handlers do run on a drop, which is what the test there covers.
+- A console action acts on the tab in use, the one showing in the pane the keyboard is
+  in, or, from a tab's menu, on that tab (#219). `get_context_tab_widget` answers which.
+  `current_notebook` finds the pane from the keyboard first, since a click into a
+  terminal does not update `self.current`. Terminal shortcuts are also application
+  accelerators, which run before the focused terminal sees the key, so a key reaches
+  the action's handler and not `on_terminal_keypress`. The tab menu's context is
+  cleared from an idle callback after `hide`. Measured: GTK hides a menu before the
+  chosen item's action runs, and that action reads the context. Clearing half of it
+  at once, as `hide` used to, sent the next paste or Ctrl+W to a tab nobody was
+  looking at.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
