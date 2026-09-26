@@ -3885,9 +3885,10 @@ def test_a_failed_connection_shows_why_in_its_tab_against_real_gtk():
     assert "OK" in result.stdout
 
 
-# A first connection to a host with a stored password (#214). ssh.expect runs a fake ssh
-# that asks about the host's key, prints a banner and asks for the password, turning echo
-# off first as ssh does. It reports what it was given rather than the password.
+# A first connection to a host with a stored password (#214, #216). ssh.expect runs a fake
+# ssh that asks about the host's key and waits for an answer, prints a banner and asks for
+# the password, turning echo off first as ssh does. It reports what it was given rather
+# than the password.
 _FAKE_FIRST_CONNECTION = r"""#!/bin/sh
 printf "The authenticity of host 'example.invalid (192.0.2.1)' can't be established.\n"
 printf "ED25519 key fingerprint is SHA256:GCMTESTFINGERPRINT.\n"
@@ -3943,6 +3944,12 @@ def whole():
     text, _ = v.get_text_range_format(Vte.Format.TEXT, 0, 0, v.get_cursor_position()[1], 10000)
     return text or ""
 
+pump(lambda: "(yes/no/[fingerprint])? " in whole(), "the host key question")
+# The script used to answer at once (#216): a second is ample for an answer to show.
+waited = time.monotonic() + 1
+pump(lambda: time.monotonic() > waited, "a second to pass")
+assert "Permanently added" not in whole(), whole()
+app.vte_feed(v, "yes\\r")  # the user's answer
 pump(lambda: "Welcome" in whole(), "the login to finish")
 shown, at = whole(), 0
 for part in (
@@ -3966,10 +3973,11 @@ print("OK")
     not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
     reason="needs a display for a real terminal",
 )
-def test_a_first_connection_shows_the_host_key_it_trusts_against_real_gtk(tmp_path):
-    """ssh.expect answers yes to an unknown host key. A host with a stored password showed
-    none of it: not the question, the fingerprint, ssh's warning that the key was added,
-    nor the banner after it (#214). A host without one runs ssh, which shows it all."""
+def test_a_first_connection_leaves_the_host_key_to_the_user_against_real_gtk(tmp_path):
+    """ssh.expect answered yes to an unknown host key itself, so a host with a stored
+    password trusted any key and sent the password to its server (#216), and until #214
+    showed none of it. A host without one runs ssh, which shows it all and waits for the
+    user."""
     pytest.importorskip("gi", reason="PyGObject not available")
     if shutil.which("expect") is None:
         pytest.skip("needs expect")

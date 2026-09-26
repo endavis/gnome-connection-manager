@@ -1,6 +1,6 @@
 ---
 title: "Using terminals in GCM"
-description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read"
+description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, a host's first connection, and what GCM does with a gcm.conf it cannot read"
 audience:
   - gcm-users
 tags:
@@ -721,6 +721,22 @@ env -u WAYLAND_DISPLAY copilot
 
 It then uses X11 through XWayland and the native write succeeds. Do not unset the variable
 globally — other applications need it.
+
+## A host's first connection
+
+The first time you connect to an SSH host, ssh shows the fingerprint of the host's key
+and asks whether to trust it. The answer is yours, for a host with a stored password as
+for one without. GCM types the password only once you have answered `yes` or pasted the
+fingerprint, and `no` ends the connection. Compare the fingerprint with one you got from
+the server's administrator before you answer: GCM sends the stored password to whichever
+server you trust.
+
+To have new keys trusted without the question, add `-o StrictHostKeyChecking=accept-new`
+to the host's **Extra arguments**. ssh then trusts a host it has not seen before, and still
+refuses one whose key has changed.
+
+A host's commands are typed 3 seconds after it connects. On a first connection they reach
+the question if it is still waiting, and ssh asks again; they are not run that time.
 
 ## When GCM will not start
 

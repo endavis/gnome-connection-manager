@@ -40,24 +40,41 @@ if { $connection == "telnet" } {
 eval spawn $cmd [ lrange $argv 1 [expr {$argc - 1}] ]
 
 # Show everything the program prints, as it arrives, as a tab running ssh or telnet
-# directly would: the banner, telnet's own lines, the host key question this script
-# answers with its fingerprint, and the prompts it answers. The passwords it types are
-# not among them, since ssh and login turn echo off first. log_user was 0 until the
-# spawn only so that spawn does not echo its command line. It used to stay 0 through the
-# block below, so only what a pattern printed ever showed: a connection that failed left
-# an empty tab (#212), and a new host key was trusted out of sight (#214). No comments
-# inside the block: there a # line is read as a pattern.
+# directly would: the banner, telnet's own lines, the host key question with its
+# fingerprint, and the prompts this script answers. The passwords it types are not among
+# them, since ssh and login turn echo off first. log_user was 0 until the spawn only so
+# that spawn does not echo its command line. It used to stay 0 through the block below,
+# so only what a pattern printed ever showed: a connection that failed left an empty tab
+# (#212), and a new host key was trusted out of sight (#214).
 log_user 1
 
+# The host key question is the user's to answer, as it is for a host without a stored
+# password. This script used to answer yes, trusting any key, and then sent the password
+# to the server that presented it (#216). Nothing typed reaches ssh while the block below
+# waits, only during interact, so the question hands the terminal over until Enter and
+# then goes on to the password prompt; an answer ssh refuses is asked again, and comes
+# back here. Enter is \r, or \n if it was typed before interact left cooked mode.
+# -nobuffer passes it on with what came before it; without that, interact holds the
+# Enter back, and dropped an answer typed ahead of it. interact also returns when ssh
+# ends, at Ctrl+C for one, having closed the spawn id, so the block must not go on then.
+# No comments inside the block: there a # line is read as a pattern.
 expect {
           -re "login:|sername:" { send "$user\n"; exp_continue; }
           $reg { send "$pass\n"; exec kill -WINCH [ pid ]; interact; }
-          -re "Are you sure you want to continue connecting (yes/no.*)?" { send "yes\n"; exp_continue; }
+          -re "Are you sure you want to continue connecting|Please type 'yes'" {
+              set answered 0
+              interact -nobuffer -re "\r|\n" { set answered 1; return; }
+              if { $answered } { exp_continue; }
+          }
           timeout { interact; }
        }
 
 # Every way out comes here, so the tab gets the status ssh or telnet exited with, which
-# Close console decides on (#210).
+# Close console decides on (#210). One killed by a signal exited with none, and exp_wait
+# gives 0 for it, a clean exit: report it as a shell does, 128 and the signal's number.
 set ret [exp_wait]
-set status [lindex $ret 3]
-exit $status
+if { [lindex $ret 4] == "CHILDKILLED" } {
+    if { [catch { exec kill -l [lindex $ret 5] } number] } { set number 0 }
+    exit [expr { 128 + $number }]
+}
+exit [lindex $ret 3]

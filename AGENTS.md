@@ -163,19 +163,32 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   Its exit status becomes the tab's, which Close console's Only on clean exit decides on,
   so every way out ends at its `exp_wait` and passes on the status of `ssh` or `telnet`.
   An early `exit` reports 0, a clean exit, as the host key failure once did (#210).
+  `exp_wait` gives 0 for a program killed by a signal too, so the script reports that as
+  a shell does, 128 and the signal's number.
   It runs only hosts with a stored password; the rest run `ssh` or `telnet` directly.
   It turns `log_user` on straight after the `spawn`, so the tab shows everything the
   program prints as it arrives, as a host without a stored password would: the banner,
-  the host key question the script answers, the prompts. `log_user` is 0 until then only
+  the host key question, the prompts. `log_user` is 0 until then only
   so that `spawn` does not echo its command line. While it stayed 0 through the `expect`
   block, only what a pattern's action printed ever showed: a connection that failed left
   an empty tab (#212), a new host key was trusted out of sight (#214), and printing from
   each branch instead loses what follows the match. A `#` line inside the `expect` block
   is read as a pattern, not a comment.
+  The host key question is the user's to answer; the script used to answer `yes`, and
+  send the password to the server whose key it had trusted (#216). Nothing typed reaches the
+  program while the `expect` block waits, only during `interact`, so the question hands
+  the terminal over until Enter and then goes back to the block for the password.
+  Measured, and each one a test: without `-nobuffer`, `interact` dropped an answer typed
+  before it began, all but the Enter; with it, the Enter is passed on, so the action
+  must not send another, which ssh would read as an empty password. `interact` also
+  returns when the program ends, having closed the spawn id, and an `exp_continue` then
+  fails with a Tcl traceback in the tab.
   `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh` or `telnet`: its `stty`
   refuses to run without a controlling terminal, and closing the pty before it exits
   kills it. The fakes turn echo off before asking for a password, as `ssh` and `login`
-  do; printing the prompt first races the script's answer, and the pty echoes it.
+  do; printing the prompt first races the script's answer, and the pty echoes it. A
+  test that types Ctrl+C waits for `interact` to put the pty in raw mode: until then the
+  terminal turns it into a SIGINT for the script, not the program.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
@@ -201,8 +214,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 ## Documentation
 - `docs/TERMINAL-USAGE.md` – user-facing, everything inside a tab: selection and what a
   word is, copy when nothing is selected, pasting, session logs and raw recording, OSC 52,
-  the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does
-  with a `gcm.conf` it cannot read.
+  the buffer viewer, tab titles, the bell, font zoom, the shortcut table, a host's first
+  connection, and what GCM does with a `gcm.conf` it cannot read.
 - `docs/HOSTS-AND-FOLDERS.md` – user-facing, everything in the server tree: making,
   renaming and deleting folders, what a drop does where, the order a folder keeps, host
   ids, and export/import. Written because the only account of folders was `docs/SPEC.md`,
