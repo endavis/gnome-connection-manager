@@ -2620,7 +2620,7 @@ class Wmain(GladeComponent):
 
     def createMenu(self):
         self.popupMenu = Gtk.Menu()
-        self.popupMenu.connect("hide", self.clear_context_terminal)
+        self.popupMenu.connect("hide", self.on_context_menu_hide)
         self.popupMenu.mnuCopy = menuItem = Gtk.MenuItem(label=_("Copiar"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy")
@@ -2783,7 +2783,7 @@ class Wmain(GladeComponent):
 
         # Menu contextual para tabs
         self.popupMenuTab = Gtk.Menu()
-        self.popupMenuTab.connect("hide", self.on_tab_menu_hide)
+        self.popupMenuTab.connect("hide", self.on_context_menu_hide)
 
         self.popupMenuTab.mnuRename = menuItem = Gtk.MenuItem(label=_("Renombrar consola"))
         self.popupMenuTab.append(menuItem)
@@ -4355,17 +4355,19 @@ class Wmain(GladeComponent):
     def clear_context_tab_widget(self, *args):
         self._context_tab_widget = None
 
-    def on_tab_menu_hide(self, _menu):
-        """Forget the tab the menu was opened for, once the chosen item has used it (#219).
+    def on_context_menu_hide(self, _menu):
+        """Forget what a terminal's or a tab's menu was opened for, once its item has run.
 
         GTK hides a menu before the chosen item's action runs, measured, and that action
-        reads this context, so it goes from an idle callback rather than from here. This
-        used to clear the tab alone, and at once: the terminal stayed the target of the
-        next shortcut, so a paste or a Ctrl+W went to a tab nobody was looking at.
+        reads this context, so it goes from an idle callback rather than from here (#219).
+        The terminal's menu cleared its terminal here, and each item then acted on the
+        terminal with the keyboard, in the other pane after a split (#221). The tab menu
+        cleared its tab alone, and at once: the terminal stayed the target of the next
+        shortcut, so a paste or a Ctrl+W went to a tab nobody was looking at (#219).
         """
-        GLib.idle_add(self.forget_tab_menu_context)
+        GLib.idle_add(self.forget_menu_context)
 
-    def forget_tab_menu_context(self):
+    def forget_menu_context(self):
         self.clear_context_tab_widget()
         self.clear_context_terminal()
         return False
@@ -4373,11 +4375,16 @@ class Wmain(GladeComponent):
     def get_context_tab_widget(self):
         """The tab an action acts on: the one whose menu is open, else the tab in use.
 
-        The tab in use is the one showing in the pane the keyboard is in. This read the
-        main pane, whichever pane the keyboard was in after a split (#219).
+        A terminal's menu names its tab through the terminal. Its Reset, Reset and clear
+        and Clone come here, and acted on the tab in use instead (#221). The tab in use
+        is the one showing in the pane the keyboard is in. This read the main pane,
+        whichever pane the keyboard was in after a split (#219).
         """
         if self._context_tab_widget is not None:
             return self._context_tab_widget
+        page = self._context_terminal.get_parent() if self._context_terminal is not None else None
+        if page is not None and page.get_parent() is not None:
+            return page
         notebook = self.current_notebook()
         position = notebook.get_current_page()
         return notebook.get_nth_page(position) if position >= 0 else None

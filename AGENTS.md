@@ -374,15 +374,19 @@ Practices below have each caught real bugs in this repo. They are worth the time
   detachable, so the tab keeps everything it was showing (#186). GCM's `page-added`
   and `page-removed` handlers do run on a drop, which is what the test there covers.
 - A console action acts on the tab in use, the one showing in the pane the keyboard is
-  in, or, from a tab's menu, on that tab (#219). `get_context_tab_widget` answers which.
-  `current_notebook` finds the pane from the keyboard first, since a click into a
-  terminal does not update `self.current`. Terminal shortcuts are also application
-  accelerators, which run before the focused terminal sees the key, so a key reaches
-  the action's handler and not `on_terminal_keypress`. The tab menu's context is
-  cleared from an idle callback after `hide`. Measured: GTK hides a menu before the
-  chosen item's action runs, and that action reads the context. Clearing half of it
-  at once, as `hide` used to, sent the next paste or Ctrl+W to a tab nobody was
-  looking at.
+  in, or, from a tab's or a terminal's menu, on that tab (#219, #221).
+  `get_context_tab_widget` answers which, reading the terminal's context too: the
+  terminal menu's Reset and Clone are tab actions. `current_notebook` finds the pane
+  from the keyboard first, since a click into a terminal does not update
+  `self.current`. Terminal shortcuts are also application accelerators, which run
+  before the focused terminal sees the key, so a key reaches the action's handler and
+  not `on_terminal_keypress`. Both menus clear their context from an idle callback
+  after `hide`, in `on_context_menu_hide`. Measured: GTK hides a menu before the chosen
+  item's action runs, and that action reads the context. The tab menu cleared half of
+  it at once, which sent the next paste or Ctrl+W to a tab nobody was looking at. The
+  terminal menu cleared all of it, so each item acted on the terminal with the
+  keyboard, which after a split can be in the other pane. Opening the menu does not
+  move the keyboard, measured.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
