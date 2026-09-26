@@ -163,8 +163,14 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   Its exit status becomes the tab's, which Close console's Only on clean exit decides on,
   so every way out ends at its `exp_wait` and passes on the status of `ssh` or `telnet`.
   The host key failure used to `exit` on its own, which is 0, a clean exit (#210).
-  `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh`: its `stty` refuses to
-  run without a controlling terminal, and closing the pty before it exits kills it.
+  It runs only hosts with a stored password; the rest run `ssh` or `telnet` directly.
+  `log_user 0` keeps the program's output off the screen until a pattern matches, so a
+  way out that matches none must print what was read, as its `eof` branch does. Without
+  it, a connection that failed left an empty tab (#212). A `#` line inside the `expect`
+  block is read as a pattern, not a comment.
+  `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh` or `telnet`: its `stty`
+  refuses to run without a controlling terminal, and closing the pty before it exits
+  kills it.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under

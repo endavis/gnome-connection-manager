@@ -86,6 +86,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A host with a stored password that could not connect left an empty tab, with nothing to
+  say why. The error ssh or telnet gave, such as a name that does not resolve or a port
+  that does not answer, never reached the tab. It does now, as it always did for a host
+  without a stored password
 - **Close console** set to **Only on clean exit** never closed a tab. It asked the terminal
   for the exit status in a way VTE no longer supports, which failed on every session end
   and left the tab open. It now goes by the status the session ended with, and a tab it
