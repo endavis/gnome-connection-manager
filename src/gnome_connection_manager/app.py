@@ -2969,7 +2969,7 @@ class Wmain(GladeComponent):
         Gtk.drag_finish(context, bool(text), False, drop_time)
         return True
 
-    def on_terminal_child_exited(self, terminal, tab):
+    def on_terminal_child_exited(self, terminal, tab, status):
         """A session ending is the last chance to write the line it ended on.
 
         It is also worth telling a user who was not watching (#208). That comes after
@@ -2977,9 +2977,12 @@ class Wmain(GladeComponent):
         notebook, so `request_attention` finds no tab to mark. A tab the user closes is
         not marked either. VTE emits child-exited as `close_tab` destroys the terminal,
         and by then `close_tab` has taken the page out of its notebook.
+
+        `status` is the wait status VTE reports with the signal, which Close console
+        needs to tell a clean exit from a failed one (#210).
         """
         self.flush_terminal_log(terminal)
-        tab.mark_tab_as_closed()
+        tab.mark_tab_as_closed(status)
         # The end is its own trigger; the output just before it is not work finishing.
         watch = getattr(terminal, "quiet_watch", None)
         if watch is not None:
@@ -3234,7 +3237,10 @@ class Wmain(GladeComponent):
 
             v.connect("bell", self.on_terminal_bell)
             v.connect("contents-changed", self.on_terminal_contents_changed)
-            v.connect("child-exited", lambda *args: self.on_terminal_child_exited(v, tab))
+            v.connect(
+                "child-exited",
+                lambda _terminal, status: self.on_terminal_child_exited(v, tab, status),
+            )
             v.connect("focus", self.on_tab_focus)
             v.connect("button_press_event", self.on_terminal_click)
             v.connect("key_press_event", self.on_terminal_keypress)
@@ -6829,6 +6835,11 @@ class NotebookTabLabel(Gtk.HBox):
 
     def close_tab(self, widget):
         notebook = self.widget_.get_parent()
+        if notebook is None:
+            # Already closed. VTE emits child-exited as the destroy below takes the
+            # terminal down, after the page has left its notebook, and Close console
+            # then asks for the tab to be closed again (#210).
+            return
         page = notebook.page_num(self.widget_)
         if page >= 0:
             notebook.is_closed = True
@@ -6836,19 +6847,21 @@ class NotebookTabLabel(Gtk.HBox):
             notebook.is_closed = False
             self.widget_.destroy()
 
-    def mark_tab_as_closed(self):
+    def mark_tab_as_closed(self, status=None):
+        """Show the session as ended, and close the tab if Close console asks for that.
+
+        `status` is the wait status from child-exited, so 0 is a clean exit. Only on clean
+        exit (2) keeps the tab when the status is anything else, or unknown. It used to ask
+        the terminal instead, and VTE 2.91 has no call for that, so it raised on every
+        session end and never closed a tab (#210).
+        """
         self.is_active = False
         self.render_label()
-        if conf.AUTO_CLOSE_TAB != 0:
-            if conf.AUTO_CLOSE_TAB == 2:
-                terminal = (
-                    self.widget_.get_parent()
-                    .get_nth_page(self.widget_.get_parent().page_num(self.widget_))
-                    .get_children()[0]
-                )
-                if terminal.get_child_exit_status() != 0:
-                    return
-            self.close_tab(self.widget_)
+        if conf.AUTO_CLOSE_TAB == 0:
+            return
+        if conf.AUTO_CLOSE_TAB == 2 and status != 0:
+            return
+        self.close_tab(self.widget_)
 
     def mark_tab_as_active(self):
         self.is_active = True

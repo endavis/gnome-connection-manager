@@ -43,12 +43,15 @@ expect {
           -re "login:|sername:" { send "$user\n"; exp_continue; }
           $reg { send "$pass\n"; exec kill -WINCH [ pid ]; interact; }
           -re "Are you sure you want to continue connecting (yes/no.*)?" { send "yes\n"; exp_continue; }
-          "Host key verification failed." { puts $expect_out(buffer);  exit; }
+          "Host key verification failed." { puts $expect_out(buffer); }
           timeout { interact; }
        }
 
 log_user 1
 
+# Every way out comes here, so the tab gets the status ssh or telnet exited with. The
+# host key failure above used to exit on its own with 0, which Close console read as a
+# clean exit and closed the tab over the message (#210).
 set ret [exp_wait]
 set status [lindex $ret 3]
 exit $status
