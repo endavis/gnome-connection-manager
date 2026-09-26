@@ -134,6 +134,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   beside the `do_startup` registrations a test checks it against. `shortcut_to_accel`,
   `apply_menu_accels` and `sync_shortcut_accels` stay too: measurement showed they are
   `Gdk`/`Gtk` calls rather than logic, which is what put the seam here (#140).
+- `src/gnome_connection_manager/utils/activity.py` – when a console busy out of sight has
+  gone quiet (#208). An agent CLI finishing in a tab nobody watches gave no sign: measured
+  in a real VTE, only codex of Claude Code, codex, agy and Copilot CLI rings the bell at
+  the end of a turn. All four redraw continuously while they work, with the longest pause
+  at 1.35 s, and not at all while idle. `QuietWatch` turns `contents-changed` into that
+  decision. Output only counts while the tab is out of sight, and must run for
+  `QUIET_MIN_BUSY`, so typing a command and switching away is not work finishing. Pure:
+  the time is an argument. `Wmain.on_terminal_contents_changed` feeds it, and `check_quiet`
+  polls it on a timer that exists only while a tab is waiting, so an idle console costs
+  nothing. It, the bell and a session ending all mark through `request_attention`.
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
   without a terminal, a display or a pty.

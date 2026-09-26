@@ -1601,6 +1601,12 @@ msgstr "Log Session"
 msgid "Marcar pestaña al recibir la campana"
 msgstr "Mark tab when the bell rings"
 
+msgid "Marcar pestaña cuando la salida se detiene N segundos (0 desactiva)"
+msgstr "Mark tab when output stops for N seconds (0 disables)"
+
+msgid "Marcar pestaña cuando termina la sesión"
+msgstr "Mark tab when its session ends"
+
 msgid "Mostrar el título del programa en la pestaña"
 msgstr "Show the program title in the tab"
 
@@ -1616,8 +1622,8 @@ msgstr "Cannot open the editor"
 msgid "Normal Size"
 msgstr "Normal Size"
 
-msgid "Notificar al recibir la campana"
-msgstr "Notify when the bell rings"
+msgid "Notificar cuando una consola requiere atención"
+msgstr "Notify when a console needs attention"
 
 msgid "Paste"
 msgstr "Paste"

@@ -1,6 +1,6 @@
 ---
 title: "Using terminals in GCM"
-description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read"
+description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read"
 audience:
   - gcm-users
 tags:
@@ -420,19 +420,36 @@ key you actually use. They address a position *within one pane*, which is why th
 restarts under each heading once you have split the window — with a split, the list groups
 consoles by pane and tells you which pane each one is in.
 
-## When a terminal rings the bell
+## When a tab needs your attention
 
-A program in a tab you are not watching can ask for attention by ringing the bell —
-`\a` — which is what a long build, a finished test run or an agent CLI waiting on a
-question typically does.
+A tab you are not watching can ask for your attention in three ways, and GCM shows each the
+same way. The tab's label goes bold, the
+[open-console list](#finding-a-console-among-many) shows the same mark, and the window is
+flagged in the taskbar if GCM is not the active window.
 
-GCM does three separate things with it, each with its own control on the General tab of
-Preferences:
+- **The bell.** A program rings it with `\a`. `codex` does when it finishes a turn, and a
+  script can do it with `printf '\a'` once a long build or test run is over.
+- **Output stopping.** The tab's screen kept changing while you were not watching, and has
+  now been still for a few seconds. This is how you find out that an agent CLI in another
+  tab has finished: of the four in [What agent CLIs do](#what-agent-clis-do), only `codex`
+  rings the bell, but all four stop drawing once a turn is done.
+- **The session ending.** The program in the tab exits, or its connection drops.
+
+Not watching means GCM is not the active window, or the tab is not the one showing in its
+pane. A tab you are looking at, in a window that has focus, is never marked, since there is
+nothing to draw your attention to. Only output made while you are not watching counts
+towards the second trigger, so typing a command and switching away does not mark the tab by
+itself: the command has to go on printing after you have left. A single burst does not count
+either, such as one line of a log: the output has to run for at least a second.
+
+Each trigger has its own control on the General tab of Preferences:
 
 | Preferences | Default | What it does |
 |---|---|---|
-| **Mark tab when the bell rings** | on | Draws the tab's label bold until you look at it, and flags the window in the taskbar if GCM is not the active window |
-| **Notify when the bell rings** | off | Raises a desktop notification, *The session requires attention*, naming the tab. Only when GCM is not the active window |
+| **Mark tab when the bell rings** | on | Marks the tab when a program rings the bell |
+| **Mark tab when output stops for N seconds (0 disables)** | 5 | Marks the tab once output made while you were not watching has been still for this many seconds. 0 turns it off |
+| **Mark tab when its session ends** | on | Marks the tab when its session ends while you are not watching |
+| **Notify when a console needs attention** | off | Raises a desktop notification, *The session requires attention*, naming the tab, for all three. Only when GCM is not the active window |
 | **Audible bell** | on | Lets the terminal make the sound |
 
 In `gcm.conf`, with their defaults:
@@ -440,23 +457,28 @@ In `gcm.conf`, with their defaults:
 ```ini
 [options]
 bell-mark-tab = 1
+quiet-mark-seconds = 5
+ended-mark-tab = 1
 bell-notify = 0
 bell-audible = 1
 ```
 
 Edit those with GCM closed; through Preferences they apply straight away, in sessions
-already open too.
+already open too. `bell-notify` keeps its name from when the bell was the only trigger.
 
-A bell in the tab you are already watching, in a window that already has focus, is
-ignored — there is nothing to draw your attention to. Everywhere else the mark stays
-until you switch to that tab, and the [open-console list](#finding-a-console-among-many)
-shows the same mark in bold, so a bell is still findable once the tab has scrolled off
-the strip.
+Five seconds leaves room for a pause while a program is still working. The agent CLIs
+measured redraw continuously while they work, and the longest pause between redraws was
+under a second and a half. A program that stays silent for longer while still busy gets its
+tab marked during that silence, and looking at the tab clears the mark.
+
+A mark stays until you switch to that tab, so a marked tab can still be found in the
+open-console list once it has scrolled off the tab strip. The tab that was showing while GCM
+was in the background has nothing to switch to; a click in its terminal clears it.
 
 The desktop notification needs a notification service to be running. Without one nothing
-is raised and nothing is said about it — under WSLg, for instance, there is no
-notifications daemon, so **Notify when the bell rings** has no effect there and the tab
-mark is what you have.
+is raised and nothing is said about it. WSLg, for instance, has no notifications daemon, so
+**Notify when a console needs attention** has no effect there and the tab mark is what you
+have.
 
 ## Dropping files onto a terminal
 
@@ -659,6 +681,13 @@ What this means in practice:
 
 All four enable bracketed paste, so multi-line pastes arrive framed rather than being
 executed line by line.
+
+When a turn ends, only `codex` rings the bell. All four stop drawing as soon as they are
+done, though, and that is what **Mark tab when output stops for N seconds** watches for. An
+agent working in a tab you are not looking at marks the tab when it finishes (see
+[When a tab needs your attention](#when-a-tab-needs-your-attention)). This was measured
+with Claude Code 2.1.283, `codex` 0.149.0, `agy` 1.1.19 and `copilot` 1.0.80, one short
+turn each.
 
 ### When `copilot /copy` reports a clipboard failure
 

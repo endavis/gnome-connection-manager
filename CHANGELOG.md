@@ -12,6 +12,13 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A tab you are not watching is now marked when its output stops, not only when it rings
+  the bell, so an agent CLI working in another tab shows when it has finished a turn. Of
+  Claude Code, `codex`, `agy` and Copilot CLI, only `codex` rings the bell, but all four
+  stop drawing when they are done. **Mark tab when output stops for N seconds** sets how
+  long to wait, 5 by default, and 0 turns it off. A tab whose session ends while you are
+  not watching is marked too. **Notify when the bell rings** is now **Notify when a
+  console needs attention**, and covers all three
 - The README says what GCM does, with a screenshot of the window and a feature list, before
   it explains how to build it. It also links the specification and the architecture
   decisions, which existed and were linked from nowhere
