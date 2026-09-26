@@ -160,6 +160,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   names/signals aligned with handler names in `app.py`.
 - `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet` to feed stored
   credentials, propagate terminal resize events, and hand control back to the VTE widget.
+  Its exit status becomes the tab's, which Close console's Only on clean exit decides on,
+  so every way out ends at its `exp_wait` and passes on the status of `ssh` or `telnet`.
+  The host key failure used to `exit` on its own, which is 0, a clean exit (#210).
+  `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh`: its `stty` refuses to
+  run without a controlling terminal, and closing the pty before it exits kills it.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under

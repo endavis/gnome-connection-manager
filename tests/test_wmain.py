@@ -1962,15 +1962,23 @@ def test_a_closed_tab_ends_its_quiet_timer(app_module, monkeypatch):
     assert label.attention is None
 
 
+class EndedTab:
+    """The tab label on_terminal_child_exited reports to, keeping each status it is given."""
+
+    def __init__(self):
+        self.statuses: list = []
+
+    def mark_tab_as_closed(self, status=None):
+        self.statuses.append(status)
+
+
 def test_a_session_ending_out_of_sight_marks_the_tab(app_module, monkeypatch):
     wmain, terminal, label, _page, _clock = _quiet_setup(app_module, monkeypatch)
-    closed: list = []
+    tab = EndedTab()
 
-    wmain.on_terminal_child_exited(
-        terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: closed.append(True))
-    )
+    wmain.on_terminal_child_exited(terminal, tab, 0)
 
-    assert closed == [True]
+    assert tab.statuses == [0]
     assert label.attention is True
 
 
@@ -1979,7 +1987,7 @@ def test_a_session_ending_in_the_watched_tab_is_not_marked(app_module, monkeypat
         app_module, monkeypatch, window_active=True, showing=True
     )
 
-    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+    wmain.on_terminal_child_exited(terminal, EndedTab(), 0)
 
     assert label.attention is None
 
@@ -1988,7 +1996,7 @@ def test_marking_a_session_that_ended_can_be_turned_off(app_module, monkeypatch)
     wmain, terminal, label, _page, _clock = _quiet_setup(app_module, monkeypatch)
     monkeypatch.setattr(app_module.conf, "ENDED_MARK_TAB", 0)
 
-    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+    wmain.on_terminal_child_exited(terminal, EndedTab(), 0)
 
     assert label.attention is None
 
@@ -1999,7 +2007,7 @@ def test_a_session_ending_settles_its_quiet_watch(app_module, monkeypatch):
     monkeypatch.setattr(app_module.conf, "ENDED_MARK_TAB", 0)
     _output(wmain, terminal, clock, 3)
 
-    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+    wmain.on_terminal_child_exited(terminal, EndedTab(), 0)
 
     assert _poll(clock, wmain, terminal, 5) is False
     assert label.attention is None
@@ -2015,7 +2023,7 @@ def test_every_trigger_can_raise_the_notification(app_module, monkeypatch):
 
     _output(wmain, terminal, clock, 3)
     _poll(clock, wmain, terminal, 5)
-    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+    wmain.on_terminal_child_exited(terminal, EndedTab(), 0)
 
     assert [ident for ident, _n in application.sent] == ["gcm-bell", "gcm-bell"]
 
@@ -3612,6 +3620,201 @@ def test_closed_tab_markup_escapes_the_label(app_module, monkeypatch):
     assert "&lt;b&gt;" in tab.label.markup
 
 
+# -- Close console: what happens to a tab when its session ends (#210) ----------------
+
+
+class ClosingPage:
+    """A tab's page, as close_tab uses it. The real Gtk.Widget has each (checked below)."""
+
+    def __init__(self):
+        self.parent = None
+        self.destroyed = 0
+        self.on_destroy = None
+
+    def get_parent(self):
+        return self.parent
+
+    def destroy(self):
+        self.destroyed += 1
+        if self.on_destroy is not None:
+            self.on_destroy()
+
+
+class ClosingNotebook:
+    """The notebook calls close_tab makes. The real Gtk.Notebook has each (checked below)."""
+
+    def __init__(self, page):
+        self.pages = [page]
+        page.parent = self
+
+    def page_num(self, page):
+        return self.pages.index(page) if page in self.pages else -1
+
+    def remove_page(self, index):
+        self.pages.pop(index).parent = None
+
+
+def test_closing_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("get_parent", "destroy"):
+        assert hasattr(ClosingPage, name), f"fake is missing {name}"
+        assert hasattr(Gtk.Widget, name), f"Gtk.Widget has no {name}"
+    for name in ("page_num", "remove_page"):
+        assert hasattr(ClosingNotebook, name), f"fake is missing {name}"
+        assert hasattr(Gtk.Notebook, name), f"Gtk.Notebook has no {name}"
+
+
+def _closing_tab(app_module, monkeypatch, mode):
+    monkeypatch.setattr(app_module.conf, "AUTO_CLOSE_TAB", mode)
+    # Real GLib provides this; test_glib_really_provides_markup_escape_text checks.
+    monkeypatch.setattr(app_module.GLib, "markup_escape_text", lambda t: t, raising=False)
+    tab = _tab_label(app_module)
+    tab.widget_ = ClosingPage()
+    return tab, ClosingNotebook(tab.widget_)
+
+
+# Close console is 0 Never, 1 Always, 2 Only on clean exit. The statuses are wait
+# statuses, as child-exited reports them against VTE 0.76: 768 is `exit 3`, 9 a SIGKILL.
+@pytest.mark.parametrize(
+    ("mode", "status", "closes"),
+    [
+        (0, 0, False),
+        (0, 768, False),
+        (1, 0, True),
+        (1, 768, True),
+        (2, 0, True),
+        (2, 768, False),
+        (2, 9, False),
+    ],
+)
+def test_close_console_decides_on_the_exit_status(app_module, monkeypatch, mode, status, closes):
+    """Only on clean exit asked the terminal for the status, which VTE 2.91 cannot give,
+    so it raised on every session end and never closed a tab (#210)."""
+    tab, notebook = _closing_tab(app_module, monkeypatch, mode)
+    page = tab.widget_
+
+    tab.mark_tab_as_closed(status)
+
+    assert (notebook.page_num(page) < 0) is closes
+    assert page.destroyed == (1 if closes else 0)
+    assert tab.is_active is False
+
+
+def test_only_on_clean_exit_keeps_a_tab_whose_status_is_unknown(app_module, monkeypatch):
+    tab, notebook = _closing_tab(app_module, monkeypatch, 2)
+
+    tab.mark_tab_as_closed()
+
+    assert notebook.page_num(tab.widget_) == 0
+
+
+@pytest.mark.parametrize("mode", [0, 1, 2])
+def test_closing_a_tab_survives_its_session_ending_inside_the_close(app_module, monkeypatch, mode):
+    """VTE emits child-exited while close_tab destroys the terminal, after the page has
+    left its notebook. With Close console on, that asked for the tab to be closed again,
+    and close_tab read the missing notebook and raised (#210)."""
+    tab, notebook = _closing_tab(app_module, monkeypatch, mode)
+    page = tab.widget_
+    # What VTE does as the terminal goes: the session ends, killed.
+    page.on_destroy = lambda: tab.mark_tab_as_closed(9)
+
+    tab.close_tab(page)
+
+    assert notebook.page_num(page) < 0
+    assert page.destroyed == 1
+
+
+# Each mode and each way a session ends, in one process. A tab ends out of sight, so a
+# session that ends in one left open is marked (#208).
+_CLOSE_CONSOLE_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, Vte
+from gnome_connection_manager import app
+
+app.conf.ENDED_MARK_TAB = 1
+
+def pump(until, what, limit=20):
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        if until():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for " + what)
+
+def settle(seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+app.wMain = app.Wmain(application=None)
+nb = app.wMain.nbConsole
+host = app.Host("Work", "local", "", "", "", "", "local")
+
+def open_tab():
+    app.wMain.addTab(nb, host)
+    page = nb.get_nth_page(nb.get_n_pages() - 1)
+    terminal = page.get_children()[0]
+    pump(lambda: (terminal.get_text_format(Vte.Format.TEXT) or "").strip(), "a prompt")
+    return page, nb.get_tab_label(page)
+
+watched, _label = open_tab()
+found = {}
+for mode in (0, 1, 2):
+    app.conf.AUTO_CLOSE_TAB = mode
+    for end in ("close", "exit", "exit 3"):
+        page, label = open_tab()
+        nb.set_current_page(nb.page_num(watched))
+        if end == "close":
+            label.close_tab(None)
+        else:
+            app.vte_feed(page.get_children()[0], end + "\\r")
+        pump(lambda: nb.page_num(page) < 0 or not label.is_active, "the session to end")
+        settle(0.3)
+        if nb.page_num(page) < 0:
+            found[mode, end] = "closed"
+        else:
+            found[mode, end] = "marked" if getattr(label, "needs_attention", False) else "open"
+
+expected = {
+    (0, "close"): "closed", (0, "exit"): "marked", (0, "exit 3"): "marked",
+    (1, "close"): "closed", (1, "exit"): "closed", (1, "exit 3"): "closed",
+    (2, "close"): "closed", (2, "exit"): "closed", (2, "exit 3"): "marked",
+}
+assert found == expected, found
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_close_console_follows_each_mode_against_real_gtk():
+    """Before #210, Only on clean exit left every tab open and unmarked, and Always and
+    Only on clean exit raised whenever a tab was closed by hand. A handler that raises
+    only prints its traceback, so stderr is checked as well as the outcome."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _CLOSE_CONSOLE_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 def test_glib_really_provides_markup_escape_text():
     """The stub above would happily pass against a function that does not exist."""
     gi = pytest.importorskip("gi", reason="PyGObject not available")
@@ -4694,24 +4897,29 @@ def test_child_exit_flushes_and_marks_the_tab(monkeypatch, app_module):
     terminal = LogTerminal("last line", row=0, col=9)
     # In no notebook, so the session-ended mark (#208) has no tab to mark.
     terminal.get_parent = lambda: None
-    marked = []
+    tab = EndedTab()
 
-    wmain.on_terminal_child_exited(
-        terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: marked.append(True))
-    )
+    wmain.on_terminal_child_exited(terminal, tab, 768)
 
     assert terminal.log.entries == ["last line"]
-    assert marked == [True]
+    # The status VTE reported, which Close console decides on (#210): here `exit 3`.
+    assert tab.statuses == [768]
 
 
 def test_child_exit_is_wired_to_the_flushing_handler(app_module):
     """Connected through a lambda, since the handler needs the tab as well as the
-    terminal, so the name check the other signals use cannot see it."""
+    terminal, so the name check the other signals use cannot see it. The lambda must
+    pass on the status the signal carries: dropping it is what left Close console
+    asking the terminal for one, which VTE 2.91 cannot answer (#210)."""
     source = Path(app_module.__file__).read_text()
     body = source.split("def addTab", 1)[1].split("\n    def ", 1)[0]
 
-    connect = next(line for line in body.splitlines() if "child-exited" in line)
-    assert "on_terminal_child_exited" in connect, connect
+    wiring = re.search(
+        r'"child-exited",\s*lambda\s+\w+,\s*(\w+):\s*self\.on_terminal_child_exited\(v, tab, (\w+)\)',
+        body,
+    )
+    assert wiring, "child-exited is not connected to on_terminal_child_exited with its status"
+    assert wiring.group(1) == wiring.group(2), wiring.group(0)
 
 
 def export_then_import(monkeypatch, tmp_path, app_module, exported_hosts, mangle=None):

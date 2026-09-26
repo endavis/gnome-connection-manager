@@ -86,6 +86,15 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- **Close console** set to **Only on clean exit** never closed a tab. It asked the terminal
+  for the exit status in a way VTE no longer supports, which failed on every session end
+  and left the tab open. It now goes by the status the session ended with, and a tab it
+  keeps open is marked like any other whose session ends while you are not watching
+- With **Close console** set to **Always** or **Only on clean exit**, closing a tab by hand
+  raised an error. It showed only on stderr, and the tab closed anyway
+- An SSH host whose key check failed ended with the status of a clean exit, so **Only on
+  clean exit** would have closed the tab over the message. It now ends with ssh's own
+  status
 - Two copies of GCM opening the same host at the same moment, one logging the session and
   the other only recording it, can no longer give both sessions the same number
 - Two tabs for one host opened together -- by naming it twice on the command line, say --
