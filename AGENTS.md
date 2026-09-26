@@ -162,15 +162,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   credentials, propagate terminal resize events, and hand control back to the VTE widget.
   Its exit status becomes the tab's, which Close console's Only on clean exit decides on,
   so every way out ends at its `exp_wait` and passes on the status of `ssh` or `telnet`.
-  The host key failure used to `exit` on its own, which is 0, a clean exit (#210).
+  An early `exit` reports 0, a clean exit, as the host key failure once did (#210).
   It runs only hosts with a stored password; the rest run `ssh` or `telnet` directly.
-  `log_user 0` keeps the program's output off the screen until a pattern matches, so a
-  way out that matches none must print what was read, as its `eof` branch does. Without
-  it, a connection that failed left an empty tab (#212). A `#` line inside the `expect`
-  block is read as a pattern, not a comment.
+  It turns `log_user` on straight after the `spawn`, so the tab shows everything the
+  program prints as it arrives, as a host without a stored password would: the banner,
+  the host key question the script answers, the prompts. `log_user` is 0 until then only
+  so that `spawn` does not echo its command line. While it stayed 0 through the `expect`
+  block, only what a pattern's action printed ever showed: a connection that failed left
+  an empty tab (#212), a new host key was trusted out of sight (#214), and printing from
+  each branch instead loses what follows the match. A `#` line inside the `expect` block
+  is read as a pattern, not a comment.
   `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh` or `telnet`: its `stty`
   refuses to run without a controlling terminal, and closing the pty before it exits
-  kills it.
+  kills it. The fakes turn echo off before asking for a password, as `ssh` and `login`
+  do; printing the prompt first races the script's answer, and the pty echoes it.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
