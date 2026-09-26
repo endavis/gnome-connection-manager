@@ -1814,6 +1814,316 @@ def test_window_becoming_active_clears_the_urgency_hint(app_module):
     assert window.urgency is False
 
 
+# -- marking a tab when its output stops or its session ends (#208) ------------------
+
+
+class QuietClock:
+    """time.monotonic and GLib.timeout_add for app_module, driven by the test."""
+
+    def __init__(self):
+        self.now = 100.0
+        self.timers: list = []
+
+    def monotonic(self):
+        return self.now
+
+    def timeout_add(self, interval, callback, *args):
+        self.timers.append((interval, callback, args))
+        return len(self.timers)
+
+
+def _quiet_setup(app_module, monkeypatch, *, window_active=True, showing=False, seconds=5):
+    wmain, terminal, label, page = _bell_setup(
+        app_module, monkeypatch, window_active=window_active, showing=showing
+    )
+    monkeypatch.setattr(app_module.conf, "QUIET_MARK_SECONDS", seconds)
+    monkeypatch.setattr(app_module.conf, "ENDED_MARK_TAB", 1)
+    clock = QuietClock()
+    monkeypatch.setattr(app_module.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(app_module.GLib, "timeout_add", clock.timeout_add)
+    page.get_children = lambda: [terminal]
+    return wmain, terminal, label, page, clock
+
+
+def _output(wmain, terminal, clock, seconds, step=0.2):
+    """Screen updates every `step` seconds for `seconds`, the way a spinner draws."""
+    end = clock.now + seconds
+    while clock.now <= end:
+        wmain.on_terminal_contents_changed(terminal)
+        clock.now += step
+    clock.now -= step  # back to the last update
+
+
+def _poll(clock, wmain, terminal, after):
+    """Run the tab's quiet timer `after` seconds from now, as GLib would."""
+    clock.now += after
+    return wmain.check_quiet(terminal)
+
+
+def test_output_that_stops_out_of_sight_marks_the_tab(app_module, monkeypatch):
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    _output(wmain, terminal, clock, 3)
+
+    assert [interval for interval, _cb, _args in clock.timers] == [app_module.QUIET_POLL_MS]
+    assert _poll(clock, wmain, terminal, 4.9) is True
+    assert label.attention is None
+    assert _poll(clock, wmain, terminal, 0.1) is False  # marked, and the timer ends
+    assert label.attention is True
+    assert terminal.quiet_timer is None
+
+
+def test_the_quiet_timer_is_started_once_per_run(app_module, monkeypatch):
+    """contents-changed fires on every redraw; a timer per redraw would pile up."""
+    wmain, terminal, _label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    _output(wmain, terminal, clock, 3)
+
+    assert len(clock.timers) == 1
+
+
+def test_output_while_the_tab_is_watched_never_marks_it(app_module, monkeypatch):
+    wmain, terminal, label, _page, clock = _quiet_setup(
+        app_module, monkeypatch, window_active=True, showing=True
+    )
+    _output(wmain, terminal, clock, 3)
+
+    assert clock.timers == []
+    assert label.attention is None
+
+
+def test_the_visible_tab_is_out_of_sight_while_gcm_is_not_the_active_window(
+    app_module, monkeypatch
+):
+    wmain, terminal, label, _page, clock = _quiet_setup(
+        app_module, monkeypatch, window_active=False, showing=True
+    )
+    _output(wmain, terminal, clock, 3)
+    _poll(clock, wmain, terminal, 5)
+
+    assert label.attention is True
+    assert wmain.wMain.urgency is True
+
+
+def test_a_single_burst_out_of_sight_does_not_mark_the_tab(app_module, monkeypatch):
+    """One line of a log is not work finishing."""
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    wmain.on_terminal_contents_changed(terminal)
+
+    assert _poll(clock, wmain, terminal, 5) is False
+    assert label.attention is None
+
+
+def test_quiet_marking_can_be_turned_off(app_module, monkeypatch):
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch, seconds=0)
+    _output(wmain, terminal, clock, 3)
+
+    assert clock.timers == []
+    assert label.attention is None
+
+
+def test_turning_quiet_marking_off_ends_a_waiting_timer(app_module, monkeypatch):
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    _output(wmain, terminal, clock, 3)
+    monkeypatch.setattr(app_module.conf, "QUIET_MARK_SECONDS", 0)
+
+    assert _poll(clock, wmain, terminal, 60) is False
+    assert label.attention is None
+
+
+def test_a_changed_quiet_period_applies_to_a_tab_already_waiting(app_module, monkeypatch):
+    """Preferences reach consoles already open: the timer reads conf each time."""
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    _output(wmain, terminal, clock, 3)
+    monkeypatch.setattr(app_module.conf, "QUIET_MARK_SECONDS", 2)
+
+    _poll(clock, wmain, terminal, 2)
+
+    assert label.attention is True
+
+
+def test_looking_at_the_tab_settles_what_it_was_doing_out_of_sight(app_module, monkeypatch):
+    wmain, terminal, label, page, clock = _quiet_setup(app_module, monkeypatch)
+    monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", 0)
+    _output(wmain, terminal, clock, 3)
+
+    wmain.on_tab_focus(object(), page)  # looked, then switched away again
+
+    assert _poll(clock, wmain, terminal, 5) is False
+    assert label.attention is False
+
+
+def test_a_closed_tab_ends_its_quiet_timer(app_module, monkeypatch):
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    _output(wmain, terminal, clock, 3)
+    terminal.get_parent = lambda: None  # close_tab destroyed the page around it
+
+    # At the next poll, not once the quiet period is up, when it would have ended anyway.
+    assert _poll(clock, wmain, terminal, 0.5) is False
+    assert terminal.quiet_timer is None
+    assert label.attention is None
+
+
+def test_a_session_ending_out_of_sight_marks_the_tab(app_module, monkeypatch):
+    wmain, terminal, label, _page, _clock = _quiet_setup(app_module, monkeypatch)
+    closed: list = []
+
+    wmain.on_terminal_child_exited(
+        terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: closed.append(True))
+    )
+
+    assert closed == [True]
+    assert label.attention is True
+
+
+def test_a_session_ending_in_the_watched_tab_is_not_marked(app_module, monkeypatch):
+    wmain, terminal, label, _page, _clock = _quiet_setup(
+        app_module, monkeypatch, window_active=True, showing=True
+    )
+
+    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+
+    assert label.attention is None
+
+
+def test_marking_a_session_that_ended_can_be_turned_off(app_module, monkeypatch):
+    wmain, terminal, label, _page, _clock = _quiet_setup(app_module, monkeypatch)
+    monkeypatch.setattr(app_module.conf, "ENDED_MARK_TAB", 0)
+
+    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+
+    assert label.attention is None
+
+
+def test_a_session_ending_settles_its_quiet_watch(app_module, monkeypatch):
+    """The end is its own trigger; the output just before it must not mark again later."""
+    wmain, terminal, label, _page, clock = _quiet_setup(app_module, monkeypatch)
+    monkeypatch.setattr(app_module.conf, "ENDED_MARK_TAB", 0)
+    _output(wmain, terminal, clock, 3)
+
+    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+
+    assert _poll(clock, wmain, terminal, 5) is False
+    assert label.attention is None
+
+
+def test_every_trigger_can_raise_the_notification(app_module, monkeypatch):
+    application = BellApplication()
+    wmain, terminal, _label, _page, clock = _quiet_setup(
+        app_module, monkeypatch, window_active=False
+    )
+    wmain.wMain.application = application
+    monkeypatch.setattr(app_module.conf, "BELL_NOTIFY", 1)
+
+    _output(wmain, terminal, clock, 3)
+    _poll(clock, wmain, terminal, 5)
+    wmain.on_terminal_child_exited(terminal, types.SimpleNamespace(mark_tab_as_closed=lambda: None))
+
+    assert [ident for ident, _n in application.sent] == ["gcm-bell", "gcm-bell"]
+
+
+def test_contents_changed_is_wired_to_the_quiet_watch(app_module):
+    source = Path(app_module.__file__).read_text()
+    body = source.split("def addTab", 1)[1].split("\n    def ", 1)[0]
+
+    connect = next(line for line in body.splitlines() if '"contents-changed"' in line)
+    assert "on_terminal_contents_changed" in connect, connect
+
+
+# Two local tabs; the second is current, so the first is out of sight in its pane whether
+# or not the X server lets the window be active -- under Xvfb it was.
+_QUIET_MARK_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, Vte
+from gnome_connection_manager import app
+
+app.conf.QUIET_MARK_SECONDS = 1
+app.conf.ENDED_MARK_TAB = 1
+app.conf.AUTO_CLOSE_TAB = 0
+
+def pump(until, what, limit=20):
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        if until():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for " + what)
+
+def text(v):
+    return v.get_text_format(Vte.Format.TEXT) or ""
+
+app.wMain = app.Wmain(application=None)
+nb = app.wMain.nbConsole
+host = app.Host("Work", "local", "", "", "", "", "local")
+app.wMain.addTab(nb, host)
+page_a = nb.get_nth_page(nb.get_n_pages() - 1)
+app.wMain.addTab(nb, host)
+page_b = nb.get_nth_page(nb.get_n_pages() - 1)
+va, vb = page_a.get_children()[0], page_b.get_children()[0]
+label_a, label_b = nb.get_tab_label(page_a), nb.get_tab_label(page_b)
+assert nb.get_current_page() == nb.page_num(page_b)
+pump(lambda: text(va).strip() and text(vb).strip(), "both prompts")
+pump(lambda: getattr(va, "quiet_timer", None) is None, "the prompt's own output to settle")
+app.wMain.clear_tab_attention(page_a)
+
+# $((i*11)) so the echoed command line cannot satisfy the wait; only its output can.
+app.vte_feed(va, "for i in 1 2 3 4 5 6; do echo tick$((i*11)); sleep 0.3; done\\r")
+pump(lambda: "tick66" in text(va), "the last tick")
+last_tick = time.monotonic()
+assert not label_a.needs_attention, "marked while its output was still running"
+pump(lambda: label_a.needs_attention, "the quiet tab to be marked", limit=10)
+waited = time.monotonic() - last_tick
+assert waited >= 1.0, "marked %.2fs after the last tick, inside the quiet period" % waited
+assert label_a.get_style_context().has_class("attention")
+assert va.quiet_timer is None, "the timer outlived the mark"
+
+app.wMain.clear_tab_attention(page_a)
+app.vte_feed(va, "exit\\r")
+pump(lambda: not label_a.is_active, "the first session to end")
+assert label_a.needs_attention, "a session ending out of sight was not marked"
+
+# Close the second tab while it waits, with a quiet period it cannot reach in time.
+nb.set_current_page(nb.page_num(page_a))
+app.vte_feed(vb, "for i in 1 2 3 4 5 6 7 8; do echo tock$((i*11)); sleep 0.3; done\\r")
+pump(lambda: "tock33" in text(vb), "the second tab's output")
+assert vb.quiet_watch.waiting
+app.conf.QUIET_MARK_SECONDS = 30
+label_b.close_tab(None)
+# VTE emits child-exited as close_tab destroys the terminal, which settles the watch.
+assert not vb.quiet_watch.waiting, "closing the tab left its watch running"
+assert vb.get_parent() is None, "check_quiet reads a closed tab as one with no parent"
+pump(lambda: vb.quiet_timer is None, "a closed tab's timer to end", limit=5)
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_a_tab_out_of_sight_is_marked_when_its_output_stops_against_real_gtk():
+    """Mutation tested: with contents-changed not connected the quiet tab is never
+    marked, and with the session end not marking the tab, or not settling its watch,
+    the assertion for each fails.
+
+    Removing `check_quiet`'s closed-tab branch does not fail it: closing the tab
+    settles the watch through child-exited first. The unit test covers that branch."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _QUIET_MARK_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 class LogHost:
     def __init__(self, group="", name="web-01", user="", host="", port=""):
         self.group = group
@@ -4382,6 +4692,8 @@ def test_child_exit_flushes_and_marks_the_tab(monkeypatch, app_module):
     monkeypatch.setattr(app_module.Vte, "get_minor_version", lambda: 80, raising=False)
     wmain = object.__new__(app_module.Wmain)
     terminal = LogTerminal("last line", row=0, col=9)
+    # In no notebook, so the session-ended mark (#208) has no tab to mark.
+    terminal.get_parent = lambda: None
     marked = []
 
     wmain.on_terminal_child_exited(

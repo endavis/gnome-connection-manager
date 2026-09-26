@@ -11,7 +11,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 <!-- BEGIN:tag=gcm-guide -->
 - [Gnome Connection Manager](index.md) - What GCM is, and where to start reading
 - [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md) - The server tree: making and moving folders, putting it in the order you want, and what export and import carry
-- [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read
+- [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read
 <!-- END:tag=gcm-guide -->
 
 ### Working on GCM
@@ -125,7 +125,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Template Management](template/manage.md) - Unified interface for creating projects, checking updates, and syncing
 - [Template Tools Reference](template/tools-reference.md) - Complete reference for all template tools in tools/pyproject_template/
 - [Tooling Roles and Architectural Boundaries](development/tooling-roles.md) - What each tool is for, who uses it, and where runtime code ends and dev tooling begins
-- [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read
+- [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, and what GCM does with a gcm.conf it cannot read
 - [Using This Template](template/index.md) - Overview of using pyproject-template for your Python projects
 <!-- END:all -->
 

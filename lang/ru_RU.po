@@ -1446,6 +1446,12 @@ msgstr ""
 msgid "Marcar pestaña al recibir la campana"
 msgstr ""
 
+msgid "Marcar pestaña cuando la salida se detiene N segundos (0 desactiva)"
+msgstr ""
+
+msgid "Marcar pestaña cuando termina la sesión"
+msgstr ""
+
 msgid "Mostrar el título del programa en la pestaña"
 msgstr ""
 
@@ -1461,7 +1467,7 @@ msgstr ""
 msgid "Normal Size"
 msgstr ""
 
-msgid "Notificar al recibir la campana"
+msgid "Notificar cuando una consola requiere atención"
 msgstr ""
 
 msgid "Paste"

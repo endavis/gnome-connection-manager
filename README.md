@@ -39,6 +39,8 @@ Requires Python 3.12+ and GTK 3.
 - `Ctrl+click` a `file:line` in output to open it in your editor
 - Drop files on a terminal to insert shell-quoted paths
 - Per-terminal font zoom, and tab labels that follow the program's title
+- A tab you are not watching is marked when its output stops, when it rings the bell, or
+  when its session ends, so an agent CLI working in another tab shows when it is done
 - Every shortcut configurable, plus custom byte sequences bound to keys of your choice
 
 ---
@@ -47,8 +49,8 @@ Requires Python 3.12+ and GTK 3.
 
 - [Using terminals in GCM](docs/TERMINAL-USAGE.md) — selection when an application has
   taken the mouse, what Copy All copies, pasting, session recording and transcripts, OSC 52,
-  the buffer viewer, tab titles, the bell, font zoom, the shortcut table, and what GCM does
-  with a `gcm.conf` it cannot read
+  the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut
+  table, and what GCM does with a `gcm.conf` it cannot read
 - [Hosts and folders in GCM](docs/HOSTS-AND-FOLDERS.md) — the server tree: making and moving
   folders, putting it in the order you want, and what export and import carry
 - [Developing](docs/DEVELOPING.md) and [Project structure](docs/PROJECT_STRUCTURE.md) — how

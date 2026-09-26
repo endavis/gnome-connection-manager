@@ -98,6 +98,7 @@ def bindtextdomain(app_name, locale_dir=None):
 
 
 from gnome_connection_manager.utils import (  # noqa: E402
+    activity,
     configfile,
     configpaths,
     crypto,
@@ -334,6 +335,10 @@ DEFAULT_FGCOLOR = "#C0C0C0"
 
 HSPLIT = 0
 VSPLIT = 1
+
+# How often a tab whose output was seen out of sight is checked for having gone quiet
+# (#208). The timer exists only while such a tab is waiting, never for an idle one.
+QUIET_POLL_MS = 500
 
 _COPY = ["copy"]
 _PASTE = ["paste"]
@@ -724,6 +729,10 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     BELL_MARK_TAB = 1
     BELL_NOTIFY = 0
     BELL_AUDIBLE = 1
+    # Seconds a tab busy out of sight must be still before it is marked; 0 turns it off.
+    # 5 is about 3.7 times the longest pause measured in an agent CLI at work (#208).
+    QUIET_MARK_SECONDS = 5
+    ENDED_MARK_TAB = 1
     COPY_SCREEN_IF_NO_SELECTION = 0
     PASTE_STRIP_TRAILING_NEWLINE = 1
     PASTE_CONFIRM_LINES = 5
@@ -760,6 +769,8 @@ CONFIG_OPTIONS = (
     ("BELL_MARK_TAB", "options", "bell-mark-tab", bool),
     ("BELL_NOTIFY", "options", "bell-notify", bool),
     ("BELL_AUDIBLE", "options", "bell-audible", bool),
+    ("QUIET_MARK_SECONDS", "options", "quiet-mark-seconds", int),
+    ("ENDED_MARK_TAB", "options", "ended-mark-tab", bool),
     ("COPY_SCREEN_IF_NO_SELECTION", "options", "copy-screen-if-no-selection", bool),
     ("PASTE_STRIP_TRAILING_NEWLINE", "options", "paste-strip-trailing-newline", bool),
     ("PASTE_CONFIRM_LINES", "options", "paste-confirm-lines", int),
@@ -2959,9 +2970,22 @@ class Wmain(GladeComponent):
         return True
 
     def on_terminal_child_exited(self, terminal, tab):
-        """A session ending is the last chance to write the line it ended on."""
+        """A session ending is the last chance to write the line it ended on.
+
+        It is also worth telling a user who was not watching (#208). That comes after
+        `mark_tab_as_closed`, which may close the tab: a closed tab's page has left its
+        notebook, so `request_attention` finds no tab to mark. A tab the user closes is
+        not marked either. VTE emits child-exited as `close_tab` destroys the terminal,
+        and by then `close_tab` has taken the page out of its notebook.
+        """
         self.flush_terminal_log(terminal)
         tab.mark_tab_as_closed()
+        # The end is its own trigger; the output just before it is not work finishing.
+        watch = getattr(terminal, "quiet_watch", None)
+        if watch is not None:
+            watch.reset()
+        if conf.ENDED_MARK_TAB:
+            self.request_attention(terminal)
 
     def on_terminal_title_changed(self, terminal, *args):
         """Show what the running program advertises, without letting it become identity."""
@@ -3209,6 +3233,7 @@ class Wmain(GladeComponent):
             )
 
             v.connect("bell", self.on_terminal_bell)
+            v.connect("contents-changed", self.on_terminal_contents_changed)
             v.connect("child-exited", lambda *args: self.on_terminal_child_exited(v, tab))
             v.connect("focus", self.on_tab_focus)
             v.connect("button_press_event", self.on_terminal_click)
@@ -3682,6 +3707,8 @@ class Wmain(GladeComponent):
         cp.set("options", "bell-mark-tab", conf.BELL_MARK_TAB)
         cp.set("options", "bell-notify", conf.BELL_NOTIFY)
         cp.set("options", "bell-audible", conf.BELL_AUDIBLE)
+        cp.set("options", "quiet-mark-seconds", conf.QUIET_MARK_SECONDS)
+        cp.set("options", "ended-mark-tab", conf.ENDED_MARK_TAB)
         cp.set("options", "copy-screen-if-no-selection", conf.COPY_SCREEN_IF_NO_SELECTION)
         cp.set("options", "paste-strip-trailing-newline", conf.PASTE_STRIP_TRAILING_NEWLINE)
         cp.set("options", "paste-confirm-lines", conf.PASTE_CONFIRM_LINES)
@@ -3797,6 +3824,17 @@ class Wmain(GladeComponent):
 
     def on_terminal_bell(self, terminal):
         """A terminal rang the bell: get the user's attention without stealing focus."""
+        self.request_attention(terminal, mark=conf.BELL_MARK_TAB)
+
+    def request_attention(self, terminal, mark=True):
+        """Draw the user's eye to a console they are not watching, without stealing focus.
+
+        The bell, output stopping out of sight and a session ending all come here (#208),
+        so each is shown the same way: a bold label until the tab is looked at, the taskbar
+        flag while GCM is not the active window, and a desktop notification if one is
+        wanted. Only the bell can ask for the notification without the mark: its two
+        preferences predate the other triggers, which have one each.
+        """
         notebook, label = self.tab_label_for(terminal.get_parent())
         # nbConsole carries placeholder pages from the glade whose tab labels are plain
         # Gtk.Labels, so a tab label is not necessarily a NotebookTabLabel.
@@ -3807,26 +3845,75 @@ class Wmain(GladeComponent):
         if window_active and showing:
             # Already being watched; marking it would only need clearing again.
             return
-        if conf.BELL_MARK_TAB:
+        if mark:
             label.set_attention(True)
             if not window_active:
                 self.wMain.set_urgency_hint(True)
         if conf.BELL_NOTIFY and not window_active:
-            self.notify_bell(label)
+            self.notify_attention(label)
 
-    def notify_bell(self, label):
+    def notify_attention(self, label):
         """Raise a desktop notification. Silently does nothing without a notification service."""
         application = self.wMain.get_application()
         if application is None:
             return
         notification = Gio.Notification.new(_("La sesion requiere atencion"))
         notification.set_body(label.get_text().strip())
+        # One id for every trigger, so a newer notification replaces an older one.
         application.send_notification("gcm-bell", notification)
+
+    def is_watched(self, terminal):
+        """True while the user can see this console: GCM active, its tab current in its pane."""
+        notebook, _ = self.tab_label_for(terminal.get_parent())
+        if notebook is None or not hasattr(notebook, "get_current_page"):
+            return False
+        if not self.wMain.is_active():
+            return False
+        return notebook.get_current_page() == notebook.page_num(terminal.get_parent())
+
+    def on_terminal_contents_changed(self, terminal):
+        """Follow a console's output while it is out of sight, to mark it once it stops (#208).
+
+        This runs on every screen update, so it only notes the time. The decision is made
+        by `check_quiet`, on a timer that exists only while a console is waiting to be
+        declared quiet.
+        """
+        if conf.QUIET_MARK_SECONDS <= 0:
+            return
+        watch = getattr(terminal, "quiet_watch", None)
+        if watch is None:
+            watch = terminal.quiet_watch = activity.QuietWatch()
+        watch.output(time.monotonic(), self.is_watched(terminal))
+        if watch.waiting and getattr(terminal, "quiet_timer", None) is None:
+            terminal.quiet_timer = GLib.timeout_add(QUIET_POLL_MS, self.check_quiet, terminal)
+
+    def check_quiet(self, terminal):
+        """Mark the tab once its output has stopped for long enough.
+
+        The timer ends as soon as there is nothing left to wait for: the run is settled,
+        the user has looked, or the tab is gone. An idle console costs nothing.
+        """
+        watch = terminal.quiet_watch
+        if terminal.get_parent() is None:
+            # Closing a tab emits child-exited, which settles the watch. This catches a
+            # close where that handler stopped short of it.
+            watch.reset()
+        elif watch.settled(time.monotonic(), conf.QUIET_MARK_SECONDS):
+            self.request_attention(terminal)
+        if watch.waiting:
+            return True
+        terminal.quiet_timer = None
+        return False
 
     def clear_tab_attention(self, page):
         _notebook, label = self.tab_label_for(page)
         if hasattr(label, "set_attention"):
             label.set_attention(False)
+        # Looking at the tab settles whatever it was doing out of sight (#208).
+        for child in page.get_children() if hasattr(page, "get_children") else ():
+            watch = getattr(child, "quiet_watch", None)
+            if watch is not None:
+                watch.reset()
 
     def on_window_active_changed(self, window, _param):
         if window.is_active():
@@ -5692,7 +5779,15 @@ class Wconfig(GladeComponent):
         self.addParam(_("Pegar con botón derecho"), "conf.PASTE_ON_RIGHT_CLICK", bool)
         self.addParam(_("Copiar selección al portapapeles"), "conf.AUTO_COPY_SELECTION", bool)
         self.addParam(_("Marcar pestaña al recibir la campana"), "conf.BELL_MARK_TAB", bool)
-        self.addParam(_("Notificar al recibir la campana"), "conf.BELL_NOTIFY", bool)
+        self.addParam(
+            _("Marcar pestaña cuando la salida se detiene N segundos (0 desactiva)"),
+            "conf.QUIET_MARK_SECONDS",
+            int,
+            0,
+            3600,
+        )
+        self.addParam(_("Marcar pestaña cuando termina la sesión"), "conf.ENDED_MARK_TAB", bool)
+        self.addParam(_("Notificar cuando una consola requiere atención"), "conf.BELL_NOTIFY", bool)
         self.addParam(_("Campana audible"), "conf.BELL_AUDIBLE", bool)
         self.addParam(
             _("Copiar pantalla si no hay selección"), "conf.COPY_SCREEN_IF_NO_SELECTION", bool
