@@ -1,6 +1,6 @@
 """Password encryption for stored host entries.
 
-AES-CTR over a PBKDF2-stretched key, with the pre-v2 formats kept readable: a
+AES in OFB mode over a PBKDF2-stretched key, with the pre-v2 formats kept readable: a
 bare-SHA-256 key (no `_KDF_PREFIX`) and, before that, a repeating-key XOR. Neither
 legacy format is written any more, only read, and both have to keep working -- the
 passwords already in a user's gcm.conf were written with them.
@@ -137,6 +137,15 @@ def _iter_blocks(data: bytes, size: int = 16):
 
 
 def _generate_keystream(key: bytes, iv: bytes):
+    """The keystream both AES formats use: OFB, each block the encryption of the last.
+
+    E(IV), E(E(IV)) and so on -- not CTR, which encrypts IV, IV+1, IV+2. The two agree on
+    the first block only, so a reimplementation in CTR reads a password shorter than 16
+    bytes and garbles any longer one (#206). Any OFB reads it, pyaes's own
+    AESModeOfOperationOFB among them, given the same key and IV. The plaintext is
+    PKCS#7-padded to whole blocks first, though OFB needs no padding, so a reader has
+    that to strip as well.
+    """
     ecb = pyaes.AESModeOfOperationECB(key)
     stream = iv
     while True:
