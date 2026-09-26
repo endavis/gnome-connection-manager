@@ -1,10 +1,13 @@
-"""Which tab a console action acts on (#219).
+"""Which tab a console action acts on (#219, #221).
 
 A shortcut acts on the tab in use: the one showing in the pane the keyboard is in. An
 item in a tab's menu acts on the tab the menu was opened for. Two leftovers used to
 decide instead. The tab menu's context outlived a dismissed menu, so the next paste or
 Ctrl+W went to that tab. Clone, Reset and Reconnect by key read the label of the last
 tab whose menu was opened, and raised before any had been.
+
+An item in a terminal's menu acts on that terminal. It acted on the terminal with the
+keyboard, which after a split can be in the other pane (#221).
 
 Terminal shortcuts are also application accelerators, which GTK runs before the focused
 terminal sees the key, so the scenarios call the application's action handlers: the
@@ -78,9 +81,25 @@ def open_menu_of(name):
     """
     w.set_context_tab_widget(page_of(name))
 
-def dismiss_menu():
+def open_terminal_menu_of(name):
+    """What Ctrl+right-clicking a terminal does: on_terminal_click makes it the context.
+
+    The keyboard stays where it was, measured: the click does not reach the terminal.
+    """
+    terminal = page_of(name).get_children()[0]
+    w.set_context_terminal(terminal)
+    w.popupMenu.terminal = terminal
+
+def dismiss_menu(menu=None):
     """Escape, or a click elsewhere: GTK hides the menu, emitting hide, and nothing is chosen."""
-    w.popupMenuTab.emit("hide")
+    (menu or w.popupMenuTab).emit("hide")
+    pump()
+
+def split_off(name):
+    """Split H with `name` showing, which moves it into a pane of its own."""
+    use(name)
+    w.on_tab_focus(page_of(name).get_children()[0])
+    w.split_notebook(app.HSPLIT)
     pump()
 
 def text(name):
@@ -140,10 +159,7 @@ elif scenario == "an-item-chosen-from-a-tab-menu":
 
 elif scenario == "clone-in-the-second-pane":
     open_tabs("A", "B")
-    use("B")
-    w.on_tab_focus(page_of("B").get_children()[0])
-    w.split_notebook(app.HSPLIT)
-    pump()
+    split_off("B")
     assert names() == [["A"], ["B"]], names()
     # A click into a terminal does not update w.current, which the split left on A.
     use("A")
@@ -151,6 +167,52 @@ elif scenario == "clone-in-the-second-pane":
     application._on_action_console_clone(None, None)
     pump(0.5)
     assert names() == [["A"], ["B", "B"]], names()
+
+elif scenario.endswith("-from-the-menu-of-a-terminal-in-the-other-pane"):
+    open_tabs("A", "B")
+    split_off("B")
+    use("A")
+    for page in (page_of("A"), page_of("B")):
+        page.get_children()[0].feed(b"ON-SCREEN\r\n")
+    Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("echo GCM-PASTED", -1)
+    pump()
+    open_terminal_menu_of("B")
+    # GTK hides the menu before the chosen item's action runs.
+    w.popupMenu.emit("hide")
+    action = scenario.split("-", 1)[0]
+    if action == "paste":
+        application._on_action_paste(None, None)
+        pump(0.5)
+        assert "GCM-PASTED" in text("B"), text("B")
+        assert "GCM-PASTED" not in text("A"), text("A")
+    elif action == "close":
+        application._on_action_console_close(None, None)
+        pump()
+        assert names() == [["A"], []], names()
+    elif action == "clear":
+        application._on_action_console_reset_clear(None, None)
+        pump()
+        assert "ON-SCREEN" not in text("B"), text("B")
+        assert "ON-SCREEN" in text("A"), text("A")
+    elif action == "clone":
+        application._on_action_console_clone(None, None)
+        pump(0.5)
+        assert names() == [["A"], ["B", "B"]], names()
+    else:
+        raise SystemExit("no action " + action)
+
+elif scenario == "paste-after-a-dismissed-terminal-menu":
+    open_tabs("A", "B")
+    split_off("B")
+    use("A")
+    open_terminal_menu_of("B")
+    dismiss_menu(w.popupMenu)
+    Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("echo GCM-PASTED", -1)
+    pump()
+    application._on_action_paste(None, None)
+    pump(0.5)
+    assert "GCM-PASTED" in text("A"), text("A")
+    assert "GCM-PASTED" not in text("B"), text("B")
 
 else:
     raise SystemExit("no scenario " + scenario)
@@ -171,6 +233,11 @@ print("OK")
         "clone-after-a-dismissed-menu",
         "an-item-chosen-from-a-tab-menu",
         "clone-in-the-second-pane",
+        "paste-from-the-menu-of-a-terminal-in-the-other-pane",
+        "close-from-the-menu-of-a-terminal-in-the-other-pane",
+        "clear-from-the-menu-of-a-terminal-in-the-other-pane",
+        "clone-from-the-menu-of-a-terminal-in-the-other-pane",
+        "paste-after-a-dismissed-terminal-menu",
     ],
 )
 def test_a_console_action_acts_on_the_tab_meant_against_real_gtk(scenario):
