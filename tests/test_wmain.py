@@ -3885,6 +3885,110 @@ def test_a_failed_connection_shows_why_in_its_tab_against_real_gtk():
     assert "OK" in result.stdout
 
 
+# A first connection to a host with a stored password (#214). ssh.expect runs a fake ssh
+# that asks about the host's key, prints a banner and asks for the password, turning echo
+# off first as ssh does. It reports what it was given rather than the password.
+_FAKE_FIRST_CONNECTION = r"""#!/bin/sh
+printf "The authenticity of host 'example.invalid (192.0.2.1)' can't be established.\n"
+printf "ED25519 key fingerprint is SHA256:GCMTESTFINGERPRINT.\n"
+printf "Are you sure you want to continue connecting (yes/no/[fingerprint])? "
+read answer
+printf "Warning: Permanently added 'example.invalid' (ED25519) to the list of known hosts.\n"
+printf "GCM-TEST banner: authorised use only\n"
+stty -echo
+printf "me@example.invalid's password: "
+read pw
+stty echo
+printf "\nWelcome (answer %s, password %s)\n" "$answer" \
+    "$([ "$pw" = not-a-password ] && echo right || echo wrong)"
+"""
+
+_FIRST_CONNECTION_SCRIPT = """
+import os, sys, tempfile, time
+from pathlib import Path
+fake = os.environ["GCM_TEST_FAKE_SSH"]
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, Vte
+from gnome_connection_manager import app
+
+# The script as it ships, with only its ssh swapped for the fake.
+text = Path(app.SSH_COMMAND).read_text()
+assert text.count('"/usr/bin/ssh"') == 1
+script = Path(tempfile.mkdtemp()) / "ssh.expect"
+script.write_text(text.replace('"/usr/bin/ssh"', '"%s"' % fake))
+script.chmod(0o755)
+app.SSH_COMMAND = str(script)
+app.conf.AUTO_CLOSE_TAB = 0
+
+def pump(until, what, limit=30):
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        if until():
+            return
+        time.sleep(0.005)
+    raise AssertionError("timed out waiting for " + what)
+
+app.wMain = app.Wmain(application=None)
+nb = app.wMain.nbConsole
+host = app.Host("Work", "first", "", "example.invalid", "me", "not-a-password")
+host.port, host.keep_alive = "22", "0"
+app.wMain.addTab(nb, host)
+v = nb.get_nth_page(nb.get_n_pages() - 1).get_children()[0]
+
+def whole():
+    # Every row, not the visible ones: a tab can be two rows tall on Xvfb.
+    text, _ = v.get_text_range_format(Vte.Format.TEXT, 0, 0, v.get_cursor_position()[1], 10000)
+    return text or ""
+
+pump(lambda: "Welcome" in whole(), "the login to finish")
+shown, at = whole(), 0
+for part in (
+    "The authenticity of host 'example.invalid (192.0.2.1)' can't be established.",
+    "ED25519 key fingerprint is SHA256:GCMTESTFINGERPRINT.",
+    "Are you sure you want to continue connecting (yes/no/[fingerprint])? yes",
+    "Warning: Permanently added 'example.invalid' (ED25519) to the list of known hosts.",
+    "GCM-TEST banner: authorised use only",
+    "me@example.invalid's password:",
+    "Welcome (answer yes, password right)",
+):
+    found = shown.find(part, at)
+    assert found >= 0, "the tab lacks %r after %r: %r" % (part, shown[:at][-40:], shown)
+    at = found + len(part)
+assert "not-a-password" not in shown, shown
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_a_first_connection_shows_the_host_key_it_trusts_against_real_gtk(tmp_path):
+    """ssh.expect answers yes to an unknown host key. A host with a stored password showed
+    none of it: not the question, the fingerprint, ssh's warning that the key was added,
+    nor the banner after it (#214). A host without one runs ssh, which shows it all."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    if shutil.which("expect") is None:
+        pytest.skip("needs expect")
+    fake = tmp_path / "ssh"
+    fake.write_text(_FAKE_FIRST_CONNECTION)
+    fake.chmod(0o755)
+    result = subprocess.run(
+        [sys.executable, "-c", _FIRST_CONNECTION_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "GCM_TEST_FAKE_SSH": str(fake)},
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 def test_glib_really_provides_markup_escape_text():
     """The stub above would happily pass against a function that does not exist."""
     gi = pytest.importorskip("gi", reason="PyGObject not available")

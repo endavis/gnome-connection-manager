@@ -86,6 +86,12 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A host with a stored password showed nothing that came before its login: the banner,
+  telnet's own lines, and on a first connection ssh's question about the host's key,
+  which GCM answers for you. The key's fingerprint, and ssh's warning that it had been
+  added to the known hosts, never reached the tab, though the key was trusted all the
+  same. A tab now shows all of it as it arrives, as for a host without a stored
+  password. That includes the prompts GCM answers, but never the password
 - A host with a stored password that could not connect left an empty tab, with nothing to
   say why. The error ssh or telnet gave, such as a name that does not resolve or a port
   that does not answer, never reached the tab. It does now, as it always did for a host
