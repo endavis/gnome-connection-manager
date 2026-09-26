@@ -86,6 +86,17 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A host with a stored password trusted a host key it had not seen before, without
+  asking. GCM answered ssh's question itself and went on to type the password, so a first
+  connection sent the stored password to whichever server answered. The question is now
+  yours, as it is for a host without a stored password, and GCM types the password once
+  you have answered `yes` or pasted the fingerprint. To have new keys trusted without the
+  question, add `-o StrictHostKeyChecking=accept-new` to the host's **Extra arguments**;
+  ssh still refuses a key that has changed
+- A host with a stored password whose ssh was killed by a signal ended with the status of
+  a clean exit, so **Only on clean exit** closed its tab. It now ends with 128 and the
+  signal's number, as a shell reports it, so Ctrl+C at the host key question leaves the
+  tab open
 - A host with a stored password showed nothing that came before its login: the banner,
   telnet's own lines, and on a first connection ssh's question about the host's key,
   which GCM answers for you. The key's fingerprint, and ssh's warning that it had been

@@ -1,8 +1,9 @@
 """ssh.expect, which runs every host with a stored password: what it passes on to the tab.
 
 That is the exit status, which a tab's Close console setting decides on (#210), and what
-the program printed: why a connection failed (#212), and everything before the login,
-the host key question the script answers among it (#214).
+the program printed: why a connection failed (#212), and everything before the login
+(#214). It is also what the user types at the host key question, which the script used
+to answer itself (#216).
 
 The script runs as a tab runs it, on a pty, with only its ssh or telnet swapped for a
 fake that prints what the real one would and exits with its status. The installed ssh
@@ -20,9 +21,12 @@ import subprocess
 import termios
 import time
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 SCRIPT = Path(__file__).resolve().parents[1] / "data" / "scripts" / "ssh.expect"
 PASSWORD = "not-a-password"
@@ -35,14 +39,24 @@ PROGRAMS = {
     "telnet": ('"/usr/bin/telnet"', ["-l", "me", "example.invalid", "23"]),
 }
 
-# A first connection: ssh asks about the host's key, the script answers yes, then the
-# banner and the password prompt. The fake reports what it was given, not the password.
+# A first connection: ssh asks about the host's key and waits for an answer, asking again
+# until it gets one it takes, then the banner and the password prompt. The fake reports
+# what it was given, not the password.
+QUESTION = "(yes/no/[fingerprint])? "
+ASKED_AGAIN = "Please type 'yes', 'no' or the fingerprint: "
 FIRST_CONNECTION = r"""
 printf "The authenticity of host 'example.invalid (192.0.2.1)' can't be established.\r\n"
 printf "ED25519 key fingerprint is SHA256:GCMTESTFINGERPRINT.\r\n"
 printf "This key is not known by any other names.\r\n"
 printf "Are you sure you want to continue connecting (yes/no/[fingerprint])? "
-read answer
+while :; do
+    read answer || answer=no
+    case "$answer" in
+        yes|SHA256:GCMTESTFINGERPRINT) break ;;
+        no) printf "Host key verification failed.\r\n"; exit 255 ;;
+    esac
+    printf "Please type 'yes', 'no' or the fingerprint: "
+done
 printf "Warning: Permanently added 'example.invalid' (ED25519) to the list of known hosts.\r\n"
 printf "GCM-TEST banner: authorised use only\r\n"
 stty -echo
@@ -73,7 +87,7 @@ exit 1
 class Run(NamedTuple):
     code: int | None  # None: still running at the deadline, and killed
     seen: str
-    answered_at: float | None  # seconds from the start, when `answer`'s text appeared
+    answered_at: list[float]  # seconds from the start, when each answer was typed
 
 
 def _prints(output: str | None, status: int) -> str:
@@ -86,14 +100,18 @@ def _run(
     tmp_path: Path,
     fake: str,
     connection: str = "ssh",
-    answer: tuple[str, bytes] | None = None,
+    answers: Sequence[tuple[str, bytes]] = (),
     seconds: float = 30,
     telnet_timeout: int | None = None,
+    raw: bool = False,
 ) -> Run:
     """Run ssh.expect against a fake program: its exit code, and what reached the pty.
 
-    `answer` types its bytes once its text has reached the pty, as a user would.
-    `telnet_timeout` replaces the script's 20 s wait for a prompt it knows.
+    Each of `answers` types its bytes once its text has reached the pty, after the text
+    of the one before it, as a user would. With `raw`, each also waits for the script to
+    put the terminal in raw mode, as interact does: until then a Ctrl+C interrupts the
+    script, not the program. `telnet_timeout` replaces the script's 20 s wait for a
+    prompt it knows.
     """
     program, args = PROGRAMS[connection]
     path = tmp_path / connection
@@ -109,6 +127,7 @@ def _run(
     script.write_text(text)
 
     master, slave = os.openpty()
+    slave_name = os.ttyname(slave)
     process = subprocess.Popen(
         ["expect", str(script), connection, *args],
         stdin=slave,
@@ -121,7 +140,9 @@ def _run(
     )
     start = time.monotonic()
     deadline = start + seconds
-    answered_at = None
+    pending = list(answers)
+    answered_at: list[float] = []
+    after = 0  # where the next answer's text is looked for
     code: int | None = None
     # Type the password once the script has turned echo off, as GCM waits 2 s for. The
     # slave's settings: on Linux the master has settings of its own, which never echo.
@@ -142,10 +163,13 @@ def _run(
             if not chunk:
                 break
             seen += chunk
-            if answer and answer[0] in seen.decode(errors="replace"):
-                answered_at = time.monotonic() - start
-                os.write(master, answer[1])
-                answer = None
+            shown = seen.decode(errors="replace")
+            while pending and (found := shown.find(pending[0][0], after)) >= 0:
+                if raw:
+                    _wait_for_raw_mode(slave_name, deadline)
+                after = found + len(pending[0][0])
+                answered_at.append(time.monotonic() - start)
+                os.write(master, pending.pop(0)[1])
         if process.poll() is None:
             process.wait(timeout=max(deadline - time.monotonic(), 0.1))
         code = process.returncode
@@ -158,6 +182,18 @@ def _run(
             process.kill()
         os.close(master)
     return Run(code, seen.decode(errors="replace").replace("\r", ""), answered_at)
+
+
+def _wait_for_raw_mode(name: str, deadline: float) -> None:
+    """Until interact has put the terminal in raw mode, where Ctrl+C is only a key."""
+    while time.monotonic() < deadline:
+        fd = os.open(name, os.O_RDWR | os.O_NOCTTY)
+        try:
+            if not termios.tcgetattr(fd)[3] & termios.ISIG:
+                return
+        finally:
+            os.close(fd)
+        time.sleep(0.01)
 
 
 def _in_order(seen: str, *parts: str) -> None:
@@ -210,25 +246,83 @@ def test_a_clean_logout_reaches_the_tab_as_one(tmp_path):
     assert code == 0
 
 
-def test_a_new_host_key_is_shown_as_it_is_trusted(tmp_path):
-    """The script answers yes to an unknown host key. The question, the fingerprint and
-    ssh's warning that the key was added never reached the tab, nor did the banner (#214)."""
-    code, seen, _ = _run(tmp_path, FIRST_CONNECTION)
+def test_a_new_host_key_waits_for_the_user(tmp_path):
+    """The script used to answer yes to an unknown host key itself, so a host with a
+    stored password trusted any key, and then sent the password to its server (#216)."""
+    code, seen, _ = _run(tmp_path, FIRST_CONNECTION, seconds=2)
+
+    assert code is None  # still asking at the deadline
+    assert seen.endswith(QUESTION), seen
+    assert "Permanently added" not in seen
+
+
+@pytest.mark.parametrize("answer", ["yes", "SHA256:GCMTESTFINGERPRINT"])
+def test_a_new_host_key_is_trusted_once_the_user_answers(tmp_path, answer):
+    """Then the script goes on to the password, as before. Until #214 none of this reached
+    the tab: not the question, the fingerprint, ssh's warning that the key was added, nor
+    the banner."""
+    code, seen, _ = _run(tmp_path, FIRST_CONNECTION, answers=[(QUESTION, f"{answer}\r".encode())])
 
     assert code == 0
     _in_order(
         seen,
         "The authenticity of host 'example.invalid (192.0.2.1)' can't be established.",
         "ED25519 key fingerprint is SHA256:GCMTESTFINGERPRINT.",
-        "Are you sure you want to continue connecting (yes/no/[fingerprint])? yes",
+        f"Are you sure you want to continue connecting (yes/no/[fingerprint])? {answer}",
         "Warning: Permanently added 'example.invalid' (ED25519) to the list of known hosts.",
         "GCM-TEST banner: authorised use only",
         "me@example.invalid's password: ",
-        "Welcome (answer yes, password right)",
+        f"Welcome (answer {answer}, password right)",
     )
     assert PASSWORD not in seen
     # log_user is 0 while the script spawns, or spawn would echo its command line.
     assert "spawn" not in seen
+
+
+def test_answering_no_ends_the_connection(tmp_path):
+    code, seen, _ = _run(tmp_path, FIRST_CONNECTION, answers=[(QUESTION, b"no\r")], seconds=10)
+
+    assert code == 255
+    assert seen.count("Host key verification failed.") == 1
+    assert "password:" not in seen
+
+
+def test_an_answer_ssh_refuses_is_asked_again(tmp_path):
+    """ssh asks again in words of its own, which the script must hand to the user too."""
+    answers = [(QUESTION, b"y\r"), (ASKED_AGAIN, b"yes\r")]
+
+    code, seen, _ = _run(tmp_path, FIRST_CONNECTION, answers=answers, seconds=10)
+
+    assert code == 0
+    _in_order(seen, f"{QUESTION}y", f"{ASKED_AGAIN}yes", "Welcome (answer yes, password right)")
+
+
+def test_an_answer_typed_before_the_question_is_not_lost(tmp_path):
+    """ssh reads an answer typed ahead once it asks, so the script must pass it on too.
+    interact dropped all of it but the Enter when it was typed before interact began."""
+    fake = FIRST_CONNECTION.replace('printf "Are you sure', 'sleep 1\nprintf "Are you sure', 1)
+    answers = [("This key is not known by any other names.", b"yes\r")]
+
+    code, seen, _ = _run(tmp_path, fake, answers=answers, seconds=10)
+
+    assert code == 0
+    assert "Welcome (answer yes, password right)" in seen
+
+
+def test_ctrl_c_at_the_question_is_not_a_clean_exit(tmp_path):
+    """Ctrl+C at the question kills ssh. For a program killed by a signal exp_wait gives
+    0, which the script passed on as a clean exit, so Only on clean exit closed the tab."""
+    code, seen, _ = _run(tmp_path, FIRST_CONNECTION, answers=[(QUESTION, b"\x03")], raw=True)
+
+    assert code == 128 + 2  # SIGINT, as a shell reports it
+    # interact returns when ssh ends, and the expect block must not go on after it.
+    assert "while executing" not in seen, seen
+
+
+def test_a_program_killed_by_a_signal_is_not_a_clean_exit(tmp_path):
+    code, _, _ = _run(tmp_path, "kill -TERM $$\n")
+
+    assert code == 128 + 15
 
 
 def test_telnet_shows_what_comes_before_its_login(tmp_path):
@@ -256,9 +350,9 @@ def test_a_prompt_the_script_does_not_know_is_shown_at_once(tmp_path):
     fake = 'printf "GCM-TEST telnet banner\\r\\nLogin: "\nread user\nprintf "\\r\\nbye %s\\r\\n" "$user"\n'
 
     code, seen, answered_at = _run(
-        tmp_path, fake, "telnet", answer=("Login: ", b"me\n"), seconds=15, telnet_timeout=5
+        tmp_path, fake, "telnet", answers=[("Login: ", b"me\n")], seconds=15, telnet_timeout=5
     )
 
     assert code == 0
     _in_order(seen, "GCM-TEST telnet banner", "Login: ", "bye me")
-    assert answered_at is not None and answered_at < 2.5, answered_at
+    assert answered_at and answered_at[0] < 2.5, answered_at
