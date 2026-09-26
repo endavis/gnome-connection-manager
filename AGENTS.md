@@ -99,8 +99,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `sed` leaves the file size unchanged and Python can serve a stale `.pyc` within the
   same second.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
-  AES-CTR over a PBKDF2-stretched key, plus the two legacy formats that must stay readable
-  (bare-SHA-256, and repeating-key XOR before that). Pure — the key file and the
+  AES in OFB mode over a PBKDF2-stretched key, plus the two legacy formats that must stay
+  readable (bare-SHA-256, and repeating-key XOR before that). OFB, not CTR, as these notes
+  once said: the two agree on the first block only, so a port written in CTR reads
+  passwords shorter than 16 bytes and garbles the rest (#206). Pure — the key file and the
   `conf.VERSION` check that selects the legacy path stay in `app.py`, which keeps a thin
   `encrypt` / `decrypt` pair wrapping this. Tested directly rather than through the `gi`
   stub, which is the point: the stub hid the XOR path failing outright on Python 3 (#141).

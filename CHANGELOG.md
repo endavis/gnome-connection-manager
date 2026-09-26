@@ -86,6 +86,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- The account of how stored passwords are encrypted, in `utils/crypto.py` and `AGENTS.md`,
+  named the cipher mode as CTR. It is OFB. The two agree on the first 16 bytes only, so
+  code written from that account would read a password shorter than 16 bytes and garble
+  any longer one
 - A host with a stored password trusted a host key it had not seen before, without
   asking. GCM answered ssh's question itself and went on to type the password, so a first
   connection sent the stored password to whichever server answered. The question is now
