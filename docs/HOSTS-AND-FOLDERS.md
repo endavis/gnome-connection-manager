@@ -116,8 +116,8 @@ by hand from two exports still imports cleanly.
 
 A host's dialog shows a different number of tabs depending on its connection type, and
 this is deliberate. **Port forwarding** is shown for SSH only: tunnelling is an SSH
-feature, so a Telnet, RDP, Local or web host has three tabs where an SSH host has four. A new
-host shows the tab until you choose a type.
+feature, so a Telnet, RDP, Local, web or VNC host has three tabs where an SSH host has four.
+A new host shows the tab until you choose a type.
 
 It is the only control that is hidden rather than disabled. The other SSH-only fields on
 the Properties tab — keep-alive, X11 forwarding, agent forwarding, compression, private
@@ -139,7 +139,7 @@ a question about it on a first connection (see
 [A host's first connection](TERMINAL-USAGE.md#a-hosts-first-connection)), a prompt for
 anything the host does not store, and why a connection failed. The tab's session ends
 when FreeRDP exits. Closing FreeRDP's window is a clean exit, and a failed connection is
-not.
+not (see [When a session ends](TERMINAL-USAGE.md#when-a-session-ends)).
 
 The port is 3389 unless you change it, and the rest of the host goes to FreeRDP:
 
@@ -155,6 +155,48 @@ The port is 3389 unless you change it, and the rest of the host goes to FreeRDP:
 An RDP host sends no commands after login, and its dialog greys them. Its tab runs
 FreeRDP, which has no shell to run them, and a command typed while FreeRDP asks
 something would be taken for the answer, to its certificate question or as the password.
+
+## VNC hosts
+
+A host of type **vnc** shows a remote desktop in its tab, drawn by gtk-vnc and scaled to
+fit the tab with its shape kept. The port is 5900 unless you change it. A server's display
+`:1` is usually port 5901.
+
+- **Password**: a stored password answers the server's request for one. Without one, GCM
+  asks when the server does.
+- **User**: a server that asks for a user name as well, such as TigerVNC with its
+  `TLSPlain` security type, is given the host's user, and GCM asks when the host has none.
+- **Extra arguments**: used only by a VNC viewer, below.
+
+A line above the desktop says what the connection is doing, and why it ended, in gtk-vnc's
+words: a wrong password, or the server going away. The session ends as a terminal's does
+(see [When a session ends](TERMINAL-USAGE.md#when-a-session-ends)). Its end is a clean one
+only when GCM closed the connection, as it does when you cancel its question for a
+password. A failed login or a server that goes away is not. Closing the tab closes the
+connection.
+
+gtk-vnc closes a connection without saying why when it supports none of the security types
+the server offers, and the line above the desktop then says that. TigerVNC's `RA2` is one
+such type.
+
+While the desktop has the keyboard it gets every key, GCM's shortcuts included, so Ctrl+W
+closes a window on the remote desktop and not the tab. Opening the tab puts the keyboard in
+the desktop, and so does a click in it. Click the tab's label, or anywhere outside the
+desktop, and GCM's shortcuts work again, as they do once the session has ended.
+
+A VNC host sends no commands after login, and its dialog greys them.
+
+Not yet supported: the clipboard, sending Ctrl+Alt+Del, and reconnecting a VNC tab.
+
+### Without gtk-vnc
+
+gtk-vnc's GObject bindings are the `gir1.2-gtk-vnc-2.0` package on Debian and Ubuntu, which
+GCM's package recommends. Without them, GCM runs a VNC viewer in a terminal tab, as it runs
+FreeRDP for an RDP host. It runs the first of `vncviewer`, `xtigervncviewer` and
+`xtightvncviewer` it finds, given the extra arguments and then `host::port`, with an IPv6
+address in brackets, as `[fe80::1]::5900`. The viewer asks for the password itself,
+TigerVNC's in a window of its own and TightVNC's in the tab, so a stored password is not
+used. With neither gtk-vnc nor a viewer, GCM says so and opens nothing.
 
 ## Web hosts
 

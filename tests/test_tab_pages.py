@@ -1,8 +1,9 @@
 """A tab that holds something other than a terminal (#223).
 
-Nothing GCM opens is such a tab yet. VNC, web views and in-tab RDP will be. So these
-scenarios open a kind of page of their own through `add_page`, as those will: a label,
-which cannot take the keyboard, or a drawing area, which can. Measured with real X
+A VNC host's desktop is such a tab (#234), and web views and in-tab RDP will be. These
+scenarios open a kind of page of their own through `add_page`, as those do, so that they
+need neither gtk-vnc nor a server: a label, which cannot take the keyboard, or a drawing
+area, which can. Measured with real X
 input, clicking the tab of either leaves the keyboard on the notebook itself, and
 `show` puts it there.
 

@@ -322,6 +322,8 @@ CONNECTION_FIELDS = ("txtUser", "txtPassword", "txtPort", "txtHost", "txtExtraPa
         ("rdp", CONNECTION_FIELDS, ()),
         # The browser asks for a login itself, and no program runs to take arguments.
         ("web", ("txtPort", "txtHost"), ("txtUser", "txtPassword", "txtExtraParams")),
+        # gtk-vnc takes the user and password, and a VNC viewer the extra arguments.
+        ("vnc", CONNECTION_FIELDS, ()),
     ],
 )
 def test_a_type_greys_and_clears_the_connection_fields_it_does_not_use(

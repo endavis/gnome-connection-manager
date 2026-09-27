@@ -1,11 +1,16 @@
-"""Connection types: what makes an SSH, Telnet, RDP or local host different (#228).
+"""Connection types: what makes an SSH, Telnet, RDP, VNC or local host different (#228).
 
 Each type is a class, and `CONNECTION_TYPES` lists them in the order the host dialog
 offers them. Code that used to compare `host.type` with a name asks the type instead:
 `addTab` for the command to run, the host dialog for the fields that apply, and
 `host_sends_commands` for whether commands follow a login. A new type adds a class here,
-not a branch in each of those. A type whose tab is not a terminal will give a page for
-`add_page` rather than a command (#223); the first such type adds that here.
+not a branch in each of those.
+
+A type whose tab is not a terminal has its page in app.py's `TYPE_PAGES`, by the type's
+id, since a page is made of widgets and this module imports no toolkit. VNC was the first
+(#234). Its page is there only where gtk-vnc is installed, and where it is not, addTab
+asks the type for `missing` and `command` as for any other: a VNC viewer, run in a
+terminal tab.
 
 A type may have settings of its own, each a `Setting`. The host dialog draws them on a
 page of the type's own, and a host keeps them in `Host.type_settings`, which clone and
@@ -29,6 +34,10 @@ from typing import cast
 # FreeRDP's X11 client, newest first. Ubuntu 24.04 installs FreeRDP 3's as xfreerdp3
 # (freerdp3-x11) and FreeRDP 2's as xfreerdp (freerdp2-x11), side by side (#225).
 RDP_CLIENTS = ("xfreerdp3", "xfreerdp")
+
+# The VNC viewers a VNC host runs in, where gtk-vnc cannot draw it in the tab (#234).
+# vncviewer is whichever one Debian's alternatives chose.
+VNC_VIEWERS = ("vncviewer", "xtigervncviewer", "xtightvncviewer")
 
 
 def N_(message: str) -> str:
@@ -110,7 +119,9 @@ class ConnectionType:
     settings_title = ""
 
     def missing(self) -> str | None:
-        """Why a host of this type cannot be opened here, marked with N_, or None."""
+        """Why a host of this type cannot be opened here, marked with N_, or None.
+
+        Not asked of a type app.py draws a page for, which needs nothing more."""
         return None
 
     def command(self, host, programs: Programs) -> Command:
@@ -263,6 +274,35 @@ class Web(ConnectionType):
         return f"https://{name}{slash}{path}"
 
 
+class Vnc(ConnectionType):
+    """A remote desktop over VNC. app.py draws it in the tab with gtk-vnc, and this is the
+    fallback: a VNC viewer run in a terminal tab, which asks for the password itself.
+    TigerVNC's asks in a window of its own and TightVNC's in the tab, measured (#234)."""
+
+    id = "vnc"
+    default_port = "5900"
+    # A viewer has no shell to run them, and a tab gtk-vnc draws has no terminal.
+    sends_commands = False
+
+    def missing(self) -> str | None:
+        if vnc_viewer() is None:
+            # One literal, or tests/test_i18n.py cannot find it to check the catalogs.
+            return N_(
+                "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
+            )
+        return None
+
+    def command(self, host, programs: Programs) -> Command:
+        args = [vnc_viewer()]
+        if host.extra_params:
+            args += shlex.split(host.extra_params)
+        # host::port is a port, where host:n is a display, 5900 + n. An IPv6 address is
+        # bracketed: TigerVNC's viewer connects to [::1]::5951 and not to ::1::5951.
+        name = f"[{host.host}]" if _is_ipv6(host.host) else host.host
+        args.append(f"{name}::{host.port}")
+        return Command(args, "")
+
+
 def _is_ipv6(name: str) -> bool:
     try:
         return ipaddress.ip_address(name).version == 6
@@ -270,8 +310,8 @@ def _is_ipv6(name: str) -> bool:
         return False
 
 
-SSH, TELNET, RDP, LOCAL, WEB = Ssh(), Telnet(), Rdp(), Local(), Web()
-CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL, WEB)
+SSH, TELNET, RDP, LOCAL, WEB, VNC = Ssh(), Telnet(), Rdp(), Local(), Web(), Vnc()
+CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL, WEB, VNC)
 
 
 def named(name: str | None) -> ConnectionType:
@@ -298,6 +338,11 @@ def for_host(host) -> ConnectionType:
 def rdp_client() -> str | None:
     """The FreeRDP client an RDP host opens in, or None when none is installed."""
     return next((name for name in RDP_CLIENTS if shutil.which(name)), None)
+
+
+def vnc_viewer() -> str | None:
+    """The VNC viewer a VNC host runs in without gtk-vnc, or None when none is installed."""
+    return next((name for name in VNC_VIEWERS if shutil.which(name)), None)
 
 
 def rdp_arguments(host) -> list[str]:

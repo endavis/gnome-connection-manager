@@ -81,6 +81,13 @@ except (ImportError, ValueError) as e:
     logger.critical("python3-gi required: %s", e)
     sys.exit(1)
 
+try:
+    gi.require_version("GtkVnc", "2.0")
+    from gi.repository import GtkVnc
+except (ImportError, ValueError):
+    # Optional: without gtk-vnc's bindings a VNC host runs a VNC viewer instead (#234).
+    GtkVnc = None
+
 
 def bindtextdomain(app_name, locale_dir=None):
     global _
@@ -1816,6 +1823,7 @@ class Wmain(GladeComponent):
         for menu in (self.popupMenu, self.popupMenuFolder, self.popupMenuTab):
             menu.attach_to_widget(self.window, None)
         self.window.connect("set-focus", self.on_window_set_focus)
+        self.window.connect("key-press-event", self.on_window_key_press)
 
         self._current_fullscreen_state = False
         self._context_terminal = None
@@ -2438,6 +2446,19 @@ class Wmain(GladeComponent):
             widget = widget.get_parent()
         if widget is not None:
             self.last_notebook = widget
+
+    def on_window_key_press(self, window, event):
+        """Give a remote desktop that has the keyboard every key, GCM's shortcuts too (#234).
+
+        GCM's shortcuts are accelerators, which GTK runs before the focused widget sees
+        the key, and they take keys a desktop's programs need. Measured with real input,
+        Ctrl+W closed a VNC tab and Ctrl+F never reached the desktop. So the desktop gets
+        a key first, and GCM only one gtk-vnc leaves. With the keyboard anywhere else,
+        GCM's shortcuts apply.
+        """
+        if GtkVnc is not None and isinstance(window.get_focus(), GtkVnc.Display):
+            return window.propagate_key_event(event)
+        return False
 
     def current_notebook(self):
         """The pane in use: the notebook the keyboard is in, or was last in (#223).
@@ -3314,6 +3335,31 @@ class Wmain(GladeComponent):
         notebook.set_tab_detachable(page, True)
         return tab
 
+    def open_type_page(self, notebook, host, page_type):
+        """Open `host` in a tab drawn by `page_type`, its type's page in TYPE_PAGES (#234).
+
+        The tab ends as a terminal's does: it is shown as ended, Close console decides
+        whether it closes, and one that ends out of sight is marked for attention. The
+        mark comes after the close, as in on_terminal_child_exited.
+        """
+
+        def ended(status):
+            tab.mark_tab_as_closed(status)
+            if conf.ENDED_MARK_TAB:
+                self.request_attention(page.keyboard)
+
+        def focus():
+            # Again later, as addTab does for a terminal, unless the tab has closed.
+            if page.get_parent() is not None:
+                self.wMain.set_focus(page.keyboard)
+            return False
+
+        page = page_type(host, ended)
+        tab = self.add_page(notebook, page, host.name)
+        self.wMain.set_focus(page.keyboard)
+        GLib.timeout_add(200, focus)
+        page.open()
+
     def addTab(self, notebook, host):
         try:
             if isinstance(host, str):
@@ -3325,12 +3371,17 @@ class Wmain(GladeComponent):
                     # print ("D: Local session logging set to: %s\n" % (conf.LOG_LOCAL))
                     host.log = conf.LOG_LOCAL
 
+            kind = connections.for_host(host)
+            page_type = TYPE_PAGES.get(kind.id)
+            if page_type is not None:
+                self.open_type_page(notebook, host, page_type)
+                return
+
             problem = connections.named(host.type).missing()
             if problem:
                 msgbox(_(problem))
                 return
 
-            kind = connections.for_host(host)
             if not kind.opens_tab:
                 open_in_browser(kind.url(host))
                 return
@@ -6921,6 +6972,111 @@ class BufferViewer(Gtk.Window):
             self.find(forward=not backwards)
             return True
         return False
+
+
+class VncPage(Gtk.Box):
+    """A VNC host's desktop, drawn in its tab by gtk-vnc (#234).
+
+    A line above the desktop says what the connection is doing, and why it ended. The
+    desktop is scaled to fit the tab and keeps its shape. gtk-vnc asks for what the
+    server wants a login to give: the host's password and user answer it, and GCM asks
+    for one the host does not store.
+
+    `ended(status)` is called as the connection ends, with 0 only when GCM closed it.
+    Measured with gtk-vnc 1.3.1: a failed login and a server going away are reported as
+    errors, but a server offering no security type gtk-vnc supports is dropped without
+    one, so no error is not a clean end. Destroying the page closes the connection, and
+    gtk-vnc reports nothing then.
+    """
+
+    def __init__(self, host, ended):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL)
+        self.host = host
+        self.ended = ended
+        self.error = None
+        self.initialized = False
+        self.closed_by_gcm = False
+        self.status = Gtk.Label(xalign=0, margin=6)
+        self.status.set_line_wrap(True)
+        # Shown only while it has something to say, which add_page's show_all is not.
+        self.status.set_no_show_all(True)
+        self.display = GtkVnc.Display()
+        self.display.set_scaling(True)
+        self.display.set_keep_aspect_ratio(True)
+        self.pack_start(self.status, False, False, 0)
+        self.pack_start(self.display, True, True, 0)
+        # What takes the keyboard in this page. A click gives it the keyboard, measured.
+        self.keyboard = self.display
+        self.display.connect("vnc-auth-credential", self.on_credential)
+        self.display.connect("vnc-initialized", self.on_initialized)
+        self.display.connect("vnc-error", self.on_error)
+        self.display.connect("vnc-disconnected", self.on_disconnected)
+
+    def open(self):
+        self.say("{} {}:{}".format(_("Connecting to"), self.host.host, self.host.port))
+        self.display.open_host(self.host.host, str(self.host.port))
+
+    def close(self):
+        """Close the connection, which makes its end a clean one."""
+        self.closed_by_gcm = True
+        self.display.close()
+
+    def say(self, text):
+        self.status.set_text(text)
+        self.status.show()
+
+    def on_credential(self, display, credentials):
+        # A GObject.ValueArray, which PyGObject does not iterate. get_nth is deprecated,
+        # and the way in.
+        for index in range(credentials.n_values):
+            kind = credentials.get_nth(index)
+            value = self.credential(kind)
+            if value is None:
+                self.close()
+                return
+            display.set_credential(kind, value)
+
+    def credential(self, kind):
+        """The answer to gtk-vnc's request for `kind`, or None when the user cancels."""
+        if kind == GtkVnc.DisplayCredential.PASSWORD:
+            return self.host.password or self.ask(_("Ingrese clave: "), password=True)
+        if kind == GtkVnc.DisplayCredential.USERNAME:
+            return self.host.user or self.ask(_("Usuario"))
+        # CLIENTNAME: the name this client gives the server.
+        return "gcm"
+
+    def ask(self, text, password=False):
+        window = self.get_toplevel()
+        parent = window if isinstance(window, Gtk.Window) else None
+        return inputbox(self.host.name, text, password=password, parent=parent)
+
+    def on_initialized(self, display):
+        self.initialized = True
+        self.status.hide()
+
+    def on_error(self, display, message):
+        self.error = message
+        self.say(message)
+
+    def on_disconnected(self, display):
+        if self.error is None:
+            if self.initialized or self.closed_by_gcm:
+                self.say(_("Disconnected"))
+            else:
+                self.say(
+                    _(
+                        "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
+                    )
+                )
+        self.ended(0 if self.closed_by_gcm else 1)
+
+
+# Pages GCM draws a host's tab with, by the type's id, where a type's tab is not a
+# terminal (#234). A page is made with the host and a function it calls with an exit
+# status as its connection ends, starts connecting at open(), and names the widget that
+# takes the keyboard as `keyboard`, a child of the page. A type without one here opens
+# as the registry says, with its command in a terminal.
+TYPE_PAGES = {"vnc": VncPage} if GtkVnc is not None else {}
 
 
 class NotebookTabLabel(Gtk.HBox):

@@ -39,7 +39,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
   repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
 - `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
-  per kind of host, `Ssh`, `Telnet`, `Rdp` and `Local`, listed in `CONNECTION_TYPES` in the
+  per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web` and `Vnc`, listed in `CONNECTION_TYPES` in the
   order the host dialog offers them, which fills its list from there. Code that used to
   compare `host.type` with a name asks the type instead: `addTab` for the `Command` to
   spawn, and the dialog and `host_sends_commands` for `default_port`, `remote`,
@@ -52,8 +52,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `connection_programs` in `app.py` builds at each spawn, so a test that swaps
   `SSH_COMMAND` for a copy of the script is heard. A type's message, such as the one its
   `missing` gives for RDP, is marked with `N_` and translated in `app.py`, and
-  `tests/test_i18n.py` reads this module for it. A type whose tab is not a terminal will
-  give a page for `add_page` rather than a command; the first one adds that here.
+  `tests/test_i18n.py` reads this module for it, one literal per message: its pattern
+  does not follow a message split across literals.
+  A type whose tab is not a terminal has its page in `TYPE_PAGES` in `app.py`, by the
+  type's id, since a page is made of widgets. `addTab` opens one with `open_type_page`
+  before it asks the type for `missing`, and builds no terminal for it: VTE 0.76 reports
+  GLib criticals as a terminal that never joined a window is dropped, which every web
+  host did until `addTab` made its terminal last. The registry scenarios fail on a GLib
+  critical since, and not on a warning: on CI, GTK warns that it has no accessibility
+  bus and no icon theme.
   A type's own settings are the `Setting`s in its `settings`, each a flag or text. The
   host dialog draws them on a page titled `settings_title`, which
   `Whost.build_type_pages` places after Port forwarding and `on_cmbType_changed` shows
@@ -77,6 +84,26 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   failure once it exits. Its tests give `xdg-open` a browser of their own, through a
   desktop file and through `BROWSER` both: with neither, `xdg-open` falls back to
   `x-www-browser`, which started a real browser when this was measured.
+  A VNC host (#234) is drawn in its tab by `VncPage` in `app.py`, with gtk-vnc, whose
+  bindings are optional: `TYPE_PAGES` holds it only where `GtkVnc` imports, and without
+  it a VNC host runs a viewer in a terminal tab from its type's `command`, the first of
+  `VNC_VIEWERS` found. Measured with gtk-vnc 1.3.1 against Xtigervnc 1.13.1, and each a
+  scenario in `tests/test_vnc.py`: the credentials asked for come as a
+  `GObject.ValueArray`, which PyGObject does not iterate, so `get_nth` over `n_values`;
+  a server with no security type gtk-vnc supports is dropped without an error, so an end
+  is clean only when GCM closed the connection; the error for a server going away is
+  "Server closed the connection" or "Failed to flush data", by what gtk-vnc was doing;
+  and destroying the page closes the connection with no signal. GCM's shortcuts are
+  accelerators, which run before the focused widget sees a key, and measured with real
+  input they took Ctrl+W, closing the tab, and Ctrl+F from the desktop. So
+  `Wmain.on_window_key_press` gives a desktop with the keyboard every key first;
+  gtk-vnc leaves them once disconnected, and the shortcuts apply again.
+  `tests/test_vnc.py` starts Xtigervnc on a display number it picks and retries, since
+  `-displayfd` finds none under WSLg, whose `/tmp/.X11-unix` is not writable. What it
+  starts dies with the scenario: a leftover held the scenario's output open, and the
+  test waited out its timeout. It starts `GcmApplication` as GCM does, `register` then
+  `activate`: a bare `Wmain` has no accelerators, and a key test there passes with or
+  without the fix.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
@@ -440,7 +467,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   tab without a terminal could not be. `get_target_terminal` is the context terminal,
   else that tab's terminal, else None. Terminal shortcuts are also application
   accelerators, which run before the focused terminal sees the key, so a key reaches
-  the action's handler and not `on_terminal_keypress`. Both menus clear their context
+  the action's handler and not `on_terminal_keypress`. A remote desktop with the
+  keyboard is the exception, and gets the key first (#234). Both menus clear their context
   from an idle callback after `hide`, in `on_context_menu_hide`, and
   `trigger_popup_action` clears it even when the action raises. Measured: GTK hides a
   menu before the chosen item's action runs, and that action reads the context. The
@@ -450,7 +478,7 @@ Practices below have each caught real bugs in this repo. They are worth the time
   Opening the menu does not move the keyboard, measured.
 - A tab holds a page, and the page need not hold a terminal (#223). `addTab` builds one
   around a terminal and opens it with `add_page`, which a page of any other kind goes
-  through too: VNC, web views and in-tab RDP are to be such pages (#207). Nothing may
+  through too: VNC's is one (#234), and web views and in-tab RDP are to be (#207). Nothing may
   take a page's first child for its terminal; `page_terminal` answers, with None for a
   page that holds something else. Terminal actions then do nothing, and tab actions --
   Rename, Close console, Split, moving between panes, the open-console list -- work on

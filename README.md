@@ -17,6 +17,10 @@ Requires Python 3.12+ and GTK 3.
 - SSH, Telnet and local shell sessions, each in a tab, with horizontal and vertical splits
 - Remote desktops over RDP, through FreeRDP in a window of its own, with the stored
   password typed at FreeRDP's prompt
+- Remote desktops over VNC, drawn in the tab by gtk-vnc, or run in a VNC viewer where
+  gtk-vnc is not installed
+- Web consoles, such as a server's management console or a switch's admin page, opened in
+  your browser
 - Passwords stored encrypted, plus private keys, SSH agent forwarding, X11 forwarding,
   compression and a keep-alive interval
 - Port forwarding per host: local forwards and dynamic (SOCKS) forwards, several at a time
