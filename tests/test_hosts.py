@@ -481,3 +481,60 @@ def test_type_settings_exist_even_when_parsing_fails_partway():
     broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
 
     assert broken.type_settings == {}
+
+
+# -- commands run on this computer (#238) ------------------------------------
+
+# A shell command holds what configparser's escaping and the commands field's `\n` scheme
+# could each mangle: a percent sign, a backslash, quotes and braces.
+BEFORE = "nmcli con up 'office vpn' && printf '%s\\n' {name} >> ~/.log-%Y"
+AFTER = "nmcli con down \"office vpn\"; awk '{print $1}' /tmp/x"
+
+
+def test_the_local_commands_survive_the_ini_round_trip():
+    host = make_sample_host()
+    host.before_command = BEFORE
+    host.after_command = AFTER
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+
+    assert loaded.before_command == BEFORE
+    assert loaded.after_command == AFTER
+
+
+def test_a_host_without_local_commands_writes_no_options_for_them():
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+
+    assert not config.has_option("host 1", "before-command")
+    assert not config.has_option("host 1", "after-command")
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+    assert (loaded.before_command, loaded.after_command) == ("", "")
+
+
+def test_clone_carries_the_local_commands():
+    host = make_sample_host()
+    host.before_command = BEFORE
+    host.after_command = AFTER
+
+    copy = host.clone()
+
+    assert (copy.before_command, copy.after_command) == (BEFORE, AFTER)
+
+
+def test_the_local_commands_are_not_a_types_settings():
+    """Every connection type has them, so they are not saved as `<type>.<key>`."""
+    host = make_sample_host()
+    host.before_command = BEFORE
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+
+    assert loaded.type_settings == {}

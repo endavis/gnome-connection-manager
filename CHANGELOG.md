@@ -12,6 +12,12 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A host can run a command on this computer before connecting and another after
+  disconnecting, such as bringing a VPN up and down, set on the host dialog's Commands
+  tab. Connecting waits for the first, in the host's tab, and goes ahead only when it
+  succeeds. The second runs once the session ends, however it ends, quitting GCM
+  included. `{name}`, `{address}`, `{port}`, `{user}`, `{group}` and `{type}` are
+  replaced by the host's own values, quoted for the shell
 - **Hide input** in the cluster window, for a password sent to several consoles at once.
   The box becomes a single line that masks what you type, and what you send from it is
   not kept for `Ctrl+Up` to bring back. The terminal guide now describes the cluster

@@ -38,6 +38,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   an imported export brings ids minted elsewhere. `Host` mints one for any record read
   without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
   repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
+- `src/gnome_connection_manager/utils/placeholders.py` – a host's values filled into a
+  command written for it, `{name}` and the rest (#238). Pure: the caller supplies the
+  quoting, `shlex.quote` for a host's commands on this computer, which run through
+  `sh -c`, so that a name holding a `;` stays one argument. Anything else in braces is
+  left as written.
+  Those commands are the host's `before_command` and `after_command`. `addTab` runs the
+  first in the tab's own terminal through `run_before_command`, and
+  `on_terminal_child_exited` starts the session with `start_session` only once it exits
+  0, from an idle rather than inside the signal. `addTab` builds the connection's command
+  before that, so Reconnect has it when the first attempt failed. `session_ended` runs the
+  second once per session, for a terminal or a page alike. Measured, Ctrl+Q ends GCM with
+  no session's end reported, while closing the window reports each, with status 9, so
+  `request_quit` runs `end_sessions` first. A page reports nothing when its tab closes,
+  so `open_type_page` listens for its `destroy`.
 - `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
   per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web` and `Vnc`, listed in `CONNECTION_TYPES` in the
   order the host dialog offers them, which fills its list from there. Code that used to
@@ -400,7 +414,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   key, which is what broke #3 and #15. Tests enforce this.
 - Host attributes include an `id`, a `folder` (the id `group` is derived from), a
   `position` among that folder's children, group/name/description, connection info, tunnels,
-  terminal overrides, clipboard/logging flags, colors, command sequences, and SSH options.
+  terminal overrides, clipboard/logging flags, colors, command sequences, commands to run on
+  this computer before connecting and after disconnecting, and SSH options.
   Keep `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in
   sync. The dialog rebuilds the record rather than mutating it, so an edit carries the id
   across in `Whost.oldId` -- dropping that would make every edit look like a new host --

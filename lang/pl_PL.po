@@ -1730,3 +1730,21 @@ msgstr ""
 
 msgid "Mask what you type, for a password, and keep it out of the history"
 msgstr ""
+
+msgid "Run on this computer before connecting:"
+msgstr ""
+
+msgid "Run on this computer after disconnecting:"
+msgstr ""
+
+msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+msgstr ""
+
+msgid "Could not run"
+msgstr ""
+
+msgid "The command before connecting to"
+msgstr ""
+
+msgid "The command after disconnecting from"
+msgstr ""

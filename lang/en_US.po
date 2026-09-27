@@ -1888,3 +1888,21 @@ msgstr "Hide input"
 
 msgid "Mask what you type, for a password, and keep it out of the history"
 msgstr "Mask what you type, for a password, and keep it out of the history"
+
+msgid "Run on this computer before connecting:"
+msgstr "Run on this computer before connecting:"
+
+msgid "Run on this computer after disconnecting:"
+msgstr "Run on this computer after disconnecting:"
+
+msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+msgstr "<span size='smaller'>{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+
+msgid "Could not run"
+msgstr "Could not run"
+
+msgid "The command before connecting to"
+msgstr "The command before connecting to"
+
+msgid "The command after disconnecting from"
+msgstr "The command after disconnecting from"
