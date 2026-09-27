@@ -515,6 +515,20 @@ review, the same rule paste follows. Handy for `@`-referencing files in an AI CL
 Non-file URLs are inserted as URLs rather than converted to paths. Dragged plain text goes
 in exactly as it came, without quoting, since it is text rather than a path.
 
+## Opening links from output
+
+Ctrl+click a link in a terminal to open it. A link is any of:
+
+- an address with its scheme, such as `https://`, `ftp://` or `sftp://`
+- a host name starting `www` or `ftp` with no scheme, such as `www.example.com/page`,
+  which opens over `http://`
+- an email address, which opens as `mailto:`
+- a hyperlink a program printed with OSC 8, which shows text of its own and opens the
+  address behind it
+
+GCM hands it to `xdg-open`, which opens it in the browser your desktop names, or its mail
+client for an email address. If `xdg-open` is missing or reports a failure, GCM says so.
+
 ## Opening file:line from output
 
 Compilers, linters, test runners and AI CLIs all print locations like

@@ -42,7 +42,8 @@ Requires Python 3.12+ and GTK 3.
 - A searchable buffer viewer, in colour, for reading scrollback without the mouse
 - Copy and paste that does not clobber the clipboard, with optional OSC 52 so a program on
   the far end can set it
-- `Ctrl+click` a `file:line` in output to open it in your editor
+- `Ctrl+click` a link to open it in your browser, or a `file:line` in output to open it in
+  your editor
 - Drop files on a terminal to insert shell-quoted paths
 - Per-terminal font zoom, and tab labels that follow the program's title
 - A tab you are not watching is marked when its output stops, when it rings the bell, or
