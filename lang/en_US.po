@@ -1858,3 +1858,6 @@ msgstr "expects true or false"
 
 msgid "expects a whole number"
 msgstr "expects a whole number"
+
+msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
+msgstr "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."

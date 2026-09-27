@@ -15,6 +15,8 @@ Requires Python 3.12+ and GTK 3.
 **Connections**
 
 - SSH, Telnet and local shell sessions, each in a tab, with horizontal and vertical splits
+- Remote desktops over RDP, through FreeRDP in a window of its own, with the stored
+  password typed at FreeRDP's prompt
 - Passwords stored encrypted, plus private keys, SSH agent forwarding, X11 forwarding,
   compression and a keep-alive interval
 - Port forwarding per host: local forwards and dynamic (SOCKS) forwards, several at a time

@@ -30,6 +30,12 @@ if { $connection == "telnet" } {
     set timeout 20
     set cmd "/usr/bin/telnet"
     set reg "assword:"
+} elseif { $connection == "rdp" } {
+    # FreeRDP's client is xfreerdp3 or xfreerdp, whichever is installed, so GCM names it
+    # as the first of the arguments below.
+    set timeout -1
+    set cmd ""
+    set reg "assword:"
 } else {
     set timeout -1
     set cmd "/usr/bin/ssh"
@@ -58,7 +64,22 @@ log_user 1
 # Enter back, and dropped an answer typed ahead of it. interact also returns when ssh
 # ends, at Ctrl+C for one, having closed the spawn id, so the block must not go on then.
 # No comments inside the block: there a # line is read as a pattern.
-expect {
+#
+# FreeRDP's certificate question is handed over the same way. FreeRDP 3 asks for a
+# domain before the password, and gets an empty one: a domain goes in the user field as
+# DOMAIN\user, and then it does not ask. FreeRDP 2 asks for the password only.
+if { $connection == "rdp" } {
+    expect {
+          -re {Domain: *$} { send "\n"; exp_continue; }
+          $reg { send "$pass\n"; interact; }
+          -re {\(Y/T/N\) $} {
+              set answered 0
+              interact -nobuffer -re "\r|\n" { set answered 1; return; }
+              if { $answered } { exp_continue; }
+          }
+       }
+} else {
+    expect {
           -re "login:|sername:" { send "$user\n"; exp_continue; }
           $reg { send "$pass\n"; exec kill -WINCH [ pid ]; interact; }
           -re "Are you sure you want to continue connecting|Please type 'yes'" {
@@ -68,8 +89,9 @@ expect {
           }
           timeout { interact; }
        }
+}
 
-# Every way out comes here, so the tab gets the status ssh or telnet exited with, which
+# Every way out comes here, so the tab gets the status its program exited with, which
 # Close console decides on (#210). One killed by a signal exited with none, and exp_wait
 # gives 0 for it, a clean exit: report it as a shell does, 128 and the signal's number.
 set ret [exp_wait]

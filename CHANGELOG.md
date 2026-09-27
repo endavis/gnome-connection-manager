@@ -12,6 +12,11 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- RDP hosts. A host of type **rdp** opens its remote desktop through FreeRDP, `xfreerdp3`
+  or else `xfreerdp`, in a window of FreeRDP's own. Its tab shows what FreeRDP prints and
+  takes its questions, and GCM types a stored password at FreeRDP's prompt rather than
+  putting it on the command line. The certificate question on a first connection is left
+  to you, as ssh's host key question is. Without FreeRDP, GCM says so and opens nothing
 - A tab you are not watching is now marked when its output stops, not only when it rings
   the bell, so an agent CLI working in another tab shows when it has finished a turn. Of
   Claude Code, `codex`, `agy` and Copilot CLI, only `codex` rings the bell, but all four

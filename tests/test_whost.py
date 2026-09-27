@@ -230,6 +230,8 @@ def test_only_ssh_hosts_get_a_port_forwarding_tab(app_module):
             "txtPassword",
             "txtHost",
             "txtExtraParams",
+            "chkCommands",
+            "txtCommands",
         )
     }
     for name, widget in controls.items():
@@ -284,7 +286,16 @@ def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module)
     )
     controls = {
         name: Control()
-        for name in (*ssh_only, "txtPort", "txtUser", "txtPassword", "txtHost", "txtExtraParams")
+        for name in (
+            *ssh_only,
+            "txtPort",
+            "txtUser",
+            "txtPassword",
+            "txtHost",
+            "txtExtraParams",
+            "chkCommands",
+            "txtCommands",
+        )
     }
     for name, widget in controls.items():
         setattr(dialog, name, widget)
@@ -375,6 +386,18 @@ def test_init_ticks_the_box_for_enabled_commands(monkeypatch, app_module):
     assert dialog.txtCommands.get_buffer().get_text() == "echo hi"
     assert dialog.chkCommands.get_active() is True
     assert dialog.txtCommands.sensitive is True
+
+
+def test_init_greys_an_rdp_hosts_commands_even_when_ticked(monkeypatch, app_module):
+    """An RDP host sends none (#225), so its box is grey, and the tick is kept."""
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    host = make_stored_host(app_module, commands="echo hi", enabled=True)
+    host.type = "rdp"
+
+    dialog.init("ops", host)
+
+    assert dialog.chkCommands.get_active() is True
+    assert dialog.txtCommands.sensitive is False
 
 
 def test_unticking_the_box_keeps_the_commands(monkeypatch, app_module):
