@@ -49,6 +49,7 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -275,6 +276,9 @@ if not Path(BASE_PATH).exists():
 
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
+# FreeRDP's X11 client, newest first. Ubuntu 24.04 installs FreeRDP 3's as xfreerdp3
+# (freerdp3-x11) and FreeRDP 2's as xfreerdp (freerdp2-x11), side by side (#225).
+RDP_CLIENTS = ("xfreerdp3", "xfreerdp")
 SHELL = os.environ["SHELL"]
 # SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
 DEFAULT_TERM_TYPE = "xterm-256color"
@@ -835,8 +839,11 @@ def host_sends_commands(host):
 
     The checkbox in the host dialog decides this, not whether there is any text: an
     entry keeps its commands when they are switched off, so the two are separate (#151).
+    An RDP host sends none: its tab runs FreeRDP, which has no shell to run them, and a
+    command typed while FreeRDP asks something is taken for the answer, to its
+    certificate question or as the password (#225).
     """
-    return bool(host.commands_enabled and host.commands)
+    return bool(host.commands_enabled and host.commands) and host.type != "rdp"
 
 
 def terminal_working_directory(terminal):
@@ -1640,6 +1647,26 @@ def vte_run(terminal, command, arg=None):
             os.environ[var] = old_val
         elif var in os.environ:
             del os.environ[var]
+
+
+def rdp_client():
+    """The FreeRDP client an RDP host opens in, or None when none is installed."""
+    return next((name for name in RDP_CLIENTS if shutil.which(name)), None)
+
+
+def rdp_arguments(host):
+    """FreeRDP's arguments for an RDP host: everything but the program and the password.
+
+    Never the password. FreeRDP 3 masks /p: in its own argv once it has read it, measured,
+    but not in its parent's, and a session runs under relay.py when raw recording or OSC
+    52 is on. ssh.expect types a stored one at FreeRDP's prompt instead (#225).
+    """
+    args = [f"/v:{host.host}", f"/port:{host.port}"]
+    if host.user:
+        args.append(f"/u:{host.user}")
+    if host.extra_params:
+        args += shlex.split(host.extra_params)
+    return args
 
 
 def page_terminal(page):
@@ -3292,6 +3319,14 @@ class Wmain(GladeComponent):
             # directory. Keep this the first thing done with the normalised host.
             v.host = host
 
+            if host.type == "rdp" and rdp_client() is None:
+                msgbox(
+                    _(
+                        "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
+                    )
+                )
+                return
+
             self.apply_preferences_to_terminal(v)
 
             scrollPane = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
@@ -3374,6 +3409,16 @@ class Wmain(GladeComponent):
                     if host.extra_params is not None and host.extra_params != "":
                         args += shlex.split(host.extra_params)
                     args.append(host.host)
+                elif host.type == "rdp":
+                    # FreeRDP shows the desktop in a window of its own. The tab shows what
+                    # it prints, takes its questions and ends with its status (#225).
+                    client = rdp_client()
+                    if host.user == "" or host.password == "":
+                        password = ""
+                        cmd = client
+                        args = [client, *rdp_arguments(host)]
+                    else:
+                        args = [SSH_COMMAND, host.type, client, *rdp_arguments(host)]
                 else:
                     if host.user == "" or host.password == "":
                         password = ""
@@ -5435,7 +5480,7 @@ class Whost(GladeComponent):
         if host.commands is not None and host.commands != "":
             self.txtCommands.get_buffer().set_text(host.commands)
         self.chkCommands.set_active(host.commands_enabled)
-        self.txtCommands.set_sensitive(host.commands_enabled)
+        self.txtCommands.set_sensitive(host.commands_enabled and host.type != "rdp")
         use_keep_alive = (
             host.keep_alive != "" and host.keep_alive != "0" and host.keep_alive is not None
         )
@@ -5680,13 +5725,18 @@ class Whost(GladeComponent):
             self.txtCompressionLevel.set_sensitive(False)
             self.txtPrivateKey.set_sensitive(False)
             self.btnBrowse.set_sensitive(False)
-            port = "23"
+            port = "3389" if widget.get_active_text() == "rdp" else "23"
             if is_local:
                 self.txtUser.set_text("")
                 self.txtPassword.set_text("")
                 self.txtPort.set_text("")
                 self.txtHost.set_text("")
         self.txtPort.set_text(port)
+
+        # An RDP host sends no commands after login: see host_sends_commands.
+        takes_commands = widget.get_active_text() != "rdp"
+        self.chkCommands.set_sensitive(takes_commands)
+        self.txtCommands.set_sensitive(takes_commands and self.chkCommands.get_active())
 
     # -- Whost.on_cmbType_changed }
 

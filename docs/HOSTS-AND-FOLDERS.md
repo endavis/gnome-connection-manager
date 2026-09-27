@@ -1,6 +1,6 @@
 ---
 title: "Hosts and folders in GCM"
-description: "The server tree: making and moving folders, putting it in the order you want, and what export and import carry"
+description: "The server tree: making and moving folders, putting it in the order you want, what export and import carry, and remote desktop hosts"
 audience:
   - gcm-users
 tags:
@@ -14,7 +14,8 @@ tags:
 
 The panel on the left is the server tree: folders, and the hosts filed under them. This
 page covers making folders, moving things between them, putting them in the order you
-want, and what a host carries with it when you export or import.
+want, what a host carries with it when you export or import, and hosts that open a
+remote desktop.
 
 Every host lives in a folder. There is no such thing as a host at the top level — a drop
 there is refused — so the first thing a new installation needs is a folder.
@@ -115,7 +116,7 @@ by hand from two exports still imports cleanly.
 
 A host's dialog shows a different number of tabs depending on its connection type, and
 this is deliberate. **Port forwarding** is shown for SSH only: tunnelling is an SSH
-feature, so a Telnet or Local host has three tabs where an SSH host has four. A new host
+feature, so a Telnet, RDP or Local host has three tabs where an SSH host has four. A new host
 shows the tab until you choose a type.
 
 It is the only control that is hidden rather than disabled. The other SSH-only fields on
@@ -125,6 +126,35 @@ key — stay where they are and go grey instead.
 Automatic commands on connect are kept separately from the checkbox that runs them, so
 unticking **Send commands after login** stops them running without discarding what you
 typed.
+
+## Remote desktop hosts
+
+A host of type **rdp** opens a remote desktop through FreeRDP, in a window of FreeRDP's
+own. GCM runs `xfreerdp3`, FreeRDP 3's client, or `xfreerdp` where only FreeRDP 2 is
+installed. On Ubuntu they come from the `freerdp3-x11` and `freerdp2-x11` packages. With
+neither installed, GCM says so and opens nothing.
+
+The host still opens a tab, which shows what FreeRDP prints: the server's certificate and
+a question about it on a first connection (see
+[A host's first connection](TERMINAL-USAGE.md#a-hosts-first-connection)), a prompt for
+anything the host does not store, and why a connection failed. The tab's session ends
+when FreeRDP exits. Closing FreeRDP's window is a clean exit, and a failed connection is
+not.
+
+The port is 3389 unless you change it, and the rest of the host goes to FreeRDP:
+
+- **User**: give a domain account as `DOMAIN\user`. Given a user alone, FreeRDP 3 asks
+  for a domain, which GCM answers with none for a host with a stored password.
+- **Password**: GCM types a stored password at FreeRDP's prompt and never puts it on
+  FreeRDP's command line. Without one, FreeRDP asks in the tab.
+- **Extra arguments**: FreeRDP's own options, after the host, port and user. For example,
+  `/size:1920x1080` sets the size of the desktop, and `/dynamic-resolution` resizes it
+  with FreeRDP's window. They are split as a shell splits them, so quote one that holds a
+  space.
+
+An RDP host sends no commands after login, and its dialog greys them. Its tab runs
+FreeRDP, which has no shell to run them, and a command typed while FreeRDP asks
+something would be taken for the answer, to its certificate question or as the password.
 
 ## See also
 

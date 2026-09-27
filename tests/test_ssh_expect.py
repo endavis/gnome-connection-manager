@@ -6,9 +6,10 @@ the program printed: why a connection failed (#212), and everything before the l
 to answer itself (#216).
 
 The script runs as a tab runs it, on a pty, with only its ssh or telnet swapped for a
-fake that prints what the real one would and exits with its status. The installed ssh
-exits 255 on an error, measured with a connection it could not make. The fakes turn
-echo off before they ask for a password, as ssh and login do.
+fake that prints what the real one would and exits with its status. FreeRDP's client is
+not named in the script but given to it, so a fake one is given instead (#225). The
+installed ssh exits 255 on an error, measured with a connection it could not make. The
+fakes turn echo off before they ask for a password, as ssh, login and FreeRDP do.
 """
 
 from __future__ import annotations
@@ -34,9 +35,11 @@ PASSWORD = "not-a-password"
 pytestmark = pytest.mark.skipif(shutil.which("expect") is None, reason="needs expect")
 
 # Each program as the script names it, and the arguments GCM gives the script for it.
+# The script names no FreeRDP client: GCM gives it as the first argument.
 PROGRAMS = {
     "ssh": ('"/usr/bin/ssh"', ["-l", "me", "example.invalid"]),
     "telnet": ('"/usr/bin/telnet"', ["-l", "me", "example.invalid", "23"]),
+    "rdp": (None, ["/v:example.invalid", "/port:3389", "/u:me"]),
 }
 
 # A first connection: ssh asks about the host's key and waits for an answer, asking again
@@ -83,6 +86,46 @@ printf "\r\nLogin incorrect (user %s, password %s)\r\n" "$user" \
 exit 1
 """
 
+# FreeRDP 3's first connection, in its words as measured with 3.31 (#225): the details of
+# a certificate it cannot verify and a question it asks again until it gets an answer it
+# takes, then a domain and a password, the password with echo off.
+RDP_QUESTION = "Do you trust the above certificate? (Y/T/N) "
+RDP_FIRST_CONNECTION = r"""
+printf "Certificate details for example.invalid:3389 (RDP-Server):\r\n"
+printf "\tCommon Name: example.invalid\r\n"
+printf "\tThumbprint:  GCM:TEST:THUMBPRINT\r\n"
+printf "The above X.509 certificate could not be verified, possibly because you do not have\r\n"
+printf "the CA certificate in your certificate store, or the certificate has expired.\r\n"
+while :; do
+    printf "Do you trust the above certificate? (Y/T/N) "
+    read answer || answer=N
+    case "$answer" in
+        [YyTt]) break ;;
+        [Nn]) printf "certificate not trusted, aborting.\r\n"; exit 143 ;;
+    esac
+    printf "\r\n"
+done
+printf "\r\nDomain:          "
+read domain
+stty -echo
+printf "\r\n\r\nPassword:        "
+read pw
+stty echo
+printf "\r\nconnected (answer %s, domain [%s], password %s)\r\n" "$answer" "$domain" \
+    "$([ "$pw" = not-a-password ] && echo right || echo wrong)"
+exit 0
+"""
+
+# FreeRDP 2.11 given /u:, and FreeRDP 3 given DOMAIN\user: no domain question.
+RDP_PASSWORD_ONLY = r"""
+stty -echo
+printf "Password: "
+read pw
+stty echo
+printf "\r\nconnected (password %s)\r\n" "$([ "$pw" = not-a-password ] && echo right || echo wrong)"
+exit 0
+"""
+
 
 class Run(NamedTuple):
     code: int | None  # None: still running at the deadline, and killed
@@ -104,6 +147,7 @@ def _run(
     seconds: float = 30,
     telnet_timeout: int | None = None,
     raw: bool = False,
+    arguments: Sequence[str] | None = None,
 ) -> Run:
     """Run ssh.expect against a fake program: its exit code, and what reached the pty.
 
@@ -111,16 +155,21 @@ def _run(
     of the one before it, as a user would. With `raw`, each also waits for the script to
     put the terminal in raw mode, as interact does: until then a Ctrl+C interrupts the
     script, not the program. `telnet_timeout` replaces the script's 20 s wait for a
-    prompt it knows.
+    prompt it knows. `arguments` replaces the program's arguments.
     """
     program, args = PROGRAMS[connection]
+    if arguments is not None:
+        args = list(arguments)
     path = tmp_path / connection
     path.write_text("#!/bin/sh\n" + fake)
     path.chmod(0o755)
     text = SCRIPT.read_text()
-    assert text.count(program) == 1, f"ssh.expect no longer names {program} once"
+    if program is None:
+        args = [str(path), *args]
+    else:
+        assert text.count(program) == 1, f"ssh.expect no longer names {program} once"
+        text = text.replace(program, f'"{path}"')
     script = tmp_path / "ssh.expect"
-    text = text.replace(program, f'"{path}"')
     if telnet_timeout is not None:
         assert text.count("set timeout 20") == 1, "ssh.expect no longer waits 20 s for telnet"
         text = text.replace("set timeout 20", f"set timeout {telnet_timeout}")
@@ -217,10 +266,15 @@ def test_a_host_key_failure_reaches_the_tab_as_a_failure(tmp_path):
 FAILURES = {
     "ssh": ("ssh: Could not resolve hostname example.invalid: Name or service not known", 255),
     "telnet": ("Server lookup failure:  example.invalid:23, Name or service not known", 1),
+    "rdp": (
+        "[ERROR][com.freerdp.core] - [freerdp_tcp_is_hostname_resolvable]: "
+        "ERRCONNECT_DNS_NAME_NOT_FOUND [0x00020005]",
+        140,
+    ),
 }
 
 
-@pytest.mark.parametrize("connection", ["ssh", "telnet"])
+@pytest.mark.parametrize("connection", ["ssh", "telnet", "rdp"])
 def test_a_failed_connection_shows_why(tmp_path, connection):
     """The error matched none of the script's patterns, and log_user 0 had kept it off
     the screen, so a connection that failed left an empty tab (#212)."""
@@ -233,7 +287,9 @@ def test_a_failed_connection_shows_why(tmp_path, connection):
 
 
 # Not 1: expect exits with 1 when the script itself fails, so 1 could not tell them apart.
-@pytest.mark.parametrize(("connection", "status"), [("ssh", 255), ("ssh", 0), ("telnet", 3)])
+@pytest.mark.parametrize(
+    ("connection", "status"), [("ssh", 255), ("ssh", 0), ("telnet", 3), ("rdp", 134), ("rdp", 0)]
+)
 def test_a_program_that_prints_nothing_keeps_its_status(tmp_path, connection, status):
     code, _, _ = _run(tmp_path, _prints(None, status), connection)
 
@@ -356,3 +412,83 @@ def test_a_prompt_the_script_does_not_know_is_shown_at_once(tmp_path):
     assert code == 0
     _in_order(seen, "GCM-TEST telnet banner", "Login: ", "bye me")
     assert answered_at and answered_at[0] < 2.5, answered_at
+
+
+# -- FreeRDP (#225) ----------------------------------------------------------
+
+
+def test_an_rdp_certificate_waits_for_the_user(tmp_path):
+    """FreeRDP's certificate question is the user's to answer, as ssh's host key question
+    is (#216): the script hands the terminal over and types nothing of its own."""
+    code, seen, _ = _run(tmp_path, RDP_FIRST_CONNECTION, "rdp", seconds=2)
+
+    assert code is None  # still asking at the deadline
+    assert seen.endswith(RDP_QUESTION), seen
+    assert "Domain:" not in seen
+
+
+@pytest.mark.parametrize("answer", ["Y", "T"])
+def test_an_rdp_certificate_is_trusted_once_the_user_answers(tmp_path, answer):
+    """Then the script answers the domain with nothing and types the password."""
+    answers = [(RDP_QUESTION, f"{answer}\r".encode())]
+
+    code, seen, _ = _run(tmp_path, RDP_FIRST_CONNECTION, "rdp", answers=answers)
+
+    assert code == 0
+    _in_order(
+        seen,
+        "Certificate details for example.invalid:3389 (RDP-Server):",
+        "Thumbprint:  GCM:TEST:THUMBPRINT",
+        f"{RDP_QUESTION}{answer}",
+        "Domain:",
+        "Password:",
+        f"connected (answer {answer}, domain [], password right)",
+    )
+    assert PASSWORD not in seen
+    assert "spawn" not in seen
+
+
+def test_refusing_an_rdp_certificate_ends_the_connection(tmp_path):
+    answers = [(RDP_QUESTION, b"N\r")]
+
+    code, seen, _ = _run(tmp_path, RDP_FIRST_CONNECTION, "rdp", answers=answers, seconds=10)
+
+    assert code == 143
+    assert seen.count("certificate not trusted, aborting.") == 1
+    assert "Password:" not in seen
+
+
+def test_an_answer_freerdp_refuses_is_asked_again(tmp_path):
+    answers = [(RDP_QUESTION, b"x\r"), (RDP_QUESTION, b"Y\r")]
+
+    code, seen, _ = _run(tmp_path, RDP_FIRST_CONNECTION, "rdp", answers=answers, seconds=10)
+
+    assert code == 0
+    _in_order(
+        seen,
+        f"{RDP_QUESTION}x",
+        f"{RDP_QUESTION}Y",
+        "connected (answer Y, domain [], password right)",
+    )
+
+
+def test_freerdp_asking_for_the_password_alone_gets_it(tmp_path):
+    """FreeRDP 2 asks for no domain, measured with 2.11, and FreeRDP 3 asks for none
+    once the user is given as DOMAIN\\user."""
+    code, seen, _ = _run(tmp_path, RDP_PASSWORD_ONLY, "rdp")
+
+    assert code == 0
+    assert "connected (password right)" in seen
+    assert PASSWORD not in seen
+
+
+def test_freerdp_gets_its_arguments_as_given(tmp_path):
+    """spawn goes through eval, which would read a backslash as an escape and split an
+    argument at a space."""
+    fake = "printf '[%s]\\r\\n' \"$@\"\nexit 0\n"
+    arguments = ["/v:example.invalid", "/port:3389", "/u:CORP\\me", "/t:A B"]
+
+    code, seen, _ = _run(tmp_path, fake, "rdp", arguments=arguments)
+
+    assert code == 0
+    _in_order(seen, "[/v:example.invalid]", "[/port:3389]", "[/u:CORP\\me]", "[/t:A B]")

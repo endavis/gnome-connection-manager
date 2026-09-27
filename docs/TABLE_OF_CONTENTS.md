@@ -10,7 +10,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 ### Using GCM
 <!-- BEGIN:tag=gcm-guide -->
 - [Gnome Connection Manager](index.md) - What GCM is, and where to start reading
-- [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md) - The server tree: making and moving folders, putting it in the order you want, and what export and import carry
+- [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md) - The server tree: making and moving folders, putting it in the order you want, what export and import carry, and remote desktop hosts
 - [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, a host's first connection, and what GCM does with a gcm.conf it cannot read
 <!-- END:tag=gcm-guide -->
 
@@ -111,7 +111,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [GitHub Repository Settings](development/github-repository-settings.md) - Complete reference for all GitHub repository settings the template expects
 - [Gnome Connection Manager](index.md) - What GCM is, and where to start reading
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
-- [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md) - The server tree: making and moving folders, putting it in the order you want, and what export and import carry
+- [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md) - The server tree: making and moving folders, putting it in the order you want, what export and import carry, and remote desktop hosts
 - [install_tools Framework](development/install-tools-framework.md)
 - [Keeping Up to Date](template/updates.md) - Stay in sync with improvements to the pyproject-template
 - [LSP Tool and Diagnostic Noise](development/ai/lsp-tool.md) - What the LSP tool gives an AI agent, why pyright diagnostics arrive stale, and the two opt-outs agents can flip on themselves

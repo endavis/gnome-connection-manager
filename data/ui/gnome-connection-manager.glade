@@ -1181,6 +1181,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <items>
                       <item id="ssh" translatable="yes">ssh</item>
                       <item id="telnet" translatable="yes">telnet</item>
+                      <item id="rdp">rdp</item>
                       <item id="local" translatable="yes">local</item>
                     </items>
                     <signal name="changed" handler="on_cmbType_changed" swapped="no"/>

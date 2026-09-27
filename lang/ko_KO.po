@@ -1854,3 +1854,6 @@ msgstr ""
 
 msgid "expects a whole number"
 msgstr ""
+
+msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
+msgstr ""

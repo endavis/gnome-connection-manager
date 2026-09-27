@@ -738,6 +738,12 @@ refuses one whose key has changed.
 A host's commands are typed 3 seconds after it connects. On a first connection they reach
 the question if it is still waiting, and ssh asks again; they are not run that time.
 
+An RDP host's first connection asks too. FreeRDP shows the server's certificate and asks
+`Do you trust the above certificate? (Y/T/N)`: `Y` trusts it from then on, `T` for this
+connection only, and `N` ends the connection. That answer is yours as well, and GCM types
+a stored password only after it. FreeRDP asks again, after a warning, when the certificate
+names another host or differs from the one you trusted.
+
 ## When GCM will not start
 
 GCM refuses to start on a `gcm.conf` it cannot read in full, and says so:

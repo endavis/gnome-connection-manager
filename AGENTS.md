@@ -160,14 +160,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget
   names/signals aligned with handler names in `app.py`.
-- `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet` to feed stored
-  credentials, propagate terminal resize events, and hand control back to the VTE widget.
+- `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet`, and FreeRDP for an RDP
+  host, to feed stored credentials, propagate terminal resize events, and hand control
+  back to the VTE widget.
   Its exit status becomes the tab's, which Close console's Only on clean exit decides on,
   so every way out ends at its `exp_wait` and passes on the status of `ssh` or `telnet`.
   An early `exit` reports 0, a clean exit, as the host key failure once did (#210).
   `exp_wait` gives 0 for a program killed by a signal too, so the script reports that as
   a shell does, 128 and the signal's number.
-  It runs only hosts with a stored password; the rest run `ssh` or `telnet` directly.
+  It runs only hosts with a stored password; the rest run `ssh`, `telnet` or FreeRDP
+  directly.
   It turns `log_user` on straight after the `spawn`, so the tab shows everything the
   program prints as it arrives, as a host without a stored password would: the banner,
   the host key question, the prompts. `log_user` is 0 until then only
@@ -185,11 +187,22 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   must not send another, which ssh would read as an empty password. `interact` also
   returns when the program ends, having closed the spawn id, and an `exp_continue` then
   fails with a Tcl traceback in the tab.
-  `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh` or `telnet`: its `stty`
-  refuses to run without a controlling terminal, and closing the pty before it exits
-  kills it. The fakes turn echo off before asking for a password, as `ssh` and `login`
-  do; printing the prompt first races the script's answer, and the pty echoes it. A
-  test that types Ctrl+C waits for `interact` to put the pty in raw mode: until then the
+  An RDP host (#225) names its program as the script's first argument: `rdp_client` in
+  `app.py` picks `xfreerdp3`, else `xfreerdp`, and `rdp_arguments` builds the rest. Never
+  `/p:`: FreeRDP 3 masks it in its own argv, measured, but not in its parent's, and
+  `relay.py` is that parent when raw recording or OSC 52 is on. The rdp branch has an
+  `expect` block of its own, so that its `Domain:` pattern never meets an ssh banner. It
+  answers FreeRDP 3's `Domain:` with an empty line and hands its `(Y/T/N)` certificate
+  question over as the ssh block hands over the host key question. FreeRDP 2 asks for the
+  password only, as FreeRDP 3 does given `DOMAIN\user`. `host_sends_commands` refuses an
+  RDP host: a command typed into its tab would answer FreeRDP's certificate question or
+  its password prompt. `tests/test_rdp.py` covers GCM's side, with a fake `xfreerdp3` on
+  `PATH`.
+  `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh`, `telnet` or FreeRDP: its
+  `stty` refuses to run without a controlling terminal, and closing the pty before it
+  exits kills it. The fakes turn echo off before asking for a password, as `ssh` and
+  `login` do; printing the prompt first races the script's answer, and the pty echoes it.
+  A test that types Ctrl+C waits for `interact` to put the pty in raw mode: until then the
   terminal turns it into a SIGINT for the script, not the program.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
@@ -326,10 +339,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   The first two now live in `src/gnome_connection_manager/utils/hosts.py` and the dialogs
   in `app.py`, so adding an attribute crosses both files.
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
-  hides the Port forwarding page for anything that is not SSH, so a Telnet host's dialog has
-  three tabs and an SSH host's has four. It looks like a bug from the outside -- a whole tab
-  vanishing -- and it is not. Every other SSH-only control in that branch is made insensitive
-  instead, which is the inconsistency behind the confusion, not the hiding itself.
+  hides the Port forwarding page for anything that is not SSH, so a Telnet or RDP host's
+  dialog has three tabs and an SSH host's has four. It looks like a bug from the outside --
+  a whole tab vanishing -- and it is not. Every other SSH-only control in that branch is
+  made insensitive instead, which is the inconsistency behind the confusion, not the
+  hiding itself.
 - Session logs are named from the host entry, never the tab label:
   `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. The naming lives in
   `src/gnome_connection_manager/utils/logpaths.py`. Raw recording adds `.raw` beside
