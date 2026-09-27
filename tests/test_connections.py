@@ -650,13 +650,11 @@ def test_the_registry_against_real_gtk(scenario):
 
 
 def glib_complaints(stderr):
-    """What GLib reported going wrong, as PyGObject prints it or as GLib does itself.
+    """The criticals GLib reported, as PyGObject prints them or as GLib does itself.
 
-    Opening a web host once did: addTab made a terminal before it knew it needed none,
-    and VTE 0.76 reports criticals as a terminal that never joined a window is dropped.
+    Opening a web host once gave two: addTab made a terminal before it knew it needed
+    none, and VTE 0.76 reports criticals as a terminal that never joined a window is
+    dropped. Warnings are left out: on CI, GTK warns that it has no accessibility bus
+    and no icon theme, which says nothing about GCM.
     """
-    return [
-        line
-        for line in stderr.splitlines()
-        if ": Warning: " in line or "-CRITICAL **" in line or "-WARNING **" in line
-    ]
+    return [line for line in stderr.splitlines() if ": Warning: " in line or "-CRITICAL **" in line]
