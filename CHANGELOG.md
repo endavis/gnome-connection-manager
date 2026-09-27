@@ -54,6 +54,10 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- Connection types moved out of `app.py` into `utils/connections.py`, one class per type,
+  and the host dialog lists them from there rather than from the glade file. A new type
+  adds a class instead of a branch in each place that compared a host's type by name.
+  Every host opens with the same command as before
 - A tab can hold something other than a terminal, which VNC, web views and RDP in a tab
   will need. Every tab is opened the same way, and what acts on a tab first asks whether
   it holds a terminal: one that does not can be renamed, closed, split and moved between

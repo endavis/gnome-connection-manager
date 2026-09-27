@@ -14,7 +14,6 @@ import subprocess
 import sys
 import types
 from pathlib import Path
-from xml.etree import ElementTree
 
 import pytest
 
@@ -44,10 +43,12 @@ def rdp_host(app_module, **fields):
 def test_the_newest_freerdp_installed_is_used(app_module, monkeypatch, installed, chosen):
     """Ubuntu 24.04 installs FreeRDP 3 and 2 side by side, as xfreerdp3 and xfreerdp."""
     monkeypatch.setattr(
-        app_module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
+        app_module.connections.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in installed else None,
     )
 
-    assert app_module.rdp_client() == chosen
+    assert app_module.connections.rdp_client() == chosen
 
 
 # -- what FreeRDP is given ---------------------------------------------------
@@ -56,13 +57,17 @@ def test_the_newest_freerdp_installed_is_used(app_module, monkeypatch, installed
 def test_freerdp_is_given_the_host_its_port_and_its_user(app_module):
     host = rdp_host(app_module, port="3390", user="CORP\\me")
 
-    assert app_module.rdp_arguments(host) == ["/v:win.example.test", "/port:3390", "/u:CORP\\me"]
+    assert app_module.connections.rdp_arguments(host) == [
+        "/v:win.example.test",
+        "/port:3390",
+        "/u:CORP\\me",
+    ]
 
 
 def test_extra_arguments_follow_as_the_shell_would_split_them(app_module):
     host = rdp_host(app_module, extra_params="/size:1280x800 '/t:Build box' +clipboard")
 
-    assert app_module.rdp_arguments(host)[3:] == [
+    assert app_module.connections.rdp_arguments(host)[3:] == [
         "/size:1280x800",
         "/t:Build box",
         "+clipboard",
@@ -72,13 +77,13 @@ def test_extra_arguments_follow_as_the_shell_would_split_them(app_module):
 def test_without_a_user_freerdp_asks_for_one(app_module):
     host = rdp_host(app_module, user="", password="")
 
-    assert app_module.rdp_arguments(host) == ["/v:win.example.test", "/port:3389"]
+    assert app_module.connections.rdp_arguments(host) == ["/v:win.example.test", "/port:3389"]
 
 
 def test_the_password_is_never_among_freerdps_arguments(app_module):
     """FreeRDP 3 masks /p: in its own argv, measured, but not in its parent's, and a
     session runs under relay.py when raw recording or OSC 52 is on."""
-    args = app_module.rdp_arguments(rdp_host(app_module))
+    args = app_module.connections.rdp_arguments(rdp_host(app_module))
 
     assert not [arg for arg in args if "not-a-password" in arg or arg.startswith("/p:")]
 
@@ -195,18 +200,6 @@ def test_an_rdp_host_sends_no_commands(app_module):
     assert app_module.host_sends_commands(host) is True
 
 
-def test_the_type_list_offers_rdp_untranslated():
-    """The dialog saves the type as the list shows it, and addTab compares that text:
-    a translation of rdp would be a type nothing opens."""
-    glade = ElementTree.parse(REPO / "data" / "ui" / "gnome-connection-manager.glade")
-    combo = next(o for o in glade.iter("object") if o.get("id") == "cmbType")
-    items = {item.get("id"): item for item in combo.iter("item")}
-
-    assert list(items) == ["ssh", "telnet", "rdp", "local"]
-    assert items["rdp"].text == "rdp"
-    assert items["rdp"].get("translatable") != "yes"
-
-
 # -- against real GTK --------------------------------------------------------
 
 # A first connection, as FreeRDP 3.31 makes one: the certificate question, then a domain
@@ -320,7 +313,7 @@ elif scenario == "a-password-without-a-user-is-left-to-freerdp":
         v.command
     )
 elif scenario == "without-freerdp-a-message-and-no-tab":
-    app.RDP_CLIENTS = ("gcm-test-no-such-client",)
+    app.connections.RDP_CLIENTS = ("gcm-test-no-such-client",)
     before = nb.get_n_pages()
     app.wMain.addTab(nb, host)
     settle(0.3)

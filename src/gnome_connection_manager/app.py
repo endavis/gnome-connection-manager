@@ -49,7 +49,6 @@ import os
 import re
 import secrets
 import shlex
-import shutil
 import socket
 import subprocess
 import sys
@@ -102,6 +101,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     activity,
     configfile,
     configpaths,
+    connections,
     crypto,
     logpaths,
     transcript,
@@ -276,9 +276,6 @@ if not Path(BASE_PATH).exists():
 
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
-# FreeRDP's X11 client, newest first. Ubuntu 24.04 installs FreeRDP 3's as xfreerdp3
-# (freerdp3-x11) and FreeRDP 2's as xfreerdp (freerdp2-x11), side by side (#225).
-RDP_CLIENTS = ("xfreerdp3", "xfreerdp")
 SHELL = os.environ["SHELL"]
 # SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
 DEFAULT_TERM_TYPE = "xterm-256color"
@@ -839,11 +836,12 @@ def host_sends_commands(host):
 
     The checkbox in the host dialog decides this, not whether there is any text: an
     entry keeps its commands when they are switched off, so the two are separate (#151).
-    An RDP host sends none: its tab runs FreeRDP, which has no shell to run them, and a
-    command typed while FreeRDP asks something is taken for the answer, to its
-    certificate question or as the password (#225).
+    A type can send none, as RDP does (#225).
     """
-    return bool(host.commands_enabled and host.commands) and host.type != "rdp"
+    return (
+        bool(host.commands_enabled and host.commands)
+        and connections.named(host.type).sends_commands
+    )
 
 
 def terminal_working_directory(terminal):
@@ -1649,24 +1647,10 @@ def vte_run(terminal, command, arg=None):
             del os.environ[var]
 
 
-def rdp_client():
-    """The FreeRDP client an RDP host opens in, or None when none is installed."""
-    return next((name for name in RDP_CLIENTS if shutil.which(name)), None)
-
-
-def rdp_arguments(host):
-    """FreeRDP's arguments for an RDP host: everything but the program and the password.
-
-    Never the password. FreeRDP 3 masks /p: in its own argv once it has read it, measured,
-    but not in its parent's, and a session runs under relay.py when raw recording or OSC
-    52 is on. ssh.expect types a stored one at FreeRDP's prompt instead (#225).
-    """
-    args = [f"/v:{host.host}", f"/port:{host.port}"]
-    if host.user:
-        args.append(f"/u:{host.user}")
-    if host.extra_params:
-        args += shlex.split(host.extra_params)
-    return args
+def connection_programs():
+    """What a connection's command runs. Read at each spawn, so that a test which swaps
+    SSH_COMMAND for a copy of the script is heard."""
+    return connections.Programs(SSH_COMMAND, get_username(), SSH_BIN, TEL_BIN)
 
 
 def page_terminal(page):
@@ -3319,12 +3303,9 @@ class Wmain(GladeComponent):
             # directory. Keep this the first thing done with the normalised host.
             v.host = host
 
-            if host.type == "rdp" and rdp_client() is None:
-                msgbox(
-                    _(
-                        "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
-                    )
-                )
+            problem = connections.named(host.type).missing()
+            if problem:
+                msgbox(_(problem))
                 return
 
             self.apply_preferences_to_terminal(v)
@@ -3370,74 +3351,20 @@ class Wmain(GladeComponent):
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
-            if host.host == "" or host.host is None:
+            kind = connections.for_host(host)
+            if not kind.remote:
                 vte_run(v, SHELL)
             else:
-                cmd = SSH_COMMAND
-                password = host.password
-                if host.type == "ssh":
-                    if len(host.user) == 0:
-                        host.user = get_username()
-                    if host.password == "":
-                        cmd = SSH_BIN
-                        args = [SSH_BIN, "-l", host.user, "-p", host.port]
-                    else:
-                        args = [SSH_COMMAND, host.type, "-l", host.user, "-p", host.port]
-                    if host.keep_alive != "0" and host.keep_alive != "":
-                        args.append("-o")
-                        args.append(f"ServerAliveInterval={host.keep_alive}")
-                    for t in host.tunnel:
-                        if t != "":
-                            if t.endswith(":*:*"):
-                                args.append("-D")
-                                args.append(t[:-4])
-                            else:
-                                args.append("-L")
-                                args.append(t)
-                    if host.x11:
-                        args.append("-X")
-                    if host.agent:
-                        args.append("-A")
-                    if host.compression:
-                        args.append("-C")
-                        if host.compressionLevel != "":
-                            args.append("-o")
-                            args.append(f"CompressionLevel={host.compressionLevel}")
-                    if host.private_key is not None and host.private_key != "":
-                        args.append("-i")
-                        args.append(host.private_key)
-                    if host.extra_params is not None and host.extra_params != "":
-                        args += shlex.split(host.extra_params)
-                    args.append(host.host)
-                elif host.type == "rdp":
-                    # FreeRDP shows the desktop in a window of its own. The tab shows what
-                    # it prints, takes its questions and ends with its status (#225).
-                    client = rdp_client()
-                    if host.user == "" or host.password == "":
-                        password = ""
-                        cmd = client
-                        args = [client, *rdp_arguments(host)]
-                    else:
-                        args = [SSH_COMMAND, host.type, client, *rdp_arguments(host)]
-                else:
-                    if host.user == "" or host.password == "":
-                        password = ""
-                        cmd = TEL_BIN
-                        args = [TEL_BIN]
-                    else:
-                        args = [SSH_COMMAND, host.type, "-l", host.user]
-                    if host.extra_params is not None and host.extra_params != "":
-                        args += shlex.split(host.extra_params)
-                    args += [host.host, host.port]
-                v.command = (cmd, args, password)
+                spawn = kind.command(host, connection_programs())
+                v.command = (spawn.program, spawn.argv, spawn.password)
                 # v.fork_command(cmd, args)
-                vte_run(v, cmd, args)
+                vte_run(v, spawn.program, spawn.argv)
                 while Gtk.events_pending():
                     Gtk.main_iteration()
 
                 # esperar 2 seg antes de enviar el pass para dar tiempo a que se levante expect y prevenir que se muestre el pass
-                if password is not None and password != "":
-                    GLib.timeout_add(2000, self.send_data, v, password)
+                if spawn.password is not None and spawn.password != "":
+                    GLib.timeout_add(2000, self.send_data, v, spawn.password)
 
             # esperar 3 seg antes de enviar comandos
             if host_sends_commands(host):
@@ -5424,6 +5351,8 @@ class Whost(GladeComponent):
         self.cmbBackspace = self.get_widget("cmbBackspace")
         self.cmbDelete = self.get_widget("cmbDelete")
         self.txtTerm = self.get_widget("txtTerm")
+        for kind in connections.CONNECTION_TYPES:
+            self.cmbType.append(kind.id, kind.id)
         self.cmbType.set_active(0)
         self.cmbBackspace.set_active(0)
         self.cmbDelete.set_active(0)
@@ -5480,7 +5409,9 @@ class Whost(GladeComponent):
         if host.commands is not None and host.commands != "":
             self.txtCommands.get_buffer().set_text(host.commands)
         self.chkCommands.set_active(host.commands_enabled)
-        self.txtCommands.set_sensitive(host.commands_enabled and host.type != "rdp")
+        self.txtCommands.set_sensitive(
+            host.commands_enabled and connections.named(host.type).sends_commands
+        )
         use_keep_alive = (
             host.keep_alive != "" and host.keep_alive != "0" and host.keep_alive is not None
         )
@@ -5578,15 +5509,16 @@ class Whost(GladeComponent):
 
         if ctype == "":
             ctype = "ssh"
+        kind = connections.named(ctype)
         tunnel = ""
 
-        if ctype == "ssh":
+        if kind.ssh_options:
             for x in self.treeModel:
                 tunnel = f"{x[3]},{tunnel}"
             tunnel = tunnel[:-1]
 
         # Validar datos
-        if group == "" or name == "" or (host == "" and ctype != "local"):
+        if group == "" or name == "" or (host == "" and kind.remote):
             msgbox(_("Los campos grupo, nombre y host son obligatorios"))
             return
 
@@ -5696,14 +5628,14 @@ class Whost(GladeComponent):
 
     # -- Whost.on_cmbType_changed {
     def on_cmbType_changed(self, widget, *args):
-        is_local = widget.get_active_text() == "local"
-        self.txtUser.set_sensitive(not is_local)
-        self.txtPassword.set_sensitive(not is_local)
-        self.txtPort.set_sensitive(not is_local)
-        self.txtHost.set_sensitive(not is_local)
-        self.txtExtraParams.set_sensitive(not is_local)
+        kind = connections.named(widget.get_active_text())
+        self.txtUser.set_sensitive(kind.remote)
+        self.txtPassword.set_sensitive(kind.remote)
+        self.txtPort.set_sensitive(kind.remote)
+        self.txtHost.set_sensitive(kind.remote)
+        self.txtExtraParams.set_sensitive(kind.remote)
 
-        if widget.get_active_text() == "ssh":
+        if kind.ssh_options:
             self.get_widget("tunnelGrid").show()
             self.txtKeepAlive.set_sensitive(True)
             self.chkKeepAlive.set_sensitive(True)
@@ -5713,7 +5645,6 @@ class Whost(GladeComponent):
             self.txtCompressionLevel.set_sensitive(self.chkCompression.get_active())
             self.txtPrivateKey.set_sensitive(True)
             self.btnBrowse.set_sensitive(True)
-            port = "22"
         else:
             self.get_widget("tunnelGrid").hide()
             self.txtKeepAlive.set_text("0")
@@ -5725,18 +5656,15 @@ class Whost(GladeComponent):
             self.txtCompressionLevel.set_sensitive(False)
             self.txtPrivateKey.set_sensitive(False)
             self.btnBrowse.set_sensitive(False)
-            port = "3389" if widget.get_active_text() == "rdp" else "23"
-            if is_local:
+            if not kind.remote:
                 self.txtUser.set_text("")
                 self.txtPassword.set_text("")
                 self.txtPort.set_text("")
                 self.txtHost.set_text("")
-        self.txtPort.set_text(port)
+        self.txtPort.set_text(kind.default_port)
 
-        # An RDP host sends no commands after login: see host_sends_commands.
-        takes_commands = widget.get_active_text() != "rdp"
-        self.chkCommands.set_sensitive(takes_commands)
-        self.txtCommands.set_sensitive(takes_commands and self.chkCommands.get_active())
+        self.chkCommands.set_sensitive(kind.sends_commands)
+        self.txtCommands.set_sensitive(kind.sends_commands and self.chkCommands.get_active())
 
     # -- Whost.on_cmbType_changed }
 

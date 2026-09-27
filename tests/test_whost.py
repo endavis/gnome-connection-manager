@@ -179,6 +179,51 @@ def test_whost_on_okbutton_validates_port(monkeypatch, app_module):
     assert destroy_stub.destroyed is False
 
 
+def save_as(app_module, monkeypatch, ctype, *, address="router.example.com", tunnels=()):
+    """Save a new host of type `ctype` through the dialog: what was saved, and any message."""
+    whost, _destroy = make_whost(app_module)
+    whost.cmbType = ComboStub(ctype)
+    whost.txtHost = TextEntry(address)
+    for tunnel in tunnels:
+        whost.treeModel.append([*tunnel.split(":")[:3], tunnel])
+    monkeypatch.setattr(app_module, "groups", {"ops": []})
+    monkeypatch.setattr(
+        app_module,
+        "wMain",
+        types.SimpleNamespace(updateTree=lambda: None, writeConfig=lambda: None),
+        raising=False,
+    )
+    messages: list = []
+    monkeypatch.setattr(app_module, "msgbox", messages.append)
+
+    whost.on_okbutton1_clicked(None)
+
+    return app_module.groups["ops"], messages
+
+
+def test_a_local_host_is_saved_without_an_address(monkeypatch, app_module):
+    saved, messages = save_as(app_module, monkeypatch, "local", address="")
+
+    assert messages == []
+    assert [(host.type, host.host) for host in saved] == [("local", "")]
+
+
+@pytest.mark.parametrize("ctype", ["ssh", "telnet", "rdp"])
+def test_a_remote_host_is_refused_without_an_address(monkeypatch, app_module, ctype):
+    saved, messages = save_as(app_module, monkeypatch, ctype, address="")
+
+    assert messages == [app_module._("Los campos grupo, nombre y host son obligatorios")]
+    assert saved == []
+
+
+@pytest.mark.parametrize(("ctype", "kept"), [("ssh", True), ("telnet", False), ("rdp", False)])
+def test_only_an_ssh_host_keeps_its_port_forwards(monkeypatch, app_module, ctype, kept):
+    """The page is hidden for the others, and whatever it held is not saved with them."""
+    saved, _messages = save_as(app_module, monkeypatch, ctype, tunnels=["8080:localhost:80"])
+
+    assert saved[0].tunnel == (["8080:localhost:80"] if kept else [""])
+
+
 # -- the dialog changes shape by connection type, on purpose (#103) -----------
 
 
@@ -244,6 +289,62 @@ def test_only_ssh_hosts_get_a_port_forwarding_tab(app_module):
     shown.clear()
     dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "telnet"))
     assert hidden and not shown, "Telnet must not offer port forwarding"
+
+
+class Field:
+    """A dialog control, as far as the type handler uses one."""
+
+    def __init__(self):
+        self.text = "kept"
+        self.sensitive = None
+
+    def set_text(self, text):
+        self.text = text
+
+    def set_sensitive(self, value):
+        self.sensitive = value
+
+    def get_active(self):
+        return False
+
+
+CONNECTION_FIELDS = ("txtUser", "txtPassword", "txtPort", "txtHost", "txtExtraParams")
+
+
+@pytest.mark.parametrize("ctype", ["local", "ssh", "telnet", "rdp"])
+def test_only_a_local_host_greys_and_clears_its_connection_fields(app_module, ctype):
+    """A local shell has no address, user, password or port. The port is then 23, since
+    the dialog refuses to save a host without a valid one."""
+    dialog = app_module.Whost.__new__(app_module.Whost)
+    names = (
+        *CONNECTION_FIELDS,
+        "txtKeepAlive",
+        "chkKeepAlive",
+        "chkX11",
+        "chkAgent",
+        "chkCompression",
+        "txtCompressionLevel",
+        "txtPrivateKey",
+        "btnBrowse",
+        "chkCommands",
+        "txtCommands",
+    )
+    fields = {name: Field() for name in names}
+    for name, field in fields.items():
+        setattr(dialog, name, field)
+    grid = types.SimpleNamespace(show=lambda: None, hide=lambda: None)
+    dialog.get_widget = lambda name: grid if name == "tunnelGrid" else fields[name]
+    local = ctype == "local"
+
+    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
+
+    assert {name: fields[name].sensitive for name in CONNECTION_FIELDS} == dict.fromkeys(
+        CONNECTION_FIELDS, not local
+    )
+    cleared = [name for name in ("txtUser", "txtPassword", "txtHost") if fields[name].text == ""]
+    assert cleared == (["txtUser", "txtPassword", "txtHost"] if local else [])
+    if local:
+        assert fields["txtPort"].text == "23"
 
 
 def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module):
