@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- **Hide input** in the cluster window, for a password sent to several consoles at once.
+  The box becomes a single line that masks what you type, and what you send from it is
+  not kept for `Ctrl+Up` to bring back. The terminal guide now describes the cluster
+  window, which only its shortcut table had named
 - VNC hosts. A host of type **vnc** shows its remote desktop in the tab, drawn by gtk-vnc
   and scaled to fit, logging in with the host's password and user or asking for them. A
   line above the desktop says why a connection failed or ended, and the tab ends as a

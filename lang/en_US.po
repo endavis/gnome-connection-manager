@@ -1882,3 +1882,9 @@ msgstr "Disconnected"
 
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
 msgstr "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
+
+msgid "Hide input"
+msgstr "Hide input"
+
+msgid "Mask what you type, for a password, and keep it out of the history"
+msgstr "Mask what you type, for a password, and keep it out of the history"

@@ -420,6 +420,24 @@ key you actually use. They address a position *within one pane*, which is why th
 restarts under each heading once you have split the window — with a split, the list groups
 consoles by pane and tells you which pane each one is in.
 
+## Typing into several consoles at once
+
+**Servers → Cluster** (`Ctrl+Shift+U`) opens a window listing your open consoles. Tick the
+ones to type into, or use **Select all**, **Clear selection** and **Invert selection**. A
+ticked console's tab is highlighted while the window is open. A tab that holds something
+other than a terminal is not listed.
+
+Type into the box at the bottom and press Enter: the text goes to each ticked console,
+followed by Enter. `Ctrl+Up` and `Ctrl+Down` bring back what you sent from the window,
+until you close it.
+
+For a password, such as the one `sudo` asks each host for, tick **Hide input** first. The
+box becomes a single line that masks what you type, and what you send from it is not kept
+for `Ctrl+Up` to bring back. The window opens with it unticked every time.
+
+Hiding covers GCM's side only. Send a password at a prompt that hides it, as `sudo`'s
+does. Typed at a shell prompt, the far end echoes it like any command.
+
 ## When a tab needs your attention
 
 A tab you are not watching can ask for your attention in three ways, and GCM shows each the

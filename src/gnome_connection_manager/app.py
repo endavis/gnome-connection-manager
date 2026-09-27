@@ -6507,9 +6507,7 @@ class Wcluster(GladeComponent):
             buf = widget.get_buffer()
             text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
             buf.set_text("")
-            for x in self.treeStore:
-                if x[0]:
-                    vte_feed(x[2], text + "\r")
+            self.send_to_selected(text)
             widget.history.append(text)
             widget.history_index = -1
             return True
@@ -6531,6 +6529,38 @@ class Wcluster(GladeComponent):
             )
 
     # -- Wcluster.on_txtCommands_key_press_event }
+
+    def send_to_selected(self, text):
+        for x in self.treeStore:
+            if x[0]:
+                vte_feed(x[2], text + "\r")
+
+    # -- Wcluster.on_chkHideInput_toggled {
+    def on_chkHideInput_toggled(self, widget, *args):
+        """A one-line field that masks what is typed, in place of the text box (#237).
+
+        For a password sent to several consoles at once. The text box cannot do it: GTK
+        3's text view has no visibility property, measured, where an entry has.
+        """
+        hidden = widget.get_active()
+        entry = self.get_widget("txtHiddenCommand")
+        # Nothing half-typed is left behind in either direction.
+        entry.set_text("")
+        entry.set_visible(hidden)
+        self.get_widget("scrolledwindow6").set_visible(not hidden)
+        # The hint names the history, which a hidden line is not kept in.
+        self.get_widget("label53").set_visible(not hidden)
+        (entry if hidden else self.get_widget("txtCommands1")).grab_focus()
+
+    # -- Wcluster.on_chkHideInput_toggled }
+
+    # -- Wcluster.on_txtHiddenCommand_activate {
+    def on_txtHiddenCommand_activate(self, widget, *args):
+        # Sent as the text box sends a line, and not added to its history.
+        self.send_to_selected(widget.get_text())
+        widget.set_text("")
+
+    # -- Wcluster.on_txtHiddenCommand_activate }
 
 
 class TranscriptReplayer:
