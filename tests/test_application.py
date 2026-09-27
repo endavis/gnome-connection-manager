@@ -582,40 +582,51 @@ def test_an_unbound_key_is_left_alone(app_module, monkeypatch):
     assert result is not True, "VTE must keep handling keys GCM has no binding for"
 
 
-# -- closing a console must reach the branch that sets the terminal (#95) -----
+# -- closing a console is a tab action, whatever the tab holds (#95, #223) -----
 
 
-def test_closing_a_console_asks_for_no_tab_action(app_module):
-    """There is no tab-scoped close to ask for: the tab menu has no Close item."""
+def test_closing_a_console_is_a_tab_action(app_module):
+    """Ctrl+W closes a tab, so it must reach a tab without a terminal too (#223)."""
     app = app_module.GcmApplication()
     controller = ControllerStub()
     app._controller = controller
 
     app._on_action_console_close(None, None)
 
-    assert ("popup", ("X", None)) in controller.calls
+    assert ("popup", ("X", "X")) in controller.calls
 
 
-def test_closing_a_console_leaves_the_terminal_set_for_the_handler(app_module):
+class ClosingNotebook:
+    def __init__(self, *pages):
+        self.pages = list(pages)
+        for page in pages:
+            page.get_parent = lambda self=self: self
+
+    def page_num(self, page):
+        return self.pages.index(page) if page in self.pages else -1
+
+    def remove_page(self, position):
+        self.pages.pop(position)
+
+
+def test_closing_a_console_closes_the_tab_in_use_through_the_real_wiring(app_module):
     """The real wiring, not just the call shape.
 
-    "X" reads `popupMenu.terminal`, and only the terminal branch of
-    trigger_popup_action sets it. Sending it down the tab branch left it unset, so
-    Ctrl+W raised AttributeError and the console stayed open (#95).
+    "X" read `popupMenu.terminal`, which only the terminal branch of
+    trigger_popup_action set. Sent down the tab branch it was unset, so Ctrl+W raised
+    AttributeError and the console stayed open (#95). It now reads the context tab,
+    which the tab branch sets, and needs no terminal at all (#223).
     """
     controller = app_module.Wmain.__new__(app_module.Wmain)
     controller._context_tab_widget = None
-    controller.nbConsole = types.SimpleNamespace(get_n_pages=lambda: 1)
-    controller.popupMenu = types.SimpleNamespace()
-    terminal = object()
-    controller.get_target_terminal = lambda: terminal
-    dispatched = []
-    controller.on_popupmenu = lambda _widget, item, *_args: dispatched.append(
-        (item, getattr(controller.popupMenu, "terminal", None))
-    )
+    controller._context_terminal = None
+    showing, other = types.SimpleNamespace(), types.SimpleNamespace()
+    notebook = ClosingNotebook(other, showing)
+    controller.page_in_use = lambda: showing
 
     app = app_module.GcmApplication()
     app._controller = controller
     app._on_action_console_close(None, None)
 
-    assert dispatched == [("X", terminal)], "the close handler was given no terminal"
+    assert notebook.pages == [other], "the tab in use was not closed"
+    assert controller._context_tab_widget is None, "the context outlived the action"

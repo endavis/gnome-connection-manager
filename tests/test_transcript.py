@@ -522,8 +522,9 @@ def test_a_tab_menu_transcript_uses_that_tabs_terminal(app_module):
     controller = app_module.Wmain.__new__(app_module.Wmain)
     controller._context_terminal = None
     controller._context_tab_widget = None
-    on_screen, in_the_tab = object(), object()
-    controller.current = on_screen
+    controller.sync_console_log_action = lambda terminal: None
+    on_screen, in_the_tab = app_module.Vte.Terminal(), app_module.Vte.Terminal()
+    controller.page_in_use = lambda: types.SimpleNamespace(get_children=lambda: [on_screen])
     page = types.SimpleNamespace(get_children=lambda: [in_the_tab])
 
     controller.set_context_tab_widget(page)
@@ -536,8 +537,9 @@ def test_the_transcript_action_hands_on_the_context_terminal(app_module):
     controller = app_module.Wmain.__new__(app_module.Wmain)
     controller._context_terminal = None
     controller._context_tab_widget = None
-    controller.current = object()
-    in_the_tab = object()
+    controller.sync_console_log_action = lambda terminal: None
+    on_screen, in_the_tab = app_module.Vte.Terminal(), app_module.Vte.Terminal()
+    controller.page_in_use = lambda: types.SimpleNamespace(get_children=lambda: [on_screen])
     controller.set_context_tab_widget(types.SimpleNamespace(get_children=lambda: [in_the_tab]))
     asked = []
     controller.save_session_transcript = lambda terminal: asked.append(terminal)

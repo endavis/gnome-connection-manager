@@ -154,10 +154,15 @@ def console_env(monkeypatch, app_module):
     return app_module
 
 
-def make_wmain(app_module, root, current=None):
+def make_wmain(app_module, root, in_use=None):
+    """A Wmain over fake panes, with `in_use` as the tab in use.
+
+    Which tab that is comes from the keyboard, and is tested against real GTK in
+    test_tab_pages.py; here it is given.
+    """
     wmain = object.__new__(app_module.Wmain)
     wmain.hpMain = root
-    wmain.current = current
+    wmain.page_in_use = lambda: in_use
     wmain.window = object()
     return wmain
 
@@ -351,9 +356,7 @@ def test_open_console_groups_marks_the_focused_console(console_env, monkeypatch)
     monkeypatch.setattr(console_env, "shortcuts", {})
     left = FakeNotebook([FakeTabLabel("a")])
     right = FakeNotebook([FakeTabLabel("b"), FakeTabLabel("c")])
-    terminal = right.pages[1].terminal
-    terminal.get_parent = lambda: right.pages[1]
-    wmain = make_wmain(console_env, FakePaned(left, right), current=terminal)
+    wmain = make_wmain(console_env, FakePaned(left, right), in_use=right.pages[1])
 
     marked = [
         entry.text
@@ -464,9 +467,7 @@ def test_menu_is_rebuilt_rather_than_appended_to(console_env, monkeypatch):
 def test_menu_marks_the_current_console(console_env, monkeypatch):
     monkeypatch.setattr(console_env, "shortcuts", {})
     notebook = FakeNotebook([FakeTabLabel("a"), FakeTabLabel("b")])
-    terminal = notebook.pages[1].terminal
-    terminal.get_parent = lambda: notebook.pages[1]
-    wmain = make_wmain(console_env, FakePaned(notebook), current=terminal)
+    wmain = make_wmain(console_env, FakePaned(notebook), in_use=notebook.pages[1])
 
     menu = wmain.build_console_menu(FakeMenu())
 

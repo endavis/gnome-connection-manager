@@ -49,6 +49,10 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- A tab can hold something other than a terminal, which VNC, web views and RDP in a tab
+  will need. Every tab is opened the same way, and what acts on a tab first asks whether
+  it holds a terminal: one that does not can be renamed, closed, split and moved between
+  panes, and terminal actions leave it alone. Nothing opens such a tab yet
 - `docs/SPEC.md` says at the top that it specifies a Qt 6 port that is not being built, so
   it can no longer be mistaken for a description of the program. It was the only account of
   folders anywhere
@@ -86,6 +90,11 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- With the keyboard in the server tree or the search box, a console shortcut acted in the
+  pane of the last terminal GCM had given the keyboard to: a new tab's, say, or the one
+  left showing by a split. Clicking into a terminal did not count, so after a click into
+  the other pane, Ctrl+W closed a tab in the first. A shortcut now acts in the pane you
+  were last in
 - An item chosen from a terminal's menu acted on the terminal with the keyboard. After a
   split, with the keyboard in one pane, the menu of a terminal in the other pane pasted
   into, cleared, cloned or closed the terminal you were typing in. It now acts on the

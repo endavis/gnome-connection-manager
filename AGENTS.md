@@ -373,20 +373,35 @@ Practices below have each caught real bugs in this repo. They are worth the time
   pointer input, the drop carries the same label object across, still reorderable and
   detachable, so the tab keeps everything it was showing (#186). GCM's `page-added`
   and `page-removed` handlers do run on a drop, which is what the test there covers.
-- A console action acts on the tab in use, the one showing in the pane the keyboard is
-  in, or, from a tab's or a terminal's menu, on that tab (#219, #221).
-  `get_context_tab_widget` answers which, reading the terminal's context too: the
-  terminal menu's Reset and Clone are tab actions. `current_notebook` finds the pane
-  from the keyboard first, since a click into a terminal does not update
-  `self.current`. Terminal shortcuts are also application accelerators, which run
-  before the focused terminal sees the key, so a key reaches the action's handler and
-  not `on_terminal_keypress`. Both menus clear their context from an idle callback
-  after `hide`, in `on_context_menu_hide`. Measured: GTK hides a menu before the chosen
-  item's action runs, and that action reads the context. The tab menu cleared half of
-  it at once, which sent the next paste or Ctrl+W to a tab nobody was looking at. The
-  terminal menu cleared all of it, so each item acted on the terminal with the
-  keyboard, which after a split can be in the other pane. Opening the menu does not
-  move the keyboard, measured.
+- A console action acts on the tab in use, or, from a tab's or a terminal's menu, on
+  that tab (#219, #221). `get_context_tab_widget` answers which, reading the terminal's
+  context too: the terminal menu's Reset and Clone are tab actions. The tab in use is
+  `page_in_use`: the page showing in the pane the keyboard is in, or was last in, which
+  `current_notebook` gives. `on_window_set_focus` keeps that pane, following the window's
+  `set-focus` into the panes by a click or a key alike (#223). It replaced
+  `self.current`, the last terminal given the keyboard, which a click never set and a
+  tab without a terminal could not be. `get_target_terminal` is the context terminal,
+  else that tab's terminal, else None. Terminal shortcuts are also application
+  accelerators, which run before the focused terminal sees the key, so a key reaches
+  the action's handler and not `on_terminal_keypress`. Both menus clear their context
+  from an idle callback after `hide`, in `on_context_menu_hide`, and
+  `trigger_popup_action` clears it even when the action raises. Measured: GTK hides a
+  menu before the chosen item's action runs, and that action reads the context. The
+  tab menu cleared half of it at once, which sent the next paste or Ctrl+W to a tab
+  nobody was looking at. The terminal menu cleared all of it, so each item acted on
+  the terminal with the keyboard, which after a split can be in the other pane.
+  Opening the menu does not move the keyboard, measured.
+- A tab holds a page, and the page need not hold a terminal (#223). `addTab` builds one
+  around a terminal and opens it with `add_page`, which a page of any other kind goes
+  through too: VNC, web views and in-tab RDP are to be such pages (#207). Nothing may
+  take a page's first child for its terminal; `page_terminal` answers, with None for a
+  page that holds something else. Terminal actions then do nothing, and tab actions --
+  Rename, Close console, Split, moving between panes, the open-console list -- work on
+  any tab. `NotebookTabLabel.prepare_menu` offers such a tab Rename and Split only, and
+  the cluster window leaves it out. Measured, choosing a tab whose page cannot take the
+  keyboard leaves the keyboard on the notebook itself. Alt+1 to Alt+9 are handled in
+  `on_terminal_keypress`, not as accelerators, so they do nothing from such a tab.
+  `tests/test_tab_pages.py` opens a kind of page of its own to test all of this.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
