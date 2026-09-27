@@ -661,6 +661,7 @@ through the shortcut editor in Preferences.
 | `Ctrl+=` | `zoom_in` | yes |
 | `Ctrl+-` | `zoom_out` | yes |
 | `Ctrl+0` | `zoom_reset` | yes |
+| `Ctrl+Shift+P` | `snippets` | yes |
 | `Alt+1`–`Alt+9` | `console_1`–`console_9` | no |
 
 To rebind, give the command its new key. The command goes on the left, the key on the
@@ -735,21 +736,35 @@ Avoid rebinding a terminal shortcut onto one of these. Window accelerators are d
 before the focused terminal sees the key, so the application command would win and the
 terminal binding would never fire.
 
-## Custom commands
+## Snippets
 
-A custom command is text GCM types into a console for you: a command you run often, a
-query, a long path. Each is listed by its name in the terminal menu's **Custom commands**
-and the menubar's **Custom Commands**, and sent to the tab the menu is for. One with a
-key is sent by the key too, to the tab you are typing in.
+A snippet is text GCM types into a console for you: a command you run often, a query, a
+long path. The terminal menu and the menubar's Edit menu each have a **Snippets**
+submenu, which lists them by name, in their folders, and sends the one chosen to the tab
+the menu is for. A snippet with a key is sent by the key too, to the tab you are typing
+in.
 
-Make one under **Custom Commands** on the **Shortcuts** tab of Preferences: type its
-text, and press its key in the **Shortcut** column if it is to have one. A command
-without a key is kept, and sent from the menus. Enter finishes the text, and Shift+Enter
-starts a new line in it. The text is typed as written, so a command meant to run ends
-with a new line. Its name is its first line, cut short if it is long, unless `gcm.conf`
-gives it one.
+**Find Snippet…**, at the top of both submenus and on `Ctrl+Shift+P`, finds one by
+typing. Every word typed must be in a snippet's name, folder, description or text. Up
+and Down move through what it found, and Enter sends the one chosen, which is the first
+found until another is. A double-click sends the one clicked, and Escape closes it. While
+it is open, what you type goes to it rather than to a console.
 
-A command can name values of the host of the tab it is sent to, filled in as it is sent:
+They are made on the **Snippets** tab of Preferences. The list on the left shows them by
+folder: **Add** makes one in the folder chosen, or in the chosen snippet's folder, and
+**Delete** deletes the snippet chosen. On the right are the chosen snippet's:
+
+- **Name**, how the menus list it. Left empty, it is the text's first line.
+- **Folder**, a path such as `ops/storage`, which files it in a submenu two deep.
+- **Key**, which sends it: press the key in the field. A key that types a character, such
+  as a letter or Enter, needs Ctrl, Alt or Super with it, since bound alone it would be
+  taken from every console. Backspace leaves the snippet without a key.
+- **Description**, which the search reads as well.
+- **Text**, which is typed as written, so a snippet meant to run ends with a new line.
+
+**OK** keeps the changes, and **Cancel** drops them. A snippet without text is not kept.
+
+A snippet can name values of the host of the tab it is sent to, filled in as it is sent:
 
 | Placeholder | Is |
 |---|---|
@@ -762,11 +777,11 @@ A command can name values of the host of the tab it is sent to, filled in as it 
 
 They are typed as they are, not quoted for a shell, since what runs in the tab need not
 be one. A local tab's host is named `local`, with no address. `{?Label}` asks for a value
-as the command is sent, showing `Label`: each label once however often it appears, all
+as the snippet is sent, showing `Label`: each label once however often it appears, all
 before anything is typed, and **Cancel** sends nothing. Anything else in braces, such as
 `awk '{print $1}'`, is typed as written.
 
-In `gcm.conf` each command is a record of its own:
+In `gcm.conf` each snippet is a record of its own:
 
 ```ini
 [snippet 5e1ec7ed]
@@ -777,16 +792,17 @@ folder = ops/storage
 description = free space on a mount
 ```
 
-`text` is a JSON string, so a new line is `\n` and a backslash `\\`. `folder` files the
-command in a submenu of both menus, `ops/storage` two deep. Only `text` is needed.
-Preferences keeps a command's folder and description, and a name `gcm.conf` gave it,
-when it changes the text or the key.
+`text` is a JSON string, so a new line is `\n` and a backslash `\\`. Only `text` is
+needed.
 
-GCM used to keep custom commands in `[shortcuts]`, as `shortcutN` and `commandN` pairs:
-a command only with a key, and listed by its first 30 characters. GCM now takes each
-pair up as it starts, with its key and its text, and its next save writes it as a record
-like the one above. A save writes each command that has a key back as a pair as well, so
-that an older GCM still has it.
+### Where custom commands went
+
+Custom commands are snippets now. GCM kept them in `[shortcuts]`, as `shortcutN` and
+`commandN` pairs: a command only with a key, listed by its first 30 characters, and made
+in a table under **Custom Commands** on the Shortcuts tab of Preferences. GCM takes each
+pair up as it starts, with its key and its text, named by its first line, and its next
+save writes it as a record like the one above. A save writes each snippet that has a key
+back as a pair as well, so that an older GCM still has it.
 
 ## What agent CLIs do
 

@@ -64,3 +64,51 @@ FONT_SCALE_STEP = 1.1
 def clamp_font_scale(scale):
     """Hold a font scale inside the range VTE will actually apply."""
     return min(FONT_SCALE_MAX, max(FONT_SCALE_MIN, scale))
+
+
+# Keys that only change what another key types, or lock a mode, by GDK's names for them.
+# Pressed alone they are no key to bind, and GDK's `is_modifier` cannot say so: measured
+# with real input under X11, it is False for Shift, Control, Alt and Super alike (#239).
+MODIFIER_KEY_NAMES = frozenset(
+    {
+        "Shift_L",
+        "Shift_R",
+        "Control_L",
+        "Control_R",
+        "Alt_L",
+        "Alt_R",
+        "Meta_L",
+        "Meta_R",
+        "Super_L",
+        "Super_R",
+        "Hyper_L",
+        "Hyper_R",
+        "ISO_Level3_Shift",
+        "ISO_Level5_Shift",
+        "Mode_switch",
+        "ISO_Next_Group",
+        "ISO_Prev_Group",
+        "Caps_Lock",
+        "Shift_Lock",
+        "Num_Lock",
+    }
+)
+
+
+def captured_key(keyval_name, key_name, types_text, held):
+    """What a key pressed in a snippet's key field makes that snippet's key (#240): the
+    name to bind it to, "" to leave it without one, or None to leave the field as it is.
+
+    `keyval_name` is GDK's name for the key, `key_name` the name GCM binds it by,
+    `types_text` whether it types a character, and `held` whether Ctrl, Alt or Super is
+    held with it. A modifier alone waits for the key it modifies. Backspace or Delete
+    alone clears the key. A key that types text with at most Shift held is refused:
+    bound, it would be taken from every console, as Enter or a letter would.
+    """
+    if keyval_name in MODIFIER_KEY_NAMES:
+        return None
+    if keyval_name in ("BackSpace", "Delete") and not held:
+        return ""
+    if types_text and not held:
+        return None
+    return key_name

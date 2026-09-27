@@ -12,6 +12,11 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A **Snippets** tab in Preferences, in place of the custom commands table, to add, edit,
+  file and delete snippets, and **Find Snippet…**, on `Ctrl+Shift+P` and at the top of
+  the Snippets menus, which finds one by typing and sends it. A key that types a
+  character is refused as a snippet's key without Ctrl, Alt or Super, since it would be
+  taken from every console
 - A dropped session can be reconnected by itself. **Reconnect a dropped session N times**
   in Preferences sets how many attempts, and 0, the default, turns it off. Each attempt
   comes after a countdown in the tab, which a key stops. Only a lost connection starts
@@ -79,13 +84,12 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
-- Custom commands are listed by name in the terminal menu and the menubar, in folders,
-  and one without a key is kept and sent from the menus. A command can name the values of
-  the tab's host, `{name}`, `{address}` and the rest, typed as they are, and `{?Label}`
-  asks for a value as it is sent. `gcm.conf` keeps each as a `[snippet <id>]` record,
-  which may give it a name, a folder and a description; GCM takes up the old
-  `shortcutN` and `commandN` pairs once, and writes each command with a key back as a
-  pair for an older GCM
+- Custom commands are snippets: named, filed in folders, listed by name in the
+  **Snippets** menus, and kept and sent without a key as well as with one. A snippet can
+  name the values of the tab's host, `{name}`, `{address}` and the rest, typed as they
+  are, and `{?Label}` asks for a value as it is sent. `gcm.conf` keeps each as a
+  `[snippet <id>]` record. GCM takes up the old `shortcutN` and `commandN` pairs once,
+  and writes each snippet with a key back as a pair for an older GCM
 - Connection types moved out of `app.py` into `utils/connections.py`, one class per type,
   and the host dialog lists them from there rather than from the glade file. A new type
   adds a class instead of a branch in each place that compared a host's type by name.

@@ -1758,3 +1758,48 @@ msgstr ""
 
 msgid "Reconnecting stopped."
 msgstr ""
+
+msgid "Snippets"
+msgstr ""
+
+msgid "Find Snippet…"
+msgstr ""
+
+msgid "Name or text"
+msgstr ""
+
+msgid "New snippet"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Folder"
+msgstr ""
+
+msgid "Key"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Its first line"
+msgstr ""
+
+msgid "Press the key that sends it"
+msgstr ""
+
+msgid "Backspace leaves it without a key"
+msgstr ""
+
+msgid "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+msgstr ""

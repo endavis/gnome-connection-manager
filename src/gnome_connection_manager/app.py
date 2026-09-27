@@ -137,6 +137,7 @@ from gnome_connection_manager.utils.logpaths import (  # noqa: E402
 )
 from gnome_connection_manager.utils.shortcuts import (  # noqa: E402
     FONT_SCALE_STEP,
+    captured_key,
     clamp_font_scale,
     parse_custom_keys,
 )
@@ -415,6 +416,7 @@ _ZOOM_IN = ["zoom_in"]
 _ZOOM_OUT = ["zoom_out"]
 _ZOOM_RESET = ["zoom_reset"]
 _VIEW_BUFFER = ["view_buffer"]
+_SNIPPETS = ["snippets"]
 
 # Terminal commands and their default keys, owned by [shortcuts] in gcm.conf.
 SHORTCUT_DEFAULTS = (
@@ -438,6 +440,7 @@ SHORTCUT_DEFAULTS = (
     ("zoom_out", _ZOOM_OUT, "CTRL+MINUS"),
     ("zoom_reset", _ZOOM_RESET, "CTRL+0"),
     ("view_buffer", _VIEW_BUFFER, "CTRL+SHIFT+F"),
+    ("snippets", _SNIPPETS, "CTRL+SHIFT+P"),
 )
 
 # Accelerators GCM registers on the window itself. GTK dispatches these before the
@@ -483,6 +486,7 @@ TERMINAL_ACTIONS = {
     "zoom_out": "zoom-out",
     "zoom_reset": "zoom-reset",
     "view_buffer": "view-buffer",
+    "snippets": "find-snippet",
 }
 
 _ACCEL_MODIFIERS = (
@@ -2210,6 +2214,8 @@ class Wmain(GladeComponent):
                     self.terminal_zoom_reset(widget)
                 elif cmd == _VIEW_BUFFER:
                     self.show_buffer_viewer(widget)
+                elif cmd == _SNIPPETS:
+                    self.show_snippet_picker(widget)
                 elif cmd == _CLEAR:
                     widget.reset(True, True)
                 elif cmd == _FIND_BACK:
@@ -2928,7 +2934,7 @@ class Wmain(GladeComponent):
         # Menu de comandos personalizados
         self.popupMenu.mnuCommands = Gtk.Menu()
 
-        self.popupMenu.mnuCmds = menuItem = Gtk.MenuItem(label=_("Comandos personalizados"))
+        self.popupMenu.mnuCmds = menuItem = Gtk.MenuItem(label=_("Snippets"))
         menuItem.set_submenu(self.popupMenu.mnuCommands)
         self.popupMenu.append(menuItem)
         menuItem.show()
@@ -3068,6 +3074,13 @@ class Wmain(GladeComponent):
         commands_menu = getattr(application, "commands_menu", None)
         if commands_menu is not None:
             commands_menu.remove_all()
+        find = Gtk.MenuItem(label=_("Find Snippet…"))
+        find.set_action_name("app.find-snippet")
+        find.show()
+        self.popupMenu.mnuCommands.append(find)
+        separator = Gtk.SeparatorMenuItem()
+        separator.show()
+        self.popupMenu.mnuCommands.append(separator)
         # The menubar is built from its model, so it follows the edits.
         self.fill_snippet_menus(
             snippetlib.tree(snippets), self.popupMenu.mnuCommands, commands_menu
@@ -4701,6 +4714,14 @@ class Wmain(GladeComponent):
         dialog.connect("delete-event", lambda *_args: replayer.cancel())
         replayer.start()
         return replayer
+
+    def show_snippet_picker(self, terminal):
+        """Find a snippet by name or text, and send it to `terminal` (#240)."""
+        if terminal is None:
+            return None
+        picker = SnippetPicker(self, terminal)
+        picker.show_all()
+        return picker
 
     def show_buffer_viewer(self, terminal):
         """Open the scrollback in a text window where the keyboard works."""
@@ -6344,7 +6365,6 @@ class Wconfig(GladeComponent):
         self.chkDefaultFont = self.get_widget("chkDefaultFont")
         self.chkDefaultColors = self.get_widget("chkDefaultColors1")
         self.treeCmd = self.get_widget("treeCommands")
-        self.treeCustom = self.get_widget("treeCustom")
         self.dlgColor = None
         self.capture_keys = False
 
@@ -6487,34 +6507,11 @@ class Wconfig(GladeComponent):
         column.set_expand(False)
         self.treeCmd.append_column(column)
 
-        # Text, key, and the id of the snippet the row edits: "" for a new one (#240).
-        self.treeModel2 = Gtk.TreeStore(
-            GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
-        )
-        self.treeCustom.set_model(self.treeModel2)
-        renderer = MultilineCellRenderer()
-        renderer.set_property("editable", True)
-        renderer.connect("edited", self.on_edited, self.treeModel2, 0)
-        column = Gtk.TreeViewColumn(_("Comando"), renderer, text=0)
-        column.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
-        column.set_expand(True)
-        self.treeCustom.append_column(column)
-        renderer = Gtk.CellRendererText()
-        renderer.set_property("editable", True)
-        renderer.connect("edited", self.on_edited, self.treeModel2, 1)
-        renderer.connect("editing-started", self.on_editing_started, self.treeModel2, 1)
-        column = Gtk.TreeViewColumn(_("Atajo"), renderer, text=1)
-        column.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
-        column.set_expand(False)
-        self.treeCustom.append_column(column)
-
         commands = [item for item in shortcuts.items() if isinstance(item[1], list)]
         for key, command in sorted(commands, key=lambda item: item[1][0]):
             self.treeModel.append(None, [command[0], key])
-        for snippet in snippets:
-            self.treeModel2.append(None, [snippet.text, snippet.key, snippet.id])
 
-        self.treeModel2.append(None, ["", "", ""])
+        self.build_snippets_page()
 
         # Connect signal handlers for color buttons and default colors checkbox
         self.btnFColor.connect("color-set", self.on_btnFColor_color_set)
@@ -6620,45 +6617,237 @@ class Wconfig(GladeComponent):
 
     def on_edited(self, widget, rownum, value, model, colnum):
         model[rownum][colnum] = value
-        if model == self.treeModel2:
-            i = self.treeModel2.get_iter_first()
-            while i is not None:
-                j = self.treeModel2.iter_next(i)
-                self.treeModel2[i]
-                if self.treeModel2[i][0] == self.treeModel2[i][1] == "":
-                    self.treeModel2.remove(i)
-                i = j
-            self.treeModel2.append(None, ["", "", ""])
-            if self.capture_keys:
-                self.capture_keys = False
+        self.capture_keys = False
 
-    def edited_snippets(self):
-        """The snippets as the table leaves them (#240).
+    # -- the Snippets page (#240)
 
-        A row keeps what the table does not show of its snippet, found by id: its name,
-        folder and description. A new row is a new snippet, named by its first line, and
-        an edited one is renamed so while its name is still the one made that way. A row
-        with no text is none, and one with no key is a snippet the menus send.
-        """
-        before = {snippet.id: snippet for snippet in snippets}
-        taken = set(before)
-        edited = []
-        for row in self.treeModel2:
-            text, key, snippet_id = row[0], row[1], row[2]
-            if text == "":
+    SNIPPET_FIELDS = ("name", "folder", "key", "description")
+
+    def build_snippets_page(self):
+        """The Snippets page: the library by folder on the left, and the snippet chosen on
+        the right. It edits copies, which OK keeps and Cancel drops."""
+        self.library = [dataclasses.replace(snippet) for snippet in snippets]
+        self.chosen = None
+
+        # Name as the list shows it, key, and id: "" for a folder's row.
+        self.snippet_store = Gtk.TreeStore(
+            GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
+        )
+        view = self.snippet_view = Gtk.TreeView(model=self.snippet_store)
+        view.append_column(Gtk.TreeViewColumn(_("Name"), Gtk.CellRendererText(), text=0))
+        view.append_column(Gtk.TreeViewColumn(_("Key"), Gtk.CellRendererText(), text=1))
+        view.get_selection().connect("changed", self.on_snippet_chosen)
+        scroller = Gtk.ScrolledWindow(vexpand=True)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_min_content_width(200)
+        scroller.set_shadow_type(Gtk.ShadowType.IN)
+        scroller.add(view)
+        add = Gtk.Button(label=_("Add"))
+        add.connect("clicked", self.on_add_snippet)
+        self.btnDeleteSnippet = Gtk.Button(label=_("Delete"))
+        self.btnDeleteSnippet.connect("clicked", self.on_delete_snippet)
+        buttons = Gtk.Box(spacing=6)
+        buttons.pack_start(add, False, False, 0)
+        buttons.pack_start(self.btnDeleteSnippet, False, False, 0)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        left.pack_start(scroller, True, True, 0)
+        left.pack_start(buttons, False, False, 0)
+
+        form = self.snippet_form = Gtk.Grid(column_spacing=6, row_spacing=6, hexpand=True)
+        labels = {
+            "name": _("Name"),
+            "folder": _("Folder"),
+            "key": _("Key"),
+            "description": _("Description"),
+        }
+        self.snippet_entries = {}
+        for row, field in enumerate(self.SNIPPET_FIELDS):
+            entry = Gtk.Entry(hexpand=True)
+            entry.connect("changed", self.on_snippet_entry_changed, field)
+            form.attach(Gtk.Label(label=labels[field], halign=Gtk.Align.START), 0, row, 1, 1)
+            form.attach(entry, 1, row, 1, 1)
+            self.snippet_entries[field] = entry
+        self.snippet_entries["name"].set_placeholder_text(_("Its first line"))
+        folder = self.snippet_entries["folder"]
+        folder.set_placeholder_text("ops/db")
+        # Filed in the list once the field is left, not at each letter typed.
+        folder.connect("focus-out-event", lambda *_args: self.refile_chosen_snippet())
+        folder.connect("activate", lambda *_args: self.refile_chosen_snippet())
+        key = self.snippet_entries["key"]
+        key.set_editable(False)
+        key.set_placeholder_text(_("Press the key that sends it"))
+        key.set_tooltip_text(_("Backspace leaves it without a key"))
+        key.connect("key-press-event", self.on_snippet_key_press)
+        row = len(self.SNIPPET_FIELDS)
+        text_label = Gtk.Label(label=_("Text"), halign=Gtk.Align.START, valign=Gtk.Align.START)
+        form.attach(text_label, 0, row, 1, 1)
+        self.snippet_text = Gtk.TextView(monospace=True)
+        self.snippet_text.get_buffer().connect("changed", self.on_snippet_text_changed)
+        text_scroller = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
+        text_scroller.set_shadow_type(Gtk.ShadowType.IN)
+        text_scroller.add(self.snippet_text)
+        form.attach(text_scroller, 1, row, 1, 1)
+        hint = Gtk.Label(
+            label=_(
+                "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+            ),
+            halign=Gtk.Align.START,
+            xalign=0,
+            wrap=True,
+            max_width_chars=60,
+        )
+        hint.get_style_context().add_class("dim-label")
+        form.attach(hint, 1, row + 1, 1, 1)
+
+        page = Gtk.Box(spacing=12)
+        page.set_border_width(6)
+        page.pack_start(left, False, True, 0)
+        page.pack_start(form, True, True, 0)
+        page.show_all()
+        self.get_widget("nbConfig").append_page(page, Gtk.Label(label=_("Snippets")))
+        self.fill_snippet_store()
+        self.show_chosen_snippet()
+
+    @staticmethod
+    def listed_name(snippet):
+        if snippet.name.strip():
+            return snippet.name
+        return snippetlib.name_for(snippet.text) if snippet.text.strip() else _("New snippet")
+
+    def fill_snippet_store(self):
+        """The library by folder, as the menus list it."""
+        self.snippet_store.clear()
+
+        def add(folder, parent):
+            for child in folder.folders:
+                add(child, self.snippet_store.append(parent, [child.name, "", ""]))
+            for snippet in folder.snippets:
+                self.snippet_store.append(parent, [snippet.name, snippet.key, snippet.id])
+
+        # Sorted by the name each is listed by: one not named yet by its first line.
+        listed = [dataclasses.replace(each, name=self.listed_name(each)) for each in self.library]
+        add(snippetlib.tree(listed), None)
+        self.snippet_view.expand_all()
+
+    def snippet_row(self, snippet_id):
+        found = []
+
+        def visit(model, _path, row):
+            if model[row][2] == snippet_id:
+                found.append(row)
+                return True
+            return False
+
+        self.snippet_store.foreach(visit)
+        return found[0] if found else None
+
+    def choose_snippet(self, snippet_id):
+        row = self.snippet_row(snippet_id)
+        if row is not None:
+            self.snippet_view.get_selection().select_iter(row)
+
+    def on_snippet_chosen(self, selection):
+        model, row = selection.get_selected()
+        snippet_id = model[row][2] if row is not None else ""
+        self.chosen = next((each for each in self.library if each.id == snippet_id), None)
+        self.show_chosen_snippet()
+
+    def show_chosen_snippet(self):
+        """The form for the chosen snippet, or empty and greyed with a folder or none."""
+        snippet = self.chosen
+        for field, entry in self.snippet_entries.items():
+            entry.set_text(getattr(snippet, field) if snippet is not None else "")
+        self.snippet_text.get_buffer().set_text(snippet.text if snippet is not None else "")
+        self.snippet_form.set_sensitive(snippet is not None)
+        self.btnDeleteSnippet.set_sensitive(snippet is not None)
+
+    def update_chosen_row(self):
+        row = self.snippet_row(self.chosen.id)
+        if row is not None:
+            self.snippet_store[row][0] = self.listed_name(self.chosen)
+            self.snippet_store[row][1] = self.chosen.key
+
+    def on_snippet_entry_changed(self, entry, field):
+        if self.chosen is None:
+            return
+        setattr(self.chosen, field, entry.get_text())
+        if field != "folder":
+            self.update_chosen_row()
+
+    def on_snippet_text_changed(self, buffer):
+        if self.chosen is None:
+            return
+        self.chosen.text = buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
+        # One named by its first line shows the new one.
+        self.update_chosen_row()
+
+    def refile_chosen_snippet(self):
+        if self.chosen is not None:
+            chosen = self.chosen
+            self.fill_snippet_store()
+            self.choose_snippet(chosen.id)
+        return False
+
+    def on_snippet_key_press(self, entry, event):
+        """Take the key pressed as the snippet's key, as `captured_key` decides."""
+        held = event.state & (
+            Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.MOD1_MASK | Gdk.ModifierType.SUPER_MASK
+        )
+        name = Gdk.keyval_name(event.keyval) or ""
+        if not held and name in ("Tab", "ISO_Left_Tab", "Escape"):
+            # The keyboard moves on, and Escape closes Preferences, as everywhere else.
+            return False
+        types_text = Gdk.keyval_to_unicode(event.keyval) != 0
+        key = captured_key(name, get_key_name(event), types_text, bool(held))
+        if key is not None:
+            entry.set_text(key)
+        return True
+
+    def on_add_snippet(self, _button):
+        """A new snippet, in the folder chosen or of the snippet chosen."""
+        folder = ""
+        model, row = self.snippet_view.get_selection().get_selected()
+        if self.chosen is not None:
+            folder = self.chosen.folder
+        elif row is not None:
+            names: list[str] = []
+            while row is not None:
+                names.insert(0, model[row][0])
+                row = model.iter_parent(row)
+            folder = "/".join(names)
+        taken = {snippet.id for snippet in self.library}
+        snippet = snippetlib.Snippet(snippetlib.new_snippet_id(taken), "", "", folder=folder)
+        self.library.append(snippet)
+        self.fill_snippet_store()
+        self.choose_snippet(snippet.id)
+        self.snippet_entries["name"].grab_focus()
+
+    def on_delete_snippet(self, _button):
+        if self.chosen is None:
+            return
+        self.library = [snippet for snippet in self.library if snippet is not self.chosen]
+        self.chosen = None
+        self.fill_snippet_store()
+        self.show_chosen_snippet()
+
+    def kept_snippets(self):
+        """The page's snippets as OK keeps them. One with no text is none, one with no
+        name is named by its first line, and of two with one key the later keeps it."""
+        kept = []
+        for snippet in self.library:
+            if not snippet.text:
                 continue
-            old = before.get(snippet_id)
-            if old is None:
-                snippet_id = snippetlib.new_snippet_id(taken)
-                taken.add(snippet_id)
-                edited.append(snippetlib.Snippet(snippet_id, snippetlib.name_for(text), text, key))
-                continue
-            name = old.name
-            if name == snippetlib.name_for(old.text):
-                name = snippetlib.name_for(text)
-            edited.append(dataclasses.replace(old, name=name, text=text, key=key))
-        snippetlib.drop_repeated_keys(edited)
-        return edited
+            kept.append(
+                dataclasses.replace(
+                    snippet,
+                    name=snippet.name.strip() or snippetlib.name_for(snippet.text),
+                    key=snippet.key.strip(),
+                    folder="/".join(snippetlib.folder_path(snippet.folder)),
+                    description=snippet.description.strip(),
+                )
+            )
+        snippetlib.drop_repeated_keys(kept)
+        return kept
 
     def on_editing_started(self, widget, entry, rownum, model, colnum):
         self.capture_keys = True
@@ -6710,7 +6899,7 @@ class Wconfig(GladeComponent):
             if x[0] != "" and x[1] != "":
                 scuts[x[1]] = [x[0]]
         global snippets
-        snippets = self.edited_snippets()
+        snippets = self.kept_snippets()
         bind_snippet_keys(scuts, snippets)
         global shortcuts
         shortcuts = scuts
@@ -7161,6 +7350,115 @@ class TranscriptReplayer:
             GLib.idle_add(window.destroy)
         if self._on_finished is not None:
             self._on_finished(text)
+
+
+class SnippetPicker(Gtk.Window):
+    """A snippet found by name or text, and sent to the console the picker opened for (#240).
+
+    The keyboard stays in the search: Up and Down move through what it found, Enter sends
+    the snippet chosen, which is the first found until another is, and Escape closes.
+    Every word typed must be in a snippet's name, folder, description or text.
+    """
+
+    def __init__(self, controller, terminal):
+        Gtk.Window.__init__(self, title=_("Snippets"))
+        self.controller = controller
+        self.terminal = terminal
+        self.set_modal(True)
+        if isinstance(controller.wMain, Gtk.Window):
+            self.set_transient_for(controller.wMain)
+        self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+        self.set_default_size(560, 360)
+        with contextlib.suppress(Exception):
+            self.set_icon_from_file(ICON_PATH)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_border_width(6)
+        self.add(box)
+        self.search = Gtk.SearchEntry()
+        self.search.set_placeholder_text(_("Name or text"))
+        self.search.connect("search-changed", lambda _entry: self.refilter())
+        self.search.connect("activate", lambda _entry: self.send_chosen())
+        box.pack_start(self.search, False, False, 0)
+
+        # Name, folder, key and id, in the order the menus list them.
+        self.store = Gtk.ListStore(str, str, str, str)
+        self.library = {snippet.id: snippet for snippet in snippets}
+
+        def add(folder, path):
+            for child in folder.folders:
+                add(child, path + [child.name])
+            for snippet in folder.snippets:
+                self.store.append([snippet.name, "/".join(path), snippet.key, snippet.id])
+
+        add(snippetlib.tree(snippets), [])
+        self.found = self.store.filter_new()
+        self.found.set_visible_func(self.matches)
+        self.view = Gtk.TreeView(model=self.found)
+        for title, column in ((_("Name"), 0), (_("Folder"), 1), (_("Key"), 2)):
+            self.view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(), text=column))
+        self.view.connect("row-activated", self.on_row_activated)
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroller.add(self.view)
+        box.pack_start(scroller, True, True, 0)
+
+        self.connect("key-press-event", self.on_key_press)
+        self.refilter()
+
+    def matches(self, model, row, _data=None):
+        snippet = self.library.get(model[row][3])
+        if snippet is None:
+            return False
+        words = self.search.get_text().casefold().split()
+        haystack = " ".join(
+            (snippet.name, snippet.folder, snippet.description, snippet.text)
+        ).casefold()
+        return all(word in haystack for word in words)
+
+    def refilter(self):
+        """Search again, and choose the first snippet found."""
+        self.found.refilter()
+        first = self.found.get_iter_first()
+        if first is not None:
+            self.view.get_selection().select_iter(first)
+
+    def chosen(self):
+        model, row = self.view.get_selection().get_selected()
+        return self.library.get(model[row][3]) if row is not None else None
+
+    def move(self, step):
+        model, row = self.view.get_selection().get_selected()
+        if row is None:
+            return
+        path = model.get_path(row)
+        index = path.get_indices()[0] + step
+        if 0 <= index < model.iter_n_children(None):
+            self.view.get_selection().select_path(Gtk.TreePath.new_from_indices([index]))
+            self.view.scroll_to_cell(Gtk.TreePath.new_from_indices([index]), None, False, 0, 0)
+
+    def on_row_activated(self, _view, path, _column):
+        self.view.get_selection().select_path(path)
+        self.send_chosen()
+
+    def on_key_press(self, _widget, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self.destroy()
+            return True
+        if event.keyval in (Gdk.KEY_Down, Gdk.KEY_Up):
+            self.move(1 if event.keyval == Gdk.KEY_Down else -1)
+            return True
+        return False
+
+    def send_chosen(self):
+        """Close, then send: a `{?Label}` asks over the main window, not over this."""
+        snippet = self.chosen()
+        if snippet is None:
+            return
+        terminal = self.terminal
+        self.destroy()
+        if self.controller.send_snippet(snippet, terminal):
+            terminal.grab_focus()
 
 
 class BufferViewer(Gtk.Window):
@@ -7794,87 +8092,6 @@ class EntryDialog(Gtk.Dialog):
         self.response(Gtk.ResponseType.OK)
 
 
-class CellTextView(Gtk.TextView, Gtk.CellEditable):
-    __gtype_name__ = "CellTextView"
-
-    __gproperties__ = {
-        "editing-canceled": (
-            bool,
-            "Editing cancelled",
-            "Editing was cancelled",
-            False,
-            GObject.ParamFlags.READWRITE,
-        ),
-    }
-
-    def do_editing_done(self, *args):
-        self.remove_widget()
-
-    def do_remove_widget(self, *args):
-        pass
-
-    def do_start_editing(self, *args):
-        pass
-
-    def get_text(self):
-        text_buffer = self.get_buffer()
-        bounds = text_buffer.get_bounds()
-        return text_buffer.get_text(*bounds, include_hidden_chars=True)
-
-    def set_text(self, text):
-        self.get_buffer().set_text(text)
-
-
-class MultilineCellRenderer(Gtk.CellRendererText):
-    __gtype_name__ = "MultilineCellRenderer"
-
-    def __init__(self):
-        Gtk.CellRendererText.__init__(self)
-        self._in_editor_menu = False
-
-    def _on_editor_focus_out_event(self, editor, *args):
-        if self._in_editor_menu:
-            return
-        editor.remove_widget()
-        self.emit("editing-canceled")
-
-    def _on_editor_key_press_event(self, editor, event):
-        if event.state & (Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.CONTROL_MASK):
-            return
-        if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-            editor.remove_widget()
-            self.emit("edited", editor.path, editor.get_text())
-        elif event.keyval == Gdk.KEY_Escape:
-            editor.remove_widget()
-            self.emit("editing-canceled")
-
-    def _on_editor_populate_popup(self, editor, menu):
-        self._in_editor_menu = True
-
-        def on_menu_unmap(menu, self):
-            self._in_editor_menu = False
-
-        menu.connect("unmap", on_menu_unmap, self)
-
-    def _on_editor_pressed(self, editor, menu):
-        # avoid bug: gtk_text_mark_get_buffer: assertion 'GTK_IS_TEXT_MARK (mark)' failed
-        return True
-
-    def do_start_editing(self, event, widget, path, _bg_area, cell_area, flags):
-        editor = CellTextView()
-        editor.override_font(self.props.font_desc)
-        editor.set_text(self.props.text)
-        editor.set_size_request(cell_area.width, cell_area.height)
-        editor.set_border_width(min(self.props.xpad, self.props.ypad))
-        editor.path = path
-        editor.connect("focus-out-event", self._on_editor_focus_out_event)
-        editor.connect("key-press-event", self._on_editor_key_press_event)
-        editor.connect("populate-popup", self._on_editor_populate_popup)
-        editor.connect("button-press-event", self._on_editor_pressed)
-        editor.show()
-        return editor
-
-
 class CheckUpdates(Thread):
     def __init__(self, p):
         Thread.__init__(self)
@@ -7962,6 +8179,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("zoom-out", self._on_action_zoom_out)
         self._create_action("zoom-reset", self._on_action_zoom_reset)
         self._create_action("view-buffer", self._on_action_view_buffer)
+        self._create_action("find-snippet", self._on_action_find_snippet)
         self._create_action("save-transcript", self._on_action_save_transcript)
         self._create_action("search-back", self._on_action_search_back)
         self._create_action("find", self._on_action_find)
@@ -8057,9 +8275,15 @@ class GcmApplication(Gtk.Application):
         search_section.append(_("Find Next"), "app.search-next")
         search_section.append(_("Find Previous"), "app.search-back")
         edit_menu.append_section(None, search_section)
+        # The library, which populateCommandsMenu fills, after a way to search it (#240).
         self.commands_menu = Gio.Menu()
+        find_section = Gio.Menu()
+        find_section.append(_("Find Snippet…"), "app.find-snippet")
+        snippets_menu = Gio.Menu()
+        snippets_menu.append_section(None, find_section)
+        snippets_menu.append_section(None, self.commands_menu)
         commands_section = Gio.Menu()
-        commands_section.append_submenu(_("Custom Commands"), self.commands_menu)
+        commands_section.append_submenu(_("Snippets"), snippets_menu)
         edit_menu.append_section(None, commands_section)
         prefs_section = Gio.Menu()
         prefs_section.append(_("Preferences"), "app.preferences")
@@ -8268,6 +8492,13 @@ class GcmApplication(Gtk.Application):
             terminal = self._controller.get_target_terminal()
             if terminal:
                 self._controller.save_session_transcript(terminal)
+            self._controller.clear_context_terminal()
+
+    def _on_action_find_snippet(self, action, _param):
+        if self._controller is not None:
+            terminal = self._controller.get_target_terminal()
+            if terminal:
+                self._controller.show_snippet_picker(terminal)
             self._controller.clear_context_terminal()
 
     def _on_action_view_buffer(self, action, _param):
