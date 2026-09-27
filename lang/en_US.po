@@ -1861,3 +1861,12 @@ msgstr "expects a whole number"
 
 msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
 msgstr "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
+
+msgid "xdg-open was not found. Install xdg-utils to open web hosts."
+msgstr "xdg-open was not found. Install xdg-utils to open web hosts."
+
+msgid "Could not open"
+msgstr "Could not open"
+
+msgid "exited with status"
+msgstr "exited with status"

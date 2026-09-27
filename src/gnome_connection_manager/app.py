@@ -887,6 +887,39 @@ def build_editor_command(path, line, col):
     return ["xdg-open", path]
 
 
+def open_in_browser(url):
+    """Open `url` in the desktop's browser, through xdg-open (#231).
+
+    Not Gtk.show_uri. GIO finds a browser only through a MIME cache or a default named
+    in mimeapps.list, and WSLg can have neither: there it raised "Operation not
+    supported", while xdg-open found the browser from its desktop file. On a GNOME
+    desktop xdg-open hands the URL to gio anyway.
+
+    Not waited for: with no desktop session, xdg-open runs the browser itself and returns
+    only when it closes, measured. A failure it reports is shown once it exits.
+    """
+    try:
+        pid, *_pipes = GLib.spawn_async(
+            ["xdg-open", url],
+            flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+        )
+    except GLib.Error as error:
+        msgbox("{} {}: {}".format(_("Could not open"), url, error.message))
+        return
+
+    def exited(pid, status):
+        GLib.spawn_close_pid(pid)
+        code = os.waitstatus_to_exitcode(status)
+        if code != 0:
+            msgbox(
+                "{} {}: xdg-open {} {}".format(
+                    _("Could not open"), url, _("exited with status"), code
+                )
+            )
+
+    GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
+
 def contrasting_foreground(rgba):
     """Black or white, whichever stays legible on `rgba`.
 
@@ -3283,11 +3316,6 @@ class Wmain(GladeComponent):
 
     def addTab(self, notebook, host):
         try:
-            v = Vte.Terminal()
-            if (Vte.MAJOR_VERSION, Vte.MINOR_VERSION) >= (0, 50):
-                v.set_allow_hyperlink(True)
-            self.registerUrlRegexes(v)
-
             if isinstance(host, str):
                 host = Host("", host)
                 # Note: log enablement defaults to host.log except for 'local'
@@ -3297,16 +3325,28 @@ class Wmain(GladeComponent):
                     # print ("D: Local session logging set to: %s\n" % (conf.LOG_LOCAL))
                     host.log = conf.LOG_LOCAL
 
-            # Before anything reads it. set_terminal_logger builds the log path from
-            # terminal.host, so assigning this later -- as it used to be -- silently sent
-            # every text log to <logs>/session/session-*.log instead of the host's own
-            # directory. Keep this the first thing done with the normalised host.
-            v.host = host
-
             problem = connections.named(host.type).missing()
             if problem:
                 msgbox(_(problem))
                 return
+
+            kind = connections.for_host(host)
+            if not kind.opens_tab:
+                open_in_browser(kind.url(host))
+                return
+
+            # Only once it is known to be needed: VTE 0.76 reports GLib criticals as a
+            # terminal that never joined a window is dropped, as one made for a web host was.
+            v = Vte.Terminal()
+            if (Vte.MAJOR_VERSION, Vte.MINOR_VERSION) >= (0, 50):
+                v.set_allow_hyperlink(True)
+            self.registerUrlRegexes(v)
+
+            # Before anything reads it. set_terminal_logger builds the log path from
+            # terminal.host, so assigning this later -- as it used to be -- silently sent
+            # every text log to <logs>/session/session-*.log instead of the host's own
+            # directory. Keep this the first thing done with the new terminal.
+            v.host = host
 
             self.apply_preferences_to_terminal(v)
 
@@ -3351,7 +3391,6 @@ class Wmain(GladeComponent):
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
-            kind = connections.for_host(host)
             if not kind.remote:
                 vte_run(v, SHELL)
             else:
@@ -5690,11 +5729,17 @@ class Whost(GladeComponent):
     # -- Whost.on_cmbType_changed {
     def on_cmbType_changed(self, widget, *args):
         kind = connections.named(widget.get_active_text())
-        self.txtUser.set_sensitive(kind.remote)
-        self.txtPassword.set_sensitive(kind.remote)
+        self.txtUser.set_sensitive(kind.remote and kind.credentials)
+        self.txtPassword.set_sensitive(kind.remote and kind.credentials)
         self.txtPort.set_sensitive(kind.remote)
         self.txtHost.set_sensitive(kind.remote)
-        self.txtExtraParams.set_sensitive(kind.remote)
+        self.txtExtraParams.set_sensitive(kind.remote and kind.arguments)
+        # Cleared as a local host's are, so a host keeps no password it never uses.
+        if not kind.credentials:
+            self.txtUser.set_text("")
+            self.txtPassword.set_text("")
+        if not kind.arguments:
+            self.txtExtraParams.set_text("")
 
         if kind.ssh_options:
             self.get_widget("tunnelGrid").show()

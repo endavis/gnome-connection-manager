@@ -313,10 +313,23 @@ class Field:
 CONNECTION_FIELDS = ("txtUser", "txtPassword", "txtPort", "txtHost", "txtExtraParams")
 
 
-@pytest.mark.parametrize("ctype", ["local", "ssh", "telnet", "rdp"])
-def test_only_a_local_host_greys_and_clears_its_connection_fields(app_module, ctype):
+@pytest.mark.parametrize(
+    ("ctype", "live", "cleared"),
+    [
+        ("local", (), ("txtUser", "txtPassword", "txtHost")),
+        ("ssh", CONNECTION_FIELDS, ()),
+        ("telnet", CONNECTION_FIELDS, ()),
+        ("rdp", CONNECTION_FIELDS, ()),
+        # The browser asks for a login itself, and no program runs to take arguments.
+        ("web", ("txtPort", "txtHost"), ("txtUser", "txtPassword", "txtExtraParams")),
+    ],
+)
+def test_a_type_greys_and_clears_the_connection_fields_it_does_not_use(
+    app_module, ctype, live, cleared
+):
     """A local shell has no address, user, password or port. The port is then 23, since
-    the dialog refuses to save a host without a valid one."""
+    the dialog refuses to save a host without a valid one. A web host has an address and
+    a port and nothing else, and keeps no password it never uses (#231)."""
     dialog = app_module.Whost.__new__(app_module.Whost)
     dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     names = (
@@ -337,17 +350,16 @@ def test_only_a_local_host_greys_and_clears_its_connection_fields(app_module, ct
         setattr(dialog, name, field)
     grid = types.SimpleNamespace(show=lambda: None, hide=lambda: None)
     dialog.get_widget = lambda name: grid if name == "tunnelGrid" else fields[name]
-    local = ctype == "local"
 
     dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
 
-    assert {name: fields[name].sensitive for name in CONNECTION_FIELDS} == dict.fromkeys(
-        CONNECTION_FIELDS, not local
+    assert {name: fields[name].sensitive for name in CONNECTION_FIELDS} == {
+        name: name in live for name in CONNECTION_FIELDS
+    }
+    assert tuple(name for name in CONNECTION_FIELDS if fields[name].text == "") == cleared
+    assert fields["txtPort"].text == {"local": "23", "web": "443"}.get(
+        ctype, fields["txtPort"].text
     )
-    cleared = [name for name in ("txtUser", "txtPassword", "txtHost") if fields[name].text == ""]
-    assert cleared == (["txtUser", "txtPassword", "txtHost"] if local else [])
-    if local:
-        assert fields["txtPort"].text == "23"
 
 
 def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module):

@@ -19,6 +19,7 @@ branches on the type's name, which each command passes it first.
 from __future__ import annotations
 
 import configparser
+import ipaddress
 import re
 import shlex
 import shutil
@@ -96,8 +97,13 @@ class ConnectionType:
     id = ""
     default_port = "23"
     remote = True  # False for a local shell, which has no address, user, password or port
+    credentials = True  # whether a remote host's user and password are used
+    arguments = True  # whether a remote host's extra arguments are, by the program it runs
     ssh_options = False  # keep-alive, X11, agent, compression, key and port forwarding
     sends_commands = True  # whether the host's commands are typed after it connects
+    # False for a type opened outside GCM, with no tab: a web host's page opens in the
+    # browser, from its url() rather than a command.
+    opens_tab = True
     # Settings of the type's own, drawn on a page of the host dialog, whose tab is
     # settings_title, marked with N_. None of the types here has any yet.
     settings: tuple[Setting, ...] = ()
@@ -109,6 +115,9 @@ class ConnectionType:
 
     def command(self, host, programs: Programs) -> Command:
         raise NotImplementedError(f"a {self.id or 'local'} host runs no command")
+
+    def url(self, host) -> str:
+        raise NotImplementedError(f"a {self.id or 'local'} host opens in a tab")
 
     def option(self, key: str) -> str:
         """The name the setting `key` is saved under in a host's section."""
@@ -222,8 +231,47 @@ class Local(ConnectionType):
     remote = False
 
 
-SSH, TELNET, RDP, LOCAL = Ssh(), Telnet(), Rdp(), Local()
-CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL)
+class Web(ConnectionType):
+    """A web page, such as a BMC's console or an admin page, opened in the desktop's
+    browser. GCM opens no tab for it (#231)."""
+
+    id = "web"
+    default_port = "443"
+    # The page asks for a login itself, and no program runs to take arguments or commands.
+    credentials = False
+    arguments = False
+    sends_commands = False
+    opens_tab = False
+
+    def missing(self) -> str | None:
+        if shutil.which("xdg-open") is None:
+            return N_("xdg-open was not found. Install xdg-utils to open web hosts.")
+        return None
+
+    def url(self, host) -> str:
+        """The address, when it is a URL. Otherwise an https:// one: the host name, the
+        port unless it is 443, and any path written after the host name."""
+        address: str = host.host.strip()
+        if "://" in address:
+            return address
+        name, slash, path = address.partition("/")
+        if _is_ipv6(name):
+            name = f"[{name}]"
+        port = str(host.port).strip()
+        if port not in ("", "443"):
+            name = f"{name}:{port}"
+        return f"https://{name}{slash}{path}"
+
+
+def _is_ipv6(name: str) -> bool:
+    try:
+        return ipaddress.ip_address(name).version == 6
+    except ValueError:
+        return False
+
+
+SSH, TELNET, RDP, LOCAL, WEB = Ssh(), Telnet(), Rdp(), Local(), Web()
+CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL, WEB)
 
 
 def named(name: str | None) -> ConnectionType:

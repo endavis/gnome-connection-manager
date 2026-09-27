@@ -1703,3 +1703,12 @@ msgstr ""
 
 msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
 msgstr ""
+
+msgid "xdg-open was not found. Install xdg-utils to open web hosts."
+msgstr ""
+
+msgid "Could not open"
+msgstr ""
+
+msgid "exited with status"
+msgstr ""

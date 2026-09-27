@@ -29,6 +29,7 @@ PROGRAMS = connections.Programs(
     expect="/gcm/ssh.expect", username="localme", ssh="ssh", telnet="telnet"
 )
 SSH, TELNET, RDP, LOCAL = connections.SSH, connections.TELNET, connections.RDP, connections.LOCAL
+WEB = connections.WEB
 
 
 def host(ctype="ssh", address="example.test", user="me", password="", **fields):
@@ -54,7 +55,13 @@ def host(ctype="ssh", address="example.test", user="me", password="", **fields):
 
 
 def test_the_types_in_the_order_the_dialog_offers_them():
-    assert [kind.id for kind in connections.CONNECTION_TYPES] == ["ssh", "telnet", "rdp", "local"]
+    assert [kind.id for kind in connections.CONNECTION_TYPES] == [
+        "ssh",
+        "telnet",
+        "rdp",
+        "local",
+        "web",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -64,6 +71,7 @@ def test_the_types_in_the_order_the_dialog_offers_them():
         ("telnet", TELNET),
         ("rdp", RDP),
         ("local", LOCAL),
+        ("web", WEB),
         ("vnc", TELNET),
         ("", TELNET),
         (None, TELNET),
@@ -83,6 +91,8 @@ def test_a_type_is_found_by_name_and_one_gcm_does_not_know_is_telnet(name, expec
         ("ssh", "example.test", SSH),
         ("telnet", "example.test", TELNET),
         ("rdp", "example.test", RDP),
+        ("web", "example.test", WEB),
+        ("web", "", LOCAL),
         ("vnc", "example.test", TELNET),
         # The dialog never saves a local host with an address; addTab ran telnet for one.
         ("local", "example.test", TELNET),
@@ -93,23 +103,33 @@ def test_what_a_host_opens_as(ctype, address, expected):
 
 
 def test_what_the_host_dialog_asks_of_each_type():
-    """Port, whether the connection fields apply, whether SSH's controls and Port
-    forwarding do, and whether commands follow a login."""
+    """Port; whether the connection fields apply, and of them the user and password, and
+    the extra arguments; whether SSH's controls and Port forwarding do; whether commands
+    follow a login; and whether the host opens a tab."""
     asked = {
-        kind.id: (kind.default_port, kind.remote, kind.ssh_options, kind.sends_commands)
+        kind.id: (
+            kind.default_port,
+            kind.remote,
+            kind.credentials,
+            kind.arguments,
+            kind.ssh_options,
+            kind.sends_commands,
+            kind.opens_tab,
+        )
         for kind in connections.CONNECTION_TYPES
     }
 
     assert asked == {
-        "ssh": ("22", True, True, True),
-        "telnet": ("23", True, False, True),
-        "rdp": ("3389", True, False, False),
+        "ssh": ("22", True, True, True, True, True, True),
+        "telnet": ("23", True, True, True, False, True, True),
+        "rdp": ("3389", True, True, True, False, False, True),
         # 23, not empty: the dialog refuses to save a host without a valid port.
-        "local": ("23", False, False, True),
+        "local": ("23", False, True, True, False, True, True),
+        "web": ("443", True, False, False, False, False, False),
     }
 
 
-def test_only_rdp_needs_a_program_gcm_can_find_missing(monkeypatch):
+def test_what_a_type_needs_that_gcm_cannot_find(monkeypatch):
     monkeypatch.setattr(connections.shutil, "which", lambda _name: None)
 
     missing = {kind.id: kind.missing() for kind in connections.CONNECTION_TYPES}
@@ -119,12 +139,56 @@ def test_only_rdp_needs_a_program_gcm_can_find_missing(monkeypatch):
         "telnet": None,
         "rdp": "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts.",
         "local": None,
+        "web": "xdg-open was not found. Install xdg-utils to open web hosts.",
     }
+
+
+def test_a_web_host_needs_only_xdg_open(monkeypatch):
+    monkeypatch.setattr(
+        connections.shutil,
+        "which",
+        lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None,
+    )
+
+    assert WEB.missing() is None
 
 
 def test_a_local_shell_is_opened_by_addtab_not_by_a_command():
     with pytest.raises(NotImplementedError):
         LOCAL.command(host("local", ""), PROGRAMS)
+
+
+def test_a_web_host_runs_no_command_and_a_tab_has_no_url():
+    with pytest.raises(NotImplementedError):
+        WEB.command(host("web"), PROGRAMS)
+    with pytest.raises(NotImplementedError):
+        SSH.url(host())
+
+
+# -- web ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("address", "port", "url"),
+    [
+        ("bmc.example", "443", "https://bmc.example"),
+        ("bmc.example", "8443", "https://bmc.example:8443"),
+        ("bmc.example/console/", "443", "https://bmc.example/console/"),
+        ("bmc.example/console", "8443", "https://bmc.example:8443/console"),
+        ("10.0.0.5", "443", "https://10.0.0.5"),
+        ("fe80::1", "443", "https://[fe80::1]"),
+        ("2001:db8::5", "8443", "https://[2001:db8::5]:8443"),
+        (" bmc.example ", "", "https://bmc.example"),
+        # With a scheme, the address is the URL, and the port is not added to it.
+        ("http://switch.example", "443", "http://switch.example"),
+        ("https://nas.example:5001/ui?x=1", "8443", "https://nas.example:5001/ui?x=1"),
+    ],
+)
+def test_a_web_hosts_url(address, port, url):
+    record = host("web", address)
+    record.port = port
+
+    assert WEB.url(record) == url
 
 
 # -- ssh ---------------------------------------------------------------------
@@ -340,19 +404,22 @@ if scenario == "the-dialog-lists-the-registry":
     dialog = app.Whost()
     dialog.init("")
     listed = [row[0] for row in dialog.cmbType.get_model()]
-    assert listed == ["ssh", "telnet", "rdp", "local"], listed
+    assert listed == ["ssh", "telnet", "rdp", "local", "web"], listed
     assert dialog.cmbType.get_active_text() == "ssh"
     ports = {}
     for kind in listed:
         assert dialog.cmbType.set_active_id(kind), kind
         ports[kind] = dialog.txtPort.get_text()
-    assert ports == {"ssh": "22", "telnet": "23", "rdp": "3389", "local": "23"}, ports
+    assert ports == {"ssh": "22", "telnet": "23", "rdp": "3389", "local": "23", "web": "443"}, ports
     dialog.get_widget("wHost").destroy()
 elif scenario == "addtab-opens-each-host-as-its-type-says":
     ran, typed = [], []
     app.vte_run = lambda terminal, command, arg=None: ran.append((command, arg))
     w.send_data = lambda terminal, data: typed.append(data)
-    shutil.which = lambda name, *args, **kwargs: "/usr/bin/xfreerdp3" if name == "xfreerdp3" else None
+    found = {"xfreerdp3": "/usr/bin/xfreerdp3", "xdg-open": "/usr/bin/xdg-open"}
+    shutil.which = lambda name, *args, **kwargs: found.get(name)
+    browsed = []
+    app.open_in_browser = browsed.append
 
     def open_host(ctype, address, user="me", password=""):
         record = app.Host("Work", ctype, "", address, user, password)
@@ -377,8 +444,78 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     argv = ["xfreerdp3", "/v:example.test", "/port:2222", "/u:me"]
     assert shown == [("xfreerdp3", argv)] and command == ("xfreerdp3", argv, ""), shown
 
+    # A web host opens in the browser, and no tab: nothing is spawned or added.
+    tabs = w.nbConsole.get_n_pages()
+    record = app.Host("Work", "bmc", "", "bmc.example/console", "me", "pw")
+    record.type, record.port = "web", "8443"
+    w.addTab(w.nbConsole, record)
+    assert browsed == ["https://bmc.example:8443/console"], browsed
+    assert w.nbConsole.get_n_pages() == tabs and len(ran) == 4, (w.nbConsole.get_n_pages(), ran)
+
     pump(2.5)  # the stored password is typed 2 s after its spawn, and only it
     assert typed == ["pw"], typed
+elif scenario == "open-in-browser":
+    # A fake xdg-open on PATH, which records what it was given and exits as told.
+    shown = []
+    app.msgbox = shown.append
+    bin_dir = tempfile.mkdtemp()
+    opened = os.path.join(bin_dir, "opened")
+
+    def xdg_open_exits(status):
+        path = os.path.join(bin_dir, "xdg-open")
+        with open(path, "w") as script:
+            script.write(f'#!/bin/sh\nprintf "%s\\n" "$@" >> {opened}\nexit {status}\n')
+        os.chmod(path, 0o755)
+
+    os.environ["PATH"] = bin_dir + os.pathsep + os.environ["PATH"]
+    xdg_open_exits(0)
+    app.open_in_browser("https://bmc.example:8443/a b?x=1")
+    pump(1.0)
+    assert open(opened).read().splitlines() == ["https://bmc.example:8443/a b?x=1"]
+    assert shown == [], shown
+
+    xdg_open_exits(4)
+    app.open_in_browser("https://down.example/")
+    pump(1.0)
+    assert shown == ["Could not open https://down.example/: xdg-open exited with status 4"], shown
+
+    shown.clear()
+    os.environ["PATH"] = tempfile.mkdtemp()  # no xdg-open at all
+    app.open_in_browser("https://gone.example/")
+    assert len(shown) == 1 and shown[0].startswith("Could not open https://gone.example/: "), shown
+elif scenario == "xdg-open-reaches-the-browser":
+    # The real xdg-open, given a browser of its own through a desktop file, and a second
+    # one through BROWSER, each leaving a mark, so that it can never reach a real one.
+    root = tempfile.mkdtemp()
+    opened = os.path.join(root, "opened")
+    for name in ("desktop", "envvar"):
+        with open(os.path.join(root, name), "w") as script:
+            script.write(f'#!/bin/sh\nprintf "{name} %s\\n" "$@" >> {opened}\n')
+        os.chmod(os.path.join(root, name), 0o755)
+    os.makedirs(os.path.join(root, "share", "applications"))
+    with open(os.path.join(root, "share", "applications", "fake-browser.desktop"), "w") as entry:
+        entry.write(
+            "[Desktop Entry]\nType=Application\nName=Fake browser\n"
+            f"Exec={root}/desktop %u\nMimeType=x-scheme-handler/https;\nNoDisplay=true\n"
+        )
+    os.environ.update(
+        XDG_DATA_HOME=os.path.join(root, "share"),
+        XDG_DATA_DIRS=os.path.join(root, "share"),
+        XDG_CONFIG_HOME=root,
+        XDG_CONFIG_DIRS=root,
+        BROWSER=os.path.join(root, "envvar"),
+    )
+    for name in ("XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "KDE_FULL_SESSION", "GNOME_DESKTOP_SESSION_ID"):
+        os.environ.pop(name, None)
+    shown = []
+    app.msgbox = shown.append
+    app.open_in_browser("https://bmc.example/console")
+    end = time.monotonic() + 10
+    while not os.path.exists(opened) and time.monotonic() < end:
+        pump(0.1)
+    pump(0.5)
+    assert open(opened).read().splitlines() == ["desktop https://bmc.example/console"], open(opened).read()
+    assert shown == [], shown
 elif scenario == "no-shipped-type-adds-a-page":
     dialog = app.Whost()
     dialog.init("")
@@ -491,6 +628,8 @@ print("OK")
     [
         "the-dialog-lists-the-registry",
         "addtab-opens-each-host-as-its-type-says",
+        "open-in-browser",
+        "xdg-open-reaches-the-browser",
         "no-shipped-type-adds-a-page",
         "a-types-page-in-the-host-dialog",
     ],
@@ -507,3 +646,15 @@ def test_the_registry_against_real_gtk(scenario):
 
     assert result.returncode == 0, result.stderr[-3000:]
     assert "OK" in result.stdout
+    assert glib_complaints(result.stderr) == []
+
+
+def glib_complaints(stderr):
+    """The criticals GLib reported, as PyGObject prints them or as GLib does itself.
+
+    Opening a web host once gave two: addTab made a terminal before it knew it needed
+    none, and VTE 0.76 reports criticals as a terminal that never joined a window is
+    dropped. Warnings are left out: on CI, GTK warns that it has no accessibility bus
+    and no icon theme, which says nothing about GCM.
+    """
+    return [line for line in stderr.splitlines() if ": Warning: " in line or "-CRITICAL **" in line]
