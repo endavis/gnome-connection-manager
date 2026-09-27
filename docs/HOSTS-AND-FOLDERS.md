@@ -116,8 +116,8 @@ by hand from two exports still imports cleanly.
 
 A host's dialog shows a different number of tabs depending on its connection type, and
 this is deliberate. **Port forwarding** is shown for SSH only: tunnelling is an SSH
-feature, so a Telnet, RDP or Local host has three tabs where an SSH host has four. A new host
-shows the tab until you choose a type.
+feature, so a Telnet, RDP, Local or web host has three tabs where an SSH host has four. A new
+host shows the tab until you choose a type.
 
 It is the only control that is hidden rather than disabled. The other SSH-only fields on
 the Properties tab — keep-alive, X11 forwarding, agent forwarding, compression, private
@@ -155,6 +155,28 @@ The port is 3389 unless you change it, and the rest of the host goes to FreeRDP:
 An RDP host sends no commands after login, and its dialog greys them. Its tab runs
 FreeRDP, which has no shell to run them, and a command typed while FreeRDP asks
 something would be taken for the answer, to its certificate question or as the password.
+
+## Web hosts
+
+A host of type **web** opens a web page in your browser, such as a server's management
+console (iLO, iDRAC, IMM) or the admin page of a switch or a NAS. Connecting to it opens
+no tab in GCM.
+
+The **Host** field holds the address:
+
+- A full URL, such as `http://switch.example/admin`, is opened as it is, and the port is
+  not used.
+- A host name or an IP address is opened over `https://`, with the port unless it is 443,
+  the default. `bmc.example` with port 8443 opens `https://bmc.example:8443`, and
+  anything after a `/` in the address is kept as the path: `bmc.example/console` opens
+  `https://bmc.example/console`.
+
+The page asks for a login itself, so a web host has no user or password, and its dialog
+clears and greys them, with the extra arguments and the commands after login.
+
+GCM opens the page with `xdg-open`, from the `xdg-utils` package, which hands it to the
+browser your desktop names. Without `xdg-open`, GCM says so and opens nothing, and it
+shows an error when `xdg-open` reports one.
 
 ## See also
 

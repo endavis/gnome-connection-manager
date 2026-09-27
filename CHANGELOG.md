@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- Web hosts. A host of type **web** opens a web page, such as a server's management
+  console or a switch's admin page, in your browser through `xdg-open`, and no tab. Its
+  address is the URL, or a host name opened over `https://` with its port unless it is
+  443. Without `xdg-open`, or when it reports a failure, GCM says so
 - RDP hosts. A host of type **rdp** opens its remote desktop through FreeRDP, `xfreerdp3`
   or else `xfreerdp`, in a window of FreeRDP's own. Its tab shows what FreeRDP prints and
   takes its questions, and GCM types a stored password at FreeRDP's prompt rather than

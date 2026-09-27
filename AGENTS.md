@@ -65,6 +65,18 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   writes it, and a key in mixed case would not be found once GCM restarted, so `Setting`
   refuses one. No type here has settings yet; `tests/test_connections.py` gives a type
   of its own some, as `tests/test_tab_pages.py` opens a page of its own.
+  A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
+  its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
+  say whether a remote host's user and password, and its extra arguments, apply; the
+  dialog clears and greys them for a web host, as it does all of them for a local one.
+  `open_in_browser` runs `xdg-open`, not `Gtk.show_uri`: GIO finds a browser only
+  through a MIME cache or a default in `mimeapps.list`, and WSLg had neither. Measured
+  there, GIO raised `Operation not supported` where `xdg-open` found the browser from
+  its desktop file. It is not waited for, since `xdg-open` with no desktop session runs
+  the browser itself and returns only when it closes, and a child watch reports a
+  failure once it exits. Its tests give `xdg-open` a browser of their own, through a
+  desktop file and through `BROWSER` both: with neither, `xdg-open` falls back to
+  `x-www-browser`, which started a real browser when this was measured.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the

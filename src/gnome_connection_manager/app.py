@@ -887,6 +887,39 @@ def build_editor_command(path, line, col):
     return ["xdg-open", path]
 
 
+def open_in_browser(url):
+    """Open `url` in the desktop's browser, through xdg-open (#231).
+
+    Not Gtk.show_uri. GIO finds a browser only through a MIME cache or a default named
+    in mimeapps.list, and WSLg can have neither: there it raised "Operation not
+    supported", while xdg-open found the browser from its desktop file. On a GNOME
+    desktop xdg-open hands the URL to gio anyway.
+
+    Not waited for: with no desktop session, xdg-open runs the browser itself and returns
+    only when it closes, measured. A failure it reports is shown once it exits.
+    """
+    try:
+        pid, *_pipes = GLib.spawn_async(
+            ["xdg-open", url],
+            flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+        )
+    except GLib.Error as error:
+        msgbox("{} {}: {}".format(_("Could not open"), url, error.message))
+        return
+
+    def exited(pid, status):
+        GLib.spawn_close_pid(pid)
+        code = os.waitstatus_to_exitcode(status)
+        if code != 0:
+            msgbox(
+                "{} {}: xdg-open {} {}".format(
+                    _("Could not open"), url, _("exited with status"), code
+                )
+            )
+
+    GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
+
 def contrasting_foreground(rgba):
     """Black or white, whichever stays legible on `rgba`.
 
@@ -3308,6 +3341,11 @@ class Wmain(GladeComponent):
                 msgbox(_(problem))
                 return
 
+            kind = connections.for_host(host)
+            if not kind.opens_tab:
+                open_in_browser(kind.url(host))
+                return
+
             self.apply_preferences_to_terminal(v)
 
             scrollPane = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
@@ -3351,7 +3389,6 @@ class Wmain(GladeComponent):
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
-            kind = connections.for_host(host)
             if not kind.remote:
                 vte_run(v, SHELL)
             else:
@@ -5690,11 +5727,17 @@ class Whost(GladeComponent):
     # -- Whost.on_cmbType_changed {
     def on_cmbType_changed(self, widget, *args):
         kind = connections.named(widget.get_active_text())
-        self.txtUser.set_sensitive(kind.remote)
-        self.txtPassword.set_sensitive(kind.remote)
+        self.txtUser.set_sensitive(kind.remote and kind.credentials)
+        self.txtPassword.set_sensitive(kind.remote and kind.credentials)
         self.txtPort.set_sensitive(kind.remote)
         self.txtHost.set_sensitive(kind.remote)
-        self.txtExtraParams.set_sensitive(kind.remote)
+        self.txtExtraParams.set_sensitive(kind.remote and kind.arguments)
+        # Cleared as a local host's are, so a host keeps no password it never uses.
+        if not kind.credentials:
+            self.txtUser.set_text("")
+            self.txtPassword.set_text("")
+        if not kind.arguments:
+            self.txtExtraParams.set_text("")
 
         if kind.ssh_options:
             self.get_widget("tunnelGrid").show()
