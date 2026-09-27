@@ -1870,3 +1870,15 @@ msgstr "Could not open"
 
 msgid "exited with status"
 msgstr "exited with status"
+
+msgid "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
+msgstr "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
+
+msgid "Connecting to"
+msgstr "Connecting to"
+
+msgid "Disconnected"
+msgstr "Disconnected"
+
+msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
+msgstr "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."

@@ -12,6 +12,12 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- VNC hosts. A host of type **vnc** shows its remote desktop in the tab, drawn by gtk-vnc
+  and scaled to fit, logging in with the host's password and user or asking for them. A
+  line above the desktop says why a connection failed or ended, and the tab ends as a
+  terminal's does. While the desktop has the keyboard it gets every key, GCM's shortcuts
+  included. Without gtk-vnc's bindings, GCM runs a VNC viewer in a terminal tab instead,
+  and without either it says so
 - Web hosts. A host of type **web** opens a web page, such as a server's management
   console or a switch's admin page, in your browser through `xdg-open`, and no tab. Its
   address is the URL, or a host name opened over `https://` with its port unless it is

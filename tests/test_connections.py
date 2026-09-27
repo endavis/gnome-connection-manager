@@ -4,8 +4,9 @@ Each kind of host is a class in `utils/connections.py`, and what used to compare
 `host.type` with a name asks the type instead. These pin how a host's type is found,
 what the host dialog asks of each type, the command each builds, and how a type's own
 settings are read and kept, without a display. Against real GTK, they check that the
-dialog lists the registry's types, that `addTab` opens a host as its type says, and that
-a type's settings get a page of the dialog and reach gcm.conf and back.
+dialog lists the registry's types, that `addTab` opens a host as its type says, a type
+with a page of its own in a tab, and that a type's settings get a page of the dialog and
+reach gcm.conf and back.
 
 When the registry replaced the branches, the command `addTab` built was recorded for a
 matrix of hosts before and after and came out the same. That comparison is in the pull
@@ -29,7 +30,7 @@ PROGRAMS = connections.Programs(
     expect="/gcm/ssh.expect", username="localme", ssh="ssh", telnet="telnet"
 )
 SSH, TELNET, RDP, LOCAL = connections.SSH, connections.TELNET, connections.RDP, connections.LOCAL
-WEB = connections.WEB
+WEB, VNC = connections.WEB, connections.VNC
 
 
 def host(ctype="ssh", address="example.test", user="me", password="", **fields):
@@ -61,6 +62,7 @@ def test_the_types_in_the_order_the_dialog_offers_them():
         "rdp",
         "local",
         "web",
+        "vnc",
     ]
 
 
@@ -72,7 +74,8 @@ def test_the_types_in_the_order_the_dialog_offers_them():
         ("rdp", RDP),
         ("local", LOCAL),
         ("web", WEB),
-        ("vnc", TELNET),
+        ("vnc", VNC),
+        ("spice", TELNET),
         ("", TELNET),
         (None, TELNET),
     ],
@@ -93,7 +96,8 @@ def test_a_type_is_found_by_name_and_one_gcm_does_not_know_is_telnet(name, expec
         ("rdp", "example.test", RDP),
         ("web", "example.test", WEB),
         ("web", "", LOCAL),
-        ("vnc", "example.test", TELNET),
+        ("vnc", "example.test", VNC),
+        ("spice", "example.test", TELNET),
         # The dialog never saves a local host with an address; addTab ran telnet for one.
         ("local", "example.test", TELNET),
     ],
@@ -126,6 +130,8 @@ def test_what_the_host_dialog_asks_of_each_type():
         # 23, not empty: the dialog refuses to save a host without a valid port.
         "local": ("23", False, True, True, False, True, True),
         "web": ("443", True, False, False, False, False, False),
+        # The user and password answer gtk-vnc, and the extra arguments go to a viewer.
+        "vnc": ("5900", True, True, True, False, False, True),
     }
 
 
@@ -140,6 +146,8 @@ def test_what_a_type_needs_that_gcm_cannot_find(monkeypatch):
         "rdp": "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts.",
         "local": None,
         "web": "xdg-open was not found. Install xdg-utils to open web hosts.",
+        "vnc": "Neither gtk-vnc's GObject bindings nor a VNC viewer was found."
+        " Install either to open VNC hosts.",
     }
 
 
@@ -189,6 +197,54 @@ def test_a_web_hosts_url(address, port, url):
     record.port = port
 
     assert WEB.url(record) == url
+
+
+# -- vnc: the viewer, where gtk-vnc cannot draw the desktop in a tab ---------
+
+
+@pytest.mark.parametrize(
+    ("installed", "viewer"),
+    [
+        ({"vncviewer", "xtigervncviewer", "xtightvncviewer"}, "vncviewer"),
+        ({"xtigervncviewer", "xtightvncviewer"}, "xtigervncviewer"),
+        ({"xtightvncviewer"}, "xtightvncviewer"),
+    ],
+)
+def test_a_vnc_host_runs_the_first_viewer_installed(monkeypatch, installed, viewer):
+    monkeypatch.setattr(
+        connections.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
+    )
+
+    assert VNC.missing() is None
+    assert VNC.command(host("vnc"), PROGRAMS).program == viewer
+
+
+@pytest.mark.parametrize(
+    ("address", "extra", "argv"),
+    [
+        ("example.test", "", ["xtigervncviewer", "example.test::2222"]),
+        # Options come before the host, as the viewers' usage has them.
+        (
+            "10.0.0.5",
+            "-ViewOnly -Shared",
+            ["xtigervncviewer", "-ViewOnly", "-Shared", "10.0.0.5::2222"],
+        ),
+        ("fe80::1", "", ["xtigervncviewer", "[fe80::1]::2222"]),
+    ],
+)
+def test_a_vnc_viewer_is_given_its_arguments_then_the_host_and_port(
+    monkeypatch, address, extra, argv
+):
+    monkeypatch.setattr(
+        connections.shutil,
+        "which",
+        lambda name: "/usr/bin/xtigervncviewer" if name == "xtigervncviewer" else None,
+    )
+
+    command = VNC.command(host("vnc", address, password="pw", extra_params=extra), PROGRAMS)
+
+    # Never the stored password: the viewer asks for it, and GCM types nothing.
+    assert (command.argv, command.password) == (argv, "")
 
 
 # -- ssh ---------------------------------------------------------------------
@@ -279,11 +335,11 @@ def test_telnet_with_a_user_and_a_password_runs_the_script():
 
 def test_a_type_gcm_does_not_know_gives_the_script_its_own_name():
     """As addTab always did. The script runs any name but telnet and rdp as ssh."""
-    record = host("vnc", password="pw")
+    record = host("spice", password="pw")
 
     command = connections.for_host(record).command(record, PROGRAMS)
 
-    assert command.argv[:2] == ["/gcm/ssh.expect", "vnc"]
+    assert command.argv[:2] == ["/gcm/ssh.expect", "spice"]
 
 
 # -- settings of a type's own ------------------------------------------------
@@ -404,19 +460,25 @@ if scenario == "the-dialog-lists-the-registry":
     dialog = app.Whost()
     dialog.init("")
     listed = [row[0] for row in dialog.cmbType.get_model()]
-    assert listed == ["ssh", "telnet", "rdp", "local", "web"], listed
+    assert listed == ["ssh", "telnet", "rdp", "local", "web", "vnc"], listed
     assert dialog.cmbType.get_active_text() == "ssh"
     ports = {}
     for kind in listed:
         assert dialog.cmbType.set_active_id(kind), kind
         ports[kind] = dialog.txtPort.get_text()
-    assert ports == {"ssh": "22", "telnet": "23", "rdp": "3389", "local": "23", "web": "443"}, ports
+    expected = {"ssh": "22", "telnet": "23", "rdp": "3389", "local": "23", "web": "443", "vnc": "5900"}
+    assert ports == expected, ports
     dialog.get_widget("wHost").destroy()
 elif scenario == "addtab-opens-each-host-as-its-type-says":
     ran, typed = [], []
     app.vte_run = lambda terminal, command, arg=None: ran.append((command, arg))
     w.send_data = lambda terminal, data: typed.append(data)
-    found = {"xfreerdp3": "/usr/bin/xfreerdp3", "xdg-open": "/usr/bin/xdg-open"}
+    app.TYPE_PAGES = {}  # as without gtk-vnc, wherever this runs
+    found = {
+        "xfreerdp3": "/usr/bin/xfreerdp3",
+        "xdg-open": "/usr/bin/xdg-open",
+        "xtigervncviewer": "/usr/bin/xtigervncviewer",
+    }
     shutil.which = lambda name, *args, **kwargs: found.get(name)
     browsed = []
     app.open_in_browser = browsed.append
@@ -452,8 +514,64 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     assert browsed == ["https://bmc.example:8443/console"], browsed
     assert w.nbConsole.get_n_pages() == tabs and len(ran) == 4, (w.nbConsole.get_n_pages(), ran)
 
-    pump(2.5)  # the stored password is typed 2 s after its spawn, and only it
+    # Without gtk-vnc, a VNC host runs a viewer in a terminal, which asks for the password.
+    shown, command = open_host("vnc", "example.test", password="pw")
+    argv = ["xtigervncviewer", "example.test::2222"]
+    assert shown == [("xtigervncviewer", argv)] and command == ("xtigervncviewer", argv, ""), shown
+
+    pump(2.5)  # the stored password is typed 2 s after its spawn, and only ssh's
     assert typed == ["pw"], typed
+elif scenario == "a-types-page-opens-in-a-tab":
+    ran = []
+    app.vte_run = lambda terminal, command, arg=None: ran.append((command, arg))
+    shutil.which = lambda name, *args, **kwargs: None  # no viewer: the page needs none
+    shown = []
+    app.msgbox = shown.append
+    opened = []
+
+    class Page(Gtk.Box):
+        # A page of a type's own, as TYPE_PAGES holds, which records what GCM asks of it.
+        def __init__(self, host, ended):
+            Gtk.Box.__init__(self)
+            self.host, self.ended = host, ended
+            self.keyboard = Gtk.DrawingArea(can_focus=True)
+            self.pack_start(self.keyboard, True, True, 0)
+
+        def open(self):
+            opened.append((self.host.name, self.get_parent() is not None))
+
+    app.TYPE_PAGES = {"vnc": Page}
+
+    def open_host(name):
+        record = app.Host("Work", name, "", "example.test", "me", "pw")
+        record.type, record.port = "vnc", "5900"
+        w.addTab(w.nbConsole, record)
+        pump(0.3)
+        page = w.nbConsole.get_nth_page(w.nbConsole.get_n_pages() - 1)
+        return page, w.nbConsole.get_tab_label(page)
+
+    page, label = open_host("desk")
+    assert isinstance(page, Page) and label.get_text().strip() == "desk", (page, label.get_text())
+    # Opened once it is a tab, with the keyboard in it, and without a viewer or a message.
+    assert opened == [("desk", True)] and ran == [] and shown == [], (opened, ran, shown)
+    assert w.wMain.get_focus() is page.keyboard, w.wMain.get_focus()
+
+    # It ends as a terminal's tab does. Only on clean exit keeps it after a failure.
+    app.conf.AUTO_CLOSE_TAB, app.conf.ENDED_MARK_TAB = 2, 1
+    other, other_label = open_host("other")  # the first is now out of sight
+    page.ended(1)
+    pump(0.2)
+    assert page.get_parent() is w.nbConsole and not label.is_active, "a failed end closed the tab"
+    assert label.needs_attention and not other_label.needs_attention
+    other.ended(0)
+    pump(0.2)
+    assert other.get_parent() is None, "a clean end left the tab open"
+
+    app.conf.ENDED_MARK_TAB = 0
+    quiet, quiet_label = open_host("quiet")
+    w.nbConsole.set_current_page(w.nbConsole.page_num(page))
+    quiet.ended(1)
+    assert not quiet_label.needs_attention, "marked with Mark tab when the session ends off"
 elif scenario == "open-in-browser":
     # A fake xdg-open on PATH, which records what it was given and exits as told.
     shown = []
@@ -628,6 +746,7 @@ print("OK")
     [
         "the-dialog-lists-the-registry",
         "addtab-opens-each-host-as-its-type-says",
+        "a-types-page-opens-in-a-tab",
         "open-in-browser",
         "xdg-open-reaches-the-browser",
         "no-shipped-type-adds-a-page",

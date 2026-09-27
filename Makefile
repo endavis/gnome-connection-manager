@@ -86,6 +86,7 @@ deb: install
 		-d gir1.2-vte-2.91 \
 		-d expect \
 		-d python3-pyaes \
+		--deb-recommends gir1.2-gtk-vnc-2.0 \
 		--after-install postinst \
 		--deb-priority optional \
 		usr

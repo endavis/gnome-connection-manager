@@ -27,7 +27,6 @@ GUIDES = (DOC, DOC.with_name("HOSTS-AND-FOLDERS.md"))
 # belongs here without a reason that survives being read aloud. Documenting one means
 # deleting its line, not editing it.
 UNDOCUMENTED_SETTINGS = {
-    "auto-close-tab": "what happens to a tab when its session ends; window behaviour",
     "check-updates": "whether GCM phones home at startup; nothing to do with a terminal",
     "confirm-close-tab": "confirmation dialogs, application behaviour",
     "confirm-close-tab-middle": "confirmation dialogs, application behaviour",

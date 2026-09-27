@@ -480,6 +480,26 @@ is raised and nothing is said about it. WSLg, for instance, has no notifications
 **Notify when a console needs attention** has no effect there and the tab mark is what you
 have.
 
+## When a session ends
+
+A tab stays open when its session ends, because the program in it exits or its connection
+drops. Its label is greyed and struck through, so that you can read how the session ended.
+**Close console**, on the General tab of Preferences, can close the tab instead:
+
+- **Never**, the default, keeps every tab.
+- **Always** closes the tab however the session ended.
+- **Only on clean exit** closes the tab when the session ended cleanly, and keeps it
+  otherwise, to show what went wrong. A clean exit is an exit status of 0. `exit` typed at
+  a shell prompt is one, and ssh failing to connect or losing its connection is not: ssh
+  then exits with 255.
+
+In `gcm.conf` this is `auto-close-tab`: 0 for Never, 1 for Always and 2 for Only on clean
+exit. A change applies straight away, to sessions already open too, since it is read as a
+session ends.
+
+A tab that shows a remote desktop ends the same way, and
+[VNC hosts](HOSTS-AND-FOLDERS.md#vnc-hosts) says when its end is a clean one.
+
 ## Dropping files onto a terminal
 
 Drag a file from a file manager onto a terminal and its path is inserted at the cursor,

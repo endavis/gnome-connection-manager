@@ -1714,3 +1714,15 @@ msgstr ""
 
 msgid "exited with status"
 msgstr ""
+
+msgid "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
+msgstr ""
+
+msgid "Connecting to"
+msgstr ""
+
+msgid "Disconnected"
+msgstr ""
+
+msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
+msgstr ""
