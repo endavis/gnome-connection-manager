@@ -1123,6 +1123,7 @@ def test_logging_an_empty_range_writes_nothing(monkeypatch, app_module):
 
 def test_importar_servidores_loads_hosts(monkeypatch, tmp_path, app_module):
     host = make_host(app_module)
+    host.type_settings = {"rdp.domain": "CORP"}  # a type's own settings go along (#228)
     password = "secretpw"
     filename = tmp_path / "hosts.ini"
 
@@ -1159,6 +1160,7 @@ def test_importar_servidores_loads_hosts(monkeypatch, tmp_path, app_module):
     imported = app_module.groups["ops/prod"][0]
     assert imported.name == host.name
     assert imported.host == host.host
+    assert imported.type_settings == {"rdp.domain": "CORP"}
 
 
 def test_exportar_servidores_writes_encrypted_hosts(monkeypatch, tmp_path, app_module):

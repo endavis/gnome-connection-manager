@@ -7,6 +7,10 @@ offers them. Code that used to compare `host.type` with a name asks the type ins
 not a branch in each of those. A type whose tab is not a terminal will give a page for
 `add_page` rather than a command (#223); the first such type adds that here.
 
+A type may have settings of its own, each a `Setting`. The host dialog draws them on a
+page of the type's own, and a host keeps them in `Host.type_settings`, which clone and
+export and import carry already, so a new type adds no attribute to `Host`.
+
 Pure: what a command needs from outside comes in as `Programs`, as the log root does for
 logpaths, so every command is built and tested without a display. `ssh.expect` still
 branches on the type's name, which each command passes it first.
@@ -14,6 +18,8 @@ branches on the type's name, which each command passes it first.
 
 from __future__ import annotations
 
+import configparser
+import re
 import shlex
 import shutil
 from dataclasses import dataclass
@@ -54,6 +60,36 @@ class Command:
         return cast("str", self.argv[0])
 
 
+@dataclass(frozen=True)
+class Setting:
+    """A setting of a type's own. A flag when its default is a bool, which the host dialog
+    draws as a check box, and text otherwise, drawn as an entry. A type that needs another
+    kind of control adds it here."""
+
+    key: str
+    label: str  # marked with N_, and translated where the dialog draws it
+    default: str | bool = ""
+
+    def __post_init__(self):
+        # configparser folds an option's name to lower case as it writes it, so a key in
+        # mixed case would be written and then never found again, once GCM restarts.
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", self.key):
+            raise ValueError(f"a setting's key is lower case, digits and hyphens: {self.key!r}")
+
+    @property
+    def is_flag(self) -> bool:
+        return isinstance(self.default, bool)
+
+    def value(self, text: str | None) -> str | bool:
+        """The value a host stored as `text`. The default when it stored none, or when a
+        flag's text is not one configparser reads as a bool."""
+        if text is None:
+            return self.default
+        if self.is_flag:
+            return configparser.RawConfigParser.BOOLEAN_STATES.get(text.lower(), self.default)
+        return text
+
+
 class ConnectionType:
     """What the rest of GCM asks about a kind of host."""
 
@@ -62,6 +98,10 @@ class ConnectionType:
     remote = True  # False for a local shell, which has no address, user, password or port
     ssh_options = False  # keep-alive, X11, agent, compression, key and port forwarding
     sends_commands = True  # whether the host's commands are typed after it connects
+    # Settings of the type's own, drawn on a page of the host dialog, whose tab is
+    # settings_title, marked with N_. None of the types here has any yet.
+    settings: tuple[Setting, ...] = ()
+    settings_title = ""
 
     def missing(self) -> str | None:
         """Why a host of this type cannot be opened here, marked with N_, or None."""
@@ -69,6 +109,27 @@ class ConnectionType:
 
     def command(self, host, programs: Programs) -> Command:
         raise NotImplementedError(f"a {self.id or 'local'} host runs no command")
+
+    def option(self, key: str) -> str:
+        """The name the setting `key` is saved under in a host's section."""
+        return f"{self.id}.{key}"
+
+    def settings_of(self, host) -> dict[str, str | bool]:
+        """Each of this type's settings for `host`, by key: what it stored, or the default."""
+        return {
+            setting.key: setting.value(host.type_settings.get(self.option(setting.key)))
+            for setting in self.settings
+        }
+
+    def stored_settings(self, values: dict) -> dict[str, str]:
+        """What a host of this type keeps for `values`, which are by key: each setting that
+        differs from its default, as text, by the name it is saved under. A default is not
+        written, as a folder's order is not while it is name order."""
+        return {
+            self.option(setting.key): str(values[setting.key])
+            for setting in self.settings
+            if values[setting.key] != setting.default
+        }
 
 
 class Ssh(ConnectionType):
@@ -163,12 +224,14 @@ class Local(ConnectionType):
 
 SSH, TELNET, RDP, LOCAL = Ssh(), Telnet(), Rdp(), Local()
 CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL)
-_BY_ID = {kind.id: kind for kind in CONNECTION_TYPES}
 
 
 def named(name: str | None) -> ConnectionType:
-    """The type called `name`. One GCM does not know is Telnet, as it always has been."""
-    return _BY_ID.get(name or "", TELNET)
+    """The type called `name`. One GCM does not know is Telnet, as it always has been.
+
+    Found in CONNECTION_TYPES at each call rather than in a copy made at import, so a
+    test that adds a type of its own is heard."""
+    return next((kind for kind in CONNECTION_TYPES if kind.id == name), TELNET)
 
 
 def for_host(host) -> ConnectionType:

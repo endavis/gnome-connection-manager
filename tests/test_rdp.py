@@ -132,6 +132,7 @@ SSH_ONLY = (
 
 def choose_type(app_module, ctype, *, commands_ticked=False):
     dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     controls = {
         name: Control()
         for name in (

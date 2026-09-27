@@ -2,9 +2,10 @@
 
 Each kind of host is a class in `utils/connections.py`, and what used to compare
 `host.type` with a name asks the type instead. These pin how a host's type is found,
-what the host dialog asks of each type, and the command each builds, without a display.
-Against real GTK, they check that the dialog lists the registry's types and that `addTab`
-opens a host as its type says.
+what the host dialog asks of each type, the command each builds, and how a type's own
+settings are read and kept, without a display. Against real GTK, they check that the
+dialog lists the registry's types, that `addTab` opens a host as its type says, and that
+a type's settings get a page of the dialog and reach gcm.conf and back.
 
 When the registry replaced the branches, the command `addTab` built was recorded for a
 matrix of hosts before and after and came out the same. That comparison is in the pull
@@ -221,6 +222,100 @@ def test_a_type_gcm_does_not_know_gives_the_script_its_own_name():
     assert command.argv[:2] == ["/gcm/ssh.expect", "vnc"]
 
 
+# -- settings of a type's own ------------------------------------------------
+#
+# None of the types here has any yet, so these use a type of their own, as the first
+# type with settings will declare them.
+
+
+class Example(connections.ConnectionType):
+    id = "example"
+    settings_title = "Example"
+    settings = (
+        connections.Setting("view-only", "View only", False),
+        connections.Setting("quality", "Quality", "high"),
+    )
+
+
+EXAMPLE = Example()
+
+
+def test_a_type_added_to_the_registry_is_found_by_name(monkeypatch):
+    monkeypatch.setattr(connections, "CONNECTION_TYPES", (*connections.CONNECTION_TYPES, EXAMPLE))
+
+    assert connections.named("example") is EXAMPLE
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (None, False),
+        ("True", True),
+        ("False", False),
+        # What configparser's getboolean reads, as the other flags of a host are read.
+        ("yes", True),
+        ("on", True),
+        ("0", False),
+        ("maybe", False),
+    ],
+)
+def test_a_flag_reads_what_a_host_stored_or_its_default(text, expected):
+    flag = connections.Setting("view-only", "View only", False)
+
+    assert flag.is_flag
+    assert flag.value(text) is expected
+
+
+@pytest.mark.parametrize(("text", "expected"), [(None, "high"), ("low", "low"), ("", "")])
+def test_text_reads_what_a_host_stored_or_its_default(text, expected):
+    text_setting = connections.Setting("quality", "Quality", "high")
+
+    assert not text_setting.is_flag
+    assert text_setting.value(text) == expected
+
+
+@pytest.mark.parametrize("key", ["viewOnly", "view only", "view.only", "view=only", ""])
+def test_a_key_configparser_would_not_give_back_is_refused(key):
+    """It folds an option's name to lower case as it writes it, so `viewOnly` would be
+    written as `example.viewonly` and never found again."""
+    with pytest.raises(ValueError, match="lower case"):
+        connections.Setting(key, "Label")
+
+
+def test_a_types_settings_are_found_under_its_prefix_and_others_are_not_its_own():
+    record = host("example")
+    record.type_settings = {"example.quality": "low", "other.quality": "medium"}
+
+    assert EXAMPLE.option("quality") == "example.quality"
+    assert EXAMPLE.settings_of(record) == {"view-only": False, "quality": "low"}
+
+
+@pytest.mark.parametrize(
+    ("values", "stored"),
+    [
+        ({"view-only": False, "quality": "high"}, {}),
+        ({"view-only": True, "quality": "high"}, {"example.view-only": "True"}),
+        ({"view-only": False, "quality": ""}, {"example.quality": ""}),
+        (
+            {"view-only": True, "quality": "low"},
+            {"example.view-only": "True", "example.quality": "low"},
+        ),
+    ],
+)
+def test_a_host_keeps_only_what_differs_from_a_default_and_reads_it_back(values, stored):
+    record = host("example")
+
+    record.type_settings = EXAMPLE.stored_settings(values)
+
+    assert record.type_settings == stored
+    assert EXAMPLE.settings_of(record) == values
+
+
+def test_a_type_without_settings_keeps_none():
+    assert SSH.stored_settings({}) == {}
+    assert SSH.settings_of(host()) == {}
+
+
 # -- against real GTK --------------------------------------------------------
 
 _SCRIPT = r"""
@@ -284,6 +379,103 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
 
     pump(2.5)  # the stored password is typed 2 s after its spawn, and only it
     assert typed == ["pw"], typed
+elif scenario == "no-shipped-type-adds-a-page":
+    dialog = app.Whost()
+    dialog.init("")
+    notebook = dialog.get_widget("nbHost")
+    assert dialog.type_pages == {} and notebook.get_n_pages() == 4, notebook.get_n_pages()
+    dialog.get_widget("wHost").destroy()
+elif scenario == "a-types-page-in-the-host-dialog":
+    from gnome_connection_manager.utils import connections
+
+    class Example(connections.ConnectionType):
+        id = "example"
+        settings_title = "Example"
+        settings = (
+            connections.Setting("view-only", "View only", False),
+            connections.Setting("quality", "Quality", "high"),
+            connections.Setting("shared", "Shared", True),
+        )
+
+    connections.CONNECTION_TYPES = (*connections.CONNECTION_TYPES, Example())
+    # A type marks its labels with N_, and the dialog translates them as it draws them.
+    ours = ("Example", "View only", "Quality", "Shared")
+    app._ = lambda text, gettext=app._: text.upper() if text in ours else gettext(text)
+
+    def shown(dialog):
+        # The tabs drawn: a hidden page takes its tab with it.
+        notebook = dialog.get_widget("nbHost")
+        pump(0.2)
+        pages = [notebook.get_nth_page(n) for n in range(notebook.get_n_pages())]
+        return [notebook.get_tab_label(page) for page in pages if notebook.get_tab_label(page).get_mapped()]
+
+    dialog = app.Whost()
+    dialog.init("")
+    notebook = dialog.get_widget("nbHost")
+    page, controls = dialog.type_pages["example"]
+    tunnels, example_tab = dialog.get_widget("tunnelGrid"), notebook.get_tab_label(page)
+    assert example_tab.get_text() == "EXAMPLE"
+    assert notebook.page_num(page) == notebook.page_num(tunnels) + 1
+
+    ssh_tabs = shown(dialog)  # a new host is ssh
+    assert notebook.get_tab_label(tunnels) in ssh_tabs and example_tab not in ssh_tabs
+    dialog.cmbType.set_active_id("example")
+    example_tabs = shown(dialog)
+    assert example_tab in example_tabs and notebook.get_tab_label(tunnels) not in example_tabs
+    assert len(example_tabs) == len(ssh_tabs)
+
+    # Drawn as Properties is: a check box for a flag, an entry for text, each labelled.
+    notebook.set_current_page(notebook.page_num(page))
+    pump(0.2)
+    assert isinstance(controls["view-only"], Gtk.CheckButton) and controls["view-only"].get_mapped()
+    assert isinstance(controls["quality"], Gtk.Entry) and controls["quality"].get_mapped()
+    # At their defaults, which a new host starts with.
+    assert controls["quality"].get_text() == "high" and not controls["view-only"].get_active()
+    assert controls["shared"].get_active()
+    labels = {child.get_text() for child in page.get_children() if isinstance(child, Gtk.Label)}
+    assert labels == {"VIEW ONLY", "QUALITY", "SHARED"}, labels
+
+    # What was typed survives choosing another type and coming back.
+    controls["view-only"].set_active(True)
+    controls["quality"].set_text("low")
+    dialog.cmbType.set_active_id("ssh")
+    dialog.cmbType.set_active_id("example")
+    assert controls["view-only"].get_active() and controls["quality"].get_text() == "low"
+
+    dialog.cmbGroup.get_children()[0].set_text("Work")
+    dialog.txtName.set_text("box")
+    dialog.txtHost.set_text("example.test")
+    dialog.on_okbutton1_clicked(None)
+    saved = {"example.view-only": "True", "example.quality": "low"}
+    assert app.groups["Work"][0].type_settings == saved, app.groups["Work"][0].type_settings
+    written = [line.strip() for line in open(app.CONFIG_FILE) if line.startswith("example.")]
+    assert written == ["example.view-only = True", "example.quality = low"], written
+
+    # Read back as GCM starts, and shown again for an edit.
+    app.groups.clear()
+    w.loadConfig()
+    loaded = app.groups["Work"][0]
+    assert loaded.type_settings == saved, loaded.type_settings
+    edit = app.Whost()
+    edit.init("Work", loaded)
+    page, controls = edit.type_pages["example"]
+    assert edit.get_widget("nbHost").get_tab_label(page) in shown(edit)
+    assert controls["view-only"].get_active() and controls["quality"].get_text() == "low"
+
+    # Back to the defaults, a host keeps nothing; and a host of another type keeps none
+    # of what a hidden page holds. Text is read stripped, as the dialog's other fields are.
+    controls["view-only"].set_active(False)
+    controls["quality"].set_text("  high ")
+    edit.on_okbutton1_clicked(None)
+    assert app.groups["Work"][0].type_settings == {}, app.groups["Work"][0].type_settings
+    written = [line.strip() for line in open(app.CONFIG_FILE) if line.startswith("example.")]
+    assert written == [], written  # a save rewrites the host's section, not adds to it
+    other = app.Whost()
+    other.init("Work", app.groups["Work"][0])
+    other.type_pages["example"][1]["quality"].set_text("low")
+    other.cmbType.set_active_id("telnet")
+    other.on_okbutton1_clicked(None)
+    assert app.groups["Work"][0].type == "telnet" and app.groups["Work"][0].type_settings == {}
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -295,7 +487,13 @@ print("OK")
     reason="needs a display for a real terminal",
 )
 @pytest.mark.parametrize(
-    "scenario", ["the-dialog-lists-the-registry", "addtab-opens-each-host-as-its-type-says"]
+    "scenario",
+    [
+        "the-dialog-lists-the-registry",
+        "addtab-opens-each-host-as-its-type-says",
+        "no-shipped-type-adds-a-page",
+        "a-types-page-in-the-host-dialog",
+    ],
 )
 def test_the_registry_against_real_gtk(scenario):
     pytest.importorskip("gi", reason="PyGObject not available")

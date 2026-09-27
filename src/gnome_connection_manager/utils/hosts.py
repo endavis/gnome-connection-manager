@@ -11,7 +11,8 @@ derives from a module global, and whether a stored value predates the v2 format,
 is `conf.VERSION`.
 
 Keep `Host.clone`, `save_host_to_ini`, the `Whost` dialogs and import/export in step:
-adding an attribute means touching all four.
+adding an attribute means touching all four. A connection type's own settings touch none
+of them: all four carry `type_settings`, which holds each under the type's prefix (#228).
 
 Every record carries an `id` (ADR-0001). It is the one attribute not derived from what the
 user typed: identity used to be the `(group, name)` pair plus a section number that is
@@ -48,6 +49,12 @@ def new_host_id():
 ERASE_BINDING_AUTO = 0
 
 
+def is_type_setting(option):
+    """Whether an option in a host's section is a connection type's own setting, saved as
+    `<type>.<key>`. No other option of a host's holds a dot."""
+    return "." in option
+
+
 class Host:
     def __init__(self, *args):
         # Before the try: its bare except leaves every attribute after the failure
@@ -55,6 +62,9 @@ class Host:
         self.id = ""
         self.folder = ""
         self.position: int | None = None
+        # The settings of a connection type's own, by the option name each is saved
+        # under, as text (#228). Not an argument: the dialog, a read and a clone set it.
+        self.type_settings: dict[str, str] = {}
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -115,9 +125,10 @@ class Host:
         The id is deliberately not carried: a clone is a second host, and two entries
         sharing an id is the thing `ensure_unique_ids` exists to undo. The folder is: the
         copy is filed beside the original. The position is not, since two siblings cannot
-        hold one place; a duplicate in the tree is placed by the caller.
+        hold one place; a duplicate in the tree is placed by the caller. The settings of
+        its type are, in a mapping of the copy's own.
         """
-        return Host(
+        copy = Host(
             self.group,
             self.name,
             self.description,
@@ -145,6 +156,8 @@ class Host:
             "",
             self.folder,
         )
+        copy.type_settings = dict(self.type_settings)
+        return copy
 
 
 class HostUtils:
@@ -233,6 +246,11 @@ class HostUtils:
             folder,
             position,
         )
+        # Every type's, not only the host's own type's: a setting of a type this GCM does
+        # not know, written by a newer one, survives being read and saved again here.
+        h.type_settings = {
+            option: value for option, value in cp.items(section) if is_type_setting(option)
+        }
         return h
 
     @staticmethod
@@ -266,6 +284,8 @@ class HostUtils:
         cp.set(section, "folder", host.folder)
         if host.position is not None:
             cp.set(section, "position", str(host.position))
+        for option, value in host.type_settings.items():
+            cp.set(section, option, value)
 
     @staticmethod
     def ensure_unique_ids(hosts):
