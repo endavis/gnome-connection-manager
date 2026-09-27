@@ -161,7 +161,7 @@ elif scenario == "clone-in-the-second-pane":
     open_tabs("A", "B")
     split_off("B")
     assert names() == [["A"], ["B"]], names()
-    # A click into a terminal does not update w.current, which the split left on A.
+    # The split leaves the first pane in use; the keyboard, not the split, decides.
     use("A")
     use("B")
     application._on_action_console_clone(None, None)

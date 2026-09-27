@@ -573,30 +573,61 @@ def test_set_context_terminal_tracks_terminal_state(app_module, monkeypatch):
     wmain.set_context_terminal(terminal)
 
     assert wmain._context_terminal is terminal
-    assert wmain.current is terminal
     assert called["sync"] == 1
 
     wmain.clear_context_terminal()
     assert wmain._context_terminal is None
 
 
-def test_get_target_terminal_prefers_context_then_active_then_current(app_module, monkeypatch):
+def test_get_target_terminal_prefers_the_context_then_the_tab_in_use(app_module):
+    """And a tab in use that holds no terminal gives none, not another tab's (#223)."""
     wmain = object.__new__(app_module.Wmain)
-    wmain.hpMain = object()
     ctx = app_module.Vte.Terminal()
-    active = app_module.Vte.Terminal()
-    fallback = app_module.Vte.Terminal()
+    in_use = app_module.Vte.Terminal()
     wmain._context_terminal = ctx
-    wmain.find_active_terminal = lambda widget: active
-    wmain.current = fallback
+    wmain._context_tab_widget = None
+    wmain.page_in_use = lambda: types.SimpleNamespace(get_children=lambda: [in_use])
 
     assert wmain.get_target_terminal() is ctx
 
     wmain._context_terminal = None
-    assert wmain.get_target_terminal() is active
+    assert wmain.get_target_terminal() is in_use
 
-    wmain.find_active_terminal = lambda widget: None
-    assert wmain.get_target_terminal() is fallback
+    wmain.page_in_use = lambda: types.SimpleNamespace(get_children=lambda: [object()])
+    assert wmain.get_target_terminal() is None
+
+    wmain.page_in_use = lambda: None
+    assert wmain.get_target_terminal() is None
+
+
+def test_an_action_that_raises_leaves_no_context(app_module):
+    """A context left behind sent the next key to its tab, a page already closed (#223)."""
+    wmain = object.__new__(app_module.Wmain)
+    wmain._context_tab_widget = types.SimpleNamespace(get_children=lambda: [object()])
+    wmain._context_terminal = None
+
+    def fail(*_args):
+        raise RuntimeError("the action failed")
+
+    wmain.on_popupmenu = fail
+    with pytest.raises(RuntimeError):
+        wmain.trigger_popup_action("RS2", "RS")
+
+    assert wmain._context_tab_widget is None
+    assert wmain._context_terminal is None
+
+
+def test_a_tab_without_a_terminal_leaves_no_context_terminal(app_module):
+    """Its tab menu then offers no terminal to act on, not one left from before."""
+    wmain = object.__new__(app_module.Wmain)
+    wmain._context_terminal = app_module.Vte.Terminal()
+    page = types.SimpleNamespace(get_children=lambda: [object()])
+
+    wmain.set_context_tab_widget(page)
+
+    assert wmain._context_tab_widget is page
+    assert wmain._context_terminal is None
+    assert wmain.get_target_terminal() is None
 
 
 def test_run_custom_command_invokes_vte_feed(monkeypatch, app_module):
@@ -3166,7 +3197,7 @@ def split(term):
     page = term.get_parent()
     before = page.get_parent()
     before.set_current_page(before.page_num(page))
-    wmain.current = term
+    wmain.wMain.set_focus(term)
     wmain.split_notebook(app.HSPLIT)
     pump()
     assert page.get_parent() is not before, "the split did not move the console"
@@ -3278,7 +3309,7 @@ pump()
 # A pane of its own to drop into.
 page = pane.get_parent()
 wmain.nbConsole.set_current_page(wmain.nbConsole.page_num(page))
-wmain.current = pane
+wmain.wMain.set_focus(pane)
 wmain.split_notebook(app.HSPLIT)
 pump()
 target = pane.get_parent().get_parent()

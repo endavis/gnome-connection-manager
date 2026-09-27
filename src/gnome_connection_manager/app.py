@@ -1642,6 +1642,19 @@ def vte_run(terminal, command, arg=None):
             del os.environ[var]
 
 
+def page_terminal(page):
+    """The terminal a console page holds, or None when the page holds something else.
+
+    A page is what a notebook holds for a tab. addTab builds one around a terminal, and
+    add_page opens any other kind (#223), so nothing may take a page's first child for a
+    terminal without asking here.
+    """
+    children = page.get_children() if hasattr(page, "get_children") else []
+    if children and isinstance(children[0], Vte.Terminal):
+        return children[0]
+    return None
+
+
 # -- the open-console list, shared by the tab-strip dropdown and the menubar (#84) ------
 
 
@@ -1758,6 +1771,7 @@ class Wmain(GladeComponent):
         self.window = self.get_widget("wMain")
         for menu in (self.popupMenu, self.popupMenuFolder, self.popupMenuTab):
             menu.attach_to_widget(self.window, None)
+        self.window.connect("set-focus", self.on_window_set_focus)
 
         self._current_fullscreen_state = False
         self._context_terminal = None
@@ -1903,7 +1917,11 @@ class Wmain(GladeComponent):
         self.menuConsoles.connect("show", self.build_console_menu)
         self.menubar = None
         self.install_menubar()
-        self.current = None
+        # The console notebook the keyboard was last in, whatever its tab holds: where an
+        # action goes once the keyboard has left for the server tree or the search box.
+        # It replaces the last terminal given the keyboard, which a click never set and a
+        # tab without a terminal could not be (#223).
+        self.last_notebook = None
         self.count = 0
         self.row_activated = False
 
@@ -2165,7 +2183,7 @@ class Wmain(GladeComponent):
 
     def open_console_groups(self):
         """Every open console, grouped by the pane it lives in."""
-        focused = self.current.get_parent() if self.current is not None else None
+        focused = self.page_in_use()
         hints = console_shortcut_hints()
         return [
             (notebook, console_entries(notebook, focused, hints))
@@ -2213,9 +2231,9 @@ class Wmain(GladeComponent):
         """
         for _notebook, entries in self.open_console_groups():
             for entry in entries:
-                children = entry.page.get_children() if entry.page is not None else []
-                if children and isinstance(children[0], Vte.Terminal):
-                    self.apply_preferences_to_terminal(children[0])
+                terminal = page_terminal(entry.page)
+                if terminal is not None:
+                    self.apply_preferences_to_terminal(terminal)
                 if hasattr(entry.label, "render_label"):
                     entry.label.render_label()
 
@@ -2269,16 +2287,26 @@ class Wmain(GladeComponent):
         self.focus_console(entry.notebook, entry.page)
 
     def focus_console(self, notebook, page):
-        """Raise `page` and put the keyboard in its terminal, whichever pane it is in."""
+        """Raise `page` and put the keyboard in it, whichever pane it is in.
+
+        In its terminal, or on a page that holds something else, in the first thing there
+        that takes the keyboard. Failing that, on the notebook's tabs, which is where
+        clicking such a tab leaves it, measured (#223).
+        """
         position = notebook.page_num(page) if page is not None else -1
         if position < 0:
             return False
         notebook.set_current_page(position)
-        children = page.get_children() if hasattr(page, "get_children") else []
-        terminal = children[0] if children else None
-        if isinstance(terminal, Vte.Terminal):
+        terminal = page_terminal(page)
+        if terminal is not None:
             self.wMain.set_focus(terminal)
             self.on_tab_focus(terminal)
+            return True
+        focus = self.wMain.get_focus()
+        inside = focus is not None and (focus == page or focus.is_ancestor(page))
+        if not inside and not page.child_focus(Gtk.DirectionType.TAB_FORWARD):
+            notebook.grab_focus()
+        self.on_tab_focus(notebook, page)
         return True
 
     def install_console_button(self, notebook):
@@ -2354,17 +2382,36 @@ class Wmain(GladeComponent):
         else:
             notebook.next_page()
 
-    def current_notebook(self):
-        """The notebook the keyboard is in, else the last focused terminal's, else the main one.
+    def on_window_set_focus(self, _window, widget):
+        """Follow the keyboard into the panes, by a click or a key, whatever a tab holds.
 
-        The keyboard first: a click into a terminal does not update self.current, so after
-        a split it can name the other pane, and a shortcut went to that pane's tab (#219).
+        The window reports every move of the keyboard, so the pane this keeps is the one
+        the keyboard is in, or was last in. Only the notebooks laid out in the panes
+        count: a notebook inside a page is passed over.
         """
-        for terminal in (self.find_active_terminal(self.hpMain), self.current):
-            pane = terminal.get_parent() if terminal is not None else None
-            if pane is not None and pane.get_parent() is not None:
-                return pane.get_parent()
+        notebooks = self.collect_notebooks(self.hpMain)
+        while widget is not None and widget not in notebooks:
+            widget = widget.get_parent()
+        if widget is not None:
+            self.last_notebook = widget
+
+    def current_notebook(self):
+        """The pane in use: the notebook the keyboard is in, or was last in (#223).
+
+        Measured, choosing a tab whose page cannot take the keyboard leaves it on the
+        notebook itself. This looked for a focused terminal, then for the last terminal
+        given the keyboard, which a click never set, so an action went to a tab nobody
+        was looking at. The main pane is the last resort.
+        """
+        if self.last_notebook in self.collect_notebooks(self.hpMain):
+            return self.last_notebook
         return self.nbConsole
+
+    def page_in_use(self):
+        """The tab in use, whatever it holds: the page showing in the pane in use."""
+        notebook = self.current_notebook()
+        position = notebook.get_current_page()
+        return notebook.get_nth_page(position) if position >= 0 else None
 
     def toggle_fullscreen(self):
         if self._current_fullscreen_state:
@@ -2423,19 +2470,15 @@ class Wmain(GladeComponent):
             self.search["index"] = len(self.search["lines"]) if backwards else 0
 
     def init_search(self):
+        terminal = self.get_target_terminal()
         if (
             hasattr(self, "search")
             and self.search
             and self.get_widget("txtSearch").get_text() == self.search["word"]
-            and self.current == self.search["terminal"]
+            and terminal == self.search["terminal"]
         ):
             return True
 
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal is None:
-            terminal = self.current
-        else:
-            self.current = terminal
         if terminal is None:
             return False
 
@@ -2496,11 +2539,11 @@ class Wmain(GladeComponent):
         elif item == "CA":  # COPY ALL
             self.terminal_copy_all(self.popupMenu.terminal)
             return True
-        elif item == "X":  # CLOSE CONSOLE
-            widget = self.popupMenu.terminal.get_parent()
-            notebook = widget.get_parent()
-            page = notebook.page_num(widget)
-            notebook.remove_page(page)
+        elif item == "X":  # CLOSE CONSOLE, whatever the tab holds (#223)
+            page = self.get_context_tab_widget()
+            notebook = page.get_parent() if page is not None else None
+            if notebook is not None:
+                notebook.remove_page(notebook.page_num(page))
             return True
         elif item == "CP":  # CUSTOM COMMANDS
             vte_feed(self.popupMenu.terminal, args[0])
@@ -2556,23 +2599,26 @@ class Wmain(GladeComponent):
             return True
         elif item == "RS" or item == "RS2":  # RESET CONSOLE
             if item == "RS":
-                tab = self.get_context_tab_label()
-                term = tab.widget_.get_children()[0]
+                term = page_terminal(self.get_context_tab_widget())
             else:
                 term = self.popupMenu.terminal
-            term.reset(True, False)
+            # None for a tab that holds no terminal, here and below (#223).
+            if term is not None:
+                term.reset(True, False)
             return True
         elif item == "RC" or item == "RC2":  # RESET AND CLEAR CONSOLE
             if item == "RC":
-                tab = self.get_context_tab_label()
-                term = tab.widget_.get_children()[0]
+                term = page_terminal(self.get_context_tab_widget())
             else:
                 term = self.popupMenu.terminal
-            term.reset(True, True)
+            if term is not None:
+                term.reset(True, True)
             return True
         elif item == "RO":  # REOPEN SESION
             tab = self.get_context_tab_label()
-            term = tab.widget_.get_children()[0]
+            term = page_terminal(tab.widget_)
+            if term is None:
+                return True
             if not hasattr(term, "command"):
                 # term.fork_command(SHELL)
                 vte_run(term, SHELL)
@@ -2590,12 +2636,15 @@ class Wmain(GladeComponent):
         elif item == "CC" or item == "CC2":  # CLONE CONSOLE
             if item == "CC":
                 tab = self.get_context_tab_label()
-                term = tab.widget_.get_children()[0]
+                term = page_terminal(tab.widget_)
                 ntbk = tab.get_parent()
             else:
                 term = self.popupMenu.terminal
                 ntbk = term.get_parent().get_parent()
                 tab = ntbk.get_tab_label(term.get_parent())
+            if term is None:
+                # A tab of another kind has nothing to clone yet; each kind defines its own.
+                return True
             if not hasattr(term, "host"):
                 self.addTab(ntbk, tab.get_text())
             else:
@@ -2606,11 +2655,10 @@ class Wmain(GladeComponent):
             return True
         elif item == "L" or item == "L2":  # ENABLE/DISABLE LOG
             if item == "L":
-                tab = self.get_context_tab_label()
-                term = tab.widget_.get_children()[0]
+                term = page_terminal(self.get_context_tab_widget())
             else:
                 term = self.popupMenu.terminal
-            if not self.set_terminal_logger(term, widget.get_active()):
+            if term is not None and not self.set_terminal_logger(term, widget.get_active()):
                 widget.set_active(False)
             return True
         elif item == "SPH":
@@ -3206,6 +3254,22 @@ class Wmain(GladeComponent):
             logger.exception("Link pattern failed to compile, matches disabled: %.60s", regex)
             return None
 
+    def add_page(self, notebook, page, title):
+        """Open `page` as a tab of `notebook`, showing it, and return the tab's label.
+
+        Whatever the page holds (#223): the tab gets the label with its close button and
+        menu, and can be reordered and dragged into another pane. addTab opens a terminal
+        through this, and a page of any other kind goes through it too, so that it is a
+        tab like the rest. page_terminal is how the rest of GCM tells them apart.
+        """
+        tab = NotebookTabLabel(f"  {title}  ", notebook, page, self.popupMenuTab)
+        page.show_all()
+        notebook.append_page(page, tab_label=tab)
+        notebook.set_current_page(notebook.page_num(page))
+        notebook.set_tab_reorderable(page, True)
+        notebook.set_tab_detachable(page, True)
+        return tab
+
     def addTab(self, notebook, host):
         try:
             v = Vte.Terminal()
@@ -3235,16 +3299,8 @@ class Wmain(GladeComponent):
             scrollPane.pack_start(v, True, True, 0)
             scrollPane.pack_start(scrollbar, False, False, 0)
 
-            tab = NotebookTabLabel(
-                f"  {host.name}  ", self.nbConsole, scrollPane, self.popupMenuTab
-            )
-
             v.connect("bell", self.on_terminal_bell)
             v.connect("contents-changed", self.on_terminal_contents_changed)
-            v.connect(
-                "child-exited",
-                lambda _terminal, status: self.on_terminal_child_exited(v, tab, status),
-            )
             v.connect("focus", self.on_tab_focus)
             v.connect("button_press_event", self.on_terminal_click)
             v.connect("key_press_event", self.on_terminal_keypress)
@@ -3264,13 +3320,11 @@ class Wmain(GladeComponent):
             v.set_backspace_binding(host.backspace_key)
             v.set_delete_binding(host.delete_key)
 
-            scrollPane.show_all()
-            v.show()
-
-            notebook.append_page(scrollPane, tab_label=tab)
-            notebook.set_current_page(self.nbConsole.page_num(scrollPane))
-            notebook.set_tab_reorderable(scrollPane, True)
-            notebook.set_tab_detachable(scrollPane, True)
+            tab = self.add_page(notebook, scrollPane, host.name)
+            v.connect(
+                "child-exited",
+                lambda _terminal, status: self.on_terminal_child_exited(v, tab, status),
+            )
             self.wMain.set_focus(v)
             self.on_tab_focus(v)
             self.set_terminal_logger(v, host.log)
@@ -3931,7 +3985,6 @@ class Wmain(GladeComponent):
 
     def on_tab_focus(self, widget, tab=None, *args):
         if isinstance(widget, Vte.Terminal):
-            self.current = widget
             self.clear_tab_attention(widget.get_parent())
         elif tab is not None:
             self.clear_tab_attention(tab)
@@ -3964,11 +4017,12 @@ class Wmain(GladeComponent):
         notebook.set_tab_detachable(page, True)
 
     def split_notebook(self, direction):
-        csp = self.current.get_parent() if self.current is not None else None
+        # The tab whose menu is open, else the tab in use: whatever it holds (#223).
+        csp = self.get_context_tab_widget()
         cnb = csp.get_parent() if csp is not None else None
 
         # Separar solo si hay mas de 2 tabs en el notebook actual
-        if csp is not None and cnb.get_n_pages() > 1:
+        if cnb is not None and cnb.get_n_pages() > 1:
             # Crear un hpaned, en el hijo 0 dejar el notebook y en el hijo 1 el nuevo notebook
             # El nuevo hpaned dejarlo como hijo del actual parent
             hp = Gtk.HPaned() if direction == HSPLIT else Gtk.VPaned()
@@ -4002,7 +4056,6 @@ class Wmain(GladeComponent):
             nb.show()
             hp.show()
             hp.queue_draw()
-            self.current = cnb.get_nth_page(cnb.get_current_page()).get_children()[0]
             self.on_tab_focus(cnb, cnb.get_nth_page(cnb.get_current_page()))
 
     def find_notebook(self, widget, exclude=None):
@@ -4333,24 +4386,29 @@ class Wmain(GladeComponent):
     def set_context_terminal(self, terminal):
         self._context_terminal = terminal
         if isinstance(terminal, Vte.Terminal):
-            self.current = terminal
             self.sync_console_log_action(terminal)
 
     def clear_context_terminal(self, *args):
         self._context_terminal = None
 
     def get_target_terminal(self):
+        """The terminal an action acts on: the one whose menu is open, else the tab's.
+
+        The tab is the one whose menu is open, else the tab in use. None when that tab
+        holds no terminal, so a terminal action does nothing there. It fell back to the
+        last terminal given the keyboard, on a tab nobody was looking at (#223).
+        """
         if self._context_terminal is not None:
             return self._context_terminal
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal is not None:
-            return terminal
-        return self.current
+        return page_terminal(self.get_context_tab_widget())
 
     def set_context_tab_widget(self, widget):
         self._context_tab_widget = widget
-        if widget and widget.get_children():
-            self.set_context_terminal(widget.get_children()[0])
+        terminal = page_terminal(widget)
+        if terminal is not None:
+            self.set_context_terminal(terminal)
+        else:
+            self.clear_context_terminal()
 
     def clear_context_tab_widget(self, *args):
         self._context_tab_widget = None
@@ -4377,17 +4435,15 @@ class Wmain(GladeComponent):
 
         A terminal's menu names its tab through the terminal. Its Reset, Reset and clear
         and Clone come here, and acted on the tab in use instead (#221). The tab in use
-        is the one showing in the pane the keyboard is in. This read the main pane,
-        whichever pane the keyboard was in after a split (#219).
+        is the one showing in the pane the keyboard is in, or was last in. This read the
+        main pane, whichever pane the keyboard was in after a split (#219).
         """
         if self._context_tab_widget is not None:
             return self._context_tab_widget
         page = self._context_terminal.get_parent() if self._context_terminal is not None else None
         if page is not None and page.get_parent() is not None:
             return page
-        notebook = self.current_notebook()
-        position = notebook.get_current_page()
-        return notebook.get_nth_page(position) if position >= 0 else None
+        return self.page_in_use()
 
     def get_context_tab_label(self):
         widget = self.get_context_tab_widget()
@@ -4652,22 +4708,25 @@ class Wmain(GladeComponent):
             vte_feed(terminal, command)
 
     def trigger_popup_action(self, terminal_code, tab_code=None, *args):
-        if tab_code is not None:
-            # The tab whose menu was opened, or else the tab in use. Not the label an
-            # earlier right-click left behind, which Clone and Reset by key once read:
-            # it acted on that tab, and raised before any tab's menu had opened (#219).
-            widget = self.get_context_tab_widget()
-            if widget is not None:
-                self.set_context_tab_widget(widget)
-                self.on_popupmenu(None, tab_code, *args)
-        else:
-            terminal = self.get_target_terminal()
-            if terminal is None:
-                return
-            self.popupMenu.terminal = terminal
-            self.on_popupmenu(None, terminal_code, *args)
-        self.clear_context_terminal()
-        self.clear_context_tab_widget()
+        try:
+            if tab_code is not None:
+                # The tab whose menu was opened, or else the tab in use. Not the label an
+                # earlier right-click left behind, which Clone and Reset by key once read:
+                # it acted on that tab, and raised before any tab's menu had opened (#219).
+                widget = self.get_context_tab_widget()
+                if widget is not None:
+                    self.set_context_tab_widget(widget)
+                    self.on_popupmenu(None, tab_code, *args)
+            else:
+                terminal = self.get_target_terminal()
+                if terminal is not None:
+                    self.popupMenu.terminal = terminal
+                    self.on_popupmenu(None, terminal_code, *args)
+        finally:
+            # Even when the action raises. A context left behind sent the next key to its
+            # tab, which could be a page already closed (#223).
+            self.clear_context_terminal()
+            self.clear_context_tab_widget()
 
     def request_quit(self):
         (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
@@ -4709,9 +4768,7 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_guardar_como1_activate {
     def on_guardar_como1_activate(self, widget, *args):
-        term = self.find_active_terminal(self.hpMain)
-        if term is None:
-            term = self.current
+        term = self.get_target_terminal()
         if term is not None:
             self.show_save_buffer(term)
 
@@ -4877,15 +4934,7 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_btnLocal_clicked {
     def on_btnLocal_clicked(self, widget, *args):
-        if (
-            self.current is not None
-            and self.current.get_parent() is not None
-            and isinstance(self.current.get_parent().get_parent(), Gtk.Notebook)
-        ):
-            ntbk = self.current.get_parent().get_parent()
-        else:
-            ntbk = self.nbConsole
-        self.addTab(ntbk, "local")
+        self.addTab(self.current_notebook(), "local")
 
     # -- Wmain.on_btnLocal_clicked }
 
@@ -5102,8 +5151,13 @@ class Wmain(GladeComponent):
             if isinstance(obj, Gtk.Notebook):
                 n = obj.get_n_pages()
                 for i in range(0, n):
-                    terminal = obj.get_nth_page(i).get_children()[0]
-                    title = obj.get_tab_label(obj.get_nth_page(i)).get_text()
+                    page = obj.get_nth_page(i)
+                    terminal = page_terminal(page)
+                    if terminal is None:
+                        # Commands are typed into terminals. A tab without one made the
+                        # send raise at its row, and the rows after it got nothing (#223).
+                        continue
+                    title = obj.get_tab_label(page).get_text()
                     consoles.append((title, terminal))
 
         if len(consoles) == 0:
@@ -6945,24 +6999,38 @@ class NotebookTabLabel(Gtk.HBox):
             )
         self.set_tooltip_text(full)
 
+    def prepare_menu(self):
+        """Make this tab the tab menu's context, and show the items that apply to it.
+
+        A tab that holds no terminal is offered Rename and Split only (#223). The others
+        act on a terminal, and on such a tab they raised or acted on another tab's.
+        """
+        global wMain
+        if wMain:
+            wMain.set_context_tab_widget(self.widget_)
+        has_terminal = page_terminal(self.widget_) is not None
+        for item in (
+            self.popup.mnuReset,
+            self.popup.mnuClear,
+            self.popup.mnuClone,
+            self.popup.mnuLog,
+            self.popup.mnuTranscript,
+        ):
+            item.set_visible(has_terminal)
+        self.popup.mnuReopen.set_visible(has_terminal and not self.is_active)
+
+        # show/hide split menu
+        nb = self.widget_.get_parent()
+        if nb.get_n_pages() > 1:
+            self.popup.mnuSplitH.show()
+            self.popup.mnuSplitV.show()
+        else:
+            self.popup.mnuSplitH.hide()
+            self.popup.mnuSplitV.hide()
+
     def popupmenu(self, widget, event, label):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
-            global wMain
-            if wMain:
-                wMain.set_context_tab_widget(self.widget_)
-            if self.is_active:
-                self.popup.mnuReopen.hide()
-            else:
-                self.popup.mnuReopen.show()
-
-            # show/hide split menu
-            nb = self.widget_.get_parent()
-            if nb.get_n_pages() > 1:
-                self.popup.mnuSplitH.show()
-                self.popup.mnuSplitV.show()
-            else:
-                self.popup.mnuSplitH.hide()
-                self.popup.mnuSplitV.hide()
+            self.prepare_menu()
 
             # Use popup_at_rect with manual position calculation for proper placement
             if hasattr(self.popup, "popup_at_rect"):
@@ -7622,11 +7690,11 @@ class GcmApplication(Gtk.Application):
 
     def _on_action_console_close(self, action, _param):
         if self._controller is not None:
-            # No tab code: "X" is a terminal code, and only the terminal branch sets
-            # the terminal it reads. Passing it as a tab code too sent it down the tab
-            # branch, which leaves that unset, so Ctrl+W raised instead of closing (#95).
-            # There is no tab-scoped close to route to -- the tab menu has no Close.
-            self._controller.trigger_popup_action("X")
+            # A tab action: it closes the tab, whatever the tab holds (#223). "X" used to
+            # read popupMenu.terminal, which only the terminal branch sets, so sending it
+            # down the tab branch raised instead of closing (#95). Reading that, Ctrl+W
+            # could not close a tab without a terminal.
+            self._controller.trigger_popup_action("X", "X")
 
     def _on_action_console_log(self, action, state):
         if self._controller is None:
