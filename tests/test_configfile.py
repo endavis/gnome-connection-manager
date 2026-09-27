@@ -16,6 +16,7 @@ import pytest
 
 from gnome_connection_manager.utils import configfile
 from gnome_connection_manager.utils.folders import SECTION_PREFIX as FOLDER_PREFIX
+from gnome_connection_manager.utils.snippets import SECTION_PREFIX as SNIPPET_PREFIX
 
 
 def sections(reading):
@@ -114,6 +115,38 @@ def test_a_verbatim_repeated_folder_is_dropped_and_its_id_still_means_one_folder
 
     assert list(sections(reading)) == ["folder a1"]
     assert reading.ambiguous_folders == frozenset()
+
+
+def test_a_repeated_snippet_is_kept_under_a_fresh_id():
+    """A snippet edited in one copy and not the other: both texts survive (#240)."""
+    text = dedent("""\
+        [snippet 5e1ec7ed]
+        name = disk
+        text = "df -h"
+
+        [snippet 5e1ec7ed]
+        name = disk
+        text = "df -hT"
+        """)
+
+    reading = configfile.read_config(text)
+
+    snippets = sections(reading)
+    assert snippets["snippet 5e1ec7ed"]["text"] == '"df -h"'
+    assert sorted(snippet["text"] for snippet in snippets.values()) == ['"df -h"', '"df -hT"']
+    assert all(name.startswith(SNIPPET_PREFIX) for name in snippets)
+    assert reading.kept_apart == 1
+    # Nothing names a snippet by its id, so nothing is ambiguous.
+    assert reading.ambiguous_folders == frozenset()
+
+
+def test_a_verbatim_repeated_snippet_is_dropped():
+    text = '[snippet 5e1ec7ed]\nname = disk\ntext = "df -h"\n' * 2
+
+    reading = configfile.read_config(text)
+
+    assert list(sections(reading)) == ["snippet 5e1ec7ed"]
+    assert reading.dropped == 1
 
 
 def test_a_repeated_singleton_section_merges_and_a_repeated_key_keeps_the_later_value():
@@ -257,6 +290,10 @@ def test_unwritten_leaves_only_what_a_save_does_not_write():
 
         [host 1 (repeat)]
         name = db
+
+        [snippet 5e1ec7ed]
+        name = disk
+        text = "df -h"
 
         [keys]
         shift+return = \\n

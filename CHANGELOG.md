@@ -74,6 +74,13 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- Custom commands are listed by name in the terminal menu and the menubar, in folders,
+  and one without a key is kept and sent from the menus. A command can name the values of
+  the tab's host, `{name}`, `{address}` and the rest, typed as they are, and `{?Label}`
+  asks for a value as it is sent. `gcm.conf` keeps each as a `[snippet <id>]` record,
+  which may give it a name, a folder and a description; GCM takes up the old
+  `shortcutN` and `commandN` pairs once, and writes each command with a key back as a
+  pair for an older GCM
 - Connection types moved out of `app.py` into `utils/connections.py`, one class per type,
   and the host dialog lists them from there rather than from the glade file. A new type
   adds a class instead of a branch in each place that compared a host's type by name.
@@ -124,6 +131,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A custom command that held a backslash and an n came back from a restart with a new
+  line in their place. One saved now comes back as it was written; one saved before
+  cannot say which it held, and is kept as GCM has been sending it. The menubar also
+  left out each `_` in a command
 - Ctrl+click on a link did nothing where GIO finds no browser, as under WSLg: GTK raised
   `Operation not supported` and nothing opened. Links now open through `xdg-open`, as web
   hosts do. An email address now opens as `mailto:user@example.com`, not

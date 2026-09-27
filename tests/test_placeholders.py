@@ -91,3 +91,58 @@ def test_a_shell_quoted_value_stays_one_argument(tmp_path, name):
 
     assert result.stdout == f"{name}|"
     assert not (tmp_path / "pwned").exists()
+
+
+# Snippets (#240): the same names, unquoted, and a value asked for with {?Label}.
+
+
+def test_a_snippet_takes_the_hosts_values_as_they_are():
+    """Typed into whatever runs in the tab, which need not be a shell: no quoting."""
+    values = placeholders.host_values(a_host(name="two words; more"))
+
+    assert placeholders.fill_snippet("ssh {user}@{address} # {name}", values, {}) == (
+        "ssh ops@10.0.0.5 # two words; more"
+    )
+
+
+def test_each_label_is_asked_once_in_the_order_it_first_appears():
+    template = "scp {?File} {?Where}:{?File} {?Where}"
+
+    assert placeholders.asked(template) == ["File", "Where"]
+
+
+@pytest.mark.parametrize("template", ["{?}", "{ ?File}", "{?{File}}", "?File"])
+def test_what_is_not_a_label_is_not_asked(template):
+    assert placeholders.asked(template) == []
+
+
+def test_a_label_is_taken_as_written():
+    assert placeholders.asked("ping {? Host name }") == [" Host name "]
+
+
+def test_answers_fill_every_place_their_label_appears():
+    filled = placeholders.fill_snippet(
+        "cp {?File} /tmp/{?File}.{name}", placeholders.host_values(a_host()), {"File": "a.log"}
+    )
+
+    assert filled == "cp a.log /tmp/a.log.web-01"
+
+
+def test_nothing_is_filled_in_twice():
+    """One pass: an answer naming a placeholder, and a value that looks like a label,
+    are typed as they are."""
+    values = placeholders.host_values(a_host(name="{?Password}"))
+
+    filled = placeholders.fill_snippet("{name} {?Say}", values, {"Say": "{address}"})
+
+    assert filled == "{?Password} {address}"
+
+
+def test_without_a_host_its_placeholders_are_left_as_written():
+    filled = placeholders.fill_snippet("echo {name} {?Say} {other}", None, {"Say": "hi"})
+
+    assert filled == "echo {name} hi {other}"
+
+
+def test_a_label_with_no_answer_is_left_as_written():
+    assert placeholders.fill_snippet("echo {?Say}", None, {}) == "echo {?Say}"

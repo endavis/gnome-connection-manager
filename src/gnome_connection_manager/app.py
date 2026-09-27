@@ -43,6 +43,7 @@ import binascii
 import builtins
 import configparser
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -116,6 +117,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     urlregex,
     vtehtml,
 )
+from gnome_connection_manager.utils import snippets as snippetlib  # noqa: E402
 from gnome_connection_manager.utils.folders import (  # noqa: E402
     NAME_HAS_SEPARATOR,
     NAME_TAKEN,
@@ -534,6 +536,23 @@ def sync_shortcut_accels():
         controller.refresh_menu_accels()
 
 
+def menu_label(text):
+    """`text` for a menu built from a model, which reads `_` as a mnemonic, measured: a
+    snippet named restart_service was drawn as restartservice (#240)."""
+    return text.replace("_", "__")
+
+
+def bind_snippet_keys(bound, library):
+    """Put each snippet with a key into `bound`, a shortcuts table, under its key (#240).
+
+    After the built-in commands, so that a snippet keeps a key one of them also has, as
+    the custom command it replaced did.
+    """
+    for snippet in library:
+        if snippet.key:
+            bound[snippet.key] = snippet
+
+
 ICON_PATH = str(Path(BASE_PATH) / "icon.png")
 
 glade_dir = str(Path(BASE_PATH) / "ui")
@@ -560,6 +579,9 @@ groups: dict = {}
 # else reads; sync_folders() re-derives it from these after every change.
 folders = FolderTree()
 shortcuts: dict = {}
+# The snippet library (#240). One with a key is in `shortcuts` too, under its key, which
+# is how the key sends it, as a custom command's did.
+snippets: list = []
 # [options] values gcm.conf gives that could not be read, so each setting is at its
 # default. writeConfig writes their text back rather than the default, until a setting
 # is changed (#173); the window reports them when it opens.
@@ -2187,8 +2209,8 @@ class Wmain(GladeComponent):
                 elif cmd == _NEW_LOCAL:
                     self.on_btnLocal_clicked(None)
             else:
-                # comandos del usuario
-                vte_feed(widget, cmd)
+                # A snippet's key (#240).
+                self.send_snippet(cmd, widget)
 
             return True
         return False
@@ -2992,20 +3014,39 @@ class Wmain(GladeComponent):
         commands_menu = getattr(application, "commands_menu", None)
         if commands_menu is not None:
             commands_menu.remove_all()
-        for x in shortcuts:
-            if not isinstance(shortcuts[x], list):
-                menuItem = self.createMenuItem(x, shortcuts[x][0:30])
-                self.popupMenu.mnuCommands.append(menuItem)
-                menuItem.set_action_name("app.custom-command")
-                menuItem.set_action_target_value(GLib.Variant("s", shortcuts[x]))
+        # The menubar is built from its model, so it follows the edits.
+        self.fill_snippet_menus(
+            snippetlib.tree(snippets), self.popupMenu.mnuCommands, commands_menu
+        )
 
-                if commands_menu is not None:
-                    # The menubar is built from this model, so it follows the edits.
-                    item = Gio.MenuItem.new(f"[{x}] {shortcuts[x][0:30]}", None)
-                    item.set_action_and_target_value(
-                        "app.custom-command", GLib.Variant("s", shortcuts[x])
-                    )
-                    commands_menu.append_item(item)
+    def fill_snippet_menus(self, folder, menu, model):
+        """List a folder of snippets by name in the terminal menu's `menu` and in the
+        menubar's `model`, which may be None: each subfolder a submenu, then each snippet,
+        with its key when it has one (#240)."""
+        for child in folder.folders:
+            submenu = Gtk.Menu()
+            item = Gtk.MenuItem(label=child.name)
+            item.set_submenu(submenu)
+            item.show()
+            menu.append(item)
+            submodel = Gio.Menu() if model is not None else None
+            self.fill_snippet_menus(child, submenu, submodel)
+            if model is not None:
+                model.append_submenu(menu_label(child.name), submodel)
+        for snippet in folder.snippets:
+            if snippet.key:
+                item = self.createMenuItem(snippet.key, snippet.name)
+            else:
+                item = Gtk.MenuItem(label=snippet.name)
+                item.show()
+            item.set_action_name("app.send-snippet")
+            item.set_action_target_value(GLib.Variant("s", snippet.id))
+            menu.append(item)
+            if model is not None:
+                label = f"[{snippet.key}] {snippet.name}" if snippet.key else snippet.name
+                entry = Gio.MenuItem.new(menu_label(label), None)
+                entry.set_action_and_target_value("app.send-snippet", GLib.Variant("s", snippet.id))
+                model.append_item(entry)
 
     def _copy_selection(self, terminal):
         # With an empty selection VTE still takes clipboard ownership and serves an
@@ -3764,15 +3805,12 @@ class Wmain(GladeComponent):
                 scuts[cp.get("shortcuts", f"console_{x}")] = globals()[f"_CONSOLE_{x}"]
             except (configparser.NoSectionError, configparser.NoOptionError):
                 scuts[f"ALT+{x}"] = globals()[f"_CONSOLE_{x}"]
-        try:
-            i = 1
-            while True:
-                scuts[cp.get("shortcuts", f"shortcut{i}")] = cp.get(
-                    "shortcuts", f"command{i}"
-                ).replace("\\n", "\n")
-                i = i + 1
-        except (configparser.NoSectionError, configparser.NoOptionError):
-            pass
+        # Custom commands are snippets now, taken from [shortcuts] once (#240).
+        global snippets
+        snippets = snippetlib.load(cp)
+        snippets += snippetlib.migrate(cp, snippets)
+        snippetlib.drop_repeated_keys(snippets)
+        bind_snippet_keys(scuts, snippets)
         global shortcuts
         shortcuts = scuts
 
@@ -4027,9 +4065,12 @@ class Wmain(GladeComponent):
             if isinstance(shortcuts[s], list):
                 cp.set("shortcuts", shortcuts[s][0], s)
             else:
+                # A snippet with a key, written as the custom command it was as well, for
+                # an older GCM to read. migrate() knows the copy by its key (#240).
                 cp.set("shortcuts", f"shortcut{i}", s)
-                cp.set("shortcuts", f"command{i}", shortcuts[s].replace("\n", "\\n"))
+                cp.set("shortcuts", f"command{i}", snippetlib.legacy_encode(shortcuts[s].text))
                 i = i + 1
+        snippetlib.save(cp, snippets)
 
         # main() has made it already; this is for every other way in. A write into a
         # directory that is not there fails, and each of these failures ends at a modal
@@ -4907,10 +4948,29 @@ class Wmain(GladeComponent):
     def collapse_all_groups(self):
         self.treeServers.collapse_all()
 
-    def run_custom_command(self, command):
+    def send_snippet_by_id(self, snippet_id):
+        """Send the snippet a menu names to the terminal the menu is for (#240)."""
+        snippet = next((each for each in snippets if each.id == snippet_id), None)
         terminal = self.get_target_terminal()
-        if terminal:
-            vte_feed(terminal, command)
+        if snippet is not None and terminal is not None:
+            self.send_snippet(snippet, terminal)
+
+    def send_snippet(self, snippet, terminal):
+        """Type `snippet` into `terminal`, with the values of the terminal's host (#240).
+
+        Each `{?Label}` is asked for first, once however often it appears, and cancelling
+        one sends nothing. Say whether it was sent.
+        """
+        answers = {}
+        for label in placeholders.asked(snippet.text):
+            answer = inputbox(snippet.name, label.strip(), parent=self.wMain)
+            if answer is None:
+                return False
+            answers[label] = answer
+        host = getattr(terminal, "host", None)
+        values = placeholders.host_values(host) if host is not None else None
+        vte_feed(terminal, placeholders.fill_snippet(snippet.text, values, answers))
+        return True
 
     def trigger_popup_action(self, terminal_code, tab_code=None, *args):
         try:
@@ -6268,7 +6328,10 @@ class Wconfig(GladeComponent):
         column.set_expand(False)
         self.treeCmd.append_column(column)
 
-        self.treeModel2 = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_STRING)
+        # Text, key, and the id of the snippet the row edits: "" for a new one (#240).
+        self.treeModel2 = Gtk.TreeStore(
+            GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
+        )
         self.treeCustom.set_model(self.treeModel2)
         renderer = MultilineCellRenderer()
         renderer.set_property("editable", True)
@@ -6286,16 +6349,13 @@ class Wconfig(GladeComponent):
         column.set_expand(False)
         self.treeCustom.append_column(column)
 
-        slist = sorted(shortcuts.items(), key=lambda i: i[1][0])
+        commands = [item for item in shortcuts.items() if isinstance(item[1], list)]
+        for key, command in sorted(commands, key=lambda item: item[1][0]):
+            self.treeModel.append(None, [command[0], key])
+        for snippet in snippets:
+            self.treeModel2.append(None, [snippet.text, snippet.key, snippet.id])
 
-        for s in slist:
-            if isinstance(s[1], list):
-                self.treeModel.append(None, [s[1][0], s[0]])
-        for s in slist:
-            if not isinstance(s[1], list):
-                self.treeModel2.append(None, [s[1], s[0]])
-
-        self.treeModel2.append(None, ["", ""])
+        self.treeModel2.append(None, ["", "", ""])
 
         # Connect signal handlers for color buttons and default colors checkbox
         self.btnFColor.connect("color-set", self.on_btnFColor_color_set)
@@ -6409,9 +6469,37 @@ class Wconfig(GladeComponent):
                 if self.treeModel2[i][0] == self.treeModel2[i][1] == "":
                     self.treeModel2.remove(i)
                 i = j
-            self.treeModel2.append(None, ["", ""])
+            self.treeModel2.append(None, ["", "", ""])
             if self.capture_keys:
                 self.capture_keys = False
+
+    def edited_snippets(self):
+        """The snippets as the table leaves them (#240).
+
+        A row keeps what the table does not show of its snippet, found by id: its name,
+        folder and description. A new row is a new snippet, named by its first line, and
+        an edited one is renamed so while its name is still the one made that way. A row
+        with no text is none, and one with no key is a snippet the menus send.
+        """
+        before = {snippet.id: snippet for snippet in snippets}
+        taken = set(before)
+        edited = []
+        for row in self.treeModel2:
+            text, key, snippet_id = row[0], row[1], row[2]
+            if text == "":
+                continue
+            old = before.get(snippet_id)
+            if old is None:
+                snippet_id = snippetlib.new_snippet_id(taken)
+                taken.add(snippet_id)
+                edited.append(snippetlib.Snippet(snippet_id, snippetlib.name_for(text), text, key))
+                continue
+            name = old.name
+            if name == snippetlib.name_for(old.text):
+                name = snippetlib.name_for(text)
+            edited.append(dataclasses.replace(old, name=name, text=text, key=key))
+        snippetlib.drop_repeated_keys(edited)
+        return edited
 
     def on_editing_started(self, widget, entry, rownum, model, colnum):
         self.capture_keys = True
@@ -6462,9 +6550,9 @@ class Wconfig(GladeComponent):
         for x in self.treeModel:
             if x[0] != "" and x[1] != "":
                 scuts[x[1]] = [x[0]]
-        for x in self.treeModel2:
-            if x[0] != "" and x[1] != "":
-                scuts[x[1]] = x[0]
+        global snippets
+        snippets = self.edited_snippets()
+        bind_snippet_keys(scuts, snippets)
         global shortcuts
         shortcuts = scuts
         sync_shortcut_accels()
@@ -7731,8 +7819,8 @@ class GcmApplication(Gtk.Application):
         self._create_action("console-close", self._on_action_console_close)
         self._create_stateful_action("console-log", False, self._on_action_console_log)
         self._create_action(
-            "custom-command",
-            self._on_action_custom_command,
+            "send-snippet",
+            self._on_action_send_snippet,
             parameter_type=GLib.VariantType.new("s"),
         )
         self._create_action("copy-address", self._on_action_copy_address)
@@ -8132,10 +8220,10 @@ class GcmApplication(Gtk.Application):
         self._controller.clear_context_terminal()
         self._controller.clear_context_tab_widget()
 
-    def _on_action_custom_command(self, action, parameter):
+    def _on_action_send_snippet(self, action, parameter):
         if self._controller is None or parameter is None:
             return
-        self._controller.run_custom_command(parameter.get_string())
+        self._controller.send_snippet_by_id(parameter.get_string())
         self._controller.clear_context_terminal()
 
     def _on_action_copy_address(self, action, _param):

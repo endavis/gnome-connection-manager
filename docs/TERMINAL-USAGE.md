@@ -704,6 +704,59 @@ Avoid rebinding a terminal shortcut onto one of these. Window accelerators are d
 before the focused terminal sees the key, so the application command would win and the
 terminal binding would never fire.
 
+## Custom commands
+
+A custom command is text GCM types into a console for you: a command you run often, a
+query, a long path. Each is listed by its name in the terminal menu's **Custom commands**
+and the menubar's **Custom Commands**, and sent to the tab the menu is for. One with a
+key is sent by the key too, to the tab you are typing in.
+
+Make one under **Custom Commands** on the **Shortcuts** tab of Preferences: type its
+text, and press its key in the **Shortcut** column if it is to have one. A command
+without a key is kept, and sent from the menus. Enter finishes the text, and Shift+Enter
+starts a new line in it. The text is typed as written, so a command meant to run ends
+with a new line. Its name is its first line, cut short if it is long, unless `gcm.conf`
+gives it one.
+
+A command can name values of the host of the tab it is sent to, filled in as it is sent:
+
+| Placeholder | Is |
+|---|---|
+| `{name}` | the host's name |
+| `{address}` | its address |
+| `{port}` | its port |
+| `{user}` | its user |
+| `{group}` | the folder it is in, as a path |
+| `{type}` | its type, such as `ssh` |
+
+They are typed as they are, not quoted for a shell, since what runs in the tab need not
+be one. A local tab's host is named `local`, with no address. `{?Label}` asks for a value
+as the command is sent, showing `Label`: each label once however often it appears, all
+before anything is typed, and **Cancel** sends nothing. Anything else in braces, such as
+`awk '{print $1}'`, is typed as written.
+
+In `gcm.conf` each command is a record of its own:
+
+```ini
+[snippet 5e1ec7ed]
+name = Disk usage
+text = "df -h {?Mount}\n"
+key = F8
+folder = ops/storage
+description = free space on a mount
+```
+
+`text` is a JSON string, so a new line is `\n` and a backslash `\\`. `folder` files the
+command in a submenu of both menus, `ops/storage` two deep. Only `text` is needed.
+Preferences keeps a command's folder and description, and a name `gcm.conf` gave it,
+when it changes the text or the key.
+
+GCM used to keep custom commands in `[shortcuts]`, as `shortcutN` and `commandN` pairs:
+a command only with a key, and listed by its first 30 characters. GCM now takes each
+pair up as it starts, with its key and its text, and its next save writes it as a record
+like the one above. A save writes each command that has a key back as a pair as well, so
+that an older GCM still has it.
+
 ## What agent CLIs do
 
 Terminal behaviour varies more than it looks, and it decides whether you need `Shift` to
