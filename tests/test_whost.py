@@ -120,6 +120,7 @@ def make_whost(
     # The real dialog sets these in __init__ and overwrites them in init() for an edit.
     whost.oldId = ""
     whost.oldPosition = None
+    whost.type_pages = {}  # as new() leaves them: no type here has settings (#228)
 
     destroy_stub = DestroyStub()
     widgets = {
@@ -259,6 +260,7 @@ def test_only_ssh_hosts_get_a_port_forwarding_tab(app_module):
             pass
 
     dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     controls = {
         name: Toggle()
         for name in (
@@ -316,6 +318,7 @@ def test_only_a_local_host_greys_and_clears_its_connection_fields(app_module, ct
     """A local shell has no address, user, password or port. The port is then 23, since
     the dialog refuses to save a host without a valid one."""
     dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     names = (
         *CONNECTION_FIELDS,
         "txtKeepAlive",
@@ -375,6 +378,7 @@ def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module)
             pass
 
     dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     ssh_only = (
         "txtKeepAlive",
         "chkKeepAlive",
@@ -414,6 +418,7 @@ def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module)
 def make_loadable_whost(app_module, monkeypatch):
     """A dialog stubbed just far enough to run `init` against a stored host."""
     dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     for name in (
         "txtName",
         "txtDescription",

@@ -5354,6 +5354,7 @@ class Whost(GladeComponent):
         for kind in connections.CONNECTION_TYPES:
             self.cmbType.append(kind.id, kind.id)
         self.cmbType.set_active(0)
+        self.build_type_pages()
         self.cmbBackspace.set_active(0)
         self.cmbDelete.set_active(0)
         # Matches the unticked chkCommands the glade file starts with; init() sets both
@@ -5369,6 +5370,62 @@ class Whost(GladeComponent):
         combo.remove_all()
         for path in sorted(folders.path_for(folder_id) for folder_id in folders.folders):
             combo.append_text(path)
+
+    def build_type_pages(self):
+        """A page for each type with settings of its own (#228), drawn as Properties is,
+        and placed after Port forwarding, since only the chosen type's page is shown. A
+        page keeps what was typed on it while another type is chosen."""
+        self.type_pages = {}
+        notebook = self.get_widget("nbHost")
+        position = notebook.page_num(self.get_widget("tunnelGrid")) + 1
+        for kind in connections.CONNECTION_TYPES:
+            if not kind.settings:
+                continue
+            page = Gtk.Grid(row_homogeneous=True)
+            controls = {}
+            for row, setting in enumerate(kind.settings):
+                # At its default, which is what a new host starts with; init() fills in
+                # what a stored one has.
+                if setting.is_flag:
+                    control = Gtk.CheckButton(active=setting.default)
+                else:
+                    control = Gtk.Entry(text=setting.default)
+                control.set_margin_start(10)
+                page.attach(Gtk.Label(label=_(setting.label), halign=Gtk.Align.START), 0, row, 1, 1)
+                page.attach(control, 1, row, 1, 1)
+                controls[setting.key] = control
+            page.show_all()
+            notebook.insert_page(page, Gtk.Label(label=_(kind.settings_title)), position)
+            position += 1
+            self.type_pages[kind.id] = (page, controls)
+        self.show_type_page(connections.named(self.cmbType.get_active_text()))
+
+    def show_type_page(self, kind):
+        for type_id, (page, _controls) in self.type_pages.items():
+            page.set_visible(type_id == kind.id)
+
+    def fill_type_pages(self, host):
+        """Each type's page from what `host` stored, or the defaults."""
+        for type_id, (_page, controls) in self.type_pages.items():
+            for key, value in connections.named(type_id).settings_of(host).items():
+                if isinstance(value, bool):
+                    controls[key].set_active(value)
+                else:
+                    controls[key].set_text(value)
+
+    def type_page_values(self, kind):
+        """What the page of `kind` holds, by setting key. Nothing for a type without one."""
+        if kind.id not in self.type_pages:
+            return {}
+        _page, controls = self.type_pages[kind.id]
+        return {
+            setting.key: (
+                controls[setting.key].get_active()
+                if setting.is_flag
+                else controls[setting.key].get_text().strip()
+            )
+            for setting in kind.settings
+        }
 
     def init(self, group, host=None):
         self.cmbGroup.get_children()[0].set_text(group)
@@ -5451,6 +5508,7 @@ class Whost(GladeComponent):
         self.cmbDelete.set_active(host.delete_key)
         self.update_texttags()
         self.txtTerm.set_text(host.term)
+        self.fill_type_pages(host)
 
     def update_texttags(self, *args):
         buf = self.txtCommands.get_buffer()
@@ -5555,6 +5613,9 @@ class Whost(GladeComponent):
             commands_enabled,
             "" if self.isNew else self.oldId,
         )
+        # The chosen type's only. Another type's page is hidden, and whatever it held is
+        # not saved with this host, as Port forwarding is not for a type without it.
+        host.type_settings = kind.stored_settings(self.type_page_values(kind))
         if not self.isNew and group == self.oldGroup:
             # Only while it stays in the same folder: a position means nothing elsewhere.
             host.position = self.oldPosition
@@ -5665,6 +5726,7 @@ class Whost(GladeComponent):
 
         self.chkCommands.set_sensitive(kind.sends_commands)
         self.txtCommands.set_sensitive(kind.sends_commands and self.chkCommands.get_active())
+        self.show_type_page(kind)
 
     # -- Whost.on_cmbType_changed }
 

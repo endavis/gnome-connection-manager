@@ -58,6 +58,11 @@ the git log.
   and the host dialog lists them from there rather than from the glade file. A new type
   adds a class instead of a branch in each place that compared a host's type by name.
   Every host opens with the same command as before
+- A connection type can have settings of its own. The host dialog shows them on a page
+  of that type's own while it is chosen, and a host saves them in its section of
+  `gcm.conf` as `<type>.<name>`, so copying, exporting and importing a host carry them.
+  No type has any yet: VNC and RDP in a tab will be the first. An option with a dot in
+  its name in a host's section is now kept when GCM saves, rather than dropped
 - A tab can hold something other than a terminal, which VNC, web views and RDP in a tab
   will need. Every tab is opened the same way, and what acts on a tab first asks whether
   it holds a terminal: one that does not can be renamed, closed, split and moved between

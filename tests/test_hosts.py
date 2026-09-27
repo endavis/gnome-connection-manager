@@ -427,3 +427,57 @@ def test_a_position_attribute_exists_even_when_parsing_fails_partway():
     broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
 
     assert broken.position is None
+
+
+# -- settings of a connection type's own (#228) ------------------------------
+
+
+def test_type_settings_survive_the_ini_round_trip_as_options_of_the_host():
+    """Each under its type's prefix, beside the host's other options. A type this GCM
+    does not know keeps its settings too, so a config a newer GCM wrote survives being
+    read and saved again here."""
+    host = make_sample_host()
+    host.type_settings = {"rdp.domain": "CORP", "rdp.gateway": "", "unknown.view-only": "True"}
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    assert config.get("host 1", "rdp.domain") == "CORP"
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+    assert loaded.type_settings == {
+        "rdp.domain": "CORP",
+        "rdp.gateway": "",
+        "unknown.view-only": "True",
+    }
+
+
+def test_no_other_option_of_a_host_is_read_as_a_type_setting():
+    """A type's setting is told from the host's own options by the dot in its name, so a
+    host without any must read back without any."""
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+
+    assert not [option for option in config.options("host 1") if hosts.is_type_setting(option)]
+    assert (
+        hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret").type_settings
+        == {}
+    )
+
+
+def test_clone_carries_type_settings_in_a_mapping_of_its_own():
+    host = make_sample_host()
+    host.type_settings = {"rdp.domain": "CORP"}
+
+    cloned = host.clone()
+    cloned.type_settings["rdp.domain"] = "OTHER"
+
+    assert host.type_settings == {"rdp.domain": "CORP"}
+    assert host.clone().type_settings == {"rdp.domain": "CORP"}
+
+
+def test_type_settings_exist_even_when_parsing_fails_partway():
+    broken = hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
+
+    assert broken.type_settings == {}

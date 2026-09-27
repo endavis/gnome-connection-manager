@@ -54,6 +54,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `missing` gives for RDP, is marked with `N_` and translated in `app.py`, and
   `tests/test_i18n.py` reads this module for it. A type whose tab is not a terminal will
   give a page for `add_page` rather than a command; the first one adds that here.
+  A type's own settings are the `Setting`s in its `settings`, each a flag or text. The
+  host dialog draws them on a page titled `settings_title`, which
+  `Whost.build_type_pages` places after Port forwarding and `on_cmbType_changed` shows
+  only while that type is chosen. A host keeps them in `Host.type_settings`, by the name
+  each is saved under in its section, `<type>.<key>`, and only while one differs from
+  its default. `HostUtils` reads every option with a dot as one, those of a type GCM
+  does not know included, so clone and export and import carry them, and a new type adds
+  no attribute to `Host`. A key is lower case: configparser folds an option's name as it
+  writes it, and a key in mixed case would not be found once GCM restarted, so `Setting`
+  refuses one. No type here has settings yet; `tests/test_connections.py` gives a type
+  of its own some, as `tests/test_tab_pages.py` opens a page of its own.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
@@ -354,7 +365,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   across in `Whost.oldId` -- dropping that would make every edit look like a new host --
   and the position in `Whost.oldPosition`, while the host stays in the same folder.
   The first two now live in `src/gnome_connection_manager/utils/hosts.py` and the dialogs
-  in `app.py`, so adding an attribute crosses both files.
+  in `app.py`, so adding an attribute crosses both files. A setting of one connection
+  type's own is not an attribute: it goes in the type's `settings`, and all of those
+  carry it already (#228).
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
   hides the Port forwarding page for a type without `ssh_options`, which only SSH has, so a
   Telnet or RDP host's

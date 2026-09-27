@@ -1004,7 +1004,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
           </packing>
         </child>
         <child>
-          <object class="GtkNotebook">
+          <object class="GtkNotebook" id="nbHost">
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <child>
