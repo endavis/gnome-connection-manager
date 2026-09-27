@@ -79,7 +79,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `open_in_browser` runs `xdg-open`, not `Gtk.show_uri`: GIO finds a browser only
   through a MIME cache or a default in `mimeapps.list`, and WSLg had neither. Measured
   there, GIO raised `Operation not supported` where `xdg-open` found the browser from
-  its desktop file. It is not waited for, since `xdg-open` with no desktop session runs
+  its desktop file. A link Ctrl+clicked in a terminal goes through it too (#232), and it
+  gives `xdg-open` the scheme in lower case: `xdg-open` looks a handler up by the scheme
+  as written, and sent `HTTPS:` and `MAILTO:` to `BROWSER`. It is not waited for, since `xdg-open` with no desktop session runs
   the browser itself and returns only when it closes, and a child watch reports a
   failure once it exits. Its tests give `xdg-open` a browser of their own, through a
   desktop file and through `BROWSER` both: with neither, `xdg-open` falls back to

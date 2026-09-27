@@ -4418,19 +4418,26 @@ def test_ctrl_click_on_a_file_match_opens_it(app_module, monkeypatch):
     assert opened == ["src/app.py:42"]
 
 
-def test_ctrl_click_on_a_url_does_not_go_to_the_file_handler(app_module, monkeypatch):
+def _ctrl_click(app_module, monkeypatch, match, tag, hyperlink=None):
+    """What a Ctrl+click on `match` hands the browser, and what it hands the file handler."""
     opened = []
-    shown = []
+    browsed: list[str] = []
     monkeypatch.setattr(
         app_module.Wmain,
         "open_file_location",
         lambda self, term, match: opened.append(match),
         raising=False,
     )
-    monkeypatch.setattr(app_module.Gtk, "show_uri", lambda *a: shown.append(a), raising=False)
+    monkeypatch.setattr(app_module, "open_in_browser", browsed.append)
+
+    def show_uri(*args):
+        # As it does where GIO finds no browser, which is what a link hit (#232).
+        raise RuntimeError("Operation not supported")
+
+    monkeypatch.setattr(app_module.Gtk, "show_uri", show_uri, raising=False)
     wmain = object.__new__(app_module.Wmain)
-    terminal = ClickTerminal("www.example.com", "url", "file")
-    terminal.hyperlink_check_event = lambda e: None
+    terminal = ClickTerminal(match, tag, "file")
+    terminal.hyperlink_check_event = lambda e: hyperlink
     terminal.get_parent = lambda: types.SimpleNamespace(
         get_parent=lambda: types.SimpleNamespace(
             get_nth_page=lambda i: None, get_current_page=lambda: 0
@@ -4439,9 +4446,52 @@ def test_ctrl_click_on_a_url_does_not_go_to_the_file_handler(app_module, monkeyp
     wmain.on_tab_focus = lambda *a: None
 
     wmain.on_terminal_click(terminal, _ctrl_click_event(app_module))
+    return browsed, opened
+
+
+def test_ctrl_click_on_a_url_does_not_go_to_the_file_handler(app_module, monkeypatch):
+    browsed, opened = _ctrl_click(app_module, monkeypatch, "www.example.com", "url")
 
     assert opened == []
-    assert shown, "a url should still reach show_uri"
+    assert browsed == ["http://www.example.com"]
+
+
+@pytest.mark.parametrize(
+    ("match", "tag", "hyperlink", "expected"),
+    [
+        ("https://example.test/page", "direct", None, "https://example.test/page"),
+        ("www.example.test/path", "url", None, "http://www.example.test/path"),
+        # mailto:, not mailto://: a URI parser reads what follows // as a user at a host,
+        # and finds no address where mailto: keeps them.
+        ("user@example.test", "email", None, "mailto:user@example.test"),
+        ("mailto:user@example.test", "email", None, "mailto:user@example.test"),
+        # The pattern takes the prefix in any case; open_in_browser lowers a scheme.
+        ("MAILTO:user@example.test", "email", None, "MAILTO:user@example.test"),
+        # A hyperlink a program printed with OSC 8, on text no pattern matches.
+        (None, None, "https://osc8.example.test/x", "https://osc8.example.test/x"),
+    ],
+)
+def test_ctrl_click_opens_a_link_through_xdg_open(
+    app_module, monkeypatch, match, tag, hyperlink, expected
+):
+    """Through open_in_browser, never Gtk.show_uri, which raised under WSLg (#232).
+
+    Measured with real Ctrl+clicks on each of these in a GCM terminal under Xvfb, with
+    GIO finding no browser: Gtk.show_uri raised "Operation not supported" for every one
+    and nothing opened, where xdg-open reached the browser, and the mail client for the
+    addresses.
+    """
+    browsed, opened = _ctrl_click(app_module, monkeypatch, match, tag, hyperlink)
+
+    assert browsed == [expected]
+    assert opened == []
+
+
+def test_ctrl_click_on_nothing_opens_nothing(app_module, monkeypatch):
+    browsed, opened = _ctrl_click(app_module, monkeypatch, None, None)
+
+    assert browsed == []
+    assert opened == []
 
 
 @pytest.mark.filterwarnings("ignore:Vte.Terminal.match_check is deprecated")

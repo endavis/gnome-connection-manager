@@ -895,7 +895,7 @@ def build_editor_command(path, line, col):
 
 
 def open_in_browser(url):
-    """Open `url` in the desktop's browser, through xdg-open (#231).
+    """Open `url` through xdg-open, in the browser, or the mail client for mailto: (#231, #232).
 
     Not Gtk.show_uri. GIO finds a browser only through a MIME cache or a default named
     in mimeapps.list, and WSLg can have neither: there it raised "Operation not
@@ -905,6 +905,10 @@ def open_in_browser(url):
     Not waited for: with no desktop session, xdg-open runs the browser itself and returns
     only when it closes, measured. A failure it reports is shown once it exits.
     """
+    # xdg-open looks for a handler by the scheme as written: measured, HTTPS: and MAILTO:
+    # went to $BROWSER where https: and mailto: found theirs. RFC 3986 makes a scheme's
+    # case no part of it, so it goes in lower case.
+    url = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*:", lambda scheme: scheme[0].lower(), url)
     try:
         pid, *_pipes = GLib.spawn_async(
             ["xdg-open", url],
@@ -2052,11 +2056,15 @@ class Wmain(GladeComponent):
                 return True
             if tag == widget.tag_url:
                 url = f"http://{url}"
-            elif tag == widget.tag_email and not url.startswith("mailto:"):
-                url = f"mailto://{url}"
+            elif tag == widget.tag_email and not url.lower().startswith("mailto:"):
+                # Not mailto://, which a URI parser reads as a user at a host, leaving the
+                # path, where mailto: keeps its addresses, empty (#232).
+                url = f"mailto:{url}"
             url = url or widget.hyperlink_check_event(event)
             if url:
-                Gtk.show_uri(Gdk.Screen.get_default(), url, Gtk.get_current_event_time())
+                # As a web host's page opens, and for the same reason: Gtk.show_uri raised
+                # where GIO found no browser, and the link did nothing (#232).
+                open_in_browser(url)
 
         # terminal does not emit the "focus" signal when there is more than one visible on the screen, so force the focus
         nb = widget.get_parent().get_parent()

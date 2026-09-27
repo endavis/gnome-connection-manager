@@ -114,6 +114,12 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- Ctrl+click on a link did nothing where GIO finds no browser, as under WSLg: GTK raised
+  `Operation not supported` and nothing opened. Links now open through `xdg-open`, as web
+  hosts do. An email address now opens as `mailto:user@example.com`, not
+  `mailto://user@example.com`, which a URI parser reads as a user at a host, with no
+  address in it. And a scheme in capitals, such as `MAILTO:`, now reaches its handler:
+  `xdg-open` looks one up by the scheme as written, and found none
 - With the keyboard in the server tree or the search box, a console shortcut acted in the
   pane of the last terminal GCM had given the keyboard to: a new tab's, say, or the one
   left showing by a split. Clicking into a terminal did not count, so after a click into

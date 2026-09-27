@@ -603,10 +603,11 @@ elif scenario == "open-in-browser":
     assert len(shown) == 1 and shown[0].startswith("Could not open https://gone.example/: "), shown
 elif scenario == "xdg-open-reaches-the-browser":
     # The real xdg-open, given a browser of its own through a desktop file, and a second
-    # one through BROWSER, each leaving a mark, so that it can never reach a real one.
+    # one through BROWSER, each leaving a mark, so that it can never reach a real one. A
+    # mail client too, which a Ctrl+click on an address opens (#232).
     root = tempfile.mkdtemp()
     opened = os.path.join(root, "opened")
-    for name in ("desktop", "envvar"):
+    for name in ("desktop", "envvar", "mail"):
         with open(os.path.join(root, name), "w") as script:
             script.write(f'#!/bin/sh\nprintf "{name} %s\\n" "$@" >> {opened}\n')
         os.chmod(os.path.join(root, name), 0o755)
@@ -615,6 +616,11 @@ elif scenario == "xdg-open-reaches-the-browser":
         entry.write(
             "[Desktop Entry]\nType=Application\nName=Fake browser\n"
             f"Exec={root}/desktop %u\nMimeType=x-scheme-handler/https;\nNoDisplay=true\n"
+        )
+    with open(os.path.join(root, "share", "applications", "fake-mail.desktop"), "w") as entry:
+        entry.write(
+            "[Desktop Entry]\nType=Application\nName=Fake mail\n"
+            f"Exec={root}/mail %u\nMimeType=x-scheme-handler/mailto;\nNoDisplay=true\n"
         )
     os.environ.update(
         XDG_DATA_HOME=os.path.join(root, "share"),
@@ -627,12 +633,20 @@ elif scenario == "xdg-open-reaches-the-browser":
         os.environ.pop(name, None)
     shown = []
     app.msgbox = shown.append
-    app.open_in_browser("https://bmc.example/console")
+    # xdg-open finds a handler by the scheme as written, and sent these two to BROWSER
+    # until open_in_browser lowered it. Only the scheme: a path keeps its case.
+    urls = ["https://bmc.example/console", "HTTPS://bmc.example/Console", "MAILTO:ops@example.test"]
+    for url in urls:
+        app.open_in_browser(url)
     end = time.monotonic() + 10
-    while not os.path.exists(opened) and time.monotonic() < end:
+    while (not os.path.exists(opened) or len(open(opened).readlines()) < len(urls)) and time.monotonic() < end:
         pump(0.1)
     pump(0.5)
-    assert open(opened).read().splitlines() == ["desktop https://bmc.example/console"], open(opened).read()
+    assert sorted(open(opened).read().splitlines()) == [
+        "desktop https://bmc.example/Console",
+        "desktop https://bmc.example/console",
+        "mail mailto:ops@example.test",
+    ], open(opened).read()
     assert shown == [], shown
 elif scenario == "no-shipped-type-adds-a-page":
     dialog = app.Whost()
