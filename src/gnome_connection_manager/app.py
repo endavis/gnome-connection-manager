@@ -3316,11 +3316,6 @@ class Wmain(GladeComponent):
 
     def addTab(self, notebook, host):
         try:
-            v = Vte.Terminal()
-            if (Vte.MAJOR_VERSION, Vte.MINOR_VERSION) >= (0, 50):
-                v.set_allow_hyperlink(True)
-            self.registerUrlRegexes(v)
-
             if isinstance(host, str):
                 host = Host("", host)
                 # Note: log enablement defaults to host.log except for 'local'
@@ -3329,12 +3324,6 @@ class Wmain(GladeComponent):
                 if host.name == "local":
                     # print ("D: Local session logging set to: %s\n" % (conf.LOG_LOCAL))
                     host.log = conf.LOG_LOCAL
-
-            # Before anything reads it. set_terminal_logger builds the log path from
-            # terminal.host, so assigning this later -- as it used to be -- silently sent
-            # every text log to <logs>/session/session-*.log instead of the host's own
-            # directory. Keep this the first thing done with the normalised host.
-            v.host = host
 
             problem = connections.named(host.type).missing()
             if problem:
@@ -3345,6 +3334,19 @@ class Wmain(GladeComponent):
             if not kind.opens_tab:
                 open_in_browser(kind.url(host))
                 return
+
+            # Only once it is known to be needed: VTE 0.76 reports GLib criticals as a
+            # terminal that never joined a window is dropped, as one made for a web host was.
+            v = Vte.Terminal()
+            if (Vte.MAJOR_VERSION, Vte.MINOR_VERSION) >= (0, 50):
+                v.set_allow_hyperlink(True)
+            self.registerUrlRegexes(v)
+
+            # Before anything reads it. set_terminal_logger builds the log path from
+            # terminal.host, so assigning this later -- as it used to be -- silently sent
+            # every text log to <logs>/session/session-*.log instead of the host's own
+            # directory. Keep this the first thing done with the new terminal.
+            v.host = host
 
             self.apply_preferences_to_terminal(v)
 

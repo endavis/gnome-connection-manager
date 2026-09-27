@@ -646,3 +646,17 @@ def test_the_registry_against_real_gtk(scenario):
 
     assert result.returncode == 0, result.stderr[-3000:]
     assert "OK" in result.stdout
+    assert glib_complaints(result.stderr) == []
+
+
+def glib_complaints(stderr):
+    """What GLib reported going wrong, as PyGObject prints it or as GLib does itself.
+
+    Opening a web host once did: addTab made a terminal before it knew it needed none,
+    and VTE 0.76 reports criticals as a terminal that never joined a window is dropped.
+    """
+    return [
+        line
+        for line in stderr.splitlines()
+        if ": Warning: " in line or "-CRITICAL **" in line or "-WARNING **" in line
+    ]
