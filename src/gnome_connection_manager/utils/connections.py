@@ -1,0 +1,204 @@
+"""Connection types: what makes an SSH, Telnet, RDP or local host different (#228).
+
+Each type is a class, and `CONNECTION_TYPES` lists them in the order the host dialog
+offers them. Code that used to compare `host.type` with a name asks the type instead:
+`addTab` for the command to run, the host dialog for the fields that apply, and
+`host_sends_commands` for whether commands follow a login. A new type adds a class here,
+not a branch in each of those. A type whose tab is not a terminal will give a page for
+`add_page` rather than a command (#223); the first such type adds that here.
+
+Pure: what a command needs from outside comes in as `Programs`, as the log root does for
+logpaths, so every command is built and tested without a display. `ssh.expect` still
+branches on the type's name, which each command passes it first.
+"""
+
+from __future__ import annotations
+
+import shlex
+import shutil
+from dataclasses import dataclass
+from typing import cast
+
+# FreeRDP's X11 client, newest first. Ubuntu 24.04 installs FreeRDP 3's as xfreerdp3
+# (freerdp3-x11) and FreeRDP 2's as xfreerdp (freerdp2-x11), side by side (#225).
+RDP_CLIENTS = ("xfreerdp3", "xfreerdp")
+
+
+def N_(message: str) -> str:
+    """Mark a message for translation. app.py translates it where it shows it."""
+    return message
+
+
+@dataclass(frozen=True)
+class Programs:
+    """What a command needs from outside this module. app.py fills it in for each spawn."""
+
+    expect: str  # ssh.expect, which types a stored password
+    username: str | None  # the local user, for an SSH host that names none
+    ssh: str = "ssh"
+    telnet: str = "telnet"
+
+
+@dataclass(frozen=True)
+class Command:
+    """What addTab spawns: the argv, program first, and a password for ssh.expect to type.
+
+    GCM types the password 2 s after the spawn, when it is neither empty nor None.
+    """
+
+    argv: list
+    password: str | None
+
+    @property
+    def program(self) -> str:
+        return cast("str", self.argv[0])
+
+
+class ConnectionType:
+    """What the rest of GCM asks about a kind of host."""
+
+    id = ""
+    default_port = "23"
+    remote = True  # False for a local shell, which has no address, user, password or port
+    ssh_options = False  # keep-alive, X11, agent, compression, key and port forwarding
+    sends_commands = True  # whether the host's commands are typed after it connects
+
+    def missing(self) -> str | None:
+        """Why a host of this type cannot be opened here, marked with N_, or None."""
+        return None
+
+    def command(self, host, programs: Programs) -> Command:
+        raise NotImplementedError(f"a {self.id or 'local'} host runs no command")
+
+
+class Ssh(ConnectionType):
+    id = "ssh"
+    default_port = "22"
+    ssh_options = True
+
+    def command(self, host, programs: Programs) -> Command:
+        if len(host.user) == 0:
+            # Into the host itself, as addTab always has.
+            host.user = programs.username
+        if host.password == "":
+            args = [programs.ssh, "-l", host.user, "-p", host.port]
+        else:
+            args = [programs.expect, host.type, "-l", host.user, "-p", host.port]
+        if host.keep_alive != "0" and host.keep_alive != "":
+            args.append("-o")
+            args.append(f"ServerAliveInterval={host.keep_alive}")
+        for t in host.tunnel:
+            if t != "":
+                if t.endswith(":*:*"):
+                    args.append("-D")
+                    args.append(t[:-4])
+                else:
+                    args.append("-L")
+                    args.append(t)
+        if host.x11:
+            args.append("-X")
+        if host.agent:
+            args.append("-A")
+        if host.compression:
+            args.append("-C")
+            if host.compressionLevel != "":
+                args.append("-o")
+                args.append(f"CompressionLevel={host.compressionLevel}")
+        if host.private_key is not None and host.private_key != "":
+            args.append("-i")
+            args.append(host.private_key)
+        if host.extra_params is not None and host.extra_params != "":
+            args += shlex.split(host.extra_params)
+        args.append(host.host)
+        return Command(args, host.password)
+
+
+class Telnet(ConnectionType):
+    id = "telnet"
+
+    def command(self, host, programs: Programs) -> Command:
+        if host.user == "" or host.password == "":
+            password = ""
+            args = [programs.telnet]
+        else:
+            password = host.password
+            # host.type rather than "telnet": a type GCM does not know opens as Telnet,
+            # and has always passed ssh.expect its own name, which the script runs as ssh.
+            args = [programs.expect, host.type, "-l", host.user]
+        if host.extra_params is not None and host.extra_params != "":
+            args += shlex.split(host.extra_params)
+        args += [host.host, host.port]
+        return Command(args, password)
+
+
+class Rdp(ConnectionType):
+    """FreeRDP shows the desktop in a window of its own. The tab shows what it prints,
+    takes its questions and ends with its status (#225)."""
+
+    id = "rdp"
+    default_port = "3389"
+    # Its tab runs FreeRDP, which has no shell to run them, and a command typed while
+    # FreeRDP asks something is taken for the answer, to its certificate question or as
+    # the password.
+    sends_commands = False
+
+    def missing(self) -> str | None:
+        if rdp_client() is None:
+            return N_(
+                "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
+            )
+        return None
+
+    def command(self, host, programs: Programs) -> Command:
+        client = rdp_client()
+        if host.user == "" or host.password == "":
+            return Command([client, *rdp_arguments(host)], "")
+        return Command([programs.expect, host.type, client, *rdp_arguments(host)], host.password)
+
+
+class Local(ConnectionType):
+    id = "local"
+    remote = False
+
+
+SSH, TELNET, RDP, LOCAL = Ssh(), Telnet(), Rdp(), Local()
+CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL)
+_BY_ID = {kind.id: kind for kind in CONNECTION_TYPES}
+
+
+def named(name: str | None) -> ConnectionType:
+    """The type called `name`. One GCM does not know is Telnet, as it always has been."""
+    return _BY_ID.get(name or "", TELNET)
+
+
+def for_host(host) -> ConnectionType:
+    """What addTab opens `host` as.
+
+    With no address, a local shell, whatever its type: the Local button's host is of type
+    ssh. A local host given an address, which the dialog never saves, is Telnet, as
+    addTab has always opened one.
+    """
+    if host.host == "" or host.host is None:
+        return LOCAL
+    kind = named(host.type)
+    return kind if kind.remote else TELNET
+
+
+def rdp_client() -> str | None:
+    """The FreeRDP client an RDP host opens in, or None when none is installed."""
+    return next((name for name in RDP_CLIENTS if shutil.which(name)), None)
+
+
+def rdp_arguments(host) -> list[str]:
+    """FreeRDP's arguments for an RDP host: everything but the program and the password.
+
+    Never the password. FreeRDP 3 masks /p: in its own argv once it has read it, measured,
+    but not in its parent's, and a session runs under relay.py when raw recording or OSC
+    52 is on. ssh.expect types a stored one at FreeRDP's prompt instead (#225).
+    """
+    args = [f"/v:{host.host}", f"/port:{host.port}"]
+    if host.user:
+        args.append(f"/u:{host.user}")
+    if host.extra_params:
+        args += shlex.split(host.extra_params)
+    return args

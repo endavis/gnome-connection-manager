@@ -38,6 +38,22 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   an imported export brings ids minted elsewhere. `Host` mints one for any record read
   without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
   repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
+- `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
+  per kind of host, `Ssh`, `Telnet`, `Rdp` and `Local`, listed in `CONNECTION_TYPES` in the
+  order the host dialog offers them, which fills its list from there. Code that used to
+  compare `host.type` with a name asks the type instead: `addTab` for the `Command` to
+  spawn, and the dialog and `host_sends_commands` for `default_port`, `remote`,
+  `ssh_options` and `sends_commands`. A new type adds a class here, not a branch in each of
+  those. `named` finds a type by name, and gives Telnet for a name GCM does not know;
+  `for_host` is what `addTab` opens a host as, a local shell for a host with no address
+  whatever its type, since the Local button's host is of type ssh. Both keep what `addTab`
+  did before the registry, checked by recording its command for a matrix of hosts before
+  and after. Pure: what a command needs from outside comes in as `Programs`, which
+  `connection_programs` in `app.py` builds at each spawn, so a test that swaps
+  `SSH_COMMAND` for a copy of the script is heard. A type's message, such as the one its
+  `missing` gives for RDP, is marked with `N_` and translated in `app.py`, and
+  `tests/test_i18n.py` reads this module for it. A type whose tab is not a terminal will
+  give a page for `add_page` rather than a command; the first one adds that here.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
@@ -188,14 +204,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   returns when the program ends, having closed the spawn id, and an `exp_continue` then
   fails with a Tcl traceback in the tab.
   An RDP host (#225) names its program as the script's first argument: `rdp_client` in
-  `app.py` picks `xfreerdp3`, else `xfreerdp`, and `rdp_arguments` builds the rest. Never
+  `src/gnome_connection_manager/utils/connections.py` picks `xfreerdp3`, else `xfreerdp`,
+  and `rdp_arguments` builds the rest. Never
   `/p:`: FreeRDP 3 masks it in its own argv, measured, but not in its parent's, and
   `relay.py` is that parent when raw recording or OSC 52 is on. The rdp branch has an
   `expect` block of its own, so that its `Domain:` pattern never meets an ssh banner. It
   answers FreeRDP 3's `Domain:` with an empty line and hands its `(Y/T/N)` certificate
   question over as the ssh block hands over the host key question. FreeRDP 2 asks for the
-  password only, as FreeRDP 3 does given `DOMAIN\user`. `host_sends_commands` refuses an
-  RDP host: a command typed into its tab would answer FreeRDP's certificate question or
+  password only, as FreeRDP 3 does given `DOMAIN\user`. The RDP type's `sends_commands`
+  is False: a command typed into its tab would answer FreeRDP's certificate question or
   its password prompt. `tests/test_rdp.py` covers GCM's side, with a fake `xfreerdp3` on
   `PATH`.
   `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh`, `telnet` or FreeRDP: its
@@ -339,7 +356,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   The first two now live in `src/gnome_connection_manager/utils/hosts.py` and the dialogs
   in `app.py`, so adding an attribute crosses both files.
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
-  hides the Port forwarding page for anything that is not SSH, so a Telnet or RDP host's
+  hides the Port forwarding page for a type without `ssh_options`, which only SSH has, so a
+  Telnet or RDP host's
   dialog has three tabs and an SSH host's has four. It looks like a bug from the outside --
   a whole tab vanishing -- and it is not. Every other SSH-only control in that branch is
   made insensitive instead, which is the inconsistency behind the confusion, not the

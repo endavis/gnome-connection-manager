@@ -16,6 +16,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 APP = REPO / "src" / "gnome_connection_manager" / "app.py"
+# The modules that hold user-visible strings. A connection type marks its messages with
+# N_ where it is defined, and app.py translates them where it shows them (#228).
+SOURCES = (APP, REPO / "src" / "gnome_connection_manager" / "utils" / "connections.py")
 PO_DIR = REPO / "lang"
 EN_PO = PO_DIR / "en_US.po"
 EN_MO = PO_DIR / "en" / "LC_MESSAGES" / "gcm-lang.mo"
@@ -88,7 +91,9 @@ def catalog_msgids(po):
 
 
 def translatable_strings():
-    return {s for s in _GETTEXT_CALL.findall(APP.read_text(encoding="utf-8")) if s}
+    return {
+        s for path in SOURCES for s in _GETTEXT_CALL.findall(path.read_text(encoding="utf-8")) if s
+    }
 
 
 def test_extraction_finds_a_realistic_number_of_strings():
@@ -141,7 +146,7 @@ def assert_mo_matches_po(strings, label):
 
 def test_the_compiled_catalog_is_not_stale():
     """.mo is what the application loads; editing .po alone changes nothing at runtime."""
-    assert_mo_matches_po(translatable_strings(), "app.py strings")
+    assert_mo_matches_po(translatable_strings(), "source strings")
 
 
 @pytest.mark.parametrize(
@@ -198,9 +203,10 @@ def test_the_english_source_catalog_has_no_blank_translations():
 
 GLADE = REPO / "data" / "ui" / "gnome-connection-manager.glade"
 
-# Not UI text. Glade emits placeholder names for unnamed widgets, and the values below
-# are protocol and host identifiers where a translation would be wrong.
-_NOT_UI_TEXT = {"label", "page 1", "page 2", "local", "localhost", "ssh", "telnet"}
+# Not UI text. Glade emits placeholder names for unnamed widgets, and localhost is a
+# host name, where a translation would be wrong. The connection types were here too, until
+# the host dialog took its list from the registry (#228).
+_NOT_UI_TEXT = {"label", "page 1", "page 2", "localhost"}
 _PLACEHOLDER_PREFIX = "__glade_unnamed_"
 
 
