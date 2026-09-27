@@ -86,6 +86,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- An item chosen from a terminal's menu acted on the terminal with the keyboard. After a
+  split, with the keyboard in one pane, the menu of a terminal in the other pane pasted
+  into, cleared, cloned or closed the terminal you were typing in. It now acts on the
+  terminal you opened it on
 - A console shortcut could act on a tab other than the one in use. Once a tab's menu had
   been opened and dismissed, the next paste went into that tab, or Ctrl+W closed it,
   though another tab was showing and had the keyboard. Clone, Reset and Reconnect by key
