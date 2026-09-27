@@ -438,6 +438,96 @@ def test_a_type_without_settings_keeps_none():
 
 # -- against real GTK --------------------------------------------------------
 
+# -- which sessions dropped (#239) ---------------------------------------------
+
+# Each line as the client printed it when the session ended so, measured against a
+# non-root sshd 9.6p1 and busybox telnetd with OpenSSH 9.6p1 and inetutils telnet 2.5.
+SSH_ENDINGS = [
+    # (how it ended, status, last lines, dropped, refused)
+    ("remote exit", 0, "$ exit\nConnection to 10.0.0.5 closed.\n", False, False),
+    ("remote exit 3", 3, "$ exit 3\nConnection to 10.0.0.5 closed.\n", False, False),
+    ("ssh's ~. escape", 255, "$ Connection to 10.0.0.5 closed.\n", False, False),
+    ("the remote shell killed", 255, "$ Connection to 10.0.0.5 closed.\n", False, False),
+    (
+        "the server shut down",
+        255,
+        "$ Connection to 10.0.0.5 closed by remote host.\nConnection to 10.0.0.5 closed.\n",
+        True,
+        False,
+    ),
+    ("the server froze", 255, "$ Timeout, server 10.0.0.5 not responding.\n", True, False),
+    ("a refused key", 255, "ops@10.0.0.5: Permission denied (publickey).\n", False, True),
+    (
+        "a refused host key",
+        255,
+        "No ED25519 host key is known for 10.0.0.5 and you have requested strict checking.\n"
+        "Host key verification failed.\n",
+        False,
+        True,
+    ),
+    (
+        "a name that does not resolve",
+        255,
+        "ssh: Could not resolve hostname db.invalid: Name or service not known\n",
+        False,
+        False,
+    ),
+    # While a server is rebooting: not a drop, not refused, so an attempt that failed.
+    (
+        "the connection refused",
+        255,
+        "ssh: connect to host 10.0.0.5 port 22: Connection refused\n",
+        False,
+        False,
+    ),
+    # The same words from a program run in the session are not ssh's: its status is not 255.
+    ("a program's own output", 1, "Connection to x closed by remote host.\n", False, False),
+]
+
+
+@pytest.mark.parametrize(
+    ("ending", "status", "tail", "dropped", "refused"), SSH_ENDINGS, ids=[e[0] for e in SSH_ENDINGS]
+)
+def test_which_ssh_sessions_dropped(ending, status, tail, dropped, refused):
+    assert SSH.dropped(status, tail) is dropped
+    assert SSH.refused(status, tail) is refused
+
+
+@pytest.mark.parametrize(
+    ("status", "dropped", "refused"),
+    [
+        (147, True, False),
+        (0, False, False),
+        (134, False, True),
+        (143, False, True),
+        (140, False, False),
+    ],
+)
+def test_which_rdp_sessions_dropped(status, dropped, refused):
+    """FreeRDP 3's statuses measured for #225: 147 Network disconnect, 0 its window
+    closed, 134 a logon failure, 143 a certificate not trusted, 140 a name not found."""
+    assert RDP.dropped(status, "") is dropped
+    assert RDP.refused(status, "") is refused
+
+
+@pytest.mark.parametrize(
+    "tail",
+    ["$ exit\nConnection closed by foreign host.\n", "telnet> quit\nConnection closed.\n"],
+)
+def test_telnet_never_drops(tail):
+    """It exits 0 however the session ends, and a server that dies says what a remote
+    `exit` says, measured: nothing tells a drop apart."""
+    for status in (0, 1, 255):
+        assert not TELNET.dropped(status, tail)
+        assert not TELNET.refused(status, tail)
+
+
+def test_nor_does_a_local_shell_a_web_host_or_vnc():
+    """VNC is out of #239's scope: its viewer, in a tab or a terminal, is not asked."""
+    for kind in (LOCAL, WEB, VNC):
+        assert not kind.dropped(255, "Connection to x closed by remote host.\n")
+
+
 _SCRIPT = r"""
 import os, shutil, sys, tempfile, time
 scenario = sys.argv[1]

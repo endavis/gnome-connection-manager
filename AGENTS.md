@@ -52,6 +52,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   no session's end reported, while closing the window reports each, with status 9, so
   `request_quit` runs `end_sessions` first. A page reports nothing when its tab closes,
   so `open_type_page` listens for its `destroy`.
+  Reconnecting a dropped session (#239) asks the type whether it `dropped` or was
+  `refused`, from the exit status and the tab's last lines. `child-exited` gives the wait
+  status, measured: 65280 for a program that exits 255, 9 for one killed by SIGKILL, so
+  `reconnect_if_dropped` converts it first. ssh exits 255 for every failure, `~.`
+  included, and only its last line tells a lost connection. telnet exits 0 however its
+  session ends, a server that dies included, so Telnet never drops. The countdown lives
+  in `count_down_to_reconnect`, and Reconnect cancels it before reconnecting itself.
+  `on_terminal_keypress` stops it for a key not in `MODIFIER_KEYS`. Not
+  `event.is_modifier`: measured with real input under X11, GDK sets it for no key, Shift
+  and Control included, and a test that builds its own events can set it to anything. Close console and the tab's mark wait in `session_over`
+  until the attempts run out.
 - `src/gnome_connection_manager/utils/snippets.py` – the snippet library (#240): text
   typed into a console on request, found by name, each a `[snippet <id>]` record, which
   `configfile.RECORD_PREFIXES` names so that one deleted stays deleted. Snippets

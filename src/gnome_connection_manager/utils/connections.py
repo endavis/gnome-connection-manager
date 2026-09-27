@@ -127,6 +127,21 @@ class ConnectionType:
     def command(self, host, programs: Programs) -> Command:
         raise NotImplementedError(f"a {self.id or 'local'} host runs no command")
 
+    def dropped(self, status: int, tail: str) -> bool:
+        """Whether a session whose program exited with `status`, with `tail` the last
+        lines of its tab, lost its connection rather than ended (#239). Never, unless a
+        type can tell. The exit status, not the wait status VTE reports.
+
+        Telnet cannot: measured, it exits 0 however its session ends, a server that dies
+        included, and says the same as for a remote `exit`.
+        """
+        return False
+
+    def refused(self, status: int, tail: str) -> bool:
+        """Whether connecting was refused in a way trying again cannot help, such as a
+        login or a host key. Reconnecting stops at one."""
+        return False
+
     def url(self, host) -> str:
         raise NotImplementedError(f"a {self.id or 'local'} host opens in a tab")
 
@@ -152,10 +167,29 @@ class ConnectionType:
         }
 
 
+# How OpenSSH says an established connection was lost. Every ssh failure exits 255,
+# the user's own `~.` included, so the line is what tells (#239). The first two were
+# measured against a server that died and one that froze; the other two are formats the
+# installed binary carries for the same, not measured. Not anchored to a line's start:
+# measured, the message follows the remote prompt on its line.
+SSH_LOST = re.compile(
+    r"Connection to \S+ closed by remote host\.|Timeout, server \S+ not responding\."
+    r"|Read from remote host |client_loop: send disconnect: "
+)
+# A refused login and a refused host key, each measured, exiting 255 as well.
+SSH_REFUSED = re.compile(r"Permission denied|Host key verification failed\.")
+
+
 class Ssh(ConnectionType):
     id = "ssh"
     default_port = "22"
     ssh_options = True
+
+    def dropped(self, status: int, tail: str) -> bool:
+        return status == 255 and SSH_LOST.search(tail) is not None
+
+    def refused(self, status: int, tail: str) -> bool:
+        return status == 255 and SSH_REFUSED.search(tail) is not None
 
     def command(self, host, programs: Programs) -> Command:
         if len(host.user) == 0:
@@ -222,6 +256,15 @@ class Rdp(ConnectionType):
     # FreeRDP asks something is taken for the answer, to its certificate question or as
     # the password.
     sends_commands = False
+
+    def dropped(self, status: int, tail: str) -> bool:
+        # FreeRDP 3's status for `Network disconnect!`, measured for #225. Closing its
+        # window exits 0.
+        return status == 147
+
+    def refused(self, status: int, tail: str) -> bool:
+        # A logon failure, and a certificate not trusted, also measured for #225.
+        return status in (134, 143)
 
     def missing(self) -> str | None:
         if rdp_client() is None:
