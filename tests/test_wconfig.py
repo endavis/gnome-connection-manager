@@ -133,8 +133,12 @@ def make_wconfig(app_module):
         EntryStub("conf.APP_TITLE", "Custom Title"),
     ]
     wconfig.treeModel = [["Clipboard Copy", "CTRL+ALT+C"]]
-    # Text, key and snippet id, as the table holds them (#240), and the blank row.
-    wconfig.treeModel2 = [["run reboot", "ALT+R", ""], ["uptime", "", ""], ["", "", ""]]
+    # The Snippets page's copies (#240): one without a name, and one without a key.
+    Snippet = app_module.snippetlib.Snippet
+    wconfig.library = [
+        Snippet("aa11bb22", "", "run reboot", "ALT+R"),
+        Snippet("cc33dd44", "up", "uptime"),
+    ]
     wconfig.btnFColor = types.SimpleNamespace(selected_color="#112233")
     wconfig.btnBColor = types.SimpleNamespace(selected_color="#445566")
     wconfig.btnFont = ButtonStub("Monospace 14")
@@ -190,10 +194,10 @@ def test_wconfig_on_okbutton_updates_conf_shortcuts(monkeypatch, app_module):
     assert conf.BACK_COLOR == "#445566"
     assert conf.FONT == "Monospace 14"
 
-    # A row without a key is a snippet too, sent from the menus.
+    # One without a key is a snippet too, sent from the menus.
     reboot, uptime = app_module.snippets
     assert (reboot.name, reboot.text, reboot.key) == ("run reboot", "run reboot", "ALT+R")
-    assert (uptime.name, uptime.text, uptime.key) == ("uptime", "uptime", "")
+    assert (uptime.name, uptime.text, uptime.key) == ("up", "uptime", "")
     assert app_module.shortcuts == {"CTRL+ALT+C": ["Clipboard Copy"], "ALT+R": reboot}
 
     assert donate_button.visible is False
@@ -369,53 +373,43 @@ def test_preferences_closed_at_once_leaves_nothing_pending_against_real_gtk():
     assert "OK" in result.stdout
 
 
-def snippet_table(app_module, rows, library):
+def kept(app_module, library):
     wconfig = object.__new__(app_module.Wconfig)
-    wconfig.treeModel2 = rows
-    app_module.snippets[:] = library
-    return wconfig
+    wconfig.library = library
+    return wconfig.kept_snippets()
 
 
-def test_a_row_keeps_what_the_table_does_not_show(monkeypatch, app_module):
-    """Found by id: a snippet's own name, folder and description survive an edit (#240)."""
+def test_ok_keeps_each_snippet_as_the_page_left_it(app_module):
     Snippet = app_module.snippetlib.Snippet
-    kept = Snippet("aa11bb22", "Disk usage", "df -h", "ALT+D", "ops", "free space")
-    monkeypatch.setattr(app_module, "snippets", [])
-    wconfig = snippet_table(app_module, [["df -hT", "ALT+F", "aa11bb22"]], [kept])
+    snippet = Snippet("aa11bb22", " Disk usage ", "df -h", " F8 ", " ops / db/ ", " free ")
 
-    [edited] = wconfig.edited_snippets()
-
-    assert edited == Snippet("aa11bb22", "Disk usage", "df -hT", "ALT+F", "ops", "free space")
+    assert kept(app_module, [snippet]) == [
+        Snippet("aa11bb22", "Disk usage", "df -h", "F8", "ops/db", "free")
+    ]
 
 
-def test_a_name_made_from_the_text_follows_it(monkeypatch, app_module):
+def test_a_snippet_without_text_is_not_kept(app_module):
+    """It has nothing to send, and gcm.conf would not bring it back."""
     Snippet = app_module.snippetlib.Snippet
-    made = Snippet("aa11bb22", "uptime", "uptime", "ALT+U")
-    monkeypatch.setattr(app_module, "snippets", [])
-    wconfig = snippet_table(app_module, [["w\nuptime", "ALT+U", "aa11bb22"]], [made])
 
-    [edited] = wconfig.edited_snippets()
-
-    assert (edited.id, edited.name, edited.text) == ("aa11bb22", "w", "w\nuptime")
+    assert kept(app_module, [Snippet("aa11bb22", "empty", ""), Snippet("cc33dd44", "", "\n")]) == [
+        Snippet("cc33dd44", repr("\n"), "\n")
+    ]
 
 
-def test_a_snippet_missing_from_the_table_is_deleted(monkeypatch, app_module):
+def test_a_snippet_without_a_name_is_named_by_its_first_line(app_module):
     Snippet = app_module.snippetlib.Snippet
-    library = [Snippet("aa11bb22", "a", "a"), Snippet("cc33dd44", "b", "b")]
-    monkeypatch.setattr(app_module, "snippets", [])
-    wconfig = snippet_table(app_module, [["b", "", "cc33dd44"], ["", "ALT+X", ""]], library)
 
-    assert [snippet.id for snippet in wconfig.edited_snippets()] == ["cc33dd44"]
+    [snippet] = kept(app_module, [Snippet("aa11bb22", "  ", "\nw\nuptime")])
+
+    assert snippet.name == "w"
 
 
-def test_a_key_given_twice_stays_with_the_later_row(monkeypatch, app_module):
-    """The earlier snippet is kept, without it, where a custom command was dropped."""
-    monkeypatch.setattr(app_module, "snippets", [])
-    rows = [["first", "ALT+K", ""], ["second", "ALT+K", ""]]
-    wconfig = snippet_table(app_module, rows, [])
+def test_of_two_snippets_with_one_key_the_later_keeps_it(app_module):
+    """The earlier is kept, without it, where a custom command was dropped."""
+    Snippet = app_module.snippetlib.Snippet
+    library = [Snippet("aa11bb22", "first", "a", "F8"), Snippet("cc33dd44", "second", "b", "F8")]
 
-    first, second = wconfig.edited_snippets()
+    first, second = kept(app_module, library)
 
-    assert (first.text, first.key) == ("first", "")
-    assert (second.text, second.key) == ("second", "ALT+K")
-    assert first.id != second.id
+    assert (first.key, second.key) == ("", "F8")

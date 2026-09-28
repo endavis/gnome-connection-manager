@@ -77,7 +77,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `fill_snippet_menus` lists them by name, in folders. A menu built from a model reads
   `_` as a mnemonic, measured, so the menubar's labels go through `menu_label`.
   `send_snippet` fills in the host's values unquoted, and asks for each `{?Label}` once,
-  before it types anything.
+  before it types anything. `SnippetPicker` finds one by typing, on the `snippets`
+  shortcut, and sends it to the terminal it was opened for. The cluster window's menu is
+  `fill_snippet_menus` given a `send`, and sends to every console ticked through
+  `send_snippet_to`, which asks for a `{?Label}` once for them all. Preferences edits them on a
+  page `Wconfig.build_snippets_page` adds to `nbConfig`, working on copies in
+  `Wconfig.library` that `kept_snippets` turns into the library on OK. Its widgets take
+  no key until the page has been shown: a test must switch to it first, as GTK drops a
+  key sent to a widget not yet realized with a critical, which is why the snippet
+  scenarios fail on a GLib critical. And `addTab` gives a new console the keyboard
+  twice, the second time from a 200 ms timer: a test that moves the keyboard away after
+  opening a tab must wait that out, or the timer takes it back, measured.
 - `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
   per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web` and `Vnc`, listed in `CONNECTION_TYPES` in the
   order the host dialog offers them, which fills its list from there. Code that used to
@@ -237,9 +247,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   claiming the `.log` while another claims the `.raw` (#204). So an empty `.log` is a
   session's own reservation, not an earlier log to append to -- `set_terminal_logger`
   reads its size, not whether it exists.
-- `src/gnome_connection_manager/utils/shortcuts.py` – the two shortcut decisions that need
-  no widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
-  and refuses anything already bound, and `clamp_font_scale` with the VTE range it mirrors.
+- `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
+  widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
+  and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
+  and `captured_key`, what a key pressed in a snippet's key field binds (#240). That one
+  asks `MODIFIER_KEY_NAMES` whether a key is a modifier, since GDK's `is_modifier` is
+  False for every key under X11, measured with real input (#239).
   Pure — the reserved set is an argument, and `RESERVED_ACCELERATORS` stays in `app.py`
   beside the `do_startup` registrations a test checks it against. `shortcut_to_accel`,
   `apply_menu_accels` and `sync_shortcut_accels` stay too: measurement showed they are

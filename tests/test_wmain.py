@@ -478,12 +478,14 @@ def test_populate_commands_menu_lists_snippets(monkeypatch, app_module):
 
     wmain.populateCommandsMenu()
 
-    assert [(item.shortcut, item.label) for item in created_items] == [
-        ("ALT+R", "reboot"),
-        (None, "up"),
+    # The picker first, then a separator, then the library (#240).
+    assert [(item.shortcut, item.label, item.action_name) for item in created_items] == [
+        (None, "Find Snippet…", "app.find-snippet"),
+        ("ALT+R", "reboot", "app.send-snippet"),
+        (None, "up", "app.send-snippet"),
     ]
-    assert wmain.popupMenu.mnuCommands.children == created_items
-    assert {item.action_name for item in created_items} == {"app.send-snippet"}
+    children = wmain.popupMenu.mnuCommands.children
+    assert children[0] is created_items[0] and children[2:] == created_items[1:]
     assert commands_model.cleared == 1
     assert len(commands_model.items) == 2
 
@@ -499,7 +501,8 @@ def test_populate_commands_menu_without_an_application(monkeypatch, app_module):
 
     wmain.populateCommandsMenu()
 
-    assert len(wmain.popupMenu.mnuCommands.children) == 1
+    # The picker, a separator, and the snippet.
+    assert len(wmain.popupMenu.mnuCommands.children) == 3
 
 
 def test_get_context_tree_iter_prefers_context_path(app_module):
@@ -4869,6 +4872,31 @@ def test_view_buffer_is_a_configurable_shortcut_in_a_menu(app_module):
     assert defaults["view_buffer"] == "CTRL+SHIFT+F"
     assert app_module.TERMINAL_ACTIONS["view_buffer"] == "view-buffer"
     assert "view-buffer" in _context_menu_actions(app_module)
+
+
+def test_show_snippet_picker_ignores_a_missing_terminal(app_module):
+    wmain = object.__new__(app_module.Wmain)
+
+    assert wmain.show_snippet_picker(None) is None
+
+
+def test_the_snippets_shortcut_opens_the_picker(app_module, monkeypatch):
+    """Where the key reaches the terminal rather than its accelerator (#240)."""
+    opened = []
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "show_snippet_picker",
+        lambda self, term: opened.append(term),
+        raising=False,
+    )
+    monkeypatch.setattr(app_module, "get_key_name", lambda event: "CTRL+SHIFT+P")
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+P": app_module._SNIPPETS})
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+
+    wmain.on_terminal_keypress(terminal, object())
+
+    assert opened == [terminal]
 
 
 # conftest stubs gi across the whole session, so the real widget cannot be built in

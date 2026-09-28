@@ -102,3 +102,37 @@ def test_clamp_font_scale_holds_vte_limits():
 def test_clamp_font_scale_is_inclusive_at_both_ends(scale):
     """The bounds are values VTE applies, not values it rejects."""
     assert shortcuts.clamp_font_scale(scale) == scale
+
+
+# A snippet's key, as its field captures it (#240).
+
+
+@pytest.mark.parametrize("modifier", ["Shift_L", "Control_R", "Alt_L", "Super_L", "Caps_Lock"])
+def test_a_modifier_alone_waits_for_the_key_it_modifies(modifier):
+    assert shortcuts.captured_key(modifier, f"CTRL+{modifier.upper()}", False, True) is None
+
+
+@pytest.mark.parametrize("key", ["BackSpace", "Delete"])
+def test_backspace_or_delete_alone_clears_the_key(key):
+    assert shortcuts.captured_key(key, key.upper(), True, False) == ""
+
+
+@pytest.mark.parametrize(
+    ("keyval", "name"), [("a", "A"), ("A", "SHIFT+A"), ("space", "SPACE"), ("Return", "RETURN")]
+)
+def test_a_key_that_types_text_is_refused(keyval, name):
+    """Bound to a snippet, it would be taken from every console."""
+    assert shortcuts.captured_key(keyval, name, True, False) is None
+
+
+@pytest.mark.parametrize(
+    ("keyval", "name", "types_text", "held"),
+    [
+        ("F8", "F8", False, False),
+        ("r", "ALT+R", True, True),
+        ("Return", "CTRL+RETURN", True, True),
+        ("BackSpace", "CTRL+BACKSPACE", True, True),
+    ],
+)
+def test_any_other_key_is_taken_as_it_is_named(keyval, name, types_text, held):
+    assert shortcuts.captured_key(keyval, name, types_text, held) == name

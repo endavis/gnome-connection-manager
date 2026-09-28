@@ -19,6 +19,7 @@ import pytest
 
 from gnome_connection_manager.utils import snippets
 from gnome_connection_manager.utils.snippets import Snippet
+from tests.test_connections import glib_complaints
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -365,9 +366,9 @@ def test_a_snippet_deleted_in_preferences_is_gone_from_gcm_conf(gcm):
     gcm.save()
     kept = gcm.app.snippets[1]
     wconfig = object.__new__(gcm.app.Wconfig)
-    wconfig.treeModel2 = [[kept.text, kept.key, kept.id], ["", "", ""]]
+    wconfig.library = [kept]  # the page's copies, the other deleted
 
-    gcm.app.snippets = wconfig.edited_snippets()
+    gcm.app.snippets = wconfig.kept_snippets()
     shortcuts: dict = {}
     gcm.app.bind_snippet_keys(shortcuts, gcm.app.snippets)
     gcm.app.shortcuts = shortcuts
@@ -462,6 +463,48 @@ def find(menu, text):
                 return found
     return None
 
+def listed(prefs):
+    """The Snippets page's list as drawn: a folder as (name, its rows)."""
+    model = prefs.snippet_store
+
+    def rows(parent):
+        items = []
+        row = model.iter_children(parent)
+        while row is not None:
+            name = model[row][0]
+            items.append((name, rows(row)) if model[row][2] == "" else name)
+            row = model.iter_next(row)
+        return items
+
+    return rows(None)
+
+def press(window, keyval, state=0):
+    """A key pressed and released in `window`, as GTK delivers one."""
+    keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
+    keyboard = Gdk.Display.get_default().get_default_seat().get_keyboard()
+    found, keys = keymap.get_entries_for_keyval(keyval)
+    for kind in (Gdk.EventType.KEY_PRESS, Gdk.EventType.KEY_RELEASE):
+        event = Gdk.Event.new(kind)
+        event.key.window = window.get_window()
+        event.key.time = Gdk.CURRENT_TIME
+        event.key.keyval = keyval
+        event.key.state = state
+        event.key.hardware_keycode, event.key.group = keys[0].keycode, keys[0].group
+        event.set_device(keyboard)
+        Gtk.main_do_event(event)
+    pump(0.1)
+
+def leave(widget):
+    """The keyboard leaving `widget`, as GTK tells it when another widget takes it."""
+    event = Gdk.Event.new(Gdk.EventType.FOCUS_CHANGE)
+    event.focus_change.window = widget.get_window()
+    event.focus_change.in_ = 0
+    widget.send_focus_change(event)
+    pump()
+
+def pickers():
+    return [win for win in Gtk.Window.list_toplevels() if isinstance(win, app.SnippetPicker) and win.get_visible()]
+
 def open_host():
     # A name with a space, which a shell would quote: a snippet's values are not.
     host = app.Host("prod", "db 01", "", "10.9.9.9", "ops", "", "", "22", "", "ssh")
@@ -486,14 +529,17 @@ if scenario == "the-menus-list-snippets-by-name-in-folders":
     ]
     w.populateCommandsMenu()
     pump()
+    # The picker, a separator, then the library.
     expected = [
+        "Find Snippet…",
+        None,
         ("ops", [("storage", ["disk"]), "Apache logs"]),
         "alpha",
         "[F8] restart_service",
     ]
     assert drawn(w.popupMenu.mnuCommands) == expected, drawn(w.popupMenu.mnuCommands)
     # The menubar reads "_" as a mnemonic, and drew restart_service as restartservice.
-    menubar = find(w.menubar, "Custom Commands")
+    menubar = find(w.menubar, "Snippets")
     assert drawn(menubar) == expected, drawn(menubar)
 
 elif scenario == "a-menu-sends-a-snippet-filled-in-for-the-tab":
@@ -539,6 +585,228 @@ elif scenario == "a-snippets-key-sends-it":
     until(lambda: "df -h db 01" in screen(terminal))
     assert "df -h db 01" in screen(terminal), screen(terminal)
 
+elif scenario == "the-snippets-page-edits-the-library":
+    app.snippets = [
+        Snippet("00000001", "disk", "df -h\r", "F8", "ops"),
+        Snippet("00000002", "up", "uptime\r"),
+    ]
+    prefs = app.Wconfig()
+    pump()
+    notebook = prefs.get_widget("nbConfig")
+    last = notebook.get_nth_page(notebook.get_n_pages() - 1)
+    assert notebook.get_tab_label(last).get_text() == "Snippets"
+    notebook.set_current_page(notebook.get_n_pages() - 1)
+    pump()
+    assert listed(prefs) == [("ops", ["disk"]), "up"], listed(prefs)
+    fields, text = prefs.snippet_entries, prefs.snippet_text.get_buffer()
+    assert not prefs.snippet_form.get_sensitive()  # nothing chosen yet
+    prefs.choose_snippet("00000001")
+    pump()
+    shown = {field: entry.get_text() for field, entry in fields.items()}
+    assert shown == {"name": "disk", "folder": "ops", "key": "F8", "description": ""}, shown
+    assert text.get_text(text.get_start_iter(), text.get_end_iter(), False) == "df -h\r"
+    fields["name"].set_text("Disk usage")
+    assert listed(prefs) == [("ops", ["Disk usage"]), "up"], listed(prefs)
+    fields["folder"].set_text("ops/storage")
+    fields["folder"].emit("activate")
+    assert listed(prefs) == [("ops", [("storage", ["Disk usage"])]), "up"], listed(prefs)
+    text.set_text("df -hT\r")
+    prefs.on_add_snippet(None)  # in the folder of the snippet chosen
+    pump()
+    assert fields["folder"].get_text() == "ops/storage"
+    text.set_text("du -sh .\r")  # and no name: listed by its first line
+    prefs.choose_snippet("00000002")
+    prefs.on_delete_snippet(None)
+    pump()
+    assert listed(prefs) == [("ops", [("storage", ["Disk usage", "du -sh ."])])], listed(prefs)
+    prefs.on_okbutton1_clicked(None)
+    pump()
+    disk, du = app.snippets
+    assert disk == Snippet("00000001", "Disk usage", "df -hT\r", "F8", "ops/storage"), disk
+    assert (du.name, du.text, du.key, du.folder) == ("du -sh .", "du -sh .\r", "", "ops/storage")
+    assert app.shortcuts["F8"] is disk
+    written = open(app.CONFIG_FILE).read()
+    assert "[snippet 00000001]" in written and "[snippet 00000002]" not in written, written
+    assert drawn(w.popupMenu.mnuCommands)[2:] == [
+        ("ops", [("storage", ["[F8] Disk usage", "du -sh ."])])
+    ], drawn(w.popupMenu.mnuCommands)
+
+elif scenario == "add-in-the-folder-chosen":
+    app.snippets = [Snippet("00000001", "disk", "df -h\r", "", "ops/storage")]
+    prefs = app.Wconfig()
+    pump()
+    notebook = prefs.get_widget("nbConfig")
+    notebook.set_current_page(notebook.get_n_pages() - 1)
+    pump()
+    store = prefs.snippet_store
+    storage = store.iter_children(store.get_iter_first())
+    assert store[storage][0] == "storage", store[storage][0]
+    prefs.snippet_view.get_selection().select_iter(storage)
+    pump()
+    # A folder is chosen: there is no snippet to edit or delete.
+    assert not prefs.snippet_form.get_sensitive()
+    assert not prefs.btnDeleteSnippet.get_sensitive()
+    prefs.on_add_snippet(None)
+    pump()
+    assert prefs.snippet_form.get_sensitive()
+    fields = prefs.snippet_entries
+    assert fields["folder"].get_text() == "ops/storage", fields["folder"].get_text()
+    prefs.snippet_text.get_buffer().set_text("uptime\r")
+    # Listed by its first line as it is typed.
+    assert listed(prefs) == [("ops", [("storage", ["disk", "uptime"])])], listed(prefs)
+    # Typed carelessly, and filed again once the field is left.
+    fields["name"].set_text("  load ")
+    fields["folder"].set_text(" ops / checks/ ")
+    fields["description"].set_text(" how busy it is ")
+    leave(fields["folder"])
+    assert listed(prefs) == [("ops", [("checks", ["  load "]), ("storage", ["disk"])])], listed(prefs)
+    prefs.on_okbutton1_clicked(None)
+    pump()
+    kept = [(each.name, each.folder, each.description) for each in app.snippets]
+    assert kept == [("disk", "ops/storage", ""), ("load", "ops/checks", "how busy it is")], kept
+    # What the next start reads is what the library holds.
+    import configparser
+    written = configparser.RawConfigParser()
+    written.read(app.CONFIG_FILE)
+    assert app.snippetlib.load(written) == app.snippets, app.snippetlib.load(written)
+
+elif scenario == "cancel-drops-the-page-edits":
+    app.snippets = [Snippet("00000001", "disk", "df -h\r", "F8")]
+    prefs = app.Wconfig()
+    pump()
+    prefs.choose_snippet("00000001")
+    prefs.snippet_entries["name"].set_text("changed")
+    prefs.on_delete_snippet(None)
+    prefs.on_cancelbutton1_clicked(None)
+    pump()
+    assert app.snippets == [Snippet("00000001", "disk", "df -h\r", "F8")], app.snippets
+
+elif scenario == "the-key-field-takes-a-key":
+    app.snippets = [Snippet("00000001", "disk", "df -h\r", "F8")]
+    prefs = app.Wconfig()
+    pump()
+    # Its widgets take keys once the page is shown, as it is when someone uses it.
+    notebook = prefs.get_widget("nbConfig")
+    notebook.set_current_page(notebook.get_n_pages() - 1)
+    pump()
+    prefs.choose_snippet("00000001")
+    field = prefs.snippet_entries["key"]
+    window = prefs.get_widget("wConfig")
+    window.set_focus(field)
+    for keyval, state, expected in (
+        (Gdk.KEY_Shift_L, 0, "F8"),  # a modifier alone waits for its key
+        (Gdk.KEY_a, 0, "F8"),  # a key that types is refused
+        (Gdk.KEY_space, 0, "F8"),
+        (Gdk.KEY_A, Gdk.ModifierType.SHIFT_MASK, "F8"),  # Shift only types a capital
+        (Gdk.KEY_F9, 0, "F9"),
+        (Gdk.KEY_r, Gdk.ModifierType.CONTROL_MASK, "CTRL+R"),
+        (Gdk.KEY_BackSpace, 0, ""),
+    ):
+        press(window, keyval, state)
+        assert field.get_text() == expected, (Gdk.keyval_name(keyval), field.get_text())
+    # The list shows the key the snippet has now.
+    assert prefs.snippet_store[prefs.snippet_row("00000001")][1] == ""
+    # Only a key pressed is a key: nothing can be pasted there.
+    Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("rm -rf /", -1)
+    field.emit("paste-clipboard")
+    pump(0.3)
+    assert field.get_text() == "", field.get_text()
+    press(window, Gdk.KEY_Tab)  # moves on, as it does from any field
+    assert window.get_focus() is prefs.snippet_entries["description"], window.get_focus()
+    assert field.get_text() == ""
+    prefs.on_okbutton1_clicked(None)
+    pump()
+    assert app.snippets[0].key == "" and "F8" not in app.shortcuts, app.snippets
+    # Escape closes Preferences, as it does from any field.
+    prefs = app.Wconfig()
+    pump()
+    notebook = prefs.get_widget("nbConfig")
+    notebook.set_current_page(notebook.get_n_pages() - 1)
+    pump()
+    prefs.choose_snippet("00000001")
+    window = prefs.get_widget("wConfig")
+    window.set_focus(prefs.snippet_entries["key"])
+    press(window, Gdk.KEY_Escape)
+    assert not window.get_visible()
+
+elif scenario == "the-picker-finds-a-snippet-and-sends-it":
+    terminal = open_host()
+    app.snippets = [
+        Snippet("00000001", "disk", "df -h {name}\r", "", "ops"),
+        Snippet("00000002", "disk free inodes", "df -i\r", "", "ops"),
+        Snippet("00000003", "up", "uptime\r", "", "", "how long it has been up"),
+    ]
+    # Opened from the menubar, say, with the keyboard in the server tree: once addTab's
+    # timer has given the new console the keyboard a second time, 200 ms on.
+    pump(0.3)
+    w.wMain.set_focus(w.treeServers)
+    pump()
+    assert w.wMain.get_focus() is w.treeServers, w.wMain.get_focus()
+    picker = w.show_snippet_picker(terminal)
+    pump()
+    found = lambda: [row[0] for row in picker.found]
+    rows = [(row[0], row[1], row[2]) for row in picker.found]
+    assert rows == [("disk", "ops", ""), ("disk free inodes", "ops", ""), ("up", "", "")], rows
+    for search, expected in (
+        ("DISK ops", ["disk", "disk free inodes"]),  # a word in any field
+        ("disk inodes", ["disk free inodes"]),  # and every word
+        ("long", ["up"]),  # the description
+        ("-i", ["disk free inodes"]),  # the text
+        ("df", ["disk", "disk free inodes"]),
+    ):
+        picker.search.set_text(search)
+        until(lambda: found() == expected, 3)
+        assert found() == expected, (search, found())
+    picker.set_focus(picker.search)
+    chosen = lambda: picker.chosen().name
+    assert chosen() == "disk", chosen()  # the first found
+    press(picker, Gdk.KEY_Up)  # already the first
+    assert chosen() == "disk", chosen()
+    press(picker, Gdk.KEY_Down)
+    press(picker, Gdk.KEY_Down)  # already the last
+    assert chosen() == "disk free inodes", chosen()
+    press(picker, Gdk.KEY_Return)
+    until(lambda: "df -i" in screen(terminal))
+    assert "df -i" in screen(terminal), screen(terminal)
+    assert "df -h" not in screen(terminal), screen(terminal)
+    assert not pickers()
+    # The keyboard is in the console it was sent to.
+    assert w.wMain.get_focus() is terminal, w.wMain.get_focus()
+    # A row activated, as a double-click does, sends it too.
+    picker = w.show_snippet_picker(terminal)
+    pump()
+    picker.view.row_activated(Gtk.TreePath.new_from_indices([2]), picker.view.get_column(0))
+    until(lambda: "uptime" in screen(terminal))
+    assert "uptime" in screen(terminal), screen(terminal)
+    assert not pickers()
+
+elif scenario == "escape-closes-the-picker":
+    terminal = open_host()
+    app.snippets = [Snippet("00000001", "up", "uptime\r")]
+    w.wMain.set_focus(terminal)
+    picker = w.show_snippet_picker(terminal)
+    pump()
+    picker.set_focus(picker.search)
+    # While it is open, what is typed at the main window goes to it, not the console.
+    press(w.wMain, Gdk.KEY_x)
+    assert picker.search.get_text() == "x", picker.search.get_text()
+    press(picker, Gdk.KEY_Escape)
+    pump(0.3)
+    assert not pickers()
+    assert "uptime" not in screen(terminal) and "x" not in screen(terminal), screen(terminal)
+
+elif scenario == "the-pickers-key-opens-it":
+    terminal = open_host()
+    app.snippets = [Snippet("00000001", "up", "uptime\r")]
+    # An accelerator, from the shortcuts table, as every terminal command's is.
+    assert application.get_accels_for_action("app.find-snippet") == ["<Primary><Shift>p"], (
+        application.get_accels_for_action("app.find-snippet")
+    )
+    w.wMain.set_focus(terminal)
+    press(w.wMain, Gdk.KEY_P, Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK)
+    pickers = [win for win in Gtk.Window.list_toplevels() if isinstance(win, app.SnippetPicker)]
+    assert len(pickers) == 1 and pickers[0].terminal is terminal, pickers
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -552,6 +820,13 @@ print("OK")
         "a-menu-sends-a-snippet-filled-in-for-the-tab",
         "a-label-is-asked-once-and-cancelling-sends-nothing",
         "a-snippets-key-sends-it",
+        "the-snippets-page-edits-the-library",
+        "add-in-the-folder-chosen",
+        "cancel-drops-the-page-edits",
+        "the-key-field-takes-a-key",
+        "the-picker-finds-a-snippet-and-sends-it",
+        "escape-closes-the-picker",
+        "the-pickers-key-opens-it",
     ],
 )
 def test_snippets_against_real_gtk(scenario):
@@ -567,3 +842,6 @@ def test_snippets_against_real_gtk(scenario):
     assert result.returncode == 0, result.stderr[-3000:]
     assert "OK" in result.stdout
     assert "Traceback" not in result.stderr, result.stderr[-3000:]
+    # A key sent to a page not yet shown is dropped with a critical, and passed a test
+    # that expected the key to change nothing.
+    assert glib_complaints(result.stderr) == [], result.stderr[-3000:]

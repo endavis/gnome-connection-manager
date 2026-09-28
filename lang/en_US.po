@@ -1915,3 +1915,51 @@ msgstr "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a ke
 
 msgid "Reconnecting stopped."
 msgstr "Reconnecting stopped."
+
+msgid "Snippets"
+msgstr "Snippets"
+
+msgid "Find Snippet…"
+msgstr "Find Snippet…"
+
+msgid "Name or text"
+msgstr "Name or text"
+
+msgid "New snippet"
+msgstr "New snippet"
+
+msgid "Name"
+msgstr "Name"
+
+msgid "Folder"
+msgstr "Folder"
+
+msgid "Key"
+msgstr "Key"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Text"
+msgstr "Text"
+
+msgid "Add"
+msgstr "Add"
+
+msgid "Delete"
+msgstr "Delete"
+
+msgid "Its first line"
+msgstr "Its first line"
+
+msgid "Press the key that sends it"
+msgstr "Press the key that sends it"
+
+msgid "Backspace leaves it without a key"
+msgstr "Backspace leaves it without a key"
+
+msgid "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+msgstr "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+
+msgid "Send a snippet to each console selected, with its own host's values"
+msgstr "Send a snippet to each console selected, with its own host's values"
