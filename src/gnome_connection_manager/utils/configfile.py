@@ -10,6 +10,8 @@ Both can be read without losing anything:
 - a repeated ``[folder <id>]`` is another folder, given a fresh id. A host naming that id
   cannot say which of the two it meant, so the id is reported as ambiguous and the caller
   files such hosts by the ``group`` path each one also carries.
+- a repeated ``[snippet <id>]`` is another snippet, given a fresh id. Nothing names a
+  snippet by its id, so nothing is ambiguous.
 - a repeat of either that is a verbatim copy of one already read is dropped.
 - a repeated singleton section -- ``[options]``, ``[window]`` -- merges into the first,
   and a repeated key keeps its later value, as configparser's lenient mode does.
@@ -38,17 +40,19 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from gnome_connection_manager.utils.folders import SECTION_PREFIX as FOLDER_PREFIX
 from gnome_connection_manager.utils.folders import new_folder_id
+from gnome_connection_manager.utils.snippets import SECTION_PREFIX as SNIPPET_PREFIX
+from gnome_connection_manager.utils.snippets import new_snippet_id
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 HOST_PREFIX = "host "
 
-# Sections a save writes from memory. Host and folder sections are records, renumbered or
-# re-keyed on every save, so one missing from memory was deleted and must not come back
-# from the file; the others are written in full.
+# Sections a save writes from memory. Host, folder and snippet sections are records,
+# renumbered or re-keyed on every save, so one missing from memory was deleted and must
+# not come back from the file; the others are written in full.
 WRITTEN_SECTIONS = frozenset({"options", "window", "shortcuts"})
-RECORD_PREFIXES = (HOST_PREFIX, FOLDER_PREFIX)
+RECORD_PREFIXES = (HOST_PREFIX, FOLDER_PREFIX, SNIPPET_PREFIX)
 
 
 class UnreadableError(Exception):
@@ -57,7 +61,7 @@ class UnreadableError(Exception):
 
 class Reading(NamedTuple):
     config: configparser.RawConfigParser
-    kept_apart: int  # repeated host or folder sections kept as records of their own
+    kept_apart: int  # repeated host, folder or snippet sections kept as records of their own
     dropped: int  # repeats that were verbatim copies
     ambiguous_folders: frozenset[str]  # folder ids that named more than one record
 
@@ -94,7 +98,7 @@ def free_name(name: str, taken: set[str]) -> str:
 
 
 def read_config(text: str, source: str = "<gcm.conf>") -> Reading:
-    """Parse gcm.conf's text, keeping repeated host and folder sections apart.
+    """Parse gcm.conf's text, keeping repeated host, folder and snippet sections apart.
 
     Raises configparser.Error for anything the lenient parser still refuses.
     """
@@ -116,6 +120,9 @@ def read_config(text: str, source: str = "<gcm.conf>") -> Reading:
         elif name.startswith(FOLDER_PREFIX):
             ids = {n[len(FOLDER_PREFIX) :].strip() for n in taken if n.startswith(FOLDER_PREFIX)}
             new = FOLDER_PREFIX + new_folder_id(ids)
+        elif name.startswith(SNIPPET_PREFIX):
+            ids = {n[len(SNIPPET_PREFIX) :].strip() for n in taken if n.startswith(SNIPPET_PREFIX)}
+            new = SNIPPET_PREFIX + new_snippet_id(ids)
         else:
             continue
         taken.add(new)

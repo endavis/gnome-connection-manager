@@ -114,6 +114,7 @@ def test_load_config_populates_conf_groups_and_shortcuts(tmp_path, app_module, m
     monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_path))
     monkeypatch.setattr(app_module, "groups", {})
     monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "snippets", [])
     monkeypatch.setattr(app_module.crypto, "decrypt", lambda _pwd, value, **_kw: value)
 
     wmain = object.__new__(app_module.Wmain)
@@ -132,7 +133,10 @@ def test_load_config_populates_conf_groups_and_shortcuts(tmp_path, app_module, m
     assert host.password == "plaintext"
 
     assert app_module.shortcuts["CTRL+ALT+C"] == app_module._COPY
-    assert app_module.shortcuts["ALT+R"] == "reboot\nnow"
+    # The custom command is a snippet now, named by its first line, and its key sends it.
+    [snippet] = app_module.snippets
+    assert (snippet.name, snippet.text, snippet.key) == ("reboot", "reboot\nnow", "ALT+R")
+    assert app_module.shortcuts["ALT+R"] is snippet
 
 
 def test_write_config_persists_conf_window_hosts_and_shortcuts(tmp_path, app_module, monkeypatch):
@@ -172,10 +176,12 @@ def test_write_config_persists_conf_window_hosts_and_shortcuts(tmp_path, app_mod
 
     host = make_host(app_module)
     monkeypatch.setattr(app_module, "groups", {"ops/prod": [host]})
+    snippet = app_module.snippetlib.Snippet("5e1ec7ed", "reboot", "reboot\nnow", "ALT+R")
+    monkeypatch.setattr(app_module, "snippets", [snippet])
     monkeypatch.setattr(
         app_module,
         "shortcuts",
-        {"CTRL+ALT+C": app_module._COPY, "ALT+R": "reboot now"},
+        {"CTRL+ALT+C": app_module._COPY, "ALT+R": snippet},
     )
 
     hp_stub = types.SimpleNamespace(get_position=lambda: 333)
@@ -201,8 +207,14 @@ def test_write_config_persists_conf_window_hosts_and_shortcuts(tmp_path, app_mod
     assert cp.getboolean("window", "show-toolbar") is False
 
     assert cp.get("shortcuts", "copy") == "CTRL+ALT+C"
+    # The snippet as a record, and as the custom command it was, for an older GCM.
+    assert dict(cp.items("snippet 5e1ec7ed")) == {
+        "name": "reboot",
+        "text": '"reboot\\nnow"',
+        "key": "ALT+R",
+    }
     assert cp.get("shortcuts", "shortcut1") == "ALT+R"
-    assert cp.get("shortcuts", "command1") == "reboot now"
+    assert cp.get("shortcuts", "command1") == "reboot\\nnow"
 
     assert cp.has_section("host 1")
     assert cp.get("host 1", "group") == "ops/prod"

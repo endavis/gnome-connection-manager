@@ -416,8 +416,8 @@ def test_every_action_is_reachable_from_a_menu(app_module):
     actions, reachable = _menu_sources(app_module)
 
     unreachable = actions - reachable
-    assert unreachable == {"donate", "custom-command"}, (
-        f"unexpected actions missing from the menus: {sorted(unreachable - {'donate', 'custom-command'})}"
+    assert unreachable == {"donate", "send-snippet"}, (
+        f"unexpected actions missing from the menus: {sorted(unreachable - {'donate', 'send-snippet'})}"
     )
 
 

@@ -8,6 +8,10 @@ its braces.
 Pure: `quote` is the caller's. A command run through `sh -c` quotes each value with
 `shlex.quote`, so that a host name holding a space or a `;` stays one argument and
 cannot extend the command.
+
+A snippet (#240) takes the same names from the host of the tab it is sent to, but
+unquoted, since it is typed into whatever runs there, which need not be a shell. It also
+takes `{?Label}`, a value asked for as it is sent: `asked` lists them, once each.
 """
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ if TYPE_CHECKING:
 PLACEHOLDERS = ("name", "address", "port", "user", "group", "type")
 
 _PLACEHOLDER = re.compile(r"\{(" + "|".join(PLACEHOLDERS) + r")\}")
+_ASKED = re.compile(r"\{\?([^{}]+)\}")
+_SNIPPET = re.compile(r"\{(?:(" + "|".join(PLACEHOLDERS) + r")|\?([^{}]+))\}")
 
 
 def host_values(host: Any) -> dict[str, str]:
@@ -41,3 +47,23 @@ def fill(
 ) -> str:
     """`template` with each placeholder replaced by its value, passed through `quote`."""
     return _PLACEHOLDER.sub(lambda match: quote(values[match.group(1)]), template)
+
+
+def asked(template: str) -> list[str]:
+    """Each `{?Label}` in `template`, once each, in the order they first appear."""
+    return list(dict.fromkeys(_ASKED.findall(template)))
+
+
+def fill_snippet(template: str, values: dict[str, str] | None, answers: dict[str, str]) -> str:
+    """A snippet's text as it is sent: the host's values as they are, and each
+    `{?Label}` answered. One pass, so that neither a value nor an answer is filled in
+    again. With no host, `values` is None and its placeholders are left as written, as
+    is a `{?Label}` with no answer."""
+
+    def replace(match: re.Match[str]) -> str:
+        name, label = match.groups()
+        if name is not None:
+            return match.group(0) if values is None else values[name]
+        return answers.get(label, match.group(0))
+
+    return _SNIPPET.sub(replace, template)

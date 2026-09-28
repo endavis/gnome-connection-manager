@@ -424,7 +424,9 @@ def test_copy_selected_address_sets_clipboard(monkeypatch, app_module):
     assert clipboard.stored is True
 
 
-def test_populate_commands_menu_adds_custom_entries(monkeypatch, app_module):
+def test_populate_commands_menu_lists_snippets(monkeypatch, app_module):
+    """By name, the one with a key showing it, each sending its snippet by id (#240).
+    Folders, and what is drawn, are checked against real GTK in test_snippets.py."""
     wmain = object.__new__(app_module.Wmain)
     wmain.popupMenu = types.SimpleNamespace(mnuCommands=DummyMenu())
     created_items = []
@@ -454,26 +456,36 @@ def test_populate_commands_menu_adds_custom_entries(monkeypatch, app_module):
         created_items.append(item)
         return item
 
+    class PlainItem(MenuItemStub):
+        def __init__(self, label):
+            super().__init__(None, label)
+            created_items.append(self)
+
+        def show(self):
+            pass
+
     wmain.createMenuItem = fake_create
+    monkeypatch.setattr(app_module.Gtk, "MenuItem", PlainItem, raising=False)
+    Snippet = app_module.snippetlib.Snippet
     monkeypatch.setattr(
         app_module,
-        "shortcuts",
-        {
-            "CTRL+C": app_module._COPY,
-            "ALT+R": "run reboot now",
-        },
+        "snippets",
+        [
+            Snippet("aa11bb22", "reboot", "run reboot now", "ALT+R"),
+            Snippet("cc33dd44", "up", "uptime"),
+        ],
     )
 
     wmain.populateCommandsMenu()
 
-    # only the non-list entry is a user command; _COPY is a built-in
-    assert len(created_items) == 1
-    assert len(wmain.popupMenu.mnuCommands.children) == 1
-    item = wmain.popupMenu.mnuCommands.children[0]
-    assert item.shortcut == "ALT+R"
-    assert item.action_name == "app.custom-command"
+    assert [(item.shortcut, item.label) for item in created_items] == [
+        ("ALT+R", "reboot"),
+        (None, "up"),
+    ]
+    assert wmain.popupMenu.mnuCommands.children == created_items
+    assert {item.action_name for item in created_items} == {"app.send-snippet"}
     assert commands_model.cleared == 1
-    assert len(commands_model.items) == 1
+    assert len(commands_model.items) == 2
 
 
 def test_populate_commands_menu_without_an_application(monkeypatch, app_module):
@@ -482,7 +494,8 @@ def test_populate_commands_menu_without_an_application(monkeypatch, app_module):
     wmain.popupMenu = types.SimpleNamespace(mnuCommands=DummyMenu())
     wmain.createMenuItem = lambda shortcut, label: MenuItemStub(shortcut, label)
     monkeypatch.setattr(app_module.Gtk.Application, "get_default", lambda: None, raising=False)
-    monkeypatch.setattr(app_module, "shortcuts", {"ALT+R": "run reboot now"})
+    Snippet = app_module.snippetlib.Snippet
+    monkeypatch.setattr(app_module, "snippets", [Snippet("aa11bb22", "reboot", "reboot", "ALT+R")])
 
     wmain.populateCommandsMenu()
 
@@ -630,16 +643,20 @@ def test_a_tab_without_a_terminal_leaves_no_context_terminal(app_module):
     assert wmain.get_target_terminal() is None
 
 
-def test_run_custom_command_invokes_vte_feed(monkeypatch, app_module):
+def test_send_snippet_by_id_types_it_into_the_target_terminal(monkeypatch, app_module):
     wmain = object.__new__(app_module.Wmain)
-    terminal = app_module.Vte.Terminal()
+    terminal = types.SimpleNamespace(host=None)
     wmain.get_target_terminal = lambda: terminal
-    fed: dict = {}
-    monkeypatch.setattr(app_module, "vte_feed", lambda term, data: fed.setdefault("data", data))
+    fed: list = []
+    monkeypatch.setattr(app_module, "vte_feed", lambda term, data: fed.append((term, data)))
+    Snippet = app_module.snippetlib.Snippet
+    monkeypatch.setattr(app_module, "snippets", [Snippet("aa11bb22", "hi", "echo hi {name}")])
 
-    wmain.run_custom_command("echo hi")
+    wmain.send_snippet_by_id("aa11bb22")
+    wmain.send_snippet_by_id("gone")
 
-    assert fed["data"] == "echo hi"
+    # A tab without a host leaves its placeholders as written.
+    assert fed == [(terminal, "echo hi {name}")]
 
 
 class PaneStub:

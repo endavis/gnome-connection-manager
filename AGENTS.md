@@ -52,6 +52,21 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   no session's end reported, while closing the window reports each, with status 9, so
   `request_quit` runs `end_sessions` first. A page reports nothing when its tab closes,
   so `open_type_page` listens for its `destroy`.
+- `src/gnome_connection_manager/utils/snippets.py` – the snippet library (#240): text
+  typed into a console on request, found by name, each a `[snippet <id>]` record, which
+  `configfile.RECORD_PREFIXES` names so that one deleted stays deleted. Snippets
+  replaced custom commands, the `shortcutN`/`commandN` pairs in `[shortcuts]`. `migrate`
+  takes each pair once, and a save writes each snippet with a key back as a pair, for an
+  older GCM to read, which `migrate` knows by its key. The pairs' encoding turned a
+  backslash and an n into a newline, measured, so a snippet's text is a JSON string,
+  which also keeps the space a `cd ` ends with. In `app.py` the list is the global
+  `snippets`, and a snippet with a key is in `shortcuts` under it too, put there after
+  the built-in commands by `bind_snippet_keys`: `on_terminal_keypress` sends it from
+  there, and it keeps a key a built-in command also has, as a custom command did.
+  `fill_snippet_menus` lists them by name, in folders. A menu built from a model reads
+  `_` as a mnemonic, measured, so the menubar's labels go through `menu_label`.
+  `send_snippet` fills in the host's values unquoted, and asks for each `{?Label}` once,
+  before it types anything.
 - `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
   per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web` and `Vnc`, listed in `CONNECTION_TYPES` in the
   order the host dialog offers them, which fills its list from there. Code that used to
