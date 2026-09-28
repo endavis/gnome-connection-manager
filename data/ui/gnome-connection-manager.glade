@@ -382,6 +382,20 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
               </packing>
             </child>
             <child>
+              <object class="GtkEntry" id="txtHiddenCommand">
+                <property name="can-focus">True</property>
+                <property name="no-show-all">True</property>
+                <property name="visibility">False</property>
+                <property name="input-purpose">password</property>
+                <signal name="activate" handler="on_txtHiddenCommand_activate" swapped="no"/>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">5</property>
+              </packing>
+            </child>
+            <child>
               <object class="GtkLabel" id="label53">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
@@ -395,7 +409,24 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
               <packing>
                 <property name="expand">False</property>
                 <property name="fill">False</property>
-                <property name="position">5</property>
+                <property name="position">6</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkCheckButton" id="chkHideInput">
+                <property name="label" translatable="yes">Hide input</property>
+                <property name="visible">True</property>
+                <property name="can-focus">True</property>
+                <property name="receives-default">False</property>
+                <property name="tooltip-text" translatable="yes">Mask what you type, for a password, and keep it out of the history</property>
+                <property name="halign">start</property>
+                <property name="draw-indicator">True</property>
+                <signal name="toggled" handler="on_chkHideInput_toggled" swapped="no"/>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="position">7</property>
               </packing>
             </child>
           </object>
