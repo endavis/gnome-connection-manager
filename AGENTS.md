@@ -52,7 +52,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   command written for it, `{name}` and the rest (#238). Pure: the caller supplies the
   quoting, `shlex.quote` for a host's commands on this computer, which run through
   `sh -c`, so that a name holding a `;` stays one argument. Anything else in braces is
-  left as written.
+  left as written. A command host's line (#248) goes through `fill_command`, which makes
+  `{password}` the reference `"$GCM_PASSWORD"`, `PASSWORD_VARIABLE`, and never the
+  password: measured, `/proc/<pid>/cmdline` is mode 444 and `/proc/<pid>/environ` 400.
   Those commands are the host's `before_command` and `after_command`. `addTab` runs the
   first in the tab's own terminal through `run_before_command`, and
   `on_terminal_child_exited` starts the session with `start_session` only once it exits
@@ -99,14 +101,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   twice, the second time from a 200 ms timer: a test that moves the keyboard away after
   opening a tab must wait that out, or the timer takes it back, measured.
 - `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
-  per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web` and `Vnc`, listed in `CONNECTION_TYPES` in the
+  per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web`, `Vnc` and `CustomCommand`, listed in `CONNECTION_TYPES` in the
   order the host dialog offers them, which fills its list from there. Code that used to
   compare `host.type` with a name asks the type instead: `addTab` for the `Command` to
   spawn, and the dialog and `host_sends_commands` for `default_port`, `remote`,
   `ssh_options` and `sends_commands`. A new type adds a class here, not a branch in each of
   those. `named` finds a type by name, and gives Telnet for a name GCM does not know;
   `for_host` is what `addTab` opens a host as, a local shell for a host with no address
-  whatever its type, since the Local button's host is of type ssh. Both keep what `addTab`
+  unless its type has `runs_without_address`, since the Local button's host is of type
+  ssh. Both keep what `addTab`
   did before the registry, checked by recording its command for a matrix of hosts before
   and after. Pure: what a command needs from outside comes in as `Programs`, which
   `connection_programs` in `app.py` builds at each spawn, so a test that swaps
@@ -130,8 +133,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   does not know included, so clone and export and import carry them, and a new type adds
   no attribute to `Host`. A key is lower case: configparser folds an option's name as it
   writes it, and a key in mixed case would not be found once GCM restarted, so `Setting`
-  refuses one. No type here has settings yet; `tests/test_connections.py` gives a type
-  of its own some, as `tests/test_tab_pages.py` opens a page of its own.
+  refuses one. `settings_hint` is a line of help under the settings, and `invalid` lets
+  a type refuse them on OK. The page packs its rows at the top at their own height:
+  measured in a screenshot, a grid given the whole page shared its height out among the
+  rows, and the one entry of the first type with settings drew half a page tall.
+  That type is `CustomCommand` (#248), a command host, whose `command.line` runs through
+  `sh -c` in a terminal tab, with the host's values quoted as `local_command` quotes them.
+  It sets `runs_without_address`, so the dialog does not ask for one. Its `{password}`
+  reaches the command in `Command.environment`, which `vte_run` hands VTE as `envv`:
+  measured, VTE adds it to what the child inherits, directly and under the relay, and it
+  never enters GCM's own environment, as TERM does. So `terminal.command` is
+  `(program, argv, password, environment)`, which `start_session` and the Reconnect key in
+  `on_terminal_keypress` read. Nothing is typed at a command host's prompts.
+  `tests/test_connections.py` gives a type of its own settings, as
+  `tests/test_tab_pages.py` opens a page of its own.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the
@@ -476,7 +491,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
   hides the Port forwarding page for a type without `ssh_options`, which only SSH has, so a
   Telnet or RDP host's
-  dialog has three tabs and an SSH host's has four. It looks like a bug from the outside --
+  dialog has three tabs and an SSH host's has four. A command host's has four too, its
+  Command line page shown where Port forwarding would be. It looks like a bug from the outside --
   a whole tab vanishing -- and it is not. Every other SSH-only control in that branch is
   made insensitive instead, which is the inconsistency behind the confusion, not the
   hiding itself.

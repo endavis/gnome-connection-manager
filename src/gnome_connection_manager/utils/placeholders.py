@@ -12,6 +12,11 @@ cannot extend the command.
 A snippet (#240) takes the same names from the host of the tab it is sent to, but
 unquoted, since it is typed into whatever runs there, which need not be a shell. It also
 takes `{?Label}`, a value asked for as it is sent: `asked` lists them, once each.
+
+A command host's command line (#248) takes them too, quoted, and `{password}`, which
+`fill_command` never replaces with the password itself: every user can read a process's
+command line, and only its owner its environment. It becomes a reference to
+PASSWORD_VARIABLE, which the command is given in its environment instead.
 """
 
 from __future__ import annotations
@@ -24,9 +29,12 @@ if TYPE_CHECKING:
 
 PLACEHOLDERS = ("name", "address", "port", "user", "group", "type")
 
+PASSWORD_VARIABLE = "GCM_PASSWORD"
+
 _PLACEHOLDER = re.compile(r"\{(" + "|".join(PLACEHOLDERS) + r")\}")
 _ASKED = re.compile(r"\{\?([^{}]+)\}")
 _SNIPPET = re.compile(r"\{(?:(" + "|".join(PLACEHOLDERS) + r")|\?([^{}]+))\}")
+_COMMAND = re.compile(r"\{(" + "|".join((*PLACEHOLDERS, "password")) + r")\}")
 
 
 def host_values(host: Any) -> dict[str, str]:
@@ -47,6 +55,26 @@ def fill(
 ) -> str:
     """`template` with each placeholder replaced by its value, passed through `quote`."""
     return _PLACEHOLDER.sub(lambda match: quote(values[match.group(1)]), template)
+
+
+def fill_command(
+    template: str, values: dict[str, str], quote: Callable[[str], str]
+) -> tuple[str, bool]:
+    """`template` filled as `fill` fills it, with each `{password}` made a reference to
+    PASSWORD_VARIABLE, which the shell expands where it runs. Also whether there was one,
+    since the command must then be given the variable. One pass, so that a value holding
+    `{password}` is left as it is."""
+    named = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal named
+        name = match.group(1)
+        if name == "password":
+            named = True
+            return f'"${PASSWORD_VARIABLE}"'
+        return quote(values[name])
+
+    return _COMMAND.sub(replace, template), named
 
 
 def asked(template: str) -> list[str]:

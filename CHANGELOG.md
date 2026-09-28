@@ -12,6 +12,11 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- Command hosts. A host of type **command** runs a command line of its own in a tab,
+  such as `mosh`, `kubectl exec` or `ipmitool … sol activate`, written on the host
+  dialog's Command line tab. It names the host's values as the commands on this computer
+  do, each quoted for the shell, and `{password}` gives the command the stored password
+  in its environment, as `GCM_PASSWORD`, never on a command line. It needs no address
 - A **Snippets** tab in Preferences, in place of the custom commands table, to add, edit,
   file and delete snippets, and **Find Snippet…**, on `Ctrl+Shift+P` and at the top of
   the Snippets menus, which finds one by typing and sends it. A key that types a

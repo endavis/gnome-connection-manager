@@ -1704,7 +1704,7 @@ def relay_command(args, socket_path=None, raw_path=None):
     return [*command, "--", *args]
 
 
-def vte_run(terminal, command, arg=None):
+def vte_run(terminal, command, arg=None, environment=None):
     term_type = (
         terminal.host.term
         if hasattr(terminal, "host") and terminal.host.term
@@ -1762,12 +1762,16 @@ def vte_run(terminal, command, arg=None):
         args = relay_command(plain_argv(args, not is_local_shell), socket_path, raw_path)
         flag_spawn = GLib.SpawnFlags.DEFAULT
 
+    # The command's own variables, such as a command host's password (#248). Given to
+    # VTE, which adds them to what the child inherits, measured, directly and through
+    # the relay, so that a password never enters GCM's own environment as TERM does.
+    envv = [f"{name}={value}" for name, value in environment.items()] if environment else None
     if TERMINAL_V048:
         terminal.spawn_async(
             Vte.PtyFlags.DEFAULT,
             os.getenv("HOME"),
             args,
-            None,
+            envv,
             flag_spawn | GLib.SpawnFlags.SEARCH_PATH,
             None,
             None,
@@ -1781,7 +1785,7 @@ def vte_run(terminal, command, arg=None):
             Vte.PtyFlags.DEFAULT,
             os.getenv("HOME"),
             args,
-            None,
+            envv,
             flag_spawn | GLib.SpawnFlags.DO_NOT_REAP_CHILD | GLib.SpawnFlags.SEARCH_PATH,
             None,
             None,
@@ -2251,7 +2255,7 @@ class Wmain(GladeComponent):
                         vte_run(widget, SHELL)
                     else:
                         # widget.fork_command(widget.command[0], widget.command[1])
-                        vte_run(widget, widget.command[0], widget.command[1])
+                        vte_run(widget, widget.command[0], widget.command[1], widget.command[3])
                         while Gtk.events_pending():
                             Gtk.main_iteration()
 
@@ -3699,7 +3703,7 @@ class Wmain(GladeComponent):
                 # Before the command before connecting runs, so that Reconnect has it
                 # even when that command failed and nothing was spawned.
                 spawn = kind.command(host, connection_programs())
-                v.command = (spawn.program, spawn.argv, spawn.password)
+                v.command = (spawn.program, spawn.argv, spawn.password, spawn.environment)
             self.run_before_command(v, lambda: self.start_session(v))
         except Exception:
             logger.exception("Error connecting to host")
@@ -3718,8 +3722,8 @@ class Wmain(GladeComponent):
         if not hasattr(terminal, "command"):
             vte_run(terminal, SHELL)
         else:
-            program, argv, password = terminal.command
-            vte_run(terminal, program, argv)
+            program, argv, password, environment = terminal.command
+            vte_run(terminal, program, argv, environment)
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
@@ -5864,7 +5868,12 @@ class Whost(GladeComponent):
         for kind in connections.CONNECTION_TYPES:
             if not kind.settings:
                 continue
-            page = Gtk.Grid(row_homogeneous=True)
+            # The rows at the top, at their own height. A grid given the whole page shared
+            # its height out among them, and drew a command line's entry half a page tall
+            # (#248).
+            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            grid = Gtk.Grid(row_homogeneous=True)
+            page.pack_start(grid, False, False, 0)
             controls = {}
             for row, setting in enumerate(kind.settings):
                 # At its default, which is what a new host starts with; init() fills in
@@ -5872,11 +5881,17 @@ class Whost(GladeComponent):
                 if setting.is_flag:
                     control = Gtk.CheckButton(active=setting.default)
                 else:
-                    control = Gtk.Entry(text=setting.default)
+                    control = Gtk.Entry(text=setting.default, hexpand=True)
                 control.set_margin_start(10)
-                page.attach(Gtk.Label(label=_(setting.label), halign=Gtk.Align.START), 0, row, 1, 1)
-                page.attach(control, 1, row, 1, 1)
+                grid.attach(Gtk.Label(label=_(setting.label), halign=Gtk.Align.START), 0, row, 1, 1)
+                grid.attach(control, 1, row, 1, 1)
                 controls[setting.key] = control
+            if kind.settings_hint:
+                # Drawn as the line of help under the Commands tab's commands is.
+                hint = Gtk.Label(halign=Gtk.Align.START, wrap=True, max_width_chars=60, xalign=0)
+                text = GLib.markup_escape_text(_(kind.settings_hint))
+                hint.set_markup(f"<span size='smaller'>{text}</span>")
+                page.pack_start(hint, False, False, 0)
             page.show_all()
             notebook.insert_page(page, Gtk.Label(label=_(kind.settings_title)), position)
             position += 1
@@ -6061,8 +6076,14 @@ class Whost(GladeComponent):
             tunnel = tunnel[:-1]
 
         # Validar datos
-        if group == "" or name == "" or (host == "" and kind.remote):
+        needs_address = kind.remote and not kind.runs_without_address
+        if group == "" or name == "" or (host == "" and needs_address):
             msgbox(_("Los campos grupo, nombre y host son obligatorios"))
+            return
+        type_values = self.type_page_values(kind)
+        problem = kind.invalid(type_values)
+        if problem:
+            msgbox(_(problem))
             return
 
         if not (port and port.isdigit() and 1 <= int(port) <= 65535):
@@ -6100,7 +6121,7 @@ class Whost(GladeComponent):
         )
         # The chosen type's only. Another type's page is hidden, and whatever it held is
         # not saved with this host, as Port forwarding is not for a type without it.
-        host.type_settings = kind.stored_settings(self.type_page_values(kind))
+        host.type_settings = kind.stored_settings(type_values)
         host.before_command = self.txtBeforeCommand.get_text().strip()
         host.after_command = self.txtAfterCommand.get_text().strip() if kind.opens_tab else ""
         if not self.isNew and group == self.oldGroup:

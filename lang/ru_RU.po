@@ -1811,3 +1811,15 @@ msgstr ""
 
 msgid "Send a snippet to each console selected, with its own host's values"
 msgstr ""
+
+msgid "Command"
+msgstr ""
+
+msgid "Command line"
+msgstr ""
+
+msgid "{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+msgstr ""
+
+msgid "A command host needs a command, on its Command line tab."
+msgstr ""

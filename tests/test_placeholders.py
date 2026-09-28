@@ -146,3 +146,45 @@ def test_without_a_host_its_placeholders_are_left_as_written():
 
 def test_a_label_with_no_answer_is_left_as_written():
     assert placeholders.fill_snippet("echo {?Say}", None, {}) == "echo {?Say}"
+
+
+# A command host's command line (#248): the same names, quoted, and {password}.
+
+
+def test_a_command_line_takes_the_hosts_values_quoted():
+    filled, named = placeholders.fill_command(
+        "ping {address} -c {port}", placeholders.host_values(a_host()), quote=lambda v: f"<{v}>"
+    )
+
+    assert (filled, named) == ("ping <10.0.0.5> -c <2222>", False)
+
+
+def test_its_password_is_a_reference_to_the_variable_and_never_the_value():
+    """The value is not among the host's values at all: nothing here can write it."""
+    filled, named = placeholders.fill_command(
+        "IPMI_PASSWORD={password} ipmitool -U {user} -E; echo {password}",
+        placeholders.host_values(a_host()),
+        quote=shlex.quote,
+    )
+
+    assert filled == 'IPMI_PASSWORD="$GCM_PASSWORD" ipmitool -U ops -E; echo "$GCM_PASSWORD"'
+    assert named and placeholders.PASSWORD_VARIABLE == "GCM_PASSWORD"
+
+
+def test_a_value_holding_the_password_placeholder_is_not_filled_in_again():
+    """One pass: a user named {password} is quoted as written, and asks for nothing."""
+    filled, named = placeholders.fill_command(
+        "ssh {user}@{address}",
+        placeholders.host_values(a_host(user="{password}")),
+        quote=shlex.quote,
+    )
+
+    assert (filled, named) == ("ssh '{password}'@10.0.0.5", False)
+
+
+def test_the_password_placeholder_is_a_command_lines_alone():
+    """#238's commands and snippets leave it as written, as they did before."""
+    values = placeholders.host_values(a_host())
+
+    assert placeholders.fill("echo {password}", values, quote=shlex.quote) == "echo {password}"
+    assert placeholders.fill_snippet("echo {password}", values, {}) == "echo {password}"
