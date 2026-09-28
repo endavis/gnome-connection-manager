@@ -23,12 +23,47 @@ right after a rename.
 from __future__ import annotations
 
 import configparser
+import json
 import secrets
 
 from gnome_connection_manager.utils import crypto
 from gnome_connection_manager.utils.folders import parse_position
 
 HOST_ID_BYTES = 4
+
+
+def legacy_commands(text):
+    """A host's commands as `commands` has always held them: each new line as `\\n`.
+
+    A carriage return is written as one too. It ends a line when they are sent, and
+    written as it is, it ended its line in the file: measured, `uptime\\rwho` left gcm.conf
+    unreadable, and `uptime\\rname = evil` set the host's name (#243).
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+
+
+def read_legacy_commands(value):
+    """A `commands` value as GCM has always read it, and so sent it. A backslash and an
+    n in the text come back as a new line: the value cannot say which it held (#243).
+    An older format still separated the lines with NULs."""
+    return value.replace("\x00", "\n").replace("\\n", "\n")
+
+
+def read_commands(stored, exact):
+    """A host's commands from its `commands` value and its `commands-json` one (#243).
+
+    The exact text is taken only while it still says what `commands` does. An older GCM
+    rewrites `commands` and drops the other, but a hand edit can change `commands` alone,
+    and then that is what the host sends.
+    """
+    if exact is not None:
+        try:
+            text = json.loads(exact)
+        except ValueError:
+            text = None
+        if isinstance(text, str) and legacy_commands(text).strip() == stored.strip():
+            return text
+    return read_legacy_commands(stored)
 
 
 def new_host_id():
@@ -195,10 +230,9 @@ class HostUtils:
         port = HostUtils.get_val(cp, section, "port", "22")
         tunnel = HostUtils.get_val(cp, section, "tunnel", "")
         ctype = HostUtils.get_val(cp, section, "type", "ssh")
-        commands = (
-            HostUtils.get_val(cp, section, "commands", "")
-            .replace("\x00", "\n")
-            .replace("\\n", "\n")
+        commands = read_commands(
+            HostUtils.get_val(cp, section, "commands", ""),
+            cp.get(section, "commands-json", fallback=None),
         )
         keepalive = HostUtils.get_val(cp, section, "keepalive", "")
         fcolor = HostUtils.get_val(cp, section, "font-color", "")
@@ -274,7 +308,14 @@ class HostUtils:
         cp.set(section, "port", host.port)
         cp.set(section, "tunnel", host.tunnel_as_string())
         cp.set(section, "type", host.type)
-        cp.set(section, "commands", host.commands.replace("\n", "\\n"))
+        # As an older GCM reads them. Where that form would not read back as they are, a
+        # backslash and an n or a carriage return coming back as a new line, or a space
+        # stripped from an end, they are written exactly as well, for a GCM that knows to
+        # read that first (#243).
+        stored = legacy_commands(host.commands)
+        cp.set(section, "commands", stored)
+        if read_legacy_commands(stored.strip()) != host.commands:
+            cp.set(section, "commands-json", json.dumps(host.commands, ensure_ascii=False))
         cp.set(section, "keepalive", host.keep_alive)
         cp.set(section, "font-color", host.font_color)
         cp.set(section, "back-color", host.back_color)
