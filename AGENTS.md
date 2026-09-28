@@ -435,6 +435,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   several tests that passed against broken code.
 - **Verify what is rendered, not what the model says.** A menubar was once "verified" by
   walking its `Gio.Menu` when it had never been rendered at all (#43). Walk the widget tree.
+- **A test that reads the screen raises its window first.** Every xdist worker's windows
+  open on the one Xvfb, all at +0+0 with no window manager, and measured, a read of a
+  covered window returns what covers it. `on_screen` in `tests/test_vnc.py` failed on CI
+  so, reading another test's console as black, until it raised its window (#250). When
+  looking for what covers a window, `xwininfo -root -children` lists the top-most first.
 - **Test fakes must mirror the real widget API.** `tests/conftest.py` stubs all of `gi`, so a
   fake can define methods the real class lacks and nothing complains — this caused #30
   (`select_none()` on `Vte.Terminal`) and #41 (`set_attention()` on `Gtk.Label`). Several
