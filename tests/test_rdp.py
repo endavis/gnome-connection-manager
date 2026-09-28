@@ -144,6 +144,7 @@ def choose_type(app_module, ctype, *, commands_ticked=False):
             "txtExtraParams",
             "chkCommands",
             "txtCommands",
+            "txtAfterCommand",
         )
     }
     controls["chkCommands"].active = commands_ticked

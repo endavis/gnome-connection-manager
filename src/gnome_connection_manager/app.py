@@ -111,6 +111,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     connections,
     crypto,
     logpaths,
+    placeholders,
     transcript,
     urlregex,
     vtehtml,
@@ -929,6 +930,34 @@ def open_in_browser(url):
             )
 
     GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
+
+def local_command(host, template):
+    """`template`, a command `host` runs on this computer, with the host's values filled
+    in, each quoted for the shell (#238)."""
+    return placeholders.fill(template, placeholders.host_values(host), quote=shlex.quote)
+
+
+def run_in_background(command, exited):
+    """Run `command` through sh, from the home directory, and call `exited` with its exit
+    status once it ends. Not waited for. A command that cannot be started is reported
+    here, and `exited` is not called.
+    """
+    try:
+        pid, *_pipes = GLib.spawn_async(
+            ["sh", "-c", command],
+            working_directory=str(Path.home()),
+            flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+        )
+    except GLib.Error as error:
+        msgbox("{} {}: {}".format(_("Could not run"), command, error.message))
+        return
+
+    def watch(pid, status):
+        GLib.spawn_close_pid(pid)
+        exited(os.waitstatus_to_exitcode(status))
+
+    GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, watch)
 
 
 def contrasting_foreground(rgba):
@@ -2692,18 +2721,8 @@ class Wmain(GladeComponent):
             term = page_terminal(tab.widget_)
             if term is None:
                 return True
-            if not hasattr(term, "command"):
-                # term.fork_command(SHELL)
-                vte_run(term, SHELL)
-            else:
-                # term.fork_command(term.command[0], term.command[1])
-                vte_run(term, term.command[0], term.command[1])
-                while Gtk.events_pending():
-                    Gtk.main_iteration()
-
-                # esperar 2 seg antes de enviar el pass para dar tiempo a que se levante expect y prevenir que se muestre el pass
-                if term.command[2] is not None and term.command[2] != "":
-                    GLib.timeout_add(2000, self.send_data, term, term.command[2])
+            # The host's command before connecting runs again first (#238).
+            self.run_before_command(term, lambda: self.start_session(term, commands=False))
             tab.mark_tab_as_active()
             return True
         elif item == "CC" or item == "CC2":  # CLONE CONSOLE
@@ -3106,6 +3125,15 @@ class Wmain(GladeComponent):
         `status` is the wait status VTE reports with the signal, which Close console
         needs to tell a clean exit from a failed one (#210).
         """
+        then = getattr(terminal, "before_then", None)
+        if then is not None:
+            # The host's command before connecting has ended (#238).
+            terminal.before_then = None
+            if status == 0 and tab.widget_.get_parent() is not None:
+                # After this emission rather than inside it: `then` spawns in this terminal.
+                GLib.idle_add(self.continue_after_before_command, terminal, tab, then)
+                return
+        self.session_ended(terminal)
         self.flush_terminal_log(terminal)
         tab.mark_tab_as_closed(status)
         # The end is its own trigger; the output just before it is not work finishing.
@@ -3352,6 +3380,7 @@ class Wmain(GladeComponent):
         """
 
         def ended(status):
+            self.session_ended(page)
             tab.mark_tab_as_closed(status)
             if conf.ENDED_MARK_TAB:
                 self.request_attention(page.keyboard)
@@ -3363,6 +3392,9 @@ class Wmain(GladeComponent):
             return False
 
         page = page_type(host, ended)
+        page.session_host = host
+        # Closing the tab, or the window, ends the session with no signal from the page.
+        page.connect("destroy", lambda _page: self.session_ended(page))
         tab = self.add_page(notebook, page, host.name)
         self.wMain.set_focus(page.keyboard)
         GLib.timeout_add(200, focus)
@@ -3382,7 +3414,9 @@ class Wmain(GladeComponent):
             kind = connections.for_host(host)
             page_type = TYPE_PAGES.get(kind.id)
             if page_type is not None:
-                self.open_type_page(notebook, host, page_type)
+                self.run_before_in_background(
+                    host, lambda: self.open_type_page(notebook, host, page_type)
+                )
                 return
 
             problem = connections.named(host.type).missing()
@@ -3391,7 +3425,7 @@ class Wmain(GladeComponent):
                 return
 
             if not kind.opens_tab:
-                open_in_browser(kind.url(host))
+                self.run_before_in_background(host, lambda: open_in_browser(kind.url(host)))
                 return
 
             # Only once it is known to be needed: VTE 0.76 reports GLib criticals as a
@@ -3450,38 +3484,139 @@ class Wmain(GladeComponent):
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
-            if not kind.remote:
-                vte_run(v, SHELL)
-            else:
+            if kind.remote:
+                # Before the command before connecting runs, so that Reconnect has it
+                # even when that command failed and nothing was spawned.
                 spawn = kind.command(host, connection_programs())
                 v.command = (spawn.program, spawn.argv, spawn.password)
-                # v.fork_command(cmd, args)
-                vte_run(v, spawn.program, spawn.argv)
-                while Gtk.events_pending():
-                    Gtk.main_iteration()
-
-                # esperar 2 seg antes de enviar el pass para dar tiempo a que se levante expect y prevenir que se muestre el pass
-                if spawn.password is not None and spawn.password != "":
-                    GLib.timeout_add(2000, self.send_data, v, spawn.password)
-
-            # esperar 3 seg antes de enviar comandos
-            if host_sends_commands(host):
-                basetime = 700 if len(host.host) == 0 else 3000
-                lines: list = []
-                for line in host.commands.splitlines():
-                    if line.startswith("##D=") and line[4:].isdigit():
-                        if len(lines):
-                            GLib.timeout_add(basetime, self.send_data, v, "\r".join(lines))
-                            lines = []
-                        basetime += int(line[4:])
-                    else:
-                        lines.append(line)
-                if len(lines):
-                    GLib.timeout_add(basetime, self.send_data, v, "\r".join(lines))
-            v.queue_draw()
+            self.run_before_command(v, lambda: self.start_session(v))
         except Exception:
             logger.exception("Error connecting to host")
             msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
+
+    def start_session(self, terminal, commands=True):
+        """Spawn the terminal's session: its command, or a local shell for a host without.
+
+        addTab starts it, and Reconnect again, once the host's command before connecting
+        has succeeded, when it has one (#238). Reconnect passes `commands` False: it has
+        never sent the commands after login a second time.
+        """
+        host = terminal.host
+        terminal.session_host = host
+        if not hasattr(terminal, "command"):
+            vte_run(terminal, SHELL)
+        else:
+            program, argv, password = terminal.command
+            vte_run(terminal, program, argv)
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+
+            # esperar 2 seg antes de enviar el pass para dar tiempo a que se levante expect y prevenir que se muestre el pass
+            if password is not None and password != "":
+                GLib.timeout_add(2000, self.send_data, terminal, password)
+
+        # esperar 3 seg antes de enviar comandos
+        if commands and host_sends_commands(host):
+            basetime = 700 if len(host.host) == 0 else 3000
+            lines: list = []
+            for line in host.commands.splitlines():
+                if line.startswith("##D=") and line[4:].isdigit():
+                    if len(lines):
+                        GLib.timeout_add(basetime, self.send_data, terminal, "\r".join(lines))
+                        lines = []
+                    basetime += int(line[4:])
+                else:
+                    lines.append(line)
+            if len(lines):
+                GLib.timeout_add(basetime, self.send_data, terminal, "\r".join(lines))
+        terminal.queue_draw()
+
+    def run_before_command(self, terminal, then):
+        """Run the host's command before connecting in `terminal`, then `then` (#238).
+
+        In the tab's own terminal, so that its output shows there and Ctrl+C reaches it.
+        on_terminal_child_exited calls `then` once it exits 0. Any other status ends the
+        tab with that status, and nothing connects. A host without one goes straight on.
+        """
+        command = terminal.host.before_command
+        if not command:
+            then()
+            return
+        terminal.before_then = then
+        vte_run(terminal, "sh", ["sh", "-c", local_command(terminal.host, command)])
+
+    def continue_after_before_command(self, terminal, tab, then):
+        # Unless the tab was closed in the meantime.
+        if tab.widget_.get_parent() is not None:
+            try:
+                then()
+            except Exception:
+                logger.exception("Error connecting to host")
+                msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
+        return False
+
+    def run_before_in_background(self, host, then):
+        """For a host whose tab is not a terminal, or which opens none: its command before
+        connecting runs out of sight, and `then` opens it once that exits 0 (#238)."""
+        if not host.before_command:
+            then()
+            return
+
+        def exited(code):
+            if code != 0:
+                msgbox(
+                    "{} {} {} {}".format(
+                        _("The command before connecting to"),
+                        host.name,
+                        _("exited with status"),
+                        code,
+                    )
+                )
+                return
+            try:
+                then()
+            except Exception:
+                logger.exception("Error connecting to host")
+                msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
+
+        run_in_background(local_command(host, host.before_command), exited)
+
+    def session_ended(self, owner):
+        """Run the host's command after disconnecting, once, for a session that started.
+
+        `owner` is the terminal or the page that held it (#238). Not waited for.
+        """
+        host = getattr(owner, "session_host", None)
+        if host is None:
+            return
+        owner.session_host = None
+        if not host.after_command:
+            return
+
+        def exited(code):
+            if code != 0:
+                msgbox(
+                    "{} {} {} {}".format(
+                        _("The command after disconnecting from"),
+                        host.name,
+                        _("exited with status"),
+                        code,
+                    )
+                )
+
+        run_in_background(local_command(host, host.after_command), exited)
+
+    def end_sessions(self):
+        """Run the command after disconnecting for each session still open (#238).
+
+        Measured, quitting by Ctrl+Q ends GCM with no session's end reported, while
+        closing the window reports each, with status 9. session_ended runs a host's
+        command once, whichever comes first.
+        """
+        for notebook in self.collect_notebooks(self.hpMain):
+            for index in range(notebook.get_n_pages()):
+                page = notebook.get_nth_page(index)
+                self.session_ended(page_terminal(page) or page)
 
     def send_data(self, terminal, data):
         vte_feed(terminal, f"{data}\r")
@@ -4801,6 +4936,7 @@ class Wmain(GladeComponent):
     def request_quit(self):
         (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
         self.writeConfig()
+        self.end_sessions()
         self.quit_application()
 
     def quit_application(self):
@@ -5606,6 +5742,8 @@ class Whost(GladeComponent):
         self.cmbDelete.set_active(host.delete_key)
         self.update_texttags()
         self.txtTerm.set_text(host.term)
+        self.txtBeforeCommand.set_text(host.before_command)
+        self.txtAfterCommand.set_text(host.after_command)
         self.fill_type_pages(host)
 
     def update_texttags(self, *args):
@@ -5714,6 +5852,8 @@ class Whost(GladeComponent):
         # The chosen type's only. Another type's page is hidden, and whatever it held is
         # not saved with this host, as Port forwarding is not for a type without it.
         host.type_settings = kind.stored_settings(self.type_page_values(kind))
+        host.before_command = self.txtBeforeCommand.get_text().strip()
+        host.after_command = self.txtAfterCommand.get_text().strip() if kind.opens_tab else ""
         if not self.isNew and group == self.oldGroup:
             # Only while it stays in the same folder: a position means nothing elsewhere.
             host.position = self.oldPosition
@@ -5830,6 +5970,10 @@ class Whost(GladeComponent):
 
         self.chkCommands.set_sensitive(kind.sends_commands)
         self.txtCommands.set_sensitive(kind.sends_commands and self.chkCommands.get_active())
+        # A host that opens no tab has no session to end, so nothing runs after one.
+        self.txtAfterCommand.set_sensitive(kind.opens_tab)
+        if not kind.opens_tab:
+            self.txtAfterCommand.set_text("")
         self.show_type_page(kind)
 
     # -- Whost.on_cmbType_changed }

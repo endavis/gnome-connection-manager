@@ -127,6 +127,42 @@ Automatic commands on connect are kept separately from the checkbox that runs th
 unticking **Send commands after login** stops them running without discarding what you
 typed.
 
+## Commands on this computer
+
+A host can run a command on your computer before connecting, and another after
+disconnecting. Both are on the host dialog's **Commands** tab, as **Run on this computer
+before connecting** and **Run on this computer after disconnecting**. They are for what a
+host needs on this side: a VPN brought up and taken down, a port knocked, a tunnel
+opened, a key added to the agent.
+
+- **Before connecting**, the command runs in the host's tab, so its output shows there.
+  Connecting waits for it, and goes ahead only when it exits with status 0. With any
+  other status the tab ends with that status and nothing connects, and **Close console**
+  treats it as a session that failed. `Ctrl+C` in the tab stops it. **Reconnect** and
+  **Clone** run it again.
+- **After disconnecting**, the command runs once the session ends, however it ends: its
+  program exits, you close the tab, or you quit GCM. GCM does not wait for it, and says
+  so when it fails. It does not run when nothing connected.
+- A **VNC** host runs its command before connecting out of sight, and opens its tab once
+  the command succeeds. A **web** host opens its page then. A web host has no session to
+  end, so its dialog greys the second field.
+
+Both run through `sh -c`, from your home directory. In either, these are replaced by the
+host's own values, each quoted for the shell:
+
+| Placeholder | Value |
+|---|---|
+| `{name}` | the host's name |
+| `{address}` | its address |
+| `{port}` | its port |
+| `{user}` | its user |
+| `{group}` | the folder it is in, as a path |
+| `{type}` | its connection type |
+
+Leave the quotes out yourself: `ping -c 1 {address}`, not `ping -c 1 "{address}"`, which
+would pass the quotes along too. Anything else in braces is left as it is, so
+`awk '{print $1}'` works.
+
 ## Remote desktop hosts
 
 A host of type **rdp** opens a remote desktop through FreeRDP, in a window of FreeRDP's

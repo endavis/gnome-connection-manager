@@ -65,6 +65,10 @@ class Host:
         # The settings of a connection type's own, by the option name each is saved
         # under, as text (#228). Not an argument: the dialog, a read and a clone set it.
         self.type_settings: dict[str, str] = {}
+        # Commands run on this computer before connecting and after disconnecting (#238),
+        # empty for none. Not arguments either, for the same reason.
+        self.before_command = ""
+        self.after_command = ""
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -157,6 +161,8 @@ class Host:
             self.folder,
         )
         copy.type_settings = dict(self.type_settings)
+        copy.before_command = self.before_command
+        copy.after_command = self.after_command
         return copy
 
 
@@ -251,6 +257,8 @@ class HostUtils:
         h.type_settings = {
             option: value for option, value in cp.items(section) if is_type_setting(option)
         }
+        h.before_command = HostUtils.get_val(cp, section, "before-command", "")
+        h.after_command = HostUtils.get_val(cp, section, "after-command", "")
         return h
 
     @staticmethod
@@ -286,6 +294,11 @@ class HostUtils:
             cp.set(section, "position", str(host.position))
         for option, value in host.type_settings.items():
             cp.set(section, option, value)
+        # Only when set, as a position is: a host without them carries no empty options.
+        if host.before_command:
+            cp.set(section, "before-command", host.before_command)
+        if host.after_command:
+            cp.set(section, "after-command", host.after_command)
 
     @staticmethod
     def ensure_unique_ids(hosts):

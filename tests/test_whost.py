@@ -114,6 +114,8 @@ def make_whost(
     whost.cmbBackspace = types.SimpleNamespace(get_active=lambda: 1)
     whost.cmbDelete = types.SimpleNamespace(get_active=lambda: 2)
     whost.txtTerm = TextEntry("xterm-256color")
+    whost.txtBeforeCommand = TextEntry("")
+    whost.txtAfterCommand = TextEntry("")
     whost.btnFColor = ColorButtonStub(types.SimpleNamespace(red=1, green=1, blue=1))
     whost.btnBColor = ColorButtonStub(types.SimpleNamespace(red=0, green=0, blue=0))
     whost.isNew = True
@@ -279,6 +281,7 @@ def test_only_ssh_hosts_get_a_port_forwarding_tab(app_module):
             "txtExtraParams",
             "chkCommands",
             "txtCommands",
+            "txtAfterCommand",
         )
     }
     for name, widget in controls.items():
@@ -346,6 +349,7 @@ def test_a_type_greys_and_clears_the_connection_fields_it_does_not_use(
         "btnBrowse",
         "chkCommands",
         "txtCommands",
+        "txtAfterCommand",
     )
     fields = {name: Field() for name in names}
     for name, field in fields.items():
@@ -362,6 +366,39 @@ def test_a_type_greys_and_clears_the_connection_fields_it_does_not_use(
     assert fields["txtPort"].text == {"local": "23", "web": "443"}.get(
         ctype, fields["txtPort"].text
     )
+
+
+@pytest.mark.parametrize("ctype", ["local", "ssh", "telnet", "rdp", "vnc", "web"])
+def test_the_command_after_disconnecting_needs_a_session_to_end(app_module, ctype):
+    """A web host opens no tab, so it has no session to end (#238). The command before
+    connecting applies to every type: the handler leaves it alone."""
+    dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}
+    names = (
+        *CONNECTION_FIELDS,
+        "txtKeepAlive",
+        "chkKeepAlive",
+        "chkX11",
+        "chkAgent",
+        "chkCompression",
+        "txtCompressionLevel",
+        "txtPrivateKey",
+        "btnBrowse",
+        "chkCommands",
+        "txtCommands",
+        "txtAfterCommand",
+    )
+    fields = {name: Field() for name in names}
+    for name, field in fields.items():
+        setattr(dialog, name, field)
+    grid = types.SimpleNamespace(show=lambda: None, hide=lambda: None)
+    dialog.get_widget = lambda name: grid if name == "tunnelGrid" else fields[name]
+
+    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
+
+    after = fields["txtAfterCommand"]
+    assert after.sensitive is (ctype != "web")
+    assert after.text == ("" if ctype == "web" else "kept")
 
 
 def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module):
@@ -414,6 +451,7 @@ def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module)
             "txtExtraParams",
             "chkCommands",
             "txtCommands",
+            "txtAfterCommand",
         )
     }
     for name, widget in controls.items():
@@ -444,6 +482,8 @@ def make_loadable_whost(app_module, monkeypatch):
         "txtCompressionLevel",
         "txtExtraParams",
         "txtTerm",
+        "txtBeforeCommand",
+        "txtAfterCommand",
     ):
         setattr(dialog, name, TextEntry())
     dialog.cmbGroup = types.SimpleNamespace(get_children=lambda: [TextEntry()])
@@ -699,3 +739,59 @@ def test_the_group_list_offers_every_folder_including_empty_ones(monkeypatch, ap
     app_module.Whost.list_folders_in(combo)
 
     assert offered == ["archive", "ops", "ops/prod"]
+
+
+# -- commands run on this computer (#238) ------------------------------------
+
+
+def test_init_loads_the_local_commands(monkeypatch, app_module):
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    host = make_stored_host(app_module, commands="", enabled=False)
+    host.before_command = "nmcli con up office"
+    host.after_command = "nmcli con down office"
+
+    dialog.init("ops", host)
+
+    assert dialog.txtBeforeCommand.get_text() == "nmcli con up office"
+    assert dialog.txtAfterCommand.get_text() == "nmcli con down office"
+
+
+def saved_host(app_module, monkeypatch, whost):
+    """The host OK files, from the groups it files it in."""
+    groups: dict = {}
+    monkeypatch.setattr(app_module, "groups", groups, raising=False)
+    monkeypatch.setattr(
+        app_module,
+        "wMain",
+        types.SimpleNamespace(updateTree=lambda: None, writeConfig=lambda: None),
+        raising=False,
+    )
+    whost.on_okbutton1_clicked(None)
+    [host] = groups["ops"]
+    return host
+
+
+def test_ok_saves_the_local_commands(monkeypatch, app_module):
+    whost, _destroy = make_whost(app_module)
+    whost.txtBeforeCommand.set_text("  nmcli con up office ")
+    whost.txtAfterCommand.set_text(" nmcli con down office  ")
+
+    host = saved_host(app_module, monkeypatch, whost)
+
+    assert host.before_command == "nmcli con up office"
+    assert host.after_command == "nmcli con down office"
+
+
+def test_ok_saves_no_command_after_for_a_host_without_a_tab(monkeypatch, app_module):
+    """Even one written into gcm.conf by hand, which init shows in the greyed field."""
+    whost, _destroy = make_whost(app_module)
+    whost.cmbType = ComboStub("web")
+    whost.txtUser = TextEntry("")
+    whost.txtPass = TextEntry("")
+    whost.txtBeforeCommand.set_text("nmcli con up office")
+    whost.txtAfterCommand.set_text("nmcli con down office")
+
+    host = saved_host(app_module, monkeypatch, whost)
+
+    assert host.before_command == "nmcli con up office"
+    assert host.after_command == ""
