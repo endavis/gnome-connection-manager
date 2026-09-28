@@ -21,6 +21,8 @@ Requires Python 3.12+ and GTK 3.
   gtk-vnc is not installed
 - Web consoles, such as a server's management console or a switch's admin page, opened in
   your browser
+- Any command line as a host, such as `mosh`, `kubectl exec` or `ipmitool … sol
+  activate`, run in a tab with the host's values filled in
 - Passwords stored encrypted, plus private keys, SSH agent forwarding, X11 forwarding,
   compression and a keep-alive interval
 - Port forwarding per host: local forwards and dynamic (SOCKS) forwards, several at a time

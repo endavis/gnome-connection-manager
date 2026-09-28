@@ -1,4 +1,5 @@
-"""Connection types: what makes an SSH, Telnet, RDP, VNC or local host different (#228).
+"""Connection types: what makes an SSH, Telnet, RDP, VNC, local or command host different
+(#228).
 
 Each type is a class, and `CONNECTION_TYPES` lists them in the order the host dialog
 offers them. Code that used to compare `host.type` with a name asks the type instead:
@@ -14,7 +15,8 @@ terminal tab.
 
 A type may have settings of its own, each a `Setting`. The host dialog draws them on a
 page of the type's own, and a host keeps them in `Host.type_settings`, which clone and
-export and import carry already, so a new type adds no attribute to `Host`.
+export and import carry already, so a new type adds no attribute to `Host`. A command
+host's command line was the first (#248).
 
 Pure: what a command needs from outside comes in as `Programs`, as the log root does for
 logpaths, so every command is built and tested without a display. `ssh.expect` still
@@ -30,6 +32,8 @@ import shlex
 import shutil
 from dataclasses import dataclass
 from typing import cast
+
+from gnome_connection_manager.utils import placeholders
 
 # FreeRDP's X11 client, newest first. Ubuntu 24.04 installs FreeRDP 3's as xfreerdp3
 # (freerdp3-x11) and FreeRDP 2's as xfreerdp (freerdp2-x11), side by side (#225).
@@ -57,13 +61,15 @@ class Programs:
 
 @dataclass(frozen=True)
 class Command:
-    """What addTab spawns: the argv, program first, and a password for ssh.expect to type.
+    """What addTab spawns: the argv, program first, a password for ssh.expect to type, and
+    variables the program is given in its environment besides those it inherits.
 
     GCM types the password 2 s after the spawn, when it is neither empty nor None.
     """
 
     argv: list
     password: str | None
+    environment: dict[str, str] | None = None
 
     @property
     def program(self) -> str:
@@ -106,6 +112,10 @@ class ConnectionType:
     id = ""
     default_port = "23"
     remote = True  # False for a local shell, which has no address, user, password or port
+    # True for a type whose command runs whether or not the host has an address, as a
+    # command host's does. A host of any other type without one opens a local shell: the
+    # Local button's host is of type ssh.
+    runs_without_address = False
     credentials = True  # whether a remote host's user and password are used
     arguments = True  # whether a remote host's extra arguments are, by the program it runs
     ssh_options = False  # keep-alive, X11, agent, compression, key and port forwarding
@@ -114,9 +124,15 @@ class ConnectionType:
     # browser, from its url() rather than a command.
     opens_tab = True
     # Settings of the type's own, drawn on a page of the host dialog, whose tab is
-    # settings_title, marked with N_. None of the types here has any yet.
+    # settings_title, with settings_hint as a line of help under them, both marked with N_.
     settings: tuple[Setting, ...] = ()
     settings_title = ""
+    settings_hint = ""
+
+    def invalid(self, values: dict) -> str | None:
+        """Why a host of this type cannot be saved with `values`, its settings by key,
+        marked with N_, or None. The host dialog asks on OK."""
+        return None
 
     def missing(self) -> str | None:
         """Why a host of this type cannot be opened here, marked with N_, or None.
@@ -346,6 +362,45 @@ class Vnc(ConnectionType):
         return Command(args, "")
 
 
+class CustomCommand(ConnectionType):
+    """A command line of the host's own, such as `mosh`, `kubectl exec` or `ipmitool …
+    sol activate`, run through sh in a terminal tab (#248).
+
+    It names the host's values as a command it runs on this computer does (#238), each
+    quoted for the shell, and `{password}` too, which the command gets in its environment
+    and never on a command line. Nothing is typed at a prompt: its prompts are unknown,
+    and a password typed blind is how one reaches the wrong place.
+    """
+
+    id = "command"
+    default_port = "22"
+    runs_without_address = True
+    # The line is the whole command, and there is nothing to add arguments to.
+    arguments = False
+    settings = (Setting("line", N_("Command"), ""),)
+    settings_title = N_("Command line")
+    settings_hint = N_(
+        "{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+    )
+
+    def invalid(self, values: dict) -> str | None:
+        if not str(values["line"]).strip():
+            return N_("A command host needs a command, on its Command line tab.")
+        return None
+
+    def command(self, host, programs: Programs) -> Command:
+        line, names_password = placeholders.fill_command(
+            str(self.settings_of(host)["line"]),
+            placeholders.host_values(host),
+            quote=shlex.quote,
+        )
+        # Only to a command that asks for it, and empty for a host that stores none.
+        environment = None
+        if names_password:
+            environment = {placeholders.PASSWORD_VARIABLE: host.password or ""}
+        return Command(["sh", "-c", line], "", environment)
+
+
 def _is_ipv6(name: str) -> bool:
     try:
         return ipaddress.ip_address(name).version == 6
@@ -354,7 +409,8 @@ def _is_ipv6(name: str) -> bool:
 
 
 SSH, TELNET, RDP, LOCAL, WEB, VNC = Ssh(), Telnet(), Rdp(), Local(), Web(), Vnc()
-CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL, WEB, VNC)
+COMMAND = CustomCommand()
+CONNECTION_TYPES = (SSH, TELNET, RDP, LOCAL, WEB, VNC, COMMAND)
 
 
 def named(name: str | None) -> ConnectionType:
@@ -368,13 +424,13 @@ def named(name: str | None) -> ConnectionType:
 def for_host(host) -> ConnectionType:
     """What addTab opens `host` as.
 
-    With no address, a local shell, whatever its type: the Local button's host is of type
-    ssh. A local host given an address, which the dialog never saves, is Telnet, as
-    addTab has always opened one.
+    With no address, a local shell, unless its type runs without one: the Local button's
+    host is of type ssh. A local host given an address, which the dialog never saves, is
+    Telnet, as addTab has always opened one.
     """
-    if host.host == "" or host.host is None:
-        return LOCAL
     kind = named(host.type)
+    if (host.host == "" or host.host is None) and not kind.runs_without_address:
+        return LOCAL
     return kind if kind.remote else TELNET
 
 

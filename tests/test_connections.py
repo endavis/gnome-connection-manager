@@ -30,7 +30,7 @@ PROGRAMS = connections.Programs(
     expect="/gcm/ssh.expect", username="localme", ssh="ssh", telnet="telnet"
 )
 SSH, TELNET, RDP, LOCAL = connections.SSH, connections.TELNET, connections.RDP, connections.LOCAL
-WEB, VNC = connections.WEB, connections.VNC
+WEB, VNC, COMMAND = connections.WEB, connections.VNC, connections.COMMAND
 
 
 def host(ctype="ssh", address="example.test", user="me", password="", **fields):
@@ -63,6 +63,7 @@ def test_the_types_in_the_order_the_dialog_offers_them():
         "local",
         "web",
         "vnc",
+        "command",
     ]
 
 
@@ -75,6 +76,7 @@ def test_the_types_in_the_order_the_dialog_offers_them():
         ("local", LOCAL),
         ("web", WEB),
         ("vnc", VNC),
+        ("command", COMMAND),
         ("spice", TELNET),
         ("", TELNET),
         (None, TELNET),
@@ -97,6 +99,10 @@ def test_a_type_is_found_by_name_and_one_gcm_does_not_know_is_telnet(name, expec
         ("web", "example.test", WEB),
         ("web", "", LOCAL),
         ("vnc", "example.test", VNC),
+        # A command host runs its command, and needs no address to (#248).
+        ("command", "example.test", COMMAND),
+        ("command", "", COMMAND),
+        ("command", None, COMMAND),
         ("spice", "example.test", TELNET),
         # The dialog never saves a local host with an address; addTab ran telnet for one.
         ("local", "example.test", TELNET),
@@ -107,13 +113,15 @@ def test_what_a_host_opens_as(ctype, address, expected):
 
 
 def test_what_the_host_dialog_asks_of_each_type():
-    """Port; whether the connection fields apply, and of them the user and password, and
-    the extra arguments; whether SSH's controls and Port forwarding do; whether commands
-    follow a login; and whether the host opens a tab."""
+    """Port; whether the connection fields apply, and without an address whether the
+    host still runs its command; of them the user and password, and the extra arguments;
+    whether SSH's controls and Port forwarding do; whether commands follow a login; and
+    whether the host opens a tab."""
     asked = {
         kind.id: (
             kind.default_port,
             kind.remote,
+            kind.runs_without_address,
             kind.credentials,
             kind.arguments,
             kind.ssh_options,
@@ -124,14 +132,16 @@ def test_what_the_host_dialog_asks_of_each_type():
     }
 
     assert asked == {
-        "ssh": ("22", True, True, True, True, True, True),
-        "telnet": ("23", True, True, True, False, True, True),
-        "rdp": ("3389", True, True, True, False, False, True),
+        "ssh": ("22", True, False, True, True, True, True, True),
+        "telnet": ("23", True, False, True, True, False, True, True),
+        "rdp": ("3389", True, False, True, True, False, False, True),
         # 23, not empty: the dialog refuses to save a host without a valid port.
-        "local": ("23", False, True, True, False, True, True),
-        "web": ("443", True, False, False, False, False, False),
+        "local": ("23", False, False, True, True, False, True, True),
+        "web": ("443", True, False, False, False, False, False, False),
         # The user and password answer gtk-vnc, and the extra arguments go to a viewer.
-        "vnc": ("5900", True, True, True, False, False, True),
+        "vnc": ("5900", True, False, True, True, False, False, True),
+        # Its line is the whole command, and names what it wants of the rest (#248).
+        "command": ("22", True, True, True, False, False, True, True),
     }
 
 
@@ -148,6 +158,7 @@ def test_what_a_type_needs_that_gcm_cannot_find(monkeypatch):
         "web": "xdg-open was not found. Install xdg-utils to open web hosts.",
         "vnc": "Neither gtk-vnc's GObject bindings nor a VNC viewer was found."
         " Install either to open VNC hosts.",
+        "command": None,
     }
 
 
@@ -550,18 +561,23 @@ if scenario == "the-dialog-lists-the-registry":
     dialog = app.Whost()
     dialog.init("")
     listed = [row[0] for row in dialog.cmbType.get_model()]
-    assert listed == ["ssh", "telnet", "rdp", "local", "web", "vnc"], listed
+    assert listed == ["ssh", "telnet", "rdp", "local", "web", "vnc", "command"], listed
     assert dialog.cmbType.get_active_text() == "ssh"
     ports = {}
     for kind in listed:
         assert dialog.cmbType.set_active_id(kind), kind
         ports[kind] = dialog.txtPort.get_text()
-    expected = {"ssh": "22", "telnet": "23", "rdp": "3389", "local": "23", "web": "443", "vnc": "5900"}
+    expected = {
+        "ssh": "22", "telnet": "23", "rdp": "3389", "local": "23", "web": "443", "vnc": "5900",
+        "command": "22",
+    }
     assert ports == expected, ports
     dialog.get_widget("wHost").destroy()
 elif scenario == "addtab-opens-each-host-as-its-type-says":
     ran, typed = [], []
-    app.vte_run = lambda terminal, command, arg=None: ran.append((command, arg))
+    app.vte_run = lambda terminal, command, arg=None, environment=None: ran.append(
+        (command, arg, environment)
+    )
     w.send_data = lambda terminal, data: typed.append(data)
     app.TYPE_PAGES = {}  # as without gtk-vnc, wherever this runs
     found = {
@@ -573,28 +589,30 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     browsed = []
     app.open_in_browser = browsed.append
 
-    def open_host(ctype, address, user="me", password=""):
+    def open_host(ctype, address, user="me", password="", settings=None):
         record = app.Host("Work", ctype, "", address, user, password)
         record.type, record.port, record.keep_alive = ctype, "2222", "0"
+        record.type_settings = settings or {}
         before = len(ran)
         w.addTab(w.nbConsole, record)
         terminal = app.page_terminal(w.nbConsole.get_nth_page(w.nbConsole.get_n_pages() - 1))
         return ran[before:], getattr(terminal, "command", None)
 
     shown, command = open_host("ssh", "")  # the Local button's host is of type ssh
-    assert shown == [(app.SHELL, None)] and command is None, (shown, command)
+    assert shown == [(app.SHELL, None, None)] and command is None, (shown, command)
 
     shown, command = open_host("ssh", "example.test", password="pw")
     argv = [app.SSH_COMMAND, "ssh", "-l", "me", "-p", "2222", "example.test"]
-    assert shown == [(app.SSH_COMMAND, argv)] and command == (app.SSH_COMMAND, argv, "pw"), shown
+    assert shown == [(app.SSH_COMMAND, argv, None)], shown
+    assert command == (app.SSH_COMMAND, argv, "pw", None), command
 
     shown, command = open_host("telnet", "example.test")
     argv = ["telnet", "example.test", "2222"]
-    assert shown == [("telnet", argv)] and command == ("telnet", argv, ""), shown
+    assert shown == [("telnet", argv, None)] and command == ("telnet", argv, "", None), shown
 
     shown, command = open_host("rdp", "example.test")
     argv = ["xfreerdp3", "/v:example.test", "/port:2222", "/u:me"]
-    assert shown == [("xfreerdp3", argv)] and command == ("xfreerdp3", argv, ""), shown
+    assert shown == [("xfreerdp3", argv, None)] and command == ("xfreerdp3", argv, "", None), shown
 
     # A web host opens in the browser, and no tab: nothing is spawned or added.
     tabs = w.nbConsole.get_n_pages()
@@ -607,13 +625,27 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     # Without gtk-vnc, a VNC host runs a viewer in a terminal, which asks for the password.
     shown, command = open_host("vnc", "example.test", password="pw")
     argv = ["xtigervncviewer", "example.test::2222"]
-    assert shown == [("xtigervncviewer", argv)] and command == ("xtigervncviewer", argv, ""), shown
+    assert shown == [("xtigervncviewer", argv, None)], shown
+    assert command == ("xtigervncviewer", argv, "", None), command
+
+    # A command host runs its line through sh, with the host's values quoted, and gets
+    # its password in its environment, only when the line names it (#248).
+    line = "IPMI_PASSWORD={password} ipmitool -H {address} -U {user} -E sol activate"
+    shown, command = open_host("command", "bmc.test", password="pw", settings={"command.line": line})
+    argv = ["sh", "-c", 'IPMI_PASSWORD="$GCM_PASSWORD" ipmitool -H bmc.test -U me -E sol activate']
+    assert shown == [("sh", argv, {"GCM_PASSWORD": "pw"})], shown
+    assert command == ("sh", argv, "", {"GCM_PASSWORD": "pw"}), command
+    # And needs no address to run it.
+    line = "kubectl exec -it {name} -- sh"
+    shown, command = open_host("command", "", password="pw", settings={"command.line": line})
+    argv = ["sh", "-c", "kubectl exec -it command -- sh"]
+    assert shown == [("sh", argv, None)] and command == ("sh", argv, "", None), shown
 
     pump(2.5)  # the stored password is typed 2 s after its spawn, and only ssh's
     assert typed == ["pw"], typed
 elif scenario == "a-types-page-opens-in-a-tab":
     ran = []
-    app.vte_run = lambda terminal, command, arg=None: ran.append((command, arg))
+    app.vte_run = lambda terminal, command, arg=None, environment=None: ran.append((command, arg))
     shutil.which = lambda name, *args, **kwargs: None  # no viewer: the page needs none
     shown = []
     app.msgbox = shown.append
@@ -738,11 +770,12 @@ elif scenario == "xdg-open-reaches-the-browser":
         "mail mailto:ops@example.test",
     ], open(opened).read()
     assert shown == [], shown
-elif scenario == "no-shipped-type-adds-a-page":
+elif scenario == "only-the-command-type-adds-a-page":
     dialog = app.Whost()
     dialog.init("")
     notebook = dialog.get_widget("nbHost")
-    assert dialog.type_pages == {} and notebook.get_n_pages() == 4, notebook.get_n_pages()
+    assert list(dialog.type_pages) == ["command"], dialog.type_pages
+    assert notebook.get_n_pages() == 5, notebook.get_n_pages()
     dialog.get_widget("wHost").destroy()
 elif scenario == "a-types-page-in-the-host-dialog":
     from gnome_connection_manager.utils import connections
@@ -774,7 +807,10 @@ elif scenario == "a-types-page-in-the-host-dialog":
     page, controls = dialog.type_pages["example"]
     tunnels, example_tab = dialog.get_widget("tunnelGrid"), notebook.get_tab_label(page)
     assert example_tab.get_text() == "EXAMPLE"
-    assert notebook.page_num(page) == notebook.page_num(tunnels) + 1
+    # After Port forwarding, and after the pages of the types listed before it.
+    command_page = dialog.type_pages["command"][0]
+    assert notebook.page_num(command_page) == notebook.page_num(tunnels) + 1
+    assert notebook.page_num(page) == notebook.page_num(command_page) + 1
 
     ssh_tabs = shown(dialog)  # a new host is ssh
     assert notebook.get_tab_label(tunnels) in ssh_tabs and example_tab not in ssh_tabs
@@ -791,7 +827,8 @@ elif scenario == "a-types-page-in-the-host-dialog":
     # At their defaults, which a new host starts with.
     assert controls["quality"].get_text() == "high" and not controls["view-only"].get_active()
     assert controls["shared"].get_active()
-    labels = {child.get_text() for child in page.get_children() if isinstance(child, Gtk.Label)}
+    [grid] = page.get_children()  # and no line of help, which Example has none of
+    labels = {child.get_text() for child in grid.get_children() if isinstance(child, Gtk.Label)}
     assert labels == {"VIEW ONLY", "QUALITY", "SHARED"}, labels
 
     # What was typed survives choosing another type and coming back.
@@ -853,7 +890,7 @@ print("OK")
         "a-types-page-opens-in-a-tab",
         "open-in-browser",
         "xdg-open-reaches-the-browser",
-        "no-shipped-type-adds-a-page",
+        "only-the-command-type-adds-a-page",
         "a-types-page-in-the-host-dialog",
     ],
 )

@@ -117,7 +117,8 @@ by hand from two exports still imports cleanly.
 A host's dialog shows a different number of tabs depending on its connection type, and
 this is deliberate. **Port forwarding** is shown for SSH only: tunnelling is an SSH
 feature, so a Telnet, RDP, Local, web or VNC host has three tabs where an SSH host has four.
-A new host shows the tab until you choose a type.
+A new host shows the tab until you choose a type. A command host has four as well, with
+its **Command line** tab where Port forwarding would be.
 
 It is the only control that is hidden rather than disabled. The other SSH-only fields on
 the Properties tab — keep-alive, X11 forwarding, agent forwarding, compression, private
@@ -264,6 +265,48 @@ clears and greys them, with the extra arguments and the commands after login.
 GCM opens the page with `xdg-open`, from the `xdg-utils` package, which hands it to the
 browser your desktop names. Without `xdg-open`, GCM says so and opens nothing, and it
 shows an error when `xdg-open` reports one.
+
+## Command hosts
+
+A host of type **command** runs a command line of its own in a tab, for a connection GCM
+has no type for: `mosh`, `kubectl exec`, `ipmitool … sol activate`, or a cloud provider's
+CLI. Write the command on the host dialog's **Command line** tab, which is shown while
+the type is chosen. A command host cannot be saved without one.
+
+The line can name the host's values, as the commands on this computer can: `{name}`,
+`{address}`, `{port}`, `{user}`, `{group}` and `{type}`. Each is quoted for the shell, so
+write them bare, not inside quotes of your own. Anything else in braces is left as
+written.
+
+`{password}` is the host's stored password, and it never goes into a command line, which
+any user of the computer can read. GCM writes `"$GCM_PASSWORD"` in its place and gives
+the command the password in its environment, as `GCM_PASSWORD`, which only you and root
+can read. Only a command whose line names `{password}` gets it. Hand it to a tool through
+the environment where the tool allows that, as `ipmitool -E` does below: a tool that
+takes a password as an argument shows it in its own command line.
+
+| Connection | Command line |
+|---|---|
+| mosh | `mosh {user}@{address}` |
+| A pod's shell | `kubectl exec -it {name} -- bash` |
+| IPMI serial over LAN | `IPMI_PASSWORD={password} ipmitool -I lanplus -H {address} -U {user} -E sol activate` |
+| AWS Session Manager | `aws ssm start-session --target {address}` |
+
+The address, user, password and port are the line's to use, and a command host needs
+none of them: without an address it still runs its command, where a host of another type
+opens a local shell. Its extra arguments are cleared and greyed, since the line is the
+whole command.
+
+The command runs through `sh`, from your home folder, with the environment GCM was
+started with, so aliases and functions from your own shell's startup files are not
+there. The session ends when the command exits, and **Close console** decides what
+becomes of the tab. **Reconnect** runs the command again, but GCM never reconnects a
+command host by itself, whatever Preferences says about a dropped session: it cannot tell
+a lost connection from a command that ended. Commands after login are typed into the tab,
+as into any other.
+
+An older GCM opens a command host as Telnet, as it does any type it does not know, or as
+a local shell when it has no address. It keeps the command line when it saves.
 
 ## See also
 
