@@ -38,6 +38,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   an imported export brings ids minted elsewhere. `Host` mints one for any record read
   without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
   repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
+  A host's commands are written as `commands`, each new line as `\n`, which is what an
+  older GCM reads, and which reads a backslash and an n back as a new line. Where that
+  would change them they are written exactly as well, under `commands-json`, and
+  `read_commands` takes that only while `commands` still says the same, so a hand edit
+  wins (#243). The name has no dot, since an option with one is a type's setting.
+  Measured with the save GCM had before #243, an older GCM drops it and rewrites
+  `commands` unchanged. A carriage return goes into `commands` as a new line: gcm.conf is
+  read with universal newlines, and one written as it is ended its line, which left the
+  file unreadable or set another option, measured. Sending ends a line there anyway,
+  since `addTab` splits the commands with `splitlines`.
 - `src/gnome_connection_manager/utils/placeholders.py` – a host's values filled into a
   command written for it, `{name}` and the rest (#238). Pure: the caller supplies the
   quoting, `shlex.quote` for a host's commands on this computer, which run through

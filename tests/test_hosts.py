@@ -11,7 +11,7 @@ import io
 
 import pytest
 
-from gnome_connection_manager.utils import crypto, hosts
+from gnome_connection_manager.utils import configfile, crypto, hosts
 
 
 def reread(cp):
@@ -538,3 +538,112 @@ def test_the_local_commands_are_not_a_types_settings():
     loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
 
     assert loaded.type_settings == {}
+
+
+# -- a host's commands come back as they were written (#243) ------------------
+
+# A backslash and an n, which `commands` reads back as a new line.
+EXACT = "printf 'a\\nb\\n'\nsudo -i"
+
+
+def saved(commands):
+    host = make_sample_host()
+    host.commands = commands
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    return reread(config)
+
+
+def load(config):
+    return hosts.HostUtils.load_host_from_ini(config, "host 1", pwd="secret")
+
+
+@pytest.mark.parametrize(
+    "commands",
+    [
+        EXACT,
+        # configparser strips a value's ends. The host dialog strips the text too, so
+        # this is for text that reached the host another way.
+        "\tuptime ",
+    ],
+)
+def test_commands_come_back_from_the_file_as_they_were_written(commands):
+    assert load(saved(commands)).commands == commands
+
+
+@pytest.mark.parametrize(
+    ("commands", "stored"),
+    [
+        (EXACT, "printf 'a\\nb\\n'\\nsudo -i"),
+        # A carriage return ends a line when commands are sent, as a new line does, and
+        # one before a new line ends the same line. An older GCM sends what a newer one does.
+        ("uptime\rwho", "uptime\\nwho"),
+        ("uptime\r\nwho", "uptime\\nwho"),
+    ],
+)
+def test_an_older_gcm_still_finds_its_commands_where_it_always_has(commands, stored):
+    """`commands` keeps the form an older GCM reads, the only one it knows."""
+    assert saved(commands).get("host 1", "commands") == stored
+
+
+def test_the_exact_form_is_not_taken_for_a_setting_of_the_hosts_type():
+    """An option with a dot in its name would be one (#228), and carried as that by an
+    older GCM, after it had rewritten `commands`."""
+    assert load(saved(EXACT)).type_settings == {}
+
+
+def test_commands_the_old_form_keeps_are_written_only_there():
+    """Most commands, which gain nothing from being written twice."""
+    config = saved("echo start\nrun-checks")
+
+    assert not config.has_option("host 1", "commands-json")
+    assert load(config).commands == "echo start\nrun-checks"
+
+
+def test_commands_edited_by_hand_outrank_the_exact_form():
+    """Edited in gcm.conf, `commands` no longer says what the exact form does."""
+    config = saved(EXACT)
+    config.set("host 1", "commands", "uptime\\nwho")
+
+    assert load(config).commands == "uptime\nwho"
+
+
+@pytest.mark.parametrize("exact", ['"uptime', "42", '["uptime"]'])
+def test_an_exact_form_that_is_not_a_json_string_is_passed_over(exact):
+    config = saved("uptime")
+    config.set("host 1", "commands-json", exact)
+
+    assert load(config).commands == "uptime"
+
+
+@pytest.mark.parametrize(
+    ("stored", "sent"),
+    [("printf 'a\\nb'", "printf 'a\nb'"), ("uptime\x00who", "uptime\nwho")],
+)
+def test_commands_written_before_243_are_read_as_gcm_has_been_sending_them(stored, sent):
+    """With only `commands`, nothing says whether a `\\n` in it was a new line, so it is
+    read as one, as GCM has always read it. NULs parted the lines before that."""
+    config = saved("")
+    config.set("host 1", "commands", stored)
+
+    assert load(config).commands == sent
+
+
+@pytest.mark.parametrize(
+    "commands",
+    ["uptime\rwho", "uptime\r who", "uptime\rname = evil", "uptime\r\nwho", "\ruptime", "uptime\r"],
+)
+def test_a_carriage_return_in_commands_leaves_the_file_as_it_was(tmp_path, commands):
+    """The file is read with universal newlines, so one written as it is ended its line:
+    measured, `uptime\\rwho` left gcm.conf unreadable, and `uptime\\rname = evil` set the
+    host's name. In a file, not through `reread`, which reads no line end there."""
+    config = saved(commands)
+    path = tmp_path / "gcm.conf"
+    with path.open("w") as handle:
+        config.write(handle)
+
+    loaded = load(configfile.load(path).config)
+
+    assert b"\r" not in path.read_bytes()
+    assert (loaded.name, loaded.commands) == (make_sample_host().name, commands)

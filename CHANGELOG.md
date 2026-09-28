@@ -141,6 +141,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A host's commands after login that held a backslash and an n, such as `printf 'a\nb'`,
+  came back from a restart with a new line in their place. Saved now, they come back as
+  written, and an older GCM still reads them as it always has; saved before, they cannot
+  say which they held, and are kept as GCM has been sending them
 - A custom command that held a backslash and an n came back from a restart with a new
   line in their place. One saved now comes back as it was written; one saved before
   cannot say which it held, and is kept as GCM has been sending it. The menubar also

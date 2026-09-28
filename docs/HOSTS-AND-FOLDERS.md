@@ -127,6 +127,15 @@ Automatic commands on connect are kept separately from the checkbox that runs th
 unticking **Send commands after login** stops them running without discarding what you
 typed.
 
+`gcm.conf` keeps them as `commands`, each new line written as `\n`, the only form an
+older GCM reads. Commands with a backslash and an n of their own, such as
+`printf 'a\nb'`, would come back from that with a new line in its place, so GCM writes
+those exactly as well, as a JSON string under `commands-json`, and reads that first. Only
+while `commands` still says the same, though: edit `commands` by hand and the host sends
+what you wrote. An older GCM that saves the file rewrites `commands` and drops
+`commands-json`. Commands saved before GCM wrote both cannot say which they held, and are
+read as GCM has been sending them, a backslash and an n as a new line.
+
 ## Commands on this computer
 
 A host can run a command on your computer before connecting, and another after

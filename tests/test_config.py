@@ -544,6 +544,18 @@ def test_an_arranged_folder_keeps_its_order_through_a_save_and_reload(
     assert [host.name for host in contents] == ["router3", "router1", "router2"]
 
 
+def test_a_hosts_commands_come_back_as_written_after_a_save(tmp_path, app_module, monkeypatch):
+    """A backslash and an n in them came back from a save as a new line (#243)."""
+    path = write_minimal_hosts_config(tmp_path, [{}])
+    [host] = load_hosts(app_module, monkeypatch, path)
+    host.commands = "printf 'a\\nb\\n'\nsudo -i"
+
+    save_config(app_module)
+    [reloaded] = load_hosts(app_module, monkeypatch, path)
+
+    assert reloaded.commands == "printf 'a\\nb\\n'\nsudo -i"
+
+
 def test_an_empty_folder_survives_a_save_and_reload(tmp_path, app_module, monkeypatch):
     path = write_minimal_hosts_config(tmp_path, [{}])
     load_hosts(app_module, monkeypatch, path)
