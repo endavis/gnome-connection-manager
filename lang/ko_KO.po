@@ -1902,3 +1902,12 @@ msgstr ""
 
 msgid "The command after disconnecting from"
 msgstr ""
+
+msgid "Reconnect a dropped session N times (0 disables)"
+msgstr ""
+
+msgid "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
+msgstr ""
+
+msgid "Reconnecting stopped."
+msgstr ""

@@ -287,6 +287,41 @@ if not Path(BASE_PATH).exists():
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
 SHELL = os.environ["SHELL"]
+# Seconds counted down in the tab before each reconnect of a dropped session (#239).
+RECONNECT_DELAY = 5
+# Seconds a reconnected session must last for a later drop to start the count over. One
+# that drops sooner uses up an attempt, so a server that drops every login cannot keep
+# the attempts going for ever.
+RECONNECT_ESTABLISHED = 30
+# Keys that only change what another key types, or lock a mode, so that pressed alone
+# they are not typing: Alt on its way to Alt+Tab, or Shift before a capital. Asked by
+# keyval, since GDK's `is_modifier` cannot tell: measured under X11, it is False for
+# Shift, Control, Alt and Super alike (#239).
+MODIFIER_KEYS = frozenset(
+    getattr(Gdk, "KEY_" + name)
+    for name in (
+        "Shift_L",
+        "Shift_R",
+        "Control_L",
+        "Control_R",
+        "Alt_L",
+        "Alt_R",
+        "Meta_L",
+        "Meta_R",
+        "Super_L",
+        "Super_R",
+        "Hyper_L",
+        "Hyper_R",
+        "ISO_Level3_Shift",
+        "ISO_Level5_Shift",
+        "Mode_switch",
+        "ISO_Next_Group",
+        "ISO_Prev_Group",
+        "Caps_Lock",
+        "Shift_Lock",
+        "Num_Lock",
+    )
+)
 # SHELL = f'env -u VIRTUAL_VENV {os.environ["SHELL"]}'
 DEFAULT_TERM_TYPE = "xterm-256color"
 
@@ -764,6 +799,8 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     # 5 is about 3.7 times the longest pause measured in an agent CLI at work (#208).
     QUIET_MARK_SECONDS = 5
     ENDED_MARK_TAB = 1
+    # How many times a dropped session is reconnected before its end is final; 0 never.
+    RECONNECT_ATTEMPTS = 0
     COPY_SCREEN_IF_NO_SELECTION = 0
     PASTE_STRIP_TRAILING_NEWLINE = 1
     PASTE_CONFIRM_LINES = 5
@@ -802,6 +839,7 @@ CONFIG_OPTIONS = (
     ("BELL_AUDIBLE", "options", "bell-audible", bool),
     ("QUIET_MARK_SECONDS", "options", "quiet-mark-seconds", int),
     ("ENDED_MARK_TAB", "options", "ended-mark-tab", bool),
+    ("RECONNECT_ATTEMPTS", "options", "reconnect-attempts", int),
     ("COPY_SCREEN_IF_NO_SELECTION", "options", "copy-screen-if-no-selection", bool),
     ("PASTE_STRIP_TRAILING_NEWLINE", "options", "paste-strip-trailing-newline", bool),
     ("PASTE_CONFIRM_LINES", "options", "paste-confirm-lines", int),
@@ -952,6 +990,17 @@ def open_in_browser(url):
             )
 
     GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
+
+def session_tail(terminal, rows=4):
+    """The last lines a terminal's session printed, up to its cursor (#239)."""
+    column, row = terminal.get_cursor_position()
+    first = max(0, row - rows)
+    if Vte.get_minor_version() < 72:
+        text, _attrs = terminal.get_text_range(first, 0, row, column, None, None)
+    else:
+        text, _attrs = terminal.get_text_range_format(Vte.Format.TEXT, first, 0, row, column)
+    return text or ""
 
 
 def local_command(host, template):
@@ -2122,6 +2171,12 @@ class Wmain(GladeComponent):
         self.on_tab_focus(nb, nb.get_nth_page(nb.get_current_page()), nb.get_current_page())
 
     def on_terminal_keypress(self, widget, event, *args):
+        # Any key but a modifier alone stops a countdown to reconnecting (#239).
+        if getattr(widget, "reconnect_pending", None) is not None and (
+            event.keyval not in MODIFIER_KEYS
+        ):
+            self.stop_reconnecting(widget)
+            return True
         # Custom sequences are consulted after the built-in commands and skipped for any
         # key a shortcut claims, so a [keys] entry can never shadow copy, paste or find --
         # including when a shortcut is rebound onto one after the fact.
@@ -2743,9 +2798,8 @@ class Wmain(GladeComponent):
             term = page_terminal(tab.widget_)
             if term is None:
                 return True
-            # The host's command before connecting runs again first (#238).
-            self.run_before_command(term, lambda: self.start_session(term, commands=False))
-            tab.mark_tab_as_active()
+            self.stop_reconnecting(term, final=False)
+            self.reconnect(term, tab)
             return True
         elif item == "CC" or item == "CC2":  # CLONE CONSOLE
             if item == "CC":
@@ -3176,6 +3230,16 @@ class Wmain(GladeComponent):
                 return
         self.session_ended(terminal)
         self.flush_terminal_log(terminal)
+        if self.reconnect_if_dropped(terminal, tab, status):
+            # Shown as ended while it counts down, but Close console and the marks wait.
+            tab.is_active = False
+            tab.render_label()
+            return
+        self.session_over(terminal, tab, status)
+
+    def session_over(self, terminal, tab, status):
+        """The end of a terminal's session, once it is final: Close console decides on
+        the tab, and one that ended out of sight is marked."""
         tab.mark_tab_as_closed(status)
         # The end is its own trigger; the output just before it is not work finishing.
         watch = getattr(terminal, "quiet_watch", None)
@@ -3183,6 +3247,92 @@ class Wmain(GladeComponent):
             watch.reset()
         if conf.ENDED_MARK_TAB:
             self.request_attention(terminal)
+
+    def reconnect_if_dropped(self, terminal, tab, status):
+        """Whether the session that just ended is to be reconnected, starting the countdown
+        to it if so (#239).
+
+        Only a connection that was up and was lost starts the attempts, which the type
+        tells from its status and last lines. While they run, one that fails to connect
+        uses one up, one refused for a login or a host key ends them, and one that stays
+        up for RECONNECT_ESTABLISHED seconds before it drops starts the count over.
+        """
+        attempts = conf.RECONNECT_ATTEMPTS
+        left = getattr(terminal, "reconnects_left", None)
+        terminal.reconnects_left = None
+        if attempts <= 0 or not hasattr(terminal, "host"):
+            return False
+        kind = connections.for_host(terminal.host)
+        tail = session_tail(terminal)
+        # VTE reports the wait status, measured: 65280 for a program that exits 255.
+        code = os.waitstatus_to_exitcode(status)
+        if kind.refused(code, tail):
+            return False
+        lasted = time.monotonic() - getattr(terminal, "session_started", 0)
+        if left is None or lasted >= RECONNECT_ESTABLISHED:
+            # It was up. Lost, it starts the attempts over; otherwise it ended.
+            if not kind.dropped(code, tail):
+                return False
+            left = attempts
+        elif code == 0:
+            return False  # it ended, rather than failed to connect
+        if left <= 0:
+            return False
+        terminal.reconnects_left = left - 1
+        self.count_down_to_reconnect(terminal, tab, status, attempts - left + 1, attempts)
+        return True
+
+    def count_down_to_reconnect(self, terminal, tab, status, attempt, attempts):
+        """Count down in the tab, then reconnect as Reconnect does. A key stops it."""
+        remaining = [RECONNECT_DELAY]
+
+        def show():
+            text = _(
+                "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
+            ).format(seconds=remaining[0], attempt=attempt, attempts=attempts)
+            terminal.feed(f"\r\x1b[K{text}".encode())
+
+        def tick():
+            if tab.widget_.get_parent() is None:
+                # The tab closed: nothing is waited for any more (#175).
+                terminal.reconnect_pending = None
+                return False
+            remaining[0] -= 1
+            if remaining[0] > 0:
+                show()
+                return True
+            terminal.reconnect_pending = None
+            terminal.feed(b"\r\n")
+            self.reconnect(terminal, tab)
+            return False
+
+        terminal.feed(b"\r\n")
+        show()
+        terminal.reconnect_pending = (GLib.timeout_add(1000, tick), tab, status)
+
+    def stop_reconnecting(self, terminal, final=True):
+        """Stop a countdown to reconnecting, if one is running, and say whether one was.
+
+        `final` makes the session's end final, as when the attempts run out. Reconnect
+        passes False: it reconnects itself.
+        """
+        terminal.reconnects_left = None
+        pending = getattr(terminal, "reconnect_pending", None)
+        if pending is None:
+            return False
+        terminal.reconnect_pending = None
+        source, tab, status = pending
+        GLib.source_remove(source)
+        if final:
+            terminal.feed(("\r\n" + _("Reconnecting stopped.") + "\r\n").encode())
+            self.session_over(terminal, tab, status)
+        return True
+
+    def reconnect(self, terminal, tab):
+        """What Reconnect does: the host's command before connecting again, then the same
+        session, without the commands after login (#238)."""
+        self.run_before_command(terminal, lambda: self.start_session(terminal, commands=False))
+        tab.mark_tab_as_active()
 
     def on_terminal_title_changed(self, terminal, *args):
         """Show what the running program advertises, without letting it become identity."""
@@ -3544,6 +3694,7 @@ class Wmain(GladeComponent):
         """
         host = terminal.host
         terminal.session_host = host
+        terminal.session_started = time.monotonic()
         if not hasattr(terminal, "command"):
             vte_run(terminal, SHELL)
         else:
@@ -4016,6 +4167,7 @@ class Wmain(GladeComponent):
         cp.set("options", "bell-audible", conf.BELL_AUDIBLE)
         cp.set("options", "quiet-mark-seconds", conf.QUIET_MARK_SECONDS)
         cp.set("options", "ended-mark-tab", conf.ENDED_MARK_TAB)
+        cp.set("options", "reconnect-attempts", conf.RECONNECT_ATTEMPTS)
         cp.set("options", "copy-screen-if-no-selection", conf.COPY_SCREEN_IF_NO_SELECTION)
         cp.set("options", "paste-strip-trailing-newline", conf.PASTE_STRIP_TRAILING_NEWLINE)
         cp.set("options", "paste-confirm-lines", conf.PASTE_CONFIRM_LINES)
@@ -6226,6 +6378,13 @@ class Wconfig(GladeComponent):
             3600,
         )
         self.addParam(_("Marcar pestaña cuando termina la sesión"), "conf.ENDED_MARK_TAB", bool)
+        self.addParam(
+            _("Reconnect a dropped session N times (0 disables)"),
+            "conf.RECONNECT_ATTEMPTS",
+            int,
+            0,
+            100,
+        )
         self.addParam(_("Notificar cuando una consola requiere atención"), "conf.BELL_NOTIFY", bool)
         self.addParam(_("Campana audible"), "conf.BELL_AUDIBLE", bool)
         self.addParam(

@@ -1906,3 +1906,12 @@ msgstr "The command before connecting to"
 
 msgid "The command after disconnecting from"
 msgstr "The command after disconnecting from"
+
+msgid "Reconnect a dropped session N times (0 disables)"
+msgstr "Reconnect a dropped session N times (0 disables)"
+
+msgid "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
+msgstr "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
+
+msgid "Reconnecting stopped."
+msgstr "Reconnecting stopped."

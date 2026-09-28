@@ -315,15 +315,28 @@ def test_config_options_table_matches_the_conf_defaults(app_module):
         seen.add((section, option))
 
 
-def test_config_options_table_covers_everything_write_config_persists(app_module):
-    """Guards against an option being written but never read back (see #34)."""
+def _written_options(app_module):
     source = Path(app_module.__file__).read_text()
     body = source.split("def writeConfig", 1)[1].split("def ", 1)[0]
-    written = set(re.findall(r'cp\.set\(\s*"(options|window)",\s*"([a-z0-9-]+)"', body))
+    return set(re.findall(r'cp\.set\(\s*"(options|window)",\s*"([a-z0-9-]+)"', body))
+
+
+def test_config_options_table_covers_everything_write_config_persists(app_module):
+    """Guards against an option being written but never read back (see #34)."""
+    written = _written_options(app_module)
     known = {(section, option) for _attr, section, option, _kind in app_module.CONFIG_OPTIONS}
 
     # "version" is written as the running app version rather than from conf
     assert written - known == set(), f"written but never read: {sorted(written - known)}"
+
+
+def test_write_config_persists_everything_the_table_reads(app_module):
+    """The other direction. A save writes [options] and [window] afresh, so an option
+    read but never written is dropped by the next save, and comes back as its default."""
+    written = _written_options(app_module)
+    known = {(section, option) for _attr, section, option, _kind in app_module.CONFIG_OPTIONS}
+
+    assert known - written == set(), f"read but never written: {sorted(known - written)}"
 
 
 def _load_with_keys(tmp_path, app_module, monkeypatch, keys, shortcuts=None):

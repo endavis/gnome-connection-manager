@@ -12,6 +12,11 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A dropped session can be reconnected by itself. **Reconnect a dropped session N times**
+  in Preferences sets how many attempts, and 0, the default, turns it off. Each attempt
+  comes after a countdown in the tab, which a key stops. Only a lost connection starts
+  them: for SSH GCM reads ssh's last line, since ssh exits 255 for `~.` as for a lost
+  connection, and telnet is never reconnected, since it exits 0 however its session ends
 - A host can run a command on this computer before connecting and another after
   disconnecting, such as bringing a VPN up and down, set on the host dialog's Commands
   tab. Connecting waits for the first, in the host's tab, and goes ahead only when it

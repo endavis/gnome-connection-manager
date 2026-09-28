@@ -518,6 +518,37 @@ session ends.
 A tab that shows a remote desktop ends the same way, and
 [VNC hosts](HOSTS-AND-FOLDERS.md#vnc-hosts) says when its end is a clean one.
 
+## When a connection drops
+
+GCM can reconnect a session whose connection was lost, from a network blip, a VPN
+reconnecting or a server restarting. **Reconnect a dropped session N times (0 disables)**,
+on the General tab of Preferences, sets how many attempts it makes. 0, the default, turns
+it off. In `gcm.conf` it is `reconnect-attempts`.
+
+Before each attempt, the tab counts down five seconds, `Reconnecting in 5 s, attempt 1
+of 3. Press a key to stop.` A key typed into the tab stops it. Shift, Ctrl, Alt or Super
+pressed alone does not, nor does one of GCM's shortcuts, which does what it always does.
+**Reconnect** reconnects straight away instead. Each attempt is what **Reconnect** does:
+the host's command before connecting runs again, the stored password is typed again, and
+the session log carries on. The commands after login are not sent again.
+
+Only a lost connection starts the attempts, never a session that ended:
+
+- **SSH:** ssh exits with 255 for every failure, `~.` included, so GCM reads its last
+  line. `Connection to … closed by remote host.` and `Timeout, server … not responding.`
+  mean the connection was lost. `exit`, `~.`, and a program killed on the far end do not.
+- **RDP:** FreeRDP's status for `Network disconnect!`. Closing its window does not.
+- **Telnet** is never reconnected. telnet exits with 0 however its session ends, and a
+  server that goes away prints what `exit` prints, so a lost connection cannot be told
+  from an ended one.
+- **VNC** is not reconnected.
+
+While the attempts run, an attempt that fails to connect, as one does while the server is
+still restarting, uses one up. A refused login or host key ends them, since trying again
+cannot help. A session that stays up for 30 seconds before it drops again starts the
+count over. **Close console** and the tab's mark wait for the last attempt: the tab
+closes, or is marked for your attention, only once GCM gives up.
+
 ## Dropping files onto a terminal
 
 Drag a file from a file manager onto a terminal and its path is inserted at the cursor,
