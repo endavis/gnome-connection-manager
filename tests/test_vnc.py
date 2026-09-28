@@ -141,7 +141,14 @@ def press(keyval):
     pump(0.3)
 
 def on_screen(display):
-    """The colour drawn at the middle of the display, read back from the X server."""
+    """The colour drawn at the middle of the display, read back from the X server.
+
+    Every test's windows open on the one Xvfb, at the same place, and measured, a read
+    of a window another covers returns what covers it: another test's console, black
+    (#250). So the window is raised first, and `until` waits while GTK draws again what
+    the raise uncovered.
+    """
+    display.get_toplevel().get_window().raise_()
     pixels = Gdk.pixbuf_get_from_window(display.get_window(), display.get_allocated_width() // 2,
                                         display.get_allocated_height() // 2, 1, 1)
     return tuple(pixels.get_pixels()[:3])
