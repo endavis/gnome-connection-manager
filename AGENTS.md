@@ -78,7 +78,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `_` as a mnemonic, measured, so the menubar's labels go through `menu_label`.
   `send_snippet` fills in the host's values unquoted, and asks for each `{?Label}` once,
   before it types anything. `SnippetPicker` finds one by typing, on the `snippets`
-  shortcut, and sends it to the terminal it was opened for. Preferences edits them on a
+  shortcut, and sends it to the terminal it was opened for. The cluster window's menu is
+  `fill_snippet_menus` given a `send`, and sends to every console ticked through
+  `send_snippet_to`, which asks for a `{?Label}` once for them all. Preferences edits them on a
   page `Wconfig.build_snippets_page` adds to `nbConfig`, working on copies in
   `Wconfig.library` that `kept_snippets` turns into the library on OK. Its widgets take
   no key until the page has been shown: a test must switch to it first, as GTK drops a

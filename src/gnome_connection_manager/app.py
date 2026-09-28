@@ -3086,10 +3086,14 @@ class Wmain(GladeComponent):
             snippetlib.tree(snippets), self.popupMenu.mnuCommands, commands_menu
         )
 
-    def fill_snippet_menus(self, folder, menu, model):
+    def fill_snippet_menus(self, folder, menu, model, send=None):
         """List a folder of snippets by name in the terminal menu's `menu` and in the
         menubar's `model`, which may be None: each subfolder a submenu, then each snippet,
-        with its key when it has one (#240)."""
+        with its key when it has one (#240).
+
+        An item sends its snippet to the tab the menu is for, or, given `send`, calls it
+        with the snippet instead, as the cluster window's menu does.
+        """
         for child in folder.folders:
             submenu = Gtk.Menu()
             item = Gtk.MenuItem(label=child.name)
@@ -3097,7 +3101,7 @@ class Wmain(GladeComponent):
             item.show()
             menu.append(item)
             submodel = Gio.Menu() if model is not None else None
-            self.fill_snippet_menus(child, submenu, submodel)
+            self.fill_snippet_menus(child, submenu, submodel, send)
             if model is not None:
                 model.append_submenu(menu_label(child.name), submodel)
         for snippet in folder.snippets:
@@ -3106,8 +3110,11 @@ class Wmain(GladeComponent):
             else:
                 item = Gtk.MenuItem(label=snippet.name)
                 item.show()
-            item.set_action_name("app.send-snippet")
-            item.set_action_target_value(GLib.Variant("s", snippet.id))
+            if send is None:
+                item.set_action_name("app.send-snippet")
+                item.set_action_target_value(GLib.Variant("s", snippet.id))
+            else:
+                item.connect("activate", lambda _item, chosen=snippet: send(chosen))
             menu.append(item)
             if model is not None:
                 label = f"[{snippet.key}] {snippet.name}" if snippet.key else snippet.name
@@ -5130,19 +5137,28 @@ class Wmain(GladeComponent):
 
     def send_snippet(self, snippet, terminal):
         """Type `snippet` into `terminal`, with the values of the terminal's host (#240).
+        Say whether it was sent."""
+        return self.send_snippet_to(snippet, [terminal])
 
-        Each `{?Label}` is asked for first, once however often it appears, and cancelling
-        one sends nothing. Say whether it was sent.
+    def send_snippet_to(self, snippet, terminals, parent=None):
+        """Type `snippet` into each of `terminals`, each with its own host's values (#240).
+
+        Each `{?Label}` is asked for first, over `parent` or else the main window: once
+        for them all, however often it appears. Cancelling one sends nothing, and with no
+        terminal nothing is asked. Say whether it was sent.
         """
+        if not terminals:
+            return False
         answers = {}
         for label in placeholders.asked(snippet.text):
-            answer = inputbox(snippet.name, label.strip(), parent=self.wMain)
+            answer = inputbox(snippet.name, label.strip(), parent=parent or self.wMain)
             if answer is None:
                 return False
             answers[label] = answer
-        host = getattr(terminal, "host", None)
-        values = placeholders.host_values(host) if host is not None else None
-        vte_feed(terminal, placeholders.fill_snippet(snippet.text, values, answers))
+        for terminal in terminals:
+            host = getattr(terminal, "host", None)
+            values = placeholders.host_values(host) if host is not None else None
+            vte_feed(terminal, placeholders.fill_snippet(snippet.text, values, answers))
         return True
 
     def trigger_popup_action(self, terminal_code, tab_code=None, *args):
@@ -7009,7 +7025,31 @@ class Wcluster(GladeComponent):
         txtCommands.history = []
         txtCommands.connect("key-press-event", self.on_txtCommands_key_press_event)
 
+        # The snippets, by folder, beside Close: one chosen goes to every console
+        # selected, each with its own host's values (#240).
+        menu = Gtk.Menu()
+        wMain.fill_snippet_menus(snippetlib.tree(snippets), menu, None, send=self.send_snippet)
+        self.btnSnippets = Gtk.MenuButton(label=_("Snippets"), popup=menu)
+        # A label takes the place of the arrow that says it opens a menu, so it goes back.
+        arrow = Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON)
+        self.btnSnippets.set_image(arrow)
+        self.btnSnippets.set_image_position(Gtk.PositionType.RIGHT)
+        self.btnSnippets.set_always_show_image(True)
+        self.btnSnippets.set_tooltip_text(
+            _("Send a snippet to each console selected, with its own host's values")
+        )
+        self.btnSnippets.set_sensitive(bool(snippets))
+        buttons = self.get_widget("cancelbutton2").get_parent()
+        buttons.pack_start(self.btnSnippets, False, False, 0)
+        buttons.set_child_secondary(self.btnSnippets, True)
+        self.btnSnippets.show()
+
     # -- Wcluster.new }
+
+    def send_snippet(self, snippet):
+        """Send `snippet` to every console selected, asking over this window (#240)."""
+        terminals = [row[2] for row in self.treeStore if row[0]]
+        wMain.send_snippet_to(snippet, terminals, parent=self.get_widget("wCluster"))
 
     # -- Wcluster custom methods {
     #   Write your own methods here

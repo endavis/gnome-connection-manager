@@ -438,6 +438,10 @@ for `Ctrl+Up` to bring back. The window opens with it unticked every time.
 Hiding covers GCM's side only. Send a password at a prompt that hides it, as `sudo`'s
 does. Typed at a shell prompt, the far end echoes it like any command.
 
+**Snippets**, at the bottom left, lists your [snippets](#snippets) by folder. The one you
+choose goes to each ticked console, with that console's own host's values in `{name}` and
+the rest. A `{?Label}` is asked for once, for them all.
+
 ## When a tab needs your attention
 
 A tab you are not watching can ask for your attention in three ways, and GCM shows each the
@@ -742,7 +746,8 @@ A snippet is text GCM types into a console for you: a command you run often, a q
 long path. The terminal menu and the menubar's Edit menu each have a **Snippets**
 submenu, which lists them by name, in their folders, and sends the one chosen to the tab
 the menu is for. A snippet with a key is sent by the key too, to the tab you are typing
-in.
+in. The cluster window sends one to
+[several consoles at once](#typing-into-several-consoles-at-once).
 
 **Find Snippet…**, at the top of both submenus and on `Ctrl+Shift+P`, finds one by
 typing. Every word typed must be in a snippet's name, folder, description or text. Up

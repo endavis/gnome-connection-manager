@@ -1960,3 +1960,6 @@ msgstr "Backspace leaves it without a key"
 
 msgid "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
 msgstr "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+
+msgid "Send a snippet to each console selected, with its own host's values"
+msgstr "Send a snippet to each console selected, with its own host's values"

@@ -16,7 +16,8 @@ the git log.
   file and delete snippets, and **Find Snippet…**, on `Ctrl+Shift+P` and at the top of
   the Snippets menus, which finds one by typing and sends it. A key that types a
   character is refused as a snippet's key without Ctrl, Alt or Super, since it would be
-  taken from every console
+  taken from every console. The cluster window's **Snippets** button sends one to each
+  console ticked there, with that console's own host's values
 - A dropped session can be reconnected by itself. **Reconnect a dropped session N times**
   in Preferences sets how many attempts, and 0, the default, turns it off. Each attempt
   comes after a countdown in the tab, which a key stops. Only a lost connection starts
