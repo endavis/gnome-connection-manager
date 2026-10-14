@@ -146,6 +146,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A new tab took the keyboard again 200 ms after it opened, from wherever it had gone by
+  then. A tab opened in that time lost it for a moment to the one before it, hidden
+  behind it, and a click into another pane in that time was undone. It now takes the
+  keyboard again only while it is still the tab in use
 - The About dialog's **Close** button did nothing, so only Escape or the title bar's
   close button closed it. It closes the dialog again
 - A host's own colours were saved a digit short when their red, green or blue was under

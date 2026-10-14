@@ -268,6 +268,57 @@ elif scenario == "preferences-with-it-open":
     pump()
     assert names() == [["A", "N"]], names()
 
+elif scenario == "a-newer-tab-keeps-the-keyboard":
+    # A new tab takes the keyboard again 200 ms on, a terminal's and a desktop's alike. One
+    # opened in the meantime must keep it (#264): measured, the shell had it for 15 ms,
+    # behind a desktop opened 1 ms after it.
+    class Desk(Gtk.Box):
+        def __init__(self, host, ended):
+            super().__init__()
+            self.keyboard = Gtk.DrawingArea()
+            self.keyboard.set_can_focus(True)
+            self.add(self.keyboard)
+
+        def open(self):
+            pass
+
+    def desk(name):
+        return app.Host("", name, "", "127.0.0.1", "", "", "", "5900", "", "vnc")
+
+    def holders():
+        """Every widget that has the keyboard over the next 600 ms."""
+        seen = set()
+        end = time.monotonic() + 0.6
+        while time.monotonic() < end:
+            Gtk.main_iteration_do(False)
+            seen.add(w.wMain.get_focus())
+            time.sleep(0.002)
+        return seen
+
+    app.TYPE_PAGES = {"vnc": Desk}
+    w.addTab(w.nbConsole, app.Host("", "shell"))
+    w.addTab(w.nbConsole, desk("desk"))
+    assert holders() == {page_of("desk").keyboard}
+    w.addTab(w.nbConsole, desk("desk2"))
+    w.addTab(w.nbConsole, app.Host("", "shell2"))
+    assert holders() == {terminal("shell2")}
+    # What the second time is for: the keyboard taken from a tab as it opens, as the
+    # server tree takes it on a double click, comes back.
+    w.addTab(w.nbConsole, app.Host("", "C"))
+    w.treeServers.grab_focus()
+    pump(0.4)
+    assert w.wMain.get_focus() is terminal("C"), w.wMain.get_focus()
+
+elif scenario == "a-pane-chosen-meanwhile-keeps-the-keyboard":
+    # A pane the keyboard is put into as a tab opens keeps it, though the new tab is still
+    # the one showing in its own pane.
+    open_tabs("A", "B")
+    split_off("B")
+    w.addTab(w.nbConsole, app.Host("", "C"))
+    use("B")
+    pump(0.4)
+    assert w.wMain.get_focus() is terminal("B"), w.wMain.get_focus()
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -292,6 +343,8 @@ print("OK")
         "the-pane-last-in-use-for-a-tab-without-a-terminal",
         "the-pane-last-in-use-after-a-click",
         "preferences-with-it-open",
+        "a-newer-tab-keeps-the-keyboard",
+        "a-pane-chosen-meanwhile-keeps-the-keyboard",
     ],
 )
 def test_a_tab_without_a_terminal_against_real_gtk(scenario):
