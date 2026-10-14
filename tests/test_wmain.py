@@ -2275,6 +2275,119 @@ def test_the_server_tree_stripes_follow_its_folders_and_theme_against_real_gtk()
     assert "OK" in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("background", "stripe"),
+    [
+        ("#ffffff", "#f1f1f1"),
+        ("#2d2d2d", "#1f1f1f"),
+        ("#1d1d1d", "#0f0f0f"),  # read as #fff while it lost a digit
+        ("#102030", "#021222"),  # #21222, which GTK cannot read
+        ("#0e0e0e", "#000000"),  # every component reaches 14: darker still
+        ("#0d0d0d", "#1b1b1b"),
+        ("#002b36", "#0e3944"),
+        ("#000000", "#0e0e0e"),  # #-e-e-e, and black once held at 0
+    ],
+)
+def test_the_second_stripe_is_lighter_only_where_darker_cannot_be(app_module, background, stripe):
+    """#259. Darker is what every tree got before, so a theme it worked for looks the same."""
+    red, green, blue = (int(background[i : i + 2], 16) / 255 for i in (1, 3, 5))
+
+    rgba = types.SimpleNamespace(red=red, green=green, blue=blue)
+
+    assert app_module.stripe_color(rgba) == stripe
+
+
+# A tree whose theme is too dark for darker stripes (#259). The colours GCM puts in column
+# 3 must be ones GTK reads, and the tree must draw them.
+_DARK_STRIPES_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import cairo, gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gtk
+from gnome_connection_manager import app
+
+app.conf.STARTUP_LOCAL = False
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+app.wMain = w = app.Wmain(application=None)
+app.groups["A"] = [app.Host("A", name, "", "", "", "") for name in ("a1", "a2", "a3")]
+w.updateTree()
+w.wMain.resize(900, 700)  # room for every row: without it the tree was 71 pixels tall
+w.wMain.show_all()
+pump()
+tree, model = w.treeServers, w.treeModel
+css = Gtk.CssProvider()
+Gtk.StyleContext.add_provider_for_screen(
+    Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_USER
+)
+
+def rows():
+    found = []
+    def walk(row):
+        while row:
+            found.append(row)
+            if model.iter_has_child(row) and tree.row_expanded(model.get_path(row)):
+                walk(model.iter_children(row))
+            row = model.iter_next(row)
+    walk(model.get_iter_first())
+    return found
+
+def drawn():
+    # Drawn into an image rather than read from the screen, where another test's window
+    # may cover it. Beside the right edge, clear of any text.
+    tree.get_selection().unselect_all()
+    width, height = tree.get_allocated_width(), tree.get_allocated_height()
+    surface = cairo.ImageSurface(cairo.FORMAT_RGB24, width, height)
+    tree.draw(cairo.Context(surface))
+    surface.flush()
+    data, stride = surface.get_data(), surface.get_stride()
+    colours = []
+    for row in rows():
+        area = tree.get_background_area(model.get_path(row), tree.get_column(0))
+        _x, y = tree.convert_bin_window_to_widget_coords(area.x, area.y)
+        at = (y + area.height // 2) * stride + (width - 4) * 4
+        blue, green, red = data[at : at + 3]
+        colours.append("#%02x%02x%02x" % (red, green, blue))
+    return colours
+
+for background, stripe in (("#000000", "#0e0e0e"), ("#102030", "#021222"), ("#1d1d1d", "#0f0f0f")):
+    css.load_from_data(("treeview.view { background-color: %s; }" % background).encode())
+    pump()
+    painted = [model[row][3] for row in rows()]
+    assert painted == [background, stripe] * 2, (background, painted)
+    assert drawn() == painted, (background, drawn())
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real tree view",
+)
+def test_a_dark_server_tree_still_draws_its_stripes_against_real_gtk():
+    """Before #259 a #102030 tree's second stripe was #21222, which GTK warned it did not
+    know as it drew each row, and a black tree's was #-e-e-e."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _DARK_STRIPES_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "Don't know color" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 class LogHost:
     def __init__(self, group="", name="web-01", user="", host="", port=""):
         self.group = group
