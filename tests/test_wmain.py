@@ -3020,13 +3020,6 @@ def test_glade_no_longer_defines_a_menubar(app_module):
     assert "GtkMenuBar" not in glade.read_text()
 
 
-# Handlers nothing connects yet, each with the issue that will connect it. One that
-# something connects fails the test too, so an entry cannot outlive its reason.
-_UNCONNECTED_HANDLERS = {
-    "on_wAbout_close": "#261: the glade rebuild in df18e0a dropped the About dialog's response",
-}
-
-
 def test_every_on_handler_is_connected(app_module):
     """An `on_*` method must be named in the glade file, whose handlers `connect_signals`
     connects by name, or be referenced in `src/`. Ten were left behind when the menus
@@ -3052,12 +3045,70 @@ def test_every_on_handler_is_connected(app_module):
     unconnected = {name: where for name, where in defined.items() if name not in named | used}
 
     assert sorted(named - set(defined)) == [], "the glade file names a handler nothing defines"
-    assert {
-        name: where for name, where in unconnected.items() if name not in _UNCONNECTED_HANDLERS
-    } == {}
-    assert sorted(set(_UNCONNECTED_HANDLERS) - set(unconnected)) == [], (
-        "connected now, so no longer an exception"
+    assert unconnected == {}
+
+
+# The About dialog as Help -> About opens it. A GtkAboutDialog does not close itself on a
+# response, so its Close button needs the response signal the glade file lost (#261).
+_ABOUT_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+app.conf.STARTUP_LOCAL = False
+app.wMain = w = app.Wmain(application=None)
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+def about():
+    w.on_acerca_de1_activate(None)
+    pump()
+    [dialog] = [window for window in Gtk.Window.list_toplevels()
+                if Gtk.Buildable.get_name(window) == "wAbout" and window.get_visible()]
+    return dialog
+
+for way, close in (
+    ("its Close button", lambda dialog: dialog.get_widget_for_response(
+        Gtk.ResponseType.DELETE_EVENT).clicked()),
+    ("Escape, which emits close", lambda dialog: dialog.emit("close")),
+    ("the title bar's close button", lambda dialog: dialog.close()),
+):
+    dialog = about()
+    close(dialog)
+    pump()
+    assert dialog not in Gtk.Window.list_toplevels(), "still open after " + way
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real dialog",
+)
+def test_the_about_dialog_closes_every_way_against_real_gtk():
+    """Its Close button did nothing from df18e0a on, while Escape and the title bar's
+    button closed it. Those destroy it twice now, from the response and from the delete
+    event, which must be harmless."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _ABOUT_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
     )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "CRITICAL" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
 
 
 class StubLabel:

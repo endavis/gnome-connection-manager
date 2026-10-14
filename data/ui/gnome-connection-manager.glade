@@ -14,6 +14,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
     <property name="website-label" translatable="yes">Project's Homepage</property>
     <property name="logo">icon.png</property>
     <property name="license-type">gpl-3-0</property>
+    <signal name="response" handler="on_wAbout_close" swapped="no"/>
     <child internal-child="vbox">
       <object class="GtkBox">
         <property name="can-focus">False</property>

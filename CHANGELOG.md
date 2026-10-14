@@ -146,6 +146,8 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- The About dialog's **Close** button did nothing, so only Escape or the title bar's
+  close button closed it. It closes the dialog again
 - A host's own colours were saved a digit short when their red, green or blue was under
   16: Solarized dark's background, `#002b36`, was saved as `#02b36`. GTK cannot read most
   colours saved so, and the host's console and dialog showed them as white. Each colour is
