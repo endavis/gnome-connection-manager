@@ -146,6 +146,10 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- The server tree's alternating row colours went wrong when a folder was opened or
+  closed. Closing one left it the same colour as the folder below it, and opening one that
+  GCM had started with closed showed all its hosts in one colour. The rows are painted
+  again whenever a folder opens or closes, and when the theme changes
 - A host's commands after login that held a backslash and an n, such as `printf 'a\nb'`,
   came back from a restart with a new line in their place. Saved now, they come back as
   written, and an older GCM still reads them as it always has; saved before, they cannot
