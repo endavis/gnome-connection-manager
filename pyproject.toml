@@ -266,6 +266,11 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--cov=gnome_connection_manager",
+    # The virtualenv sees /usr/bin/python3's own packages, for PyGObject, and pytest loads
+    # every pytest11 plugin registered anywhere on sys.path. platformdirs 4.12 and later
+    # registers one, and a system copy that new beside the venv's older platformdirs,
+    # which is the one imported, stopped pytest before it collected anything (#252).
+    "-p", "no:platformdirs",
 ]
 
 # Coverage
