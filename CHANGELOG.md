@@ -146,6 +146,14 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- A host's own colours were saved a digit short when their red, green or blue was under
+  16: Solarized dark's background, `#002b36`, was saved as `#02b36`. GTK cannot read most
+  colours saved so, and the host's console and dialog showed them as white. Each colour is
+  now saved as six digits and comes back as picked. One saved short before could have
+  been more than one colour, so it shows white until it is picked again
+- The server tree's second row colour went wrong the same way on a dark theme, and GTK
+  warned as it drew each row that it did not know the colour. On a tree too dark for it to
+  be darker than the first, with a red, green or blue under 14, it is now lighter
 - The server tree's alternating row colours went wrong when a folder was opened or
   closed. Closing one left it the same colour as the folder below it, and opening one that
   GCM had started with closed showed all its hosts in one colour. The rows are painted

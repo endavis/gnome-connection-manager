@@ -1582,8 +1582,24 @@ def parse_color(spec: str) -> Gdk.Color:
 
 
 def color_to_hex(rgba: Gdk.RGBA, diff: int = 0) -> str:
-    """Convert Gdk.RGBA to hex color string."""
-    return f"#{int(rgba.red * 255 + diff):x}{int(rgba.green * 255 + diff):x}{int(rgba.blue * 255 + diff):x}"
+    """Convert Gdk.RGBA to a #rrggbb string, with diff added to each component.
+
+    Each component is rounded, held to 0-255 and written as two digits. Written with `:x`,
+    one under 16 lost a digit and one under 0 became `-e`. GTK cannot read most strings
+    written so, and a host's colour saved as one came back white (#259).
+    """
+    return "#" + "".join(
+        f"{min(255, max(0, round(component * 255) + diff)):02x}"
+        for component in (rgba.red, rgba.green, rgba.blue)
+    )
+
+
+def stripe_color(rgba: Gdk.RGBA) -> str:
+    """The server tree's second stripe, from its background: 14 darker on each component,
+    or 14 lighter when one is under 14 and cannot be darkened that far. On a black tree,
+    darker would be black as well (#259)."""
+    darkest = min(round(component * 255) for component in (rgba.red, rgba.green, rgba.blue))
+    return color_to_hex(rgba, -14 if darkest >= 14 else 14)
 
 
 def get_key_name(event):
@@ -4140,7 +4156,7 @@ class Wmain(GladeComponent):
                 "background-color", Gtk.StateFlags.NORMAL
             )
             self.color_back1 = color_to_hex(rgba)
-            self.color_back2 = color_to_hex(rgba, -14)
+            self.color_back2 = stripe_color(rgba)
             i = self.treeModel.get_iter_first()
         else:
             i = self.treeModel.iter_children(node)

@@ -1,8 +1,13 @@
-"""Tests for the Whost dialog logic (host add/edit flows) without GTK."""
+"""Tests for the Whost dialog logic (host add/edit flows), without GTK but for one round
+trip through the real dialog."""
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -795,3 +800,116 @@ def test_ok_saves_no_command_after_for_a_host_without_a_tab(monkeypatch, app_mod
 
     assert host.before_command == "nmcli con up office"
     assert host.after_command == ""
+
+
+def picked(colour: str) -> types.SimpleNamespace:
+    """A colour as a colour button gives it: each component a fraction of 1."""
+    red, green, blue = (int(colour[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    return types.SimpleNamespace(red=red, green=green, blue=blue)
+
+
+@pytest.mark.parametrize(
+    "colour", ["#002b36", "#00ff00", "#0000ff", "#ff8000", "#010203", "#000000", "#282a36"]
+)
+def test_a_hosts_own_colours_are_saved_as_six_digits(monkeypatch, app_module, colour):
+    """Written with `:x`, a component under 16 lost a digit: #002b36 was saved as #02b36,
+    which GTK cannot read, and #010203 as #123, which it reads as #112233 (#259)."""
+    whost, _destroy = make_whost(app_module)
+    whost.widgets["chkDefaultColors"] = CheckStub(False)
+    whost.btnFColor = ColorButtonStub(picked(colour))
+    whost.btnBColor = ColorButtonStub(picked(colour))
+
+    host = saved_host(app_module, monkeypatch, whost)
+
+    assert (host.font_color, host.back_color) == (colour, colour)
+
+
+@pytest.mark.parametrize(
+    ("components", "diff", "expected"),
+    [
+        ((0.999, 0.999, 0.999), 0, "#ffffff"),  # rounded, where int() gave #fefefe
+        ((16 / 255, 32 / 255, 48 / 255), -14, "#021222"),  # two digits, not #21222
+        ((0, 0, 0), -14, "#000000"),  # held at 0, not #-e-e-e
+        ((1, 1, 1), 14, "#ffffff"),  # held at 255, not #10d10d10d
+    ],
+)
+def test_color_to_hex_writes_each_component_as_a_byte(app_module, components, diff, expected):
+    red, green, blue = components
+    rgba = types.SimpleNamespace(red=red, green=green, blue=blue)
+
+    assert app_module.color_to_hex(rgba, diff) == expected
+
+
+# A host's own colours, picked in the real dialog, written to gcm.conf and read back as
+# GCM starts: into the dialog again, and into a console (#259). Both colours here lost a
+# digit when saved before, and came back white. HOME is redirected so this can never
+# touch a real configuration.
+_HOST_COLOURS_SCRIPT = """
+import configparser, os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gdk, Vte
+from gnome_connection_manager import app
+from gnome_connection_manager.utils.configfile import HOST_PREFIX
+
+app.conf.STARTUP_LOCAL = False
+app.wMain = w = app.Wmain(application=None)
+
+def colour(spec):
+    rgba = Gdk.RGBA()
+    assert rgba.parse(spec), spec
+    return rgba
+
+def hex_of(rgba):
+    return "#%02x%02x%02x" % tuple(round(c * 255) for c in (rgba.red, rgba.green, rgba.blue))
+
+font, back = "#00ff00", "#002b36"
+dialog = app.Whost()
+dialog.init("")
+dialog.cmbGroup.get_children()[0].set_text("Work")
+dialog.txtName.set_text("box")
+dialog.txtHost.set_text("example.test")
+dialog.get_widget("chkDefaultColors").set_active(False)
+dialog.btnFColor.set_rgba(colour(font))
+dialog.btnBColor.set_rgba(colour(back))
+dialog.on_okbutton1_clicked(None)
+saved = configparser.RawConfigParser()
+saved.read(app.CONFIG_FILE)
+[section] = [name for name in saved.sections() if name.startswith(HOST_PREFIX)]
+written = saved.get(section, "font-color"), saved.get(section, "back-color")
+assert written == (font, back), written
+
+app.groups.clear()
+w.loadConfig()
+host = app.groups["Work"][0]
+edit = app.Whost()
+edit.init("Work", host)
+assert not edit.get_widget("chkDefaultColors").get_active()
+shown = hex_of(edit.btnFColor.get_rgba()), hex_of(edit.btnBColor.get_rgba())
+assert shown == (font, back), shown
+edit.get_widget("wHost").destroy()
+
+terminal = Vte.Terminal()
+terminal.host = host
+w.apply_preferences_to_terminal(terminal)
+drawn = hex_of(terminal.get_color_background_for_draw())
+assert drawn == back, drawn
+print("OK")
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display for a real dialog")
+def test_a_hosts_own_colours_come_back_as_picked_against_real_gtk():
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _HOST_COLOURS_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
