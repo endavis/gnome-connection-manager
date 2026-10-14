@@ -120,8 +120,9 @@ def open_desk(server, password=PASSWORD, user=""):
 def ended(label):
     return lambda: not label.is_active
 
-def press(keyval):
-    """Ctrl and a key, pressed and let go, through the main window as a key typed is."""
+def press(keyval, window=None):
+    """Ctrl and a key, pressed and let go, through a window as a key typed is: the main
+    window, unless another is given."""
     keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
     keyboard = Gdk.Display.get_default().get_default_seat().get_keyboard()
     held = Gdk.ModifierType.CONTROL_MASK
@@ -130,7 +131,7 @@ def press(keyval):
                                (Gdk.EventType.KEY_RELEASE, keyval, held),
                                (Gdk.EventType.KEY_RELEASE, Gdk.KEY_Control_L, held)):
         event = Gdk.Event.new(kind)
-        event.key.window = w.wMain.get_window()
+        event.key.window = (window or w.wMain).get_window()
         event.key.time = Gdk.CURRENT_TIME
         event.key.state = state
         event.key.keyval = value
@@ -341,6 +342,47 @@ elif scenario == "the-desktop-moves-with-its-tab":
     subprocess.run(["xsetroot", "-solid", "#0000ff"], env=remote, check=True)
     assert until(lambda: on_screen(page.display) == (0, 0, 255)), on_screen(page.display)
     server.stop()
+elif scenario == "the-desktop-moves-to-a-window-of-its-own":
+    server = Server()
+    w.addTab(w.nbConsole, app.Host("", "shell"))
+    page, label = open_desk(server)
+    assert until(lambda: page.initialized), page.status.get_text()
+    # Out to a window of its own (#255), still connected and drawn there. Before the key
+    # logger starts: its window covers the remote root, whose colour this sets.
+    w.toggle_console_window(page)
+    pump(0.5)
+    window = w.console_window_of(page.get_parent())
+    assert window is not None, page.get_parent()
+    assert page.get_parent().get_tab_label(page) is label and label.is_active
+    screen = dict(os.environ, DISPLAY=server.display)
+    subprocess.run(["xsetroot", "-solid", "#00ff00"], env=screen, check=True)
+    assert until(lambda: on_screen(page.display) == (0, 255, 0)), on_screen(page.display)
+    # With the keyboard in the desktop there, the desktop gets Ctrl+W, not GCM.
+    helper = os.path.join(os.getcwd(), "tests", "helpers", "remote_key_logger.py")
+    logger = subprocess.Popen([sys.executable, helper], env=screen, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, text=True, preexec_fn=dies_with_us)
+    assert logger.stdout.readline().strip() == "ready"
+    os.set_blocking(logger.stdout.fileno(), False)
+    typed = []
+
+    def remote():
+        typed.extend(line.strip() for line in logger.stdout.readlines())
+        return typed
+
+    assert until(lambda: window.get_focus() is page.display), window.get_focus()
+    press(Gdk.KEY_w, window)
+    assert until(lambda: "w control" in remote()), remote()
+    assert w.console_window_of(page.get_parent()) is window, "Ctrl+W closed the tab instead"
+    logger.terminate()
+    logger.wait()
+    # And back, still connected.
+    w.toggle_console_window(page)
+    pump(0.5)
+    assert page.get_parent() is w.nbConsole, page.get_parent()
+    assert until(lambda: w.console_windows == ())
+    subprocess.run(["xsetroot", "-solid", "#ff0000"], env=screen, check=True)
+    assert until(lambda: on_screen(page.display) == (255, 0, 0)), on_screen(page.display)
+    server.stop()
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -379,6 +421,7 @@ def gtk_vnc_installed():
         "a-server-gtk-vnc-cannot-log-in-to",
         "the-desktop-gets-every-key-while-it-has-the-keyboard",
         "the-desktop-moves-with-its-tab",
+        "the-desktop-moves-to-a-window-of-its-own",
     ],
 )
 def test_a_vnc_host_against_a_real_server(scenario, tmp_path):

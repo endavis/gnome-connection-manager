@@ -1823,3 +1823,12 @@ msgstr ""
 
 msgid "A command host needs a command, on its Command line tab."
 msgstr ""
+
+msgid "Move to New Window"
+msgstr ""
+
+msgid "Move to Main Window"
+msgstr ""
+
+msgid "Window {}"
+msgstr ""

@@ -12,6 +12,14 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A console can move to a window of its own, to keep it on another monitor or beside
+  another program: **Move to New Window** in its tab's menu or under **View**,
+  `Ctrl+Shift+M`, or dropping its tab anywhere but a tab strip. It keeps its session, its
+  tab's label and marks, and its log. A console window holds several tabs and no splits,
+  and a shortcut pressed there acts on its tab: `Ctrl+F` opens a search box of its own,
+  and `F11` makes it fill the screen. `Ctrl+Shift+M` again, **Move to Main Window**, or
+  dragging the tab into the main window brings a console back, and closing the window
+  brings back every console in it, ending none
 - Command hosts. A host of type **command** runs a command line of its own in a tab,
   such as `mosh`, `kubectl exec` or `ipmitool … sol activate`, written on the host
   dialog's Command line tab. It names the host's values as the commands on this computer

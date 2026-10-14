@@ -408,6 +408,7 @@ _CONSOLE_8 = ["console_8"]
 _CONSOLE_9 = ["console_9"]
 _CONSOLE_CLOSE = ["console_close"]
 _CONSOLE_RECONNECT = ["console_reconnect"]
+_CONSOLE_WINDOW = ["console_window"]
 _CONNECT = ["connect"]
 _NEW_LOCAL = ["new_local"]
 _FULLSCREEN = ["fullscreen"]
@@ -431,6 +432,7 @@ SHORTCUT_DEFAULTS = (
     ("console_next", _CONSOLE_NEXT, "CTRL+TAB"),
     ("console_close", _CONSOLE_CLOSE, "CTRL+W"),
     ("console_reconnect", _CONSOLE_RECONNECT, "CTRL+N"),
+    ("console_window", _CONSOLE_WINDOW, "CTRL+SHIFT+M"),
     ("connect", _CONNECT, "CTRL+RETURN"),
     ("reset", _CLEAR, "CTRL+SHIFT+K"),
     ("clone", _CLONE, "CTRL+SHIFT+D"),
@@ -474,6 +476,7 @@ TERMINAL_ACTIONS = {
     "connect": "connect",
     "console_close": "console-close",
     "console_reconnect": "console-reconnect",
+    "console_window": "console-window",
     "reset": "console-reset",
     "clone": "console-clone",
     "find": "find",
@@ -1932,6 +1935,12 @@ def console_item_markup(entry):
 
 
 class Wmain(GladeComponent):
+    # new() gives each Wmain its own. These are for one built without it, as tests
+    # build one: no console window, none in use, and no tab being dragged (#255).
+    console_windows: tuple = ()
+    window_in_use: object = None
+    dragged_tab: object = None
+
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
     ):
@@ -1991,6 +2000,7 @@ class Wmain(GladeComponent):
         self.nbConsole.connect("page-added", self.on_page_added)
         self.nbConsole.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
         self.nbConsole.connect("scroll-event", self.on_tab_scroll)
+        self.watch_tab_drags(self.nbConsole)
 
         self.hpMain.previous_position = 150
 
@@ -2097,11 +2107,17 @@ class Wmain(GladeComponent):
         self.menuConsoles.connect("show", self.build_console_menu)
         self.menubar = None
         self.install_menubar()
-        # The console notebook the keyboard was last in, whatever its tab holds: where an
-        # action goes once the keyboard has left for the server tree or the search box.
-        # It replaces the last terminal given the keyboard, which a click never set and a
-        # tab without a terminal could not be (#223).
+        # The main window's console notebook the keyboard was last in, whatever its tab
+        # holds: where an action goes once the keyboard has left for the server tree or the
+        # search box. It replaces the last terminal given the keyboard, which a click never
+        # set and a tab without a terminal could not be (#223).
         self.last_notebook = None
+        # The windows consoles were moved out to, and which window, one of those or the
+        # main one, last had the keyboard: the tab in use is in that one (#255).
+        self.console_windows = ()
+        self.window_in_use = None
+        # The tab a drag between notebooks carries, while it does (#255).
+        self.dragged_tab = None
         self.count = 0
         self.row_activated = False
 
@@ -2124,6 +2140,10 @@ class Wmain(GladeComponent):
             else:
                 self.set_context_terminal(widget)
                 self.popupMenu.mnuCopy.set_sensitive(widget.get_has_selection())
+                # A console window has no splits (#255).
+                in_window = self.console_window_of(widget.get_parent().get_parent()) is not None
+                self.popupMenu.mnuSplitH.set_visible(not in_window)
+                self.popupMenu.mnuSplitV.set_visible(not in_window)
                 self.popupMenu.terminal = widget
                 # Use popup_at_rect with manual position calculation for proper placement
                 if hasattr(self.popupMenu, "popup_at_rect"):
@@ -2265,6 +2285,8 @@ class Wmain(GladeComponent):
                     if page != -1:
                         widget.get_parent().get_parent().remove_page(page)
                         wid.destroy()
+                elif cmd == _CONSOLE_WINDOW:
+                    self.toggle_console_window(widget.get_parent())
                 elif cmd == _CONSOLE_RECONNECT:
                     if not hasattr(widget, "command"):
                         # widget.fork_command(SHELL)
@@ -2373,13 +2395,34 @@ class Wmain(GladeComponent):
                 self.collect_notebooks(child, found)
         return found
 
+    def console_notebooks(self):
+        """Every console notebook: the main window's panes, then each console window's.
+
+        A console window holds one notebook and no splits (#255). Those are listed in the
+        order the windows opened.
+        """
+        notebooks = self.collect_notebooks(self.hpMain)
+        notebooks.extend(window.notebook for window in self.console_windows)
+        return notebooks
+
+    def console_window_of(self, notebook):
+        """The console window holding `notebook`, or None for a pane of the main window."""
+        for window in self.console_windows:
+            if window.notebook is notebook:
+                return window
+        return None
+
+    def window_of(self, notebook):
+        """The window a console notebook is in: its console window, or the main window."""
+        return self.console_window_of(notebook) or self.wMain
+
     def open_console_groups(self):
-        """Every open console, grouped by the pane it lives in."""
+        """Every open console, grouped by the pane or console window it is in."""
         focused = self.page_in_use()
         hints = console_shortcut_hints()
         return [
             (notebook, console_entries(notebook, focused, hints))
-            for notebook in self.collect_notebooks(self.hpMain)
+            for notebook in self.console_notebooks()
         ]
 
     def apply_preferences_to_terminal(self, terminal):
@@ -2441,7 +2484,7 @@ class Wmain(GladeComponent):
         return item
 
     def build_console_menu(self, menu):
-        """Fill `menu` with one item per open console, grouped by pane.
+        """Fill `menu` with one item per open console, grouped by pane and console window.
 
         Rebuilt from scratch on every open. Keeping it live instead would mean
         invalidating on eight signals, one of which is the window title an agent
@@ -2452,8 +2495,15 @@ class Wmain(GladeComponent):
         pane_groups = self.open_console_groups()
         # Pane numbers only mean something once there is more than one pane.
         headings = sum(1 for _notebook, entries in pane_groups if entries) > 1
-        listed = 0
-        for index, (_notebook, entries) in enumerate(pane_groups, 1):
+        listed = panes = windows = 0
+        for notebook, entries in pane_groups:
+            # The main window's panes come first, then the console windows (#255).
+            if self.console_window_of(notebook) is None:
+                panes += 1
+                title = _("Pane {}").format(panes)
+            else:
+                windows += 1
+                title = _("Window {}").format(windows)
             if not entries:
                 continue
             if headings:
@@ -2461,7 +2511,7 @@ class Wmain(GladeComponent):
                     separator = Gtk.SeparatorMenuItem()
                     separator.show()
                     menu.append(separator)
-                heading = Gtk.MenuItem(label=_("Pane {}").format(index))
+                heading = Gtk.MenuItem(label=title)
                 heading.set_sensitive(False)
                 heading.show()
                 menu.append(heading)
@@ -2479,22 +2529,25 @@ class Wmain(GladeComponent):
         self.focus_console(entry.notebook, entry.page)
 
     def focus_console(self, notebook, page):
-        """Raise `page` and put the keyboard in it, whichever pane it is in.
+        """Raise `page` and put the keyboard in it, whichever pane or window it is in.
 
         In its terminal, or on a page that holds something else, in the first thing there
         that takes the keyboard. Failing that, on the notebook's tabs, which is where
-        clicking such a tab leaves it, measured (#223).
+        clicking such a tab leaves it, measured (#223). A console in another window brings
+        that window to the front (#255).
         """
         position = notebook.page_num(page) if page is not None else -1
         if position < 0:
             return False
         notebook.set_current_page(position)
+        window = self.window_of(notebook)
+        self.use_window(window)
         terminal = page_terminal(page)
         if terminal is not None:
-            self.wMain.set_focus(terminal)
+            window.set_focus(terminal)
             self.on_tab_focus(terminal)
             return True
-        focus = self.wMain.get_focus()
+        focus = window.get_focus()
         inside = focus is not None and (focus == page or focus.is_ancestor(page))
         if not inside and not page.child_focus(Gtk.DirectionType.TAB_FORWARD):
             notebook.grab_focus()
@@ -2552,9 +2605,22 @@ class Wmain(GladeComponent):
         else:
             menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
 
+    def search_box(self):
+        """The search box of the window in use: the main window's, in its toolbar, or a
+        console window's own (#255)."""
+        if self.window_in_use in self.console_windows:
+            return self.window_in_use.search_entry
+        return self.get_widget("txtSearch")
+
     def focus_search(self):
-        self.get_widget("txtSearch").select_region(0, -1)
-        self.get_widget("txtSearch").grab_focus()
+        if self.window_in_use in self.console_windows:
+            self.window_in_use.search_bar.set_search_mode(True)
+            # The bar gives its entry the keyboard at once, and maps it only on the next
+            # frame. Realized now, it can take the keys let go of meanwhile: unrealized,
+            # each one was a GTK critical, measured.
+            self.search_box().realize()
+        self.search_box().select_region(0, -1)
+        self.search_box().grab_focus()
 
     def console_previous(self, notebook=None):
         notebook = notebook or self.current_notebook()
@@ -2601,16 +2667,39 @@ class Wmain(GladeComponent):
         return False
 
     def current_notebook(self):
-        """The pane in use: the notebook the keyboard is in, or was last in (#223).
+        """The pane in use: in the window that last had the keyboard, the notebook the
+        keyboard is in, or was last in (#223, #255).
 
-        Measured, choosing a tab whose page cannot take the keyboard leaves it on the
-        notebook itself. This looked for a focused terminal, then for the last terminal
-        given the keyboard, which a click never set, so an action went to a tab nobody
-        was looking at. The main pane is the last resort.
+        A console window has one notebook, so it is that one. In the main window, measured,
+        choosing a tab whose page cannot take the keyboard leaves it on the notebook
+        itself. This looked for a focused terminal, then for the last terminal given the
+        keyboard, which a click never set, so an action went to a tab nobody was looking
+        at.
+        """
+        if self.window_in_use in self.console_windows:
+            return self.window_in_use.notebook
+        return self.main_notebook()
+
+    def main_notebook(self):
+        """The main window's pane in use, where a console moved back goes (#255).
+
+        The notebook the keyboard is in or was last in there, and the main pane failing
+        that.
         """
         if self.last_notebook in self.collect_notebooks(self.hpMain):
             return self.last_notebook
         return self.nbConsole
+
+    def use_window(self, window):
+        """Make `window` the one in use, bringing it to the front if it was not (#255).
+
+        The main window or a console window. Activating one makes it the window in use
+        too, through on_window_active_changed; this is for GCM moving the keyboard there
+        itself, so that it acts on the right tab before the activation arrives.
+        """
+        if window is not (self.window_in_use or self.wMain):
+            self.window_in_use = window
+            window.present()
 
     def page_in_use(self):
         """The tab in use, whatever it holds: the page showing in the pane in use."""
@@ -2619,6 +2708,15 @@ class Wmain(GladeComponent):
         return notebook.get_nth_page(position) if position >= 0 else None
 
     def toggle_fullscreen(self):
+        if self.window_in_use in self.console_windows:
+            # The console window's own, which has no toolbar or menu to hide (#255).
+            window = self.window_in_use
+            state = window.get_window().get_state() if window.get_window() else 0
+            if state & Gdk.WindowState.FULLSCREEN:
+                window.unfullscreen()
+            else:
+                window.fullscreen()
+            return
         if self._current_fullscreen_state:
             Gtk.Window.unfullscreen(self.wMainWindow)
             self.wMainWindow.set_decorated(True)
@@ -2679,7 +2777,7 @@ class Wmain(GladeComponent):
         if (
             hasattr(self, "search")
             and self.search
-            and self.get_widget("txtSearch").get_text() == self.search["word"]
+            and self.search_box().get_text() == self.search["word"]
             and terminal == self.search["terminal"]
         ):
             return True
@@ -2688,7 +2786,7 @@ class Wmain(GladeComponent):
             return False
 
         self.search = {}
-        text = self.get_widget("txtSearch").get_text()
+        text = self.search_box().get_text()
         if text == "" or text == _("buscar..."):
             terminal.search_set_regex(None, 0)
             terminal.match_remove_all()
@@ -2749,6 +2847,9 @@ class Wmain(GladeComponent):
             notebook = page.get_parent() if page is not None else None
             if notebook is not None:
                 notebook.remove_page(notebook.page_num(page))
+            return True
+        elif item == "W":  # TO A WINDOW OF ITS OWN, OR BACK, whatever the tab holds (#255)
+            self.toggle_console_window(self.get_context_tab_widget())
             return True
         elif item == "CP":  # CUSTOM COMMANDS
             vte_feed(self.popupMenu.terminal, args[0])
@@ -3073,6 +3174,12 @@ class Wmain(GladeComponent):
         self.popupMenuTab.mnuSplitV = menuItem = Gtk.MenuItem(label=_("Split V"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.split-vertical")
+        menuItem.show()
+
+        # Out to a window of its own, or back from one: prepare_menu says which (#255).
+        self.popupMenuTab.mnuWindow = menuItem = Gtk.MenuItem(label=_("Move to New Window"))
+        self.popupMenuTab.append(menuItem)
+        menuItem.set_action_name("app.console-window")
         menuItem.show()
 
     def createMenuItem(self, shortcut, label):
@@ -3822,9 +3929,9 @@ class Wmain(GladeComponent):
 
         Measured, quitting by Ctrl+Q ends GCM with no session's end reported, while
         closing the window reports each, with status 9. session_ended runs a host's
-        command once, whichever comes first.
+        command once, whichever comes first. Every window's, console windows' too (#255).
         """
-        for notebook in self.collect_notebooks(self.hpMain):
+        for notebook in self.console_notebooks():
             for index in range(notebook.get_n_pages()):
                 page = notebook.get_nth_page(index)
                 self.session_ended(page_terminal(page) or page)
@@ -4312,16 +4419,18 @@ class Wmain(GladeComponent):
 
         The bell, output stopping out of sight and a session ending all come here (#208),
         so each is shown the same way: a bold label until the tab is looked at, the taskbar
-        flag while GCM is not the active window, and a desktop notification if one is
-        wanted. Only the bell can ask for the notification without the mark: its two
-        preferences predate the other triggers, which have one each.
+        flag while the window holding the tab is not the active one, and a desktop
+        notification if one is wanted. Only the bell can ask for the notification without
+        the mark: its two preferences predate the other triggers, which have one each.
+        The window is the main window or the console window the tab is in (#255).
         """
         notebook, label = self.tab_label_for(terminal.get_parent())
         # nbConsole carries placeholder pages from the glade whose tab labels are plain
         # Gtk.Labels, so a tab label is not necessarily a NotebookTabLabel.
         if not hasattr(label, "set_attention"):
             return
-        window_active = self.wMain.is_active()
+        window = self.window_of(notebook)
+        window_active = window.is_active()
         showing = notebook.get_current_page() == notebook.page_num(terminal.get_parent())
         if window_active and showing:
             # Already being watched; marking it would only need clearing again.
@@ -4329,7 +4438,7 @@ class Wmain(GladeComponent):
         if mark:
             label.set_attention(True)
             if not window_active:
-                self.wMain.set_urgency_hint(True)
+                window.set_urgency_hint(True)
         if conf.BELL_NOTIFY and not window_active:
             self.notify_attention(label)
 
@@ -4344,11 +4453,12 @@ class Wmain(GladeComponent):
         application.send_notification("gcm-bell", notification)
 
     def is_watched(self, terminal):
-        """True while the user can see this console: GCM active, its tab current in its pane."""
+        """True while the user can see this console: its window active, its tab current in
+        its pane."""
         notebook, _ = self.tab_label_for(terminal.get_parent())
         if notebook is None or not hasattr(notebook, "get_current_page"):
             return False
-        if not self.wMain.is_active():
+        if not self.window_of(notebook).is_active():
             return False
         return notebook.get_current_page() == notebook.page_num(terminal.get_parent())
 
@@ -4397,15 +4507,30 @@ class Wmain(GladeComponent):
                 watch.reset()
 
     def on_window_active_changed(self, window, _param):
+        """The main window or a console window took the keyboard, or lost it.
+
+        The last of them to take it is the window in use, whose tab an action goes to
+        (#255). Measured under X11 with no window manager, presenting a window sets this
+        as the keyboard arrives, and a shortcut there runs with it already set.
+        """
         if window.is_active():
             window.set_urgency_hint(False)
+            self.window_in_use = window
 
     def on_tab_focus(self, widget, tab=None, *args):
+        notebook = widget
         if isinstance(widget, Vte.Terminal):
             self.clear_tab_attention(widget.get_parent())
+            page = widget.get_parent()
+            notebook = page.get_parent() if page is not None else None
         elif tab is not None:
             self.clear_tab_attention(tab)
-        if conf.UPDATE_TITLE and widget is not None:
+        # The main window's title follows its tab only with Dynamic title on. A console
+        # window's always does: it has nothing else to say (#255).
+        window = self.console_window_of(notebook)
+        if window is None and conf.UPDATE_TITLE:
+            window = self.wMain
+        if window is not None and widget is not None:
             if isinstance(widget, Vte.Terminal):
                 tab_text = (
                     widget.get_parent().get_parent().get_tab_label(widget.get_parent()).get_text()
@@ -4415,9 +4540,9 @@ class Wmain(GladeComponent):
             else:
                 tab_text = ""
             if tab_text:
-                self.wMain.set_title(f"{conf.APP_TITLE or app_name} - {tab_text.strip()}")
+                window.set_title(f"{conf.APP_TITLE or app_name} - {tab_text.strip()}")
             else:
-                self.wMain.set_title(conf.APP_TITLE or app_name)
+                window.set_title(conf.APP_TITLE or app_name)
 
     def move_page(self, page, notebook):
         """Move a console to the end of another notebook, taking its tab label along.
@@ -4433,27 +4558,162 @@ class Wmain(GladeComponent):
         notebook.set_tab_reorderable(page, True)
         notebook.set_tab_detachable(page, True)
 
+    def open_console_window(self, width, height):
+        """A new console window, `width` by `height`, empty until a tab moves in (#255)."""
+        window = ConsoleWindow(self, width, height)
+        self.console_windows = (*self.console_windows, window)
+        return window
+
+    def toggle_console_window(self, page):
+        """Move the console on `page` to a window of its own, or back from one (#255).
+
+        One command does both, so one shortcut moves a console out and back, as RustConn's
+        does.
+        """
+        notebook = page.get_parent() if page is not None else None
+        if notebook is None:
+            return
+        if self.console_window_of(notebook) is None:
+            self.move_to_new_window(page)
+        else:
+            self.move_to_main_window(page)
+
+    def move_to_new_window(self, page):
+        """Move the console on `page` to a new console window, the size of its pane."""
+        allocation = page.get_parent().get_allocation()
+        window = self.open_console_window(allocation.width, allocation.height)
+        self.move_page(page, window.notebook)
+        window.show()
+        self.focus_console(window.notebook, page)
+        return window
+
+    def move_to_main_window(self, page):
+        """Move the console on `page` back into the main window's pane in use (#255)."""
+        notebook = self.main_notebook()
+        self.move_page(page, notebook)
+        self.focus_console(notebook, page)
+
+    def on_notebook_create_window(self, notebook, page, x, y):
+        """A tab dropped outside every notebook opens in a console window there (#255).
+
+        GTK asks for the notebook to put it in, and moves it there itself. Measured with a
+        real pointer drag under X11, dropped on the bare root window: it asks with the
+        pointer's position, and the tab takes its label along, as between panes.
+        """
+        allocation = notebook.get_allocation()
+        window = self.open_console_window(allocation.width, allocation.height)
+        window.move(x, y)
+        window.show()
+
+        def focus():
+            # Once GTK has moved the tab in, which it does after this returns.
+            self.focus_console(window.notebook, page)
+            return False
+
+        GLib.idle_add(focus)
+        return window.notebook
+
+    def watch_tab_drags(self, notebook):
+        """Move a tab dropped outside every notebook to a window of its own (#255)."""
+        notebook.connect("create-window", self.on_notebook_create_window)
+        notebook.connect("drag-begin", self.on_notebook_drag_begin)
+        notebook.connect("drag-failed", self.on_notebook_drag_failed)
+        notebook.connect("drag-end", self.on_notebook_drag_end)
+
+    def on_notebook_drag_begin(self, notebook, _context):
+        # GTK shows a tab as it is pressed, so the one showing as a drag begins is the
+        # one dragged: measured on sway, dragging a tab that was not showing.
+        self.dragged_tab = notebook.get_nth_page(notebook.get_current_page())
+
+    def on_notebook_drag_end(self, _notebook, _context):
+        self.dragged_tab = None
+
+    def on_notebook_drag_failed(self, notebook, _context, result):
+        """A tab dropped outside every notebook under Wayland, which GTK puts back (#255).
+
+        GTK asks for a window for a tab dropped on the bare root window, or one whose drag
+        failed for want of a target. Measured with real pointer input under X11, that is
+        a drop anywhere else but a tab strip, a terminal or the server tree, while Escape
+        cancels the drag. Measured on sway with a virtual pointer, Wayland reports a drop
+        on the bare desktop or on a terminal as an error instead, and GTK put the tab
+        back. So there GCM moves it out itself, as Move to New Window does, once GTK has.
+        """
+        page = self.dragged_tab
+        wayland = notebook.get_display().__gtype__.name == "GdkWaylandDisplay"
+        if result == Gtk.DragResult.ERROR and wayland and page is not None:
+            GLib.idle_add(self.move_out_after_drag, page)
+        return False
+
+    def move_out_after_drag(self, page):
+        if page.get_parent() is not None:
+            self.move_to_new_window(page)
+        return False
+
+    def on_console_window_delete(self, window, _event):
+        """Closing a console window moves its consoles back into the main window (#255).
+
+        It ends none of them. Ending each, as closing its tab does, would have asked
+        nothing with Confirm on close console off, which asks once a tab. They go into the
+        main window's pane in use, in their order, and the one showing here shows there.
+        """
+        notebook = self.main_notebook()
+        showing = window.notebook.get_nth_page(window.notebook.get_current_page())
+        while window.notebook.get_n_pages():
+            self.move_page(window.notebook.get_nth_page(0), notebook)
+        if showing is not None:
+            self.focus_console(notebook, showing)
+        return False
+
+    def on_console_window_destroy(self, window):
+        self.console_windows = tuple(other for other in self.console_windows if other is not window)
+        if self.window_in_use is window:
+            self.window_in_use = None
+
+    def on_console_window_page_removed(self, notebook, _page, _number):
+        """Close a console window once its last tab has left it, however it left (#255).
+
+        From an idle, after GTK has finished moving the tab: a drag still ends in the
+        notebook the tab left. One dropped back in meanwhile keeps the window open.
+        """
+        if notebook.get_n_pages() == 0:
+            GLib.idle_add(self.close_empty_console_window, self.console_window_of(notebook))
+
+    def close_empty_console_window(self, window):
+        if window in self.console_windows and window.notebook.get_n_pages() == 0:
+            window.destroy()
+        return False
+
+    def new_console_notebook(self):
+        """A notebook for consoles, for a split or a console window (#255).
+
+        Wired as the main pane is, in the panes' group, so tabs drag between them all.
+        """
+        nb = Gtk.Notebook()
+        nb.set_group_name("11")
+        nb.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        nb.connect("button_press_event", self.on_double_click, None)
+        nb.connect("page_removed", self.on_page_removed)
+        nb.connect("page-added", self.on_page_added)
+        nb.connect("switch-page", self.on_tab_focus)
+        nb.connect("scroll-event", self.on_tab_scroll)
+        self.watch_tab_drags(nb)
+
+        nb.set_property("scrollable", True)
+        self.install_console_button(nb)
+        return nb
+
     def split_notebook(self, direction):
         # The tab whose menu is open, else the tab in use: whatever it holds (#223).
         csp = self.get_context_tab_widget()
         cnb = csp.get_parent() if csp is not None else None
 
-        # Separar solo si hay mas de 2 tabs en el notebook actual
-        if cnb is not None and cnb.get_n_pages() > 1:
+        # Separar solo si hay mas de 2 tabs en el notebook actual. A console window has
+        # no splits (#255).
+        if cnb is not None and cnb.get_n_pages() > 1 and self.console_window_of(cnb) is None:
             # Crear un hpaned, en el hijo 0 dejar el notebook y en el hijo 1 el nuevo notebook
             # El nuevo hpaned dejarlo como hijo del actual parent
             hp = Gtk.HPaned() if direction == HSPLIT else Gtk.VPaned()
-            nb = Gtk.Notebook()
-            nb.set_group_name("11")
-            nb.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
-            nb.connect("button_press_event", self.on_double_click, None)
-            nb.connect("page_removed", self.on_page_removed)
-            nb.connect("page-added", self.on_page_added)
-            nb.connect("switch-page", self.on_tab_focus)
-            nb.connect("scroll-event", self.on_tab_scroll)
-
-            nb.set_property("scrollable", True)
-            self.install_console_button(nb)
+            nb = self.new_console_notebook()
             cp = cnb.get_parent()
 
             if direction == HSPLIT:
@@ -4492,6 +4752,10 @@ class Wmain(GladeComponent):
             # eliminar el notebook solo si queda otro notebook y no quedan tabs en el actual
             paned = widget.get_parent()
             if paned is None or paned == self.hpMain:
+                return
+            if self.console_window_of(widget) is not None:
+                # Not a pane: it sits in a console window's box, beside the search bar,
+                # and the window closes itself once its last tab has left (#255).
                 return
             container = paned.get_parent()
             save = paned.get_child2() if paned.get_child1() == widget else paned.get_child1()
@@ -5187,6 +5451,10 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_wMain_destroy {
     def on_wMain_destroy(self, widget, *args):
+        # Closing the main window quits GCM. A console window's sessions end with it, as
+        # the main window's do: each terminal reports its end as it is destroyed (#255).
+        for window in self.console_windows:
+            window.destroy()
         self.writeConfig()
         self.quit_application()
 
@@ -5545,31 +5813,18 @@ class Wmain(GladeComponent):
         if not create:
             return True
 
-        # obtener lista de consolas abiertas
+        # obtener lista de consolas abiertas, en cada ventana (#255)
         consoles = []
-        global wMain
-        obj = wMain.hpMain
-        s = []
-        s.append(obj)
-        while len(s) > 0:
-            obj = s.pop()
-            # agregar hijos de p a s
-            if hasattr(obj, "get_children"):
-                for w in obj.get_children():
-                    if isinstance(w, Gtk.Notebook) or hasattr(w, "get_children"):
-                        s.append(w)
-
-            if isinstance(obj, Gtk.Notebook):
-                n = obj.get_n_pages()
-                for i in range(0, n):
-                    page = obj.get_nth_page(i)
-                    terminal = page_terminal(page)
-                    if terminal is None:
-                        # Commands are typed into terminals. A tab without one made the
-                        # send raise at its row, and the rows after it got nothing (#223).
-                        continue
-                    title = obj.get_tab_label(page).get_text()
-                    consoles.append((title, terminal))
+        for notebook in self.console_notebooks():
+            for i in range(notebook.get_n_pages()):
+                page = notebook.get_nth_page(i)
+                terminal = page_terminal(page)
+                if terminal is None:
+                    # Commands are typed into terminals. A tab without one made the
+                    # send raise at its row, and the rows after it got nothing (#223).
+                    continue
+                title = notebook.get_tab_label(page).get_text()
+                consoles.append((title, terminal))
 
         if len(consoles) == 0:
             msgbox(_("No hay consolas abiertas"))
@@ -7983,12 +8238,16 @@ class NotebookTabLabel(Gtk.HBox):
     def prepare_menu(self):
         """Make this tab the tab menu's context, and show the items that apply to it.
 
-        A tab that holds no terminal is offered Rename and Split only (#223). The others
-        act on a terminal, and on such a tab they raised or acted on another tab's.
+        A tab that holds no terminal is offered Rename, Split and moving to a window of its
+        own only (#223, #255). The others act on a terminal, and on such a tab they raised
+        or acted on another tab's. A tab in a console window is offered no Split, and
+        moving back to the main window.
         """
         global wMain
+        in_window = False
         if wMain:
             wMain.set_context_tab_widget(self.widget_)
+            in_window = wMain.console_window_of(self.widget_.get_parent()) is not None
         has_terminal = page_terminal(self.widget_) is not None
         for item in (
             self.popup.mnuReset,
@@ -8002,12 +8261,15 @@ class NotebookTabLabel(Gtk.HBox):
 
         # show/hide split menu
         nb = self.widget_.get_parent()
-        if nb.get_n_pages() > 1:
+        if nb.get_n_pages() > 1 and not in_window:
             self.popup.mnuSplitH.show()
             self.popup.mnuSplitV.show()
         else:
             self.popup.mnuSplitH.hide()
             self.popup.mnuSplitV.hide()
+        self.popup.mnuWindow.set_label(
+            _("Move to Main Window") if in_window else _("Move to New Window")
+        )
 
     def popupmenu(self, widget, event, label):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
@@ -8058,6 +8320,60 @@ class NotebookTabLabel(Gtk.HBox):
             ):
                 return True
             self.close_tab(self.widget_)
+
+
+class ConsoleWindow(Gtk.Window):
+    """A window of its own for consoles moved out of the main window (#255).
+
+    It holds one notebook, made as a split's is and in the panes' group, so tabs drag
+    between it and the panes, and more can be dropped in. It has no splits. Closing it
+    moves its consoles back into the main window, and it closes itself once its last tab
+    has left. It joins the application, so GCM's shortcuts work in it: measured, a key
+    pressed there runs the application's action as one in the main window does.
+    """
+
+    def __init__(self, controller, width, height):
+        Gtk.Window.__init__(self, title=conf.APP_TITLE or app_name)
+        main = controller.wMain
+        application = main.get_application()
+        if application is not None:
+            self.set_application(application)
+        # The main window's visual: a console's transparency needs the RGBA one where there
+        # is a compositor, which update_visual gives the main window.
+        self.set_visual(main.get_visual())
+        self.set_default_size(width, height)
+        with contextlib.suppress(Exception):
+            self.set_icon_from_file(ICON_PATH)
+        self.notebook = controller.new_console_notebook()
+        self.notebook.connect("page-removed", controller.on_console_window_page_removed)
+        # Find puts the keyboard here, to search this window's tabs. The main window's
+        # search box searches the main window's tab in use, and is out of reach from here.
+        self.search_entry = Gtk.Entry()
+        self.search_entry.set_placeholder_text(_("buscar..."))
+        # Before the bar takes the entry, so Escape clears the search before closing it.
+        self.search_entry.connect("key-press-event", controller.on_btnSearch_key_press)
+        self.search_bar = Gtk.SearchBar()
+        self.search_bar.add(self.search_entry)
+        self.search_bar.set_show_close_button(True)
+        self.search_bar.connect("notify::search-mode-enabled", self.on_search_mode)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.pack_start(self.search_bar, False, False, 0)
+        box.pack_start(self.notebook, True, True, 0)
+        self.add(box)
+        box.show_all()
+        self.controller = controller
+        self.connect("key-press-event", controller.on_window_key_press)
+        self.connect("notify::is-active", controller.on_window_active_changed)
+        self.connect("delete-event", controller.on_console_window_delete)
+        self.connect("destroy", controller.on_console_window_destroy)
+
+    def on_search_mode(self, search_bar, _param):
+        """Give the tab showing the keyboard back once the search box closes."""
+        if search_bar.get_search_mode():
+            return
+        page = self.notebook.get_nth_page(self.notebook.get_current_page())
+        if page is not None:
+            self.controller.focus_console(self.notebook, page)
 
 
 class EntryDialog(Gtk.Dialog):
@@ -8207,6 +8523,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("console-rename", self._on_action_console_rename)
         self._create_action("console-reconnect", self._on_action_console_reconnect)
         self._create_action("console-close", self._on_action_console_close)
+        self._create_action("console-window", self._on_action_console_window)
         self._create_stateful_action("console-log", False, self._on_action_console_log)
         self._create_action(
             "send-snippet",
@@ -8313,6 +8630,8 @@ class GcmApplication(Gtk.Application):
         split_section.append(_("Split Horizontal"), "app.split-horizontal")
         split_section.append(_("Split Vertical"), "app.split-vertical")
         split_section.append(_("Unsplit"), "app.unsplit")
+        # From here the main window is in use, so the console moves out (#255).
+        split_section.append(_("Move to New Window"), "app.console-window")
         view_menu.append_section(None, split_section)
         zoom_section = Gio.Menu()
         zoom_section.append(_("Zoom In"), "app.zoom-in")
@@ -8609,6 +8928,11 @@ class GcmApplication(Gtk.Application):
             # down the tab branch raised instead of closing (#95). Reading that, Ctrl+W
             # could not close a tab without a terminal.
             self._controller.trigger_popup_action("X", "X")
+
+    def _on_action_console_window(self, action, _param):
+        if self._controller is not None:
+            # A tab action, like Close console: out to a window of its own, or back (#255).
+            self._controller.trigger_popup_action("W", "W")
 
     def _on_action_console_log(self, action, state):
         if self._controller is None:

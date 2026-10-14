@@ -316,7 +316,9 @@ def _menu_modifiers(app_module, monkeypatch):
     wmain = object.__new__(app_module.Wmain)
     wmain.terminal_paste = lambda _terminal: None
     wmain.set_context_terminal = lambda _terminal: opened.append(True)
-    switch = types.SimpleNamespace(set_sensitive=lambda _value: None)
+    switch = types.SimpleNamespace(
+        set_sensitive=lambda _value: None, set_visible=lambda _value: None
+    )
     wmain.popupMenu = types.SimpleNamespace(
         mnuCopy=switch, mnuSplitH=switch, mnuSplitV=switch, popup=lambda *_args: None
     )

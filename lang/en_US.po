@@ -1975,3 +1975,12 @@ msgstr "{name}, {address}, {port}, {user}, {group} and {type} are the host's, ea
 
 msgid "A command host needs a command, on its Command line tab."
 msgstr "A command host needs a command, on its Command line tab."
+
+msgid "Move to New Window"
+msgstr "Move to New Window"
+
+msgid "Move to Main Window"
+msgstr "Move to Main Window"
+
+msgid "Window {}"
+msgstr "Window {}"
