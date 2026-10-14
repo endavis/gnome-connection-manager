@@ -2364,6 +2364,9 @@ Ej: ##D=1000&lt;/span&gt;</property>
                     <property name="can-focus">True</property>
                     <signal name="button-press-event" handler="on_tvServers_button_press_event" swapped="no"/>
                     <signal name="row-activated" handler="on_tvServers_row_activated" swapped="no"/>
+                    <signal name="row-collapsed" handler="on_tvServers_row_collapsed" swapped="no"/>
+                    <signal name="row-expanded" handler="on_tvServers_row_expanded" swapped="no"/>
+                    <signal name="style-updated" handler="on_tvServers_style_updated" swapped="no"/>
                     <child internal-child="selection">
                       <object class="GtkTreeSelection"/>
                     </child>

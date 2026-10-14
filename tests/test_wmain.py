@@ -2186,6 +2186,95 @@ def test_a_tab_out_of_sight_is_marked_when_its_output_stops_against_real_gtk():
     assert "OK" in result.stdout
 
 
+# GCM paints the server tree's stripes itself, into model column 3, and walks only into
+# expanded folders, so opening or closing one has to paint them again (#257).
+_ROW_STRIPES_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gtk
+from gnome_connection_manager import app
+
+app.conf.STARTUP_LOCAL = False
+
+def pump(seconds=0.3):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+app.wMain = w = app.Wmain(application=None)
+for folder, names in (("A", ["a1", "a2", "a3"]), ("B", ["b1", "b2"])):
+    app.groups[folder] = [app.Host(folder, name, "", "", "", "") for name in names]
+w.updateTree()
+pump()
+tree, model = w.treeServers, w.treeModel
+
+def visible_rows():
+    rows = []
+    def walk(row):
+        while row:
+            rows.append((model[row][0], model[row][3]))
+            if model.iter_has_child(row) and tree.row_expanded(model.get_path(row)):
+                walk(model.iter_children(row))
+            row = model.iter_next(row)
+    walk(model.get_iter_first())
+    return rows
+
+def assert_striped(after):
+    rows = visible_rows()
+    same = [(a[0], b[0]) for a, b in zip(rows, rows[1:]) if a[1] == b[1]]
+    assert not same, "after %s, adjacent rows share a colour: %s" % (after, rows)
+
+assert_striped("updateTree")
+folder_a = model.get_path(model.get_iter_first())
+tree.collapse_row(folder_a)
+pump()
+assert_striped("collapsing A")
+# A's hosts still hold the colours they were painted with before A closed, which no
+# longer fit below the folder after it.
+tree.expand_row(folder_a, False)
+pump()
+assert_striped("expanding A")
+
+# A theme change, as far as the tree can tell: its background is no longer white.
+css = Gtk.CssProvider()
+css.load_from_data(b"treeview.view { background-color: #305070; }")
+Gtk.StyleContext.add_provider_for_screen(
+    Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_USER
+)
+pump()
+style = tree.get_style_context()
+background = app.color_to_hex(style.get_property("background-color", Gtk.StateFlags.NORMAL))
+assert background != "#ffffff", "the background did not change"
+assert visible_rows()[0][1] == background, (background, visible_rows())
+assert_striped("the background changing")
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real tree view",
+)
+def test_the_server_tree_stripes_follow_its_folders_and_theme_against_real_gtk():
+    """Mutation tested: with any one of the tree's row-collapsed, row-expanded and
+    style-updated signals left out of the glade file, its step fails."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _ROW_STRIPES_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert "OK" in result.stdout
+
+
 class LogHost:
     def __init__(self, group="", name="web-01", user="", host="", port=""):
         self.group = group
