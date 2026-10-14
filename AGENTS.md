@@ -442,6 +442,28 @@ Practices below have each caught real bugs in this repo. They are worth the time
   covered window returns what covers it. `on_screen` in `tests/test_vnc.py` failed on CI
   so, reading another test's console as black, until it raised its window (#250). When
   looking for what covers a window, `xwininfo -root -children` lists the top-most first.
+- **Real X input comes through XTest, by ctypes.** python-xlib is not a dependency, so
+  `tests/test_console_window.py` loads libXtst, which CI installs as `libxtst6`. Keys and
+  the keyboard's place are a display's, so a test using them runs on an Xvfb of its own:
+  on the shared one, another worker's windows take them. Two workers can choose the same
+  free display number, and measured under load, the loser's server took long enough to
+  exit that two scenarios ran on one display, each typing into the other's windows, until
+  one finished and took the server down. So `_private_display` counts a display as its
+  own only once the lock file Xvfb writes names its process. A GTK process whose X server
+  goes away exits with status 1 and prints nothing, measured.
+- **Wayland is measured on sway, headless.** WSLg takes no synthetic input, and Xvfb
+  answers for X11 only. Ubuntu's sway runs from its packages unpacked with
+  `apt-get download` and `dpkg -x`, under `WLR_BACKENDS=headless`, and a small C client of
+  the `zwlr_virtual_pointer_manager_v1` protocol, built against `libwayland-dev`'s
+  headers, moves and presses its pointer (#255). Keep its `XDG_RUNTIME_DIR` short: a
+  socket's path holds 108 bytes. Wayland tells a client nothing of where its windows are,
+  so find a widget on the output by putting the pointer in its window and asking GTK
+  where it is. Measured, sway 1.9 often refused a drag begun seconds after a cancelled
+  one, with GCM's handling of it and without, so a drag that never ends is sway's while
+  its log says `Rejecting start_drag`.
+- **A signal handler's exception does not end a scenario.** PyGObject prints it and
+  carries on, measured: the scenario exits 0 having printed OK. So
+  `tests/test_console_window.py` also fails on a traceback in the scenario's stderr.
 - **Test fakes must mirror the real widget API.** `tests/conftest.py` stubs all of `gi`, so a
   fake can define methods the real class lacks and nothing complains — this caused #30
   (`select_none()` on `Vte.Terminal`) and #41 (`set_attention()` on `Gtk.Label`). Several
@@ -553,33 +575,60 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - A console action acts on the tab in use, or, from a tab's or a terminal's menu, on
   that tab (#219, #221). `get_context_tab_widget` answers which, reading the terminal's
   context too: the terminal menu's Reset and Clone are tab actions. The tab in use is
-  `page_in_use`: the page showing in the pane the keyboard is in, or was last in, which
-  `current_notebook` gives. `on_window_set_focus` keeps that pane, following the window's
-  `set-focus` into the panes by a click or a key alike (#223). It replaced
-  `self.current`, the last terminal given the keyboard, which a click never set and a
-  tab without a terminal could not be. `get_target_terminal` is the context terminal,
-  else that tab's terminal, else None. Terminal shortcuts are also application
-  accelerators, which run before the focused terminal sees the key, so a key reaches
-  the action's handler and not `on_terminal_keypress`. A remote desktop with the
+  `page_in_use`: the page showing in the pane the keyboard is in, or was last in, in the
+  window that last had it, which `current_notebook` gives. `on_window_set_focus` keeps
+  that pane, following the window's `set-focus` into the panes by a click or a key alike
+  (#223). It replaced `self.current`, the last terminal given the keyboard, which a click
+  never set and a tab without a terminal could not be. `get_target_terminal` is the
+  context terminal, else that tab's terminal, else None. Terminal shortcuts are also
+  application accelerators, which run before the focused terminal sees the key, so a key
+  reaches the action's handler and not `on_terminal_keypress`. A remote desktop with the
   keyboard is the exception, and gets the key first (#234). Both menus clear their context
   from an idle callback after `hide`, in `on_context_menu_hide`, and
-  `trigger_popup_action` clears it even when the action raises. Measured: GTK hides a
-  menu before the chosen item's action runs, and that action reads the context. The
-  tab menu cleared half of it at once, which sent the next paste or Ctrl+W to a tab
-  nobody was looking at. The terminal menu cleared all of it, so each item acted on
-  the terminal with the keyboard, which after a split can be in the other pane.
-  Opening the menu does not move the keyboard, measured.
+  `trigger_popup_action` clears it even when the action raises. Measured: GTK hides a menu
+  before the chosen item's action runs, and that action reads the context. The tab menu
+  cleared half of it at once, which sent the next paste or Ctrl+W to a tab nobody was
+  looking at. The terminal menu cleared all of it, so each item acted on the terminal with
+  the keyboard, which after a split can be in the other pane. Opening the menu does not
+  move the keyboard, measured.
 - A tab holds a page, and the page need not hold a terminal (#223). `addTab` builds one
   around a terminal and opens it with `add_page`, which a page of any other kind goes
   through too: VNC's is one (#234), and web views and in-tab RDP are to be (#207). Nothing may
   take a page's first child for its terminal; `page_terminal` answers, with None for a
   page that holds something else. Terminal actions then do nothing, and tab actions --
-  Rename, Close console, Split, moving between panes, the open-console list -- work on
-  any tab. `NotebookTabLabel.prepare_menu` offers such a tab Rename and Split only, and
-  the cluster window leaves it out. Measured, choosing a tab whose page cannot take the
-  keyboard leaves the keyboard on the notebook itself. Alt+1 to Alt+9 are handled in
-  `on_terminal_keypress`, not as accelerators, so they do nothing from such a tab.
-  `tests/test_tab_pages.py` opens a kind of page of its own to test all of this.
+  Rename, Close console, Split, moving between panes and windows, the open-console list --
+  work on any tab. `NotebookTabLabel.prepare_menu` offers such a tab Rename, Split and
+  Move to New Window only, and the cluster window leaves it out. Measured, choosing a tab
+  whose page cannot take the keyboard leaves the keyboard on the notebook itself. Alt+1 to
+  Alt+9 are handled in `on_terminal_keypress`, not as accelerators, so they do nothing
+  from such a tab. `tests/test_tab_pages.py` opens a kind of page of its own to test all
+  of this.
+- A console can move to a window of its own, a `ConsoleWindow` (#255). It holds one
+  notebook from `new_console_notebook`, as a split does, so tabs drag between it and the
+  panes, and no splits: `split_notebook` refuses there, both menus hide Split, and
+  `check_notebook_pages` passes its notebook over. Code that reaches every console walks
+  `console_notebooks`, the main window's panes and then each console window's;
+  `collect_notebooks(self.hpMain)` is the main window's alone, which is what
+  `on_window_set_focus` and `main_notebook` want. The window in use, `window_in_use`, is
+  the last of them to become active, through `on_window_active_changed`, or the one
+  `use_window` brought forward, and `current_notebook` reads it. A console window joins
+  the application, so the application's keys work there: measured, without that the
+  terminal shortcuts still worked, through `on_terminal_keypress`, but Ctrl+Shift+U did
+  not. `toggle_console_window` moves a tab out or back. Back is into `main_notebook`, the
+  main window's pane in use, and so is every console of a window being closed, which ends
+  none of them, as decided in #255. An emptied console window closes itself, from an idle.
+  A tab dropped outside every notebook raises `create-window`: measured with real pointer
+  input under X11, a drop on the root window arrives through GTK's root-window drop,
+  `drag-data-get` and not `drag-failed`, with the pointer's position, and a drop anywhere
+  else but a tab strip, a terminal included, through `drag-failed` with no target. Under
+  Wayland, measured on sway, GTK reports either as `drag-failed` with an error and opens
+  nothing, so there `on_notebook_drag_failed` moves the tab out itself, the one
+  `on_notebook_drag_begin` recorded, once GTK has put it back. `watch_tab_drags` wires
+  those signals on every console notebook. Find there opens the window's own search box,
+  which `search_box` returns, and F11 makes the console window fill the screen. The bar
+  maps its entry only on its next frame, so `focus_search` realizes it: unrealized, each
+  key let go of meanwhile was a GTK critical. A mark flags the window holding the tab,
+  which `window_of` gives.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/en_US.po`); the catalogs the application loads are compiled beside them
   (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating

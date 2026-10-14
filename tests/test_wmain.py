@@ -1658,10 +1658,8 @@ def test_right_click_paste_goes_through_the_policy(monkeypatch, app_module):
     monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
     monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
     wmain = object.__new__(app_module.Wmain)
-    wmain.popupMenu = types.SimpleNamespace(
-        mnuSplitH=types.SimpleNamespace(set_sensitive=lambda _v: None),
-        mnuSplitV=types.SimpleNamespace(set_sensitive=lambda _v: None),
-    )
+    split = types.SimpleNamespace(set_sensitive=lambda _v: None, set_visible=lambda _v: None)
+    wmain.popupMenu = types.SimpleNamespace(mnuSplitH=split, mnuSplitV=split)
     terminal = ClipboardTerminal()
     terminal.get_parent = NotebookAncestor
     _clipboard(monkeypatch, app_module, "echo hi\n")
@@ -1698,7 +1696,7 @@ def test_ctrl_right_click_opens_the_menu_even_while_right_click_pastes(
     monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_LINES", 0)
     monkeypatch.setattr(app_module.conf, "PASTE_CONFIRM_BYTES", 0)
     popped = []
-    sensitive = types.SimpleNamespace(set_sensitive=lambda _v: None)
+    sensitive = types.SimpleNamespace(set_sensitive=lambda _v: None, set_visible=lambda _v: None)
     wmain = object.__new__(app_module.Wmain)
     wmain.popupMenu = types.SimpleNamespace(
         mnuCopy=sensitive,
@@ -5190,6 +5188,133 @@ def test_the_snippets_shortcut_opens_the_picker(app_module, monkeypatch):
     wmain.on_terminal_keypress(terminal, object())
 
     assert opened == [terminal]
+
+
+def test_the_console_window_shortcut_moves_the_terminals_tab(app_module, monkeypatch):
+    """Where the key reaches the terminal rather than its accelerator (#255)."""
+    moved = []
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "toggle_console_window",
+        lambda self, page: moved.append(page),
+        raising=False,
+    )
+    monkeypatch.setattr(app_module, "get_key_name", lambda event: "CTRL+SHIFT+M")
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+M": app_module._CONSOLE_WINDOW})
+    wmain = object.__new__(app_module.Wmain)
+    terminal = ClipboardTerminal()
+    page = object()
+    terminal.get_parent = lambda: page
+
+    wmain.on_terminal_keypress(terminal, object())
+
+    assert moved == [page]
+
+
+class DraggingNotebook:
+    """A notebook a tab is dragged from. The real Gtk.Notebook has each (checked below)."""
+
+    def __init__(self, pages, backend):
+        self.pages = pages
+        self.current = 0
+        # GCM knows the backend by the display's type name, measured on sway as
+        # GdkWaylandDisplay.
+        self.display = types.SimpleNamespace(__gtype__=types.SimpleNamespace(name=backend))
+
+    def get_current_page(self):
+        return self.current
+
+    def get_nth_page(self, number):
+        return self.pages[number]
+
+    def get_display(self):
+        return self.display
+
+
+def test_dragging_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("get_current_page", "get_nth_page", "get_display"):
+        assert hasattr(DraggingNotebook, name), f"fake is missing {name}"
+        assert hasattr(Gtk.Notebook, name), f"Gtk.Notebook has no {name}"
+
+
+def test_a_console_notebook_watches_its_tab_drags(app_module):
+    """Every console notebook is wired by this, so none misses one of the four (#255)."""
+    wmain = object.__new__(app_module.Wmain)
+    connected = []
+    notebook = types.SimpleNamespace(connect=lambda *args: connected.append(args))
+
+    wmain.watch_tab_drags(notebook)
+
+    assert connected == [
+        ("create-window", wmain.on_notebook_create_window),
+        ("drag-begin", wmain.on_notebook_drag_begin),
+        ("drag-failed", wmain.on_notebook_drag_failed),
+        ("drag-end", wmain.on_notebook_drag_end),
+    ]
+
+
+def _failed_drag(app_module, monkeypatch, backend, result):
+    """Drag the first of two tabs, with the second showing by the end, and fail it so."""
+    results = types.SimpleNamespace(ERROR="error", NO_TARGET="no-target")
+    monkeypatch.setattr(app_module.Gtk, "DragResult", results)
+    scheduled = []
+    monkeypatch.setattr(
+        app_module.GLib, "idle_add", lambda callback, *args: scheduled.append((callback, args))
+    )
+    wmain = object.__new__(app_module.Wmain)
+    pages = [object(), object()]
+    notebook = DraggingNotebook(pages, backend)
+    wmain.on_notebook_drag_begin(notebook, None)
+    notebook.current = 1
+    assert wmain.on_notebook_drag_failed(notebook, None, getattr(results, result)) is False
+    wmain.on_notebook_drag_end(notebook, None)
+    assert wmain.dragged_tab is None
+    return wmain, pages, scheduled
+
+
+def test_a_tab_dropped_outside_under_wayland_moves_out(app_module, monkeypatch):
+    """Wayland reports the drop as an error, and GTK puts the tab back (#255).
+
+    The tab moved is the one dragged, not the one showing when the drag fails.
+    """
+    wmain, pages, scheduled = _failed_drag(app_module, monkeypatch, "GdkWaylandDisplay", "ERROR")
+
+    assert scheduled == [(wmain.move_out_after_drag, (pages[0],))]
+
+
+def test_a_failed_drag_under_x11_is_left_to_gtk(app_module, monkeypatch):
+    _, _, scheduled = _failed_drag(app_module, monkeypatch, "GdkX11Display", "ERROR")
+
+    assert scheduled == []
+
+
+def test_a_drop_with_no_target_is_left_to_gtk(app_module, monkeypatch):
+    """GTK opens a window for that itself, through create-window."""
+    _, _, scheduled = _failed_drag(app_module, monkeypatch, "GdkWaylandDisplay", "NO_TARGET")
+
+    assert scheduled == []
+
+
+def test_a_tab_moves_out_after_its_drag_only_while_still_open(app_module, monkeypatch):
+    moved = []
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "move_to_new_window",
+        lambda self, page: moved.append(page) or object(),
+        raising=False,
+    )
+    wmain = object.__new__(app_module.Wmain)
+    still_open = types.SimpleNamespace(get_parent=lambda: object())
+    closed = types.SimpleNamespace(get_parent=lambda: None)
+
+    # From an idle, so once each.
+    assert wmain.move_out_after_drag(still_open) is False
+    assert wmain.move_out_after_drag(closed) is False
+    assert moved == [still_open]
 
 
 # conftest stubs gi across the whole session, so the real widget cannot be built in

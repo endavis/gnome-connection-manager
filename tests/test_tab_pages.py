@@ -115,7 +115,7 @@ def menu_items(name):
     """The tab menu's items shown for `name`'s tab, then the menu dismissed."""
     label_of(name).prepare_menu()
     shown = [item for item in ("mnuRename", "mnuReset", "mnuClear", "mnuReopen", "mnuClone",
-                               "mnuLog", "mnuTranscript", "mnuSplitH", "mnuSplitV")
+                               "mnuLog", "mnuTranscript", "mnuSplitH", "mnuSplitV", "mnuWindow")
              if getattr(w.popupMenuTab, item).get_visible()]
     w.popupMenuTab.emit("hide")
     pump()
@@ -198,9 +198,9 @@ elif scenario == "rename-from-its-menu":
 elif scenario == "its-menu-offers-what-applies":
     open_tabs("A")
     open_page("N")
-    assert menu_items("N") == ["mnuRename", "mnuSplitH", "mnuSplitV"], menu_items("N")
+    assert menu_items("N") == ["mnuRename", "mnuSplitH", "mnuSplitV", "mnuWindow"], menu_items("N")
     everything = ["mnuRename", "mnuReset", "mnuClear", "mnuClone", "mnuLog", "mnuTranscript",
-                  "mnuSplitH", "mnuSplitV"]
+                  "mnuSplitH", "mnuSplitV", "mnuWindow"]
     assert menu_items("A") == everything, menu_items("A")
 
 elif scenario == "the-open-console-list":

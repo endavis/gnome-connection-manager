@@ -1,6 +1,6 @@
 ---
 title: "Using terminals in GCM"
-description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut table, a host's first connection, and what GCM does with a gcm.conf it cannot read"
+description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, consoles in windows of their own, tabs that need your attention, font zoom, the shortcut table, a host's first connection, and what GCM does with a gcm.conf it cannot read"
 audience:
   - gcm-users
 tags:
@@ -420,6 +420,47 @@ key you actually use. They address a position *within one pane*, which is why th
 restarts under each heading once you have split the window — with a split, the list groups
 consoles by pane and tells you which pane each one is in.
 
+## A console in a window of its own
+
+A console can leave the main window for a window of its own, to keep it on another monitor
+or beside another program. Three ways move it out:
+
+- **Move to New Window** in its tab's menu, or **View → Move to New Window** for the tab in
+  use.
+- `Ctrl+Shift+M`, the `console_window` shortcut.
+- Dragging its tab off the tab strip and letting go anywhere but a tab strip: on the
+  desktop, or over a console. Under X11 the window opens where you let go; under Wayland
+  the desktop places it.
+
+The console keeps its session, its tab's label and marks, and its log. Nothing reconnects.
+
+A console window holds tabs as a pane does. Drag more tabs into it, or open them there:
+**Clone** in it, a new local console from it, and a double-click on its tab strip all open
+in it. It has no splits, so Split is not offered there. Its title is its tab's, whether or
+not **Dynamic title** is set, since it has nothing else to show.
+
+A shortcut pressed in a console window acts on its tab, never on the main window's.
+`Ctrl+F` opens a search box at the top of the window, for its own tabs, and `F11` makes it
+fill the screen. A tab there that [needs your attention](#when-a-tab-needs-your-attention)
+flags this window in the taskbar, not the main one.
+
+To bring a console back:
+
+- `Ctrl+Shift+M` again, or **Move to Main Window** in its tab's menu.
+- Drag its tab into a tab strip in the main window.
+- Close the window, which brings back every console in it. Closing it ends none of them:
+  to end a session, close its tab.
+
+Each one goes into the main window's pane in use, the one the keyboard is in or was last in.
+A console window closes itself once its last tab has left, however it left.
+
+The [open-console list](#finding-a-console-among-many) shows consoles in console windows
+too, under the headings Window 1, Window 2 and so on. The
+[cluster window](#typing-into-several-consoles-at-once) lists them, and Preferences applies
+to them as it does to the rest. Quitting GCM, by `Ctrl+Q` or by closing the main window,
+ends every session in every window. Closing the main window asks first when **Confirm on
+exit** is set, and counts the consoles in every window.
+
 ## Typing into several consoles at once
 
 **Servers → Cluster** (`Ctrl+Shift+U`) opens a window listing your open consoles. Tick the
@@ -656,6 +697,7 @@ through the shortcut editor in Preferences.
 | `Ctrl+Shift+Tab` | `console_previous` | yes |
 | `Ctrl+W` | `console_close` | yes |
 | `Ctrl+N` | `console_reconnect` | yes |
+| `Ctrl+Shift+M` | `console_window` | yes |
 | `Ctrl+Return` | `connect` | yes |
 | `Ctrl+Shift+K` | `reset` | yes |
 | `Ctrl+Shift+D` | `clone` | yes |
