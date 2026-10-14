@@ -449,7 +449,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   not drift: the tree is ruff-formatted and `doit check` enforces it, so `doit format`
   should be a no-op on a clean checkout.
 - **The glade file is a shared namespace.** Deleting a block can remove widgets referenced
-  elsewhere. Sweep every `get_widget("...")` id in the source against the glade.
+  elsewhere. Sweep every `get_widget("...")` id in the source against the glade. Its
+  handlers are connected by name, and vulture skips every `on_*` name, so a handler whose
+  signal is lost still looks alive. The glade rebuild in df18e0a lost the server tree's and
+  the About dialog's (#257, #261), and moving the menus to actions left ten behind (#256).
+  `test_every_on_handler_is_connected` fails on an `on_*` method that nothing connects.
 - **Run the app for tracebacks** with a throwaway HOME:
   `HOME=<tmpdir> timeout 12 uv run python -m gnome_connection_manager`. Never point it at a
   real configuration directory -- and note that HOME alone no longer settles which one

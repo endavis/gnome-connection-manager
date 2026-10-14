@@ -144,7 +144,6 @@ if scenario == "terminal-actions-leave-the-other-tabs-alone":
     application._on_action_console_log(None, GLib.Variant("b", True))
     app.snippets.append(app.snippetlib.Snippet("c0ffee00", "custom", "echo GCM-CUSTOM\r"))
     application._on_action_send_snippet(None, GLib.Variant("s", "c0ffee00"))
-    w.on_guardar_como1_activate(None)
     w.get_widget("txtSearch").set_text("ON-SCREEN")
     w.on_btnSearch_clicked(None)
     pump(0.5)

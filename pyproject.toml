@@ -235,7 +235,8 @@ exclude = [
 ]
 ignore_names = [
     # GTK calls these back by name from the glade file, so nothing in Python
-    # references them and vulture cannot see the caller.
+    # references them and vulture cannot see the caller. A test checks the `on_*`
+    # ones instead: test_every_on_handler_is_connected (#256).
     "on_*",
     "do_*",
     "test_*",
