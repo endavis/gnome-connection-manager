@@ -160,6 +160,37 @@ def test_application_select_copy_all_actions(app_module):
     assert ("copy-all", controller.terminal) in controller.calls
 
 
+def test_application_copy_paste_action_uses_target_terminal(app_module):
+    """The one copy or paste action no test called (#256)."""
+    app = app_module.GcmApplication()
+    controller = ControllerStub()
+    app._controller = controller
+
+    app._on_action_copy_paste(None, None)
+
+    assert controller.calls == [
+        ("target", None),
+        ("copy-paste", controller.terminal),
+        ("clear", None),
+    ]
+
+
+def test_application_copy_paste_action_no_terminal_still_clears(app_module):
+    app = app_module.GcmApplication()
+
+    class EmptyController(ControllerStub):
+        def get_target_terminal(self):
+            self.calls.append(("target", None))
+            return None
+
+    controller = EmptyController()
+    app._controller = controller
+
+    app._on_action_copy_paste(None, None)
+
+    assert controller.calls == [("target", None), ("clear", None)]
+
+
 def test_application_split_actions(app_module):
     app = app_module.GcmApplication()
     controller = ControllerStub()

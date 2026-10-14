@@ -3430,34 +3430,6 @@ class Wmain(GladeComponent):
             return
         Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
 
-    def on_menuCopy_activate(self, widget):
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal:
-            self.terminal_copy(terminal)
-
-    def on_menuPaste_activate(self, widget):
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal:
-            self.terminal_paste(terminal)
-
-    def on_menuCopyPaste_activate(self, widget):
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal:
-            self.terminal_copy_paste(terminal)
-
-    def on_menuSelectAll_activate(self, widget):
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal:
-            self.terminal_select_all(terminal)
-
-    def on_menuCopyAll_activate(self, widget):
-        terminal = self.find_active_terminal(self.hpMain)
-        if terminal:
-            self.terminal_copy_all(terminal)
-
-    def on_menuSettings_activate(self, widget):
-        Wconfig()
-
     def on_contents_changed(self, terminal):
         col, row = terminal.get_cursor_position()
         if terminal.last_logged_row != row:
@@ -4508,19 +4480,6 @@ class Wmain(GladeComponent):
                     return wid
             return None
 
-    def find_active_terminal(self, widget):
-        if isinstance(widget, Vte.Terminal) and widget.is_focus():
-            return widget
-        else:
-            if not hasattr(widget, "get_children"):
-                return None
-
-            for w in widget.get_children():
-                wid = self.find_active_terminal(w)
-                if isinstance(wid, Vte.Terminal) and wid.is_focus():
-                    return wid
-            return None
-
     def check_notebook_pages(self, widget):
         if widget.get_n_pages() == 0:
             # eliminar el notebook solo si queda otro notebook y no quedan tabs en el actual
@@ -5241,14 +5200,6 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_wMain_delete_event }
 
-    # -- Wmain.on_guardar_como1_activate {
-    def on_guardar_como1_activate(self, widget, *args):
-        term = self.get_target_terminal()
-        if term is not None:
-            self.show_save_buffer(term)
-
-    # -- Wmain.on_guardar_como1_activate }
-
     # -- Wmain.on_importar_servidores1_activate {
     def on_importar_servidores1_activate(self, widget, *args):
         filename = show_open_dialog(
@@ -5350,28 +5301,6 @@ class Wmain(GladeComponent):
                 msgbox(f"{_('Archivo invalido')}: {e}")
 
     # -- Wmain.on_exportar_servidores1_activate }
-
-    # -- Wmain.on_salir1_activate {
-    def on_salir1_activate(self, widget, *args):
-        self.request_quit()
-
-    # -- Wmain.on_salir1_activate }
-
-    # -- Wmain.on_show_toolbar_activate {
-    def on_show_toolbar_toggled(self, widget, *args):
-        if widget.get_active() == conf.SHOW_TOOLBAR:
-            return
-        self.set_toolbar_visible(widget.get_active())
-
-    # -- Wmain.on_show_toolbar_activate }
-
-    # -- Wmain.on_show_panel_activate {
-    def on_show_panel_toggled(self, widget, *args):
-        if widget.get_active() == conf.SHOW_PANEL:
-            return
-        self.set_panel_visible(widget.get_active())
-
-    # -- Wmain.on_show_panel_activate }
 
     # -- Wmain.on_acerca_de1_activate {
     def on_acerca_de1_activate(self, widget, *args):

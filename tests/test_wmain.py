@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import configparser
 import inspect
 import os
@@ -1055,24 +1056,6 @@ def test_clipboard_stub_matches_real_gtk_clipboard_api():
     for name in ("wait_for_text", "set_text", "store"):
         assert hasattr(ClipboardStub, name), f"fake is missing {name}"
         assert hasattr(Gtk.Clipboard, name), f"Gtk.Clipboard has no {name}"
-
-
-def test_terminal_menu_actions_use_active_terminal(monkeypatch, app_module):
-    wmain = object.__new__(app_module.Wmain)
-    terminal = ClipboardTerminal()
-    wmain.hpMain = object()
-    wmain.find_active_terminal = lambda widget: terminal
-    _clipboard(monkeypatch, app_module, "hello")
-
-    wmain.on_menuCopy_activate(None)
-    wmain.on_menuPaste_activate(None)
-    wmain.on_menuCopyPaste_activate(None)
-    wmain.on_menuSelectAll_activate(None)
-    wmain.on_menuCopyAll_activate(None)
-
-    assert terminal.copied.count(app_module.Vte.Format.TEXT) == 3
-    assert terminal.pasted_text == ["hello", "hello"]
-    assert terminal.selected == ["all", "all", "none"]
 
 
 def test_on_contents_changed_uses_text_range_pre72(monkeypatch, app_module):
@@ -3035,6 +3018,46 @@ def test_glade_no_longer_defines_a_menubar(app_module):
     """One menubar definition only; a second would silently shadow the model (#43)."""
     glade = Path(app_module.glade_dir) / "gnome-connection-manager.glade"
     assert "GtkMenuBar" not in glade.read_text()
+
+
+# Handlers nothing connects yet, each with the issue that will connect it. One that
+# something connects fails the test too, so an entry cannot outlive its reason.
+_UNCONNECTED_HANDLERS = {
+    "on_wAbout_close": "#261: the glade rebuild in df18e0a dropped the About dialog's response",
+}
+
+
+def test_every_on_handler_is_connected(app_module):
+    """An `on_*` method must be named in the glade file, whose handlers `connect_signals`
+    connects by name, or be referenced in `src/`. Ten were left behind when the menus
+    became application actions, and vulture skips every `on_*` name (#256). References
+    are read from the syntax tree, so a comment does not count as one: the generator's
+    `# -- Wmain.on_x {` markers hid two of the ten from a search of the text."""
+    src = Path(app_module.__file__).resolve().parent
+    glade = (Path(app_module.glade_dir) / "gnome-connection-manager.glade").read_text()
+    named = set(re.findall(r'handler="(on_\w+)"', glade))
+    defined: dict[str, str] = {}
+    used: set[str] = set()
+    for path in sorted(src.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name.startswith("on_"):
+                    defined.setdefault(node.name, f"{path.name}:{node.lineno}")
+            elif isinstance(node, ast.Attribute):
+                used.add(node.attr)
+            elif isinstance(node, ast.Name):
+                used.add(node.id)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                used.add(node.value)
+    unconnected = {name: where for name, where in defined.items() if name not in named | used}
+
+    assert sorted(named - set(defined)) == [], "the glade file names a handler nothing defines"
+    assert {
+        name: where for name, where in unconnected.items() if name not in _UNCONNECTED_HANDLERS
+    } == {}
+    assert sorted(set(_UNCONNECTED_HANDLERS) - set(unconnected)) == [], (
+        "connected now, so no longer an exception"
+    )
 
 
 class StubLabel:
