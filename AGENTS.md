@@ -99,7 +99,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   key sent to a widget not yet realized with a critical, which is why the snippet
   scenarios fail on a GLib critical. And `addTab` gives a new console the keyboard
   twice, the second time from a 200 ms timer: a test that moves the keyboard away after
-  opening a tab must wait that out, or the timer takes it back, measured.
+  opening a tab must wait that out, or the timer takes it back, measured. `focus_again`
+  runs that timer, and gives the keyboard back only while the tab is the one in use, so
+  moving it to another tab or pane is kept (#264).
 - `src/gnome_connection_manager/utils/connections.py` – the connection types (#228): a class
   per kind of host, `Ssh`, `Telnet`, `Rdp`, `Local`, `Web`, `Vnc` and `CustomCommand`, listed in `CONNECTION_TYPES` in the
   order the host dialog offers them, which fills its list from there. Code that used to

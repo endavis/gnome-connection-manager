@@ -617,6 +617,23 @@ def test_get_target_terminal_prefers_the_context_then_the_tab_in_use(app_module)
     assert wmain.get_target_terminal() is None
 
 
+def test_focus_again_gives_the_keyboard_only_to_the_tab_in_use(app_module):
+    """A new tab's second take of the keyboard, 200 ms on. Another tab in use by then
+    keeps it (#264), and the timer runs once whichever way."""
+    wmain = object.__new__(app_module.Wmain)
+    focused: list[object] = []
+    wmain.wMain = types.SimpleNamespace(set_focus=focused.append)
+    page, other, keyboard = object(), object(), object()
+
+    wmain.page_in_use = lambda: other
+    assert not wmain.focus_again(page, keyboard)
+    assert focused == []
+
+    wmain.page_in_use = lambda: page
+    assert not wmain.focus_again(page, keyboard)
+    assert focused == [keyboard]
+
+
 def test_an_action_that_raises_leaves_no_context(app_module):
     """A context left behind sent the next key to its tab, a page already closed (#223)."""
     wmain = object.__new__(app_module.Wmain)

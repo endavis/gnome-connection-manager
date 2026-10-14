@@ -3588,20 +3588,27 @@ class Wmain(GladeComponent):
             if conf.ENDED_MARK_TAB:
                 self.request_attention(page.keyboard)
 
-        def focus():
-            # Again later, as addTab does for a terminal, unless the tab has closed.
-            if page.get_parent() is not None:
-                self.wMain.set_focus(page.keyboard)
-            return False
-
         page = page_type(host, ended)
         page.session_host = host
         # Closing the tab, or the window, ends the session with no signal from the page.
         page.connect("destroy", lambda _page: self.session_ended(page))
         tab = self.add_page(notebook, page, host.name)
         self.wMain.set_focus(page.keyboard)
-        GLib.timeout_add(200, focus)
+        GLib.timeout_add(200, self.focus_again, page, page.keyboard)
         page.open()
+
+    def focus_again(self, page, widget):
+        """Give a new tab's `widget` the keyboard again, 200 ms after the tab opened.
+
+        Something can take the keyboard as a tab opens, such as the server tree on a double
+        click, so a new tab takes it twice. The second time is only while the tab is still
+        the one in use: one opened in the meantime, or a pane the keyboard was moved into,
+        keeps it. Measured, a shell tab's timer moved the keyboard into the shell, hidden
+        behind a desktop opened 1 ms after it, for 15 ms (#264).
+        """
+        if self.page_in_use() is page:
+            self.wMain.set_focus(widget)
+        return False
 
     def addTab(self, notebook, host):
         try:
@@ -3681,7 +3688,7 @@ class Wmain(GladeComponent):
             self.on_tab_focus(v)
             self.set_terminal_logger(v, host.log)
 
-            GLib.timeout_add(200, lambda: self.wMain.set_focus(v))
+            GLib.timeout_add(200, self.focus_again, scrollPane, v)
 
             # Dar tiempo a la interfaz para que muestre el terminal
             while Gtk.events_pending():
