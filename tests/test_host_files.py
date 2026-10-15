@@ -459,6 +459,8 @@ def test_mounting_runs_sshfs_as_a_daemon_with_the_password_in_its_environment(
 
     assert shown == [("info", f"Mounted router at {folder}.")]
     assert wmain.mounting == set()
+    # Kept: the host is mounted there now.
+    assert folder.is_dir()
 
 
 def test_with_no_stored_password_none_reaches_ssh(app_module, monkeypatch, tmp_path):
@@ -484,6 +486,21 @@ def test_a_failed_mount_says_why_in_ssh_s_words(app_module, monkeypatch, tmp_pat
         ("error", f"Could not mount router at {folder}: Host key verification failed.")
     ]
     assert wmain.mounting == set()
+    # Removed again, though not ~/mnt: one for every host that failed would pile up.
+    assert not folder.exists() and folder.parent.is_dir()
+
+
+def test_a_failed_mount_keeps_a_folder_that_holds_anything(app_module, monkeypatch, tmp_path):
+    """Measured, sshfs mounts over a folder that holds files, and rmdir refuses one."""
+    host, wmain, spawned, _shown, _log = mounting(app_module, monkeypatch, tmp_path)
+    folder = router_folder()
+    folder.mkdir(parents=True)
+    (folder / "notes.txt").write_text("mine\n")
+
+    wmain.mount_files(host, folder)
+    spawned.exit(1)
+
+    assert (folder / "notes.txt").read_text() == "mine\n"
 
 
 def test_without_ssh_s_words_sshfs_s_own_are_given_or_its_status(app_module, monkeypatch, tmp_path):
@@ -549,6 +566,7 @@ def test_sshfs_failing_to_start_is_reported(app_module, monkeypatch, tmp_path):
         ("error", f"Could not mount router at {router_folder()}: Failed to execute child process")
     ]
     assert wmain.mounting == frozenset()
+    assert not router_folder().exists()
 
 
 def test_a_runtime_folder_with_whitespace_leaves_ssh_no_log(app_module, monkeypatch, tmp_path):
@@ -608,8 +626,33 @@ def test_unmounting_uses_fuse_3s_fusermount_or_else_fuse_2s(
     assert shown == [("info", f"Unmounted router from {router_folder()}.")]
 
 
+def test_unmounting_removes_the_hosts_folder(app_module, monkeypatch):
+    """So that one is not left in ~/mnt for every host ever mounted. ~/mnt stays."""
+    host, wmain, spawned, _shown = unmounting(app_module, monkeypatch, ("fusermount3",))
+    router_folder().mkdir(parents=True)
+
+    wmain.unmount_files(host, router_folder())
+    spawned.exit(0)
+
+    assert not router_folder().exists() and router_folder().parent.is_dir()
+
+
+def test_unmounting_keeps_a_folder_that_holds_anything(app_module, monkeypatch):
+    """What the mount hid in the folder is there again, and stays, folder and all."""
+    host, wmain, spawned, shown = unmounting(app_module, monkeypatch, ("fusermount3",))
+    router_folder().mkdir(parents=True)
+    (router_folder() / "notes.txt").write_text("mine\n")
+
+    wmain.unmount_files(host, router_folder())
+    spawned.exit(0)
+
+    assert (router_folder() / "notes.txt").read_text() == "mine\n"
+    assert shown == [("info", f"Unmounted router from {router_folder()}.")]
+
+
 def test_a_failed_unmount_says_why(app_module, monkeypatch):
     host, wmain, spawned, shown = unmounting(app_module, monkeypatch, ("fusermount3",))
+    router_folder().mkdir(parents=True)
 
     wmain.unmount_files(host, router_folder())
     spawned.exit(1, f"fusermount3: failed to unmount {router_folder()}: Device or resource busy\n")
@@ -621,6 +664,8 @@ def test_a_failed_unmount_says_why(app_module, monkeypatch):
             f"{router_folder()}: Device or resource busy",
         )
     ]
+    # Still mounted there, so kept.
+    assert router_folder().is_dir()
 
 
 def test_without_fusermount_it_says_so(app_module, monkeypatch):
@@ -910,6 +955,8 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         said = unmount(box)
         assert said == f"Unmounted probe box from {folder}.", said
         assert mount_items(box) == (True, False)
+        # Removed with the mount, and ~/mnt kept.
+        assert not folder.exists() and folder.parent.is_dir(), os.listdir(folder.parent)
 
         # A host key ssh does not know: the question is refused, at once, though there is
         # a password the helper could give.
@@ -920,6 +967,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert said == f"Could not mount probe box at {folder}: Host key verification failed.", said
         assert time.monotonic() - start < 10
         assert app.remotefiles.mount_at(app.read_mount_table(), folder) is None
+        assert not folder.exists()
 
         # Nothing listening at the port: ssh's reason, at once, and nothing mounted.
         closed = os.environ["PROBE_CLOSED_PORT"]
@@ -932,6 +980,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert said == f"Could not mount probe box at {folder}: {reason}", said
         assert time.monotonic() - start < 10
         assert app.remotefiles.mount_at(app.read_mount_table(), folder) is None
+        assert not folder.exists()
 
         # A stored password, and no key: ssh asks the helper, which answers with it.
         locked = ssh_host("probe box", "127.0.0.1", user, password="not-a-key", port=port)
@@ -939,6 +988,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert said.startswith(f"Could not mount probe box at {folder}: "), said
         assert said.endswith("Permission denied (publickey,password)."), said
         assert app.remotefiles.mount_at(app.read_mount_table(), folder) is None
+        assert not folder.exists()
 
         # A key whose path has a space and a comma in it.
         odd = os.path.join(scratch, "a key, b")
@@ -950,6 +1000,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert said == f"Mounted odd at {w.files_folder(oddly)}.", said
         said = unmount(oddly)
         assert said == f"Unmounted odd from {w.files_folder(oddly)}.", said
+        assert not w.files_folder(oddly).exists()
 
         # Mounted for the test to find once GCM has gone.
         assert mount(box) == f"Mounted probe box at {folder}."
@@ -962,11 +1013,13 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert os.listdir(folder) == ["notes.txt"], os.listdir(folder)
         said = unmount(right)
         assert said == f"Unmounted stored from {folder}.", said
+        assert not folder.exists()
         wrong = ssh_host("stored", "files.example", "eric", password="nope", port="2200")
         said = mount(wrong)
         reason = "eric@files.example: Permission denied (publickey,password)."
         assert said == f"Could not mount stored at {folder}: {reason}", said
         assert not w.files_mounted(wrong)
+        assert not folder.exists()
 
 else:
     raise SystemExit("no scenario " + scenario)

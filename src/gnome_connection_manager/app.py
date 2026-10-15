@@ -1049,6 +1049,14 @@ def read_mount_table():
         return ""
 
 
+def remove_mount_folder(folder):
+    """Remove a host's folder under ~/mnt once nothing is mounted there, so that one is not
+    left behind for every host ever mounted. rmdir, and only that: measured, it refuses a
+    folder still mounted, as busy, and one holding anything, which keeps what it holds."""
+    with contextlib.suppress(OSError):
+        folder.rmdir()
+
+
 def read_finished(fd):
     """What a finished child wrote to the pipe `fd`, which this closes.
 
@@ -5334,7 +5342,8 @@ class Wmain(GladeComponent):
 
         A daemon, since one exits 0 once connected, measured, and the mount, made before
         connecting, says nothing. ssh's messages go to a log beside the runtime files, as
-        a daemon drops them, and a reconnect opens it again, so it stays.
+        a daemon drops them, and a reconnect opens it again, so it stays. A mount that
+        fails removes `folder` again, while it is empty.
         """
         if folder in self.mounting:
             return
@@ -5386,6 +5395,7 @@ class Wmain(GladeComponent):
                 standard_error=True,
             )
         except GLib.Error as error:
+            remove_mount_folder(folder)
             msgbox(_("Could not mount {} at {}: {}").format(host.name, folder, error.message))
             return
         self.mounting = self.mounting | {folder}
@@ -5403,6 +5413,8 @@ class Wmain(GladeComponent):
             except OSError:
                 ssh_log = ""
             reason = remotefiles.failure_reason(ssh_log, output)
+            # Measured, a failed sshfs has unmounted by the time it exits.
+            remove_mount_folder(folder)
             msgbox(
                 _("Could not mount {} at {}: {}").format(
                     host.name, folder, reason or "sshfs {} {}".format(_("exited with status"), code)
@@ -5413,8 +5425,8 @@ class Wmain(GladeComponent):
 
     def unmount_files(self, host, folder):
         """Unmount a host's files from `folder` with fusermount, FUSE 3's, or FUSE 2's
-        where only that is installed, and say so, as mounting does. The sshfs daemon and
-        its ssh end with the mount."""
+        where only that is installed, remove the folder, and say so, as mounting does.
+        The sshfs daemon and its ssh end with the mount."""
         program = shutil.which("fusermount3") or shutil.which("fusermount")
         if program is None:
             msgbox(_("Unmounting needs fusermount, which is not installed."))
@@ -5436,6 +5448,7 @@ class Wmain(GladeComponent):
             output = read_finished(stderr)
             code = os.waitstatus_to_exitcode(status)
             if code == 0:
+                remove_mount_folder(folder)
                 msginfo(_("Unmounted {} from {}.").format(host.name, folder))
                 return
             reason = remotefiles.failure_reason("", output)

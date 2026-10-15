@@ -334,7 +334,10 @@ program can open the host's files as it opens its own. It needs
 `sshfs`, which Ubuntu installs with `sudo apt install sshfs`. GCM says when the mount is
 ready, or why it failed, in ssh's words where ssh gave any. While the host is mounted
 there, its menu offers **Unmount SSHFS** in Mount's place, and GCM says when the host is
-unmounted, or why it could not be. The mount lasts until you unmount it: closing GCM
+unmounted, or why it could not be. Unmounting removes the host's folder from `~/mnt`
+again, as does a mount that fails, so that a folder is not left there for every host
+ever mounted. GCM removes only an empty folder: one that held files before the mount
+keeps them. `~/mnt` itself stays. The mount lasts until you unmount it: closing GCM
 leaves it mounted. If something else is mounted at that folder, GCM names it and leaves
 it alone, and Unmount SSHFS unmounts only what Mount with SSHFS mounted there.
 

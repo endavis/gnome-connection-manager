@@ -208,6 +208,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `GCM_PASSWORD` through `data/scripts/gcm-askpass`, never in an argument.
   `Wmain.mount_files` starts sshfs with `child_setup=os.setsid`, so the mount outlives
   GCM, and `mount_at` reads `/proc/self/mountinfo` for what is mounted at the folder.
+  `remove_mount_folder` removes the folder again after an unmount and after a failed
+  mount, so that one is not left for every host ever mounted. `rmdir` alone: measured,
+  it refuses a folder still mounted, as busy, and one holding anything, so files that
+  were there before the mount stay, folder and all.
   Pure: the programs found and the mount table are arguments.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
