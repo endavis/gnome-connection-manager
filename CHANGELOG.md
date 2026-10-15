@@ -12,6 +12,13 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- An SSH host's files, from its menu in the server tree or the **Servers** menu. **Open
+  in File Manager** opens its login folder over SFTP in the file manager your desktop
+  opens folders with, given the address alone, never the password. **Mount with SSHFS**
+  mounts it at `~/mnt/<host name>` with `sshfs`, with the host's user, port, key file and
+  stored password, which reaches ssh through a helper and never a command line. The mount
+  lasts until **Unmount SSHFS**, closing GCM or not, and a failed one says why in ssh's
+  words. A host key never seen is not trusted there: connect once in a console first
 - A console can move to a window of its own, to keep it on another monitor or beside
   another program: **Move to New Window** in its tab's menu or under **View**,
   `Ctrl+Shift+M`, or dropping its tab anywhere but a tab strip. It keeps its session, its

@@ -123,6 +123,9 @@ class ConnectionType:
     # False for a type opened outside GCM, with no tab: a web host's page opens in the
     # browser, from its url() rather than a command.
     opens_tab = True
+    # True for a type whose host's files open over SFTP: in the file manager, and mounted
+    # with sshfs (#267). remotefiles builds both.
+    sftp = False
     # Settings of the type's own, drawn on a page of the host dialog, whose tab is
     # settings_title, with settings_hint as a line of help under them, both marked with N_.
     settings: tuple[Setting, ...] = ()
@@ -200,6 +203,7 @@ class Ssh(ConnectionType):
     id = "ssh"
     default_port = "22"
     ssh_options = True
+    sftp = True
 
     def dropped(self, status: int, tail: str) -> bool:
         return status == 255 and SSH_LOST.search(tail) is not None
@@ -325,7 +329,7 @@ class Web(ConnectionType):
         if "://" in address:
             return address
         name, slash, path = address.partition("/")
-        if _is_ipv6(name):
+        if is_ipv6(name):
             name = f"[{name}]"
         port = str(host.port).strip()
         if port not in ("", "443"):
@@ -357,7 +361,7 @@ class Vnc(ConnectionType):
             args += shlex.split(host.extra_params)
         # host::port is a port, where host:n is a display, 5900 + n. An IPv6 address is
         # bracketed: TigerVNC's viewer connects to [::1]::5951 and not to ::1::5951.
-        name = f"[{host.host}]" if _is_ipv6(host.host) else host.host
+        name = f"[{host.host}]" if is_ipv6(host.host) else host.host
         args.append(f"{name}::{host.port}")
         return Command(args, "")
 
@@ -401,7 +405,7 @@ class CustomCommand(ConnectionType):
         return Command(["sh", "-c", line], "", environment)
 
 
-def _is_ipv6(name: str) -> bool:
+def is_ipv6(name: str) -> bool:
     try:
         return ipaddress.ip_address(name).version == 6
     except ValueError:

@@ -1827,3 +1827,42 @@ msgstr ""
 
 msgid "Window {}"
 msgstr ""
+
+msgid "Open in File Manager"
+msgstr ""
+
+msgid "Mount with SSHFS"
+msgstr ""
+
+msgid "Unmount SSHFS"
+msgstr ""
+
+msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
+msgstr ""
+
+msgid "Something else is mounted at {}: {}"
+msgstr ""
+
+msgid "Mounting a host needs sshfs, which is not installed."
+msgstr ""
+
+msgid "Could not mount {} at {}: {}"
+msgstr ""
+
+msgid "Mounted {} at {}."
+msgstr ""
+
+msgid "Unmounting needs fusermount, which is not installed."
+msgstr ""
+
+msgid "Could not unmount {}: {}"
+msgstr ""
+
+msgid "{} is mounted at {} already."
+msgstr ""
+
+msgid "{} is not mounted at {}."
+msgstr ""
+
+msgid "its user begins with -, which ssh would read as an option."
+msgstr ""
