@@ -182,12 +182,65 @@ def test_another_types_host_is_neither_opened_nor_mounted(app_module, monkeypatc
     assert opened == [] and toggled == []
 
 
+def said(app_module, monkeypatch):
+    """What GCM says, each as ("info", text) through msginfo, for what worked or needed
+    nothing doing, or ("error", text) through msgbox, which draws an error."""
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(app_module, "msgbox", lambda text: shown.append(("error", text)))
+    monkeypatch.setattr(app_module, "msginfo", lambda text: shown.append(("info", text)))
+    return shown
+
+
+class Dialog:
+    """Gtk.MessageDialog, as msgbox and msginfo use one. The real class has each (below)."""
+
+    made: list = []
+
+    def __init__(self, **properties):
+        self.properties = properties
+        Dialog.made.append(self)
+
+    def set_icon_from_file(self, path):
+        pass
+
+    def run(self):
+        return 0
+
+    def destroy(self):
+        pass
+
+
+def test_the_dialog_fake_matches_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("set_icon_from_file", "run", "destroy"):
+        assert hasattr(Dialog, name), f"fake is missing {name}"
+        assert hasattr(Gtk.MessageDialog, name), f"Gtk.MessageDialog has no {name}"
+
+
+@pytest.mark.parametrize(("helper", "kind"), [("msginfo", "INFO"), ("msgbox", "ERROR")])
+def test_what_worked_is_drawn_as_information_and_a_failure_as_an_error(
+    app_module, monkeypatch, helper, kind
+):
+    """Measured with the Yaru theme, GTK draws a message's type as its icon: a no-entry
+    sign for an error, which a mount that worked was drawn with."""
+    monkeypatch.setattr(Dialog, "made", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", Dialog)
+
+    getattr(app_module, helper)("Unmounted router from /home/netops/mnt/router.")
+
+    [dialog] = Dialog.made
+    assert dialog.properties["message_type"] == getattr(app_module.Gtk.MessageType, kind)
+    assert dialog.properties["text"] == "Unmounted router from /home/netops/mnt/router."
+
+
 def chosen(app_module, monkeypatch, action, *lines):
     """Mount with SSHFS or Unmount SSHFS chosen for the selected host, with `lines` in
     the mount table: what GCM went on to do, and what it said."""
-    shown: list[str] = []
+    shown = said(app_module, monkeypatch)
     calls: list[tuple] = []
-    monkeypatch.setattr(app_module, "msgbox", shown.append)
     host = make_host(app_module)
     wmain, _iter = make_wmain_with_host(app_module, host)
     wmain.mount_files = lambda *args: calls.append(("mount", *args))
@@ -209,7 +262,7 @@ def test_mount_with_sshfs_says_so_while_that_host_is_mounted(app_module, monkeyp
     _host, calls, shown = chosen(app_module, monkeypatch, "mount_selected_files", line)
 
     assert calls == []
-    assert shown == [f"router is mounted at {router_folder()} already."]
+    assert shown == [("info", f"router is mounted at {router_folder()} already.")]
 
 
 def test_something_else_mounted_there_is_left_alone_and_named(app_module, monkeypatch):
@@ -217,14 +270,14 @@ def test_something_else_mounted_there_is_left_alone_and_named(app_module, monkey
     _host, calls, shown = chosen(app_module, monkeypatch, "mount_selected_files", line)
 
     assert calls == []
-    assert shown == [f"Something else is mounted at {router_folder()}: scratch"]
+    assert shown == [("error", f"Something else is mounted at {router_folder()}: scratch")]
 
 
 def test_unmount_sshfs_unmounts_that_folder(app_module, monkeypatch):
     line = mounted_line(router_folder())
-    _host, calls, shown = chosen(app_module, monkeypatch, "unmount_selected_files", line)
+    host, calls, shown = chosen(app_module, monkeypatch, "unmount_selected_files", line)
 
-    assert calls == [("unmount", router_folder())] and shown == []
+    assert calls == [("unmount", host, router_folder())] and shown == []
 
 
 @pytest.mark.parametrize(
@@ -237,7 +290,7 @@ def test_unmount_sshfs_unmounts_nothing_but_that_host(app_module, monkeypatch, l
     _host, calls, shown = chosen(app_module, monkeypatch, "unmount_selected_files", *lines)
 
     assert calls == []
-    assert shown == [f"router is not mounted at {router_folder()}."]
+    assert shown == [("info", f"router is not mounted at {router_folder()}.")]
 
 
 # -- Open in File Manager ------------------------------------------------------------------
@@ -361,8 +414,7 @@ class Spawned:
 
 
 def mounting(app_module, monkeypatch, tmp_path, installed=("sshfs",), fail=None):
-    shown: list[str] = []
-    monkeypatch.setattr(app_module, "msgbox", shown.append)
+    shown = said(app_module, monkeypatch)
     monkeypatch.setattr(
         app_module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
     )
@@ -405,7 +457,7 @@ def test_mounting_runs_sshfs_as_a_daemon_with_the_password_in_its_environment(
 
     spawned.exit(0)
 
-    assert shown == [f"Mounted router at {folder}."]
+    assert shown == [("info", f"Mounted router at {folder}.")]
     assert wmain.mounting == set()
 
 
@@ -428,7 +480,9 @@ def test_a_failed_mount_says_why_in_ssh_s_words(app_module, monkeypatch, tmp_pat
     log.write_text("Host key verification failed.\n")
     spawned.exit(1, "read: Connection reset by peer\n")
 
-    assert shown == [f"Could not mount router at {folder}: Host key verification failed."]
+    assert shown == [
+        ("error", f"Could not mount router at {folder}: Host key verification failed.")
+    ]
     assert wmain.mounting == set()
 
 
@@ -443,8 +497,8 @@ def test_without_ssh_s_words_sshfs_s_own_are_given_or_its_status(app_module, mon
     second.exit(3)
 
     assert shown == [
-        f"Could not mount router at {folder}: fuse: bad mount point",
-        f"Could not mount router at {folder}: sshfs exited with status 3",
+        ("error", f"Could not mount router at {folder}: fuse: bad mount point"),
+        ("error", f"Could not mount router at {folder}: sshfs exited with status 3"),
     ]
 
 
@@ -458,8 +512,11 @@ def test_a_user_ssh_would_read_as_an_option_is_not_mounted(app_module, monkeypat
 
     assert spawned.calls == [] and not router_folder().exists()
     assert shown == [
-        f"Could not mount router at {router_folder()}: its user begins with -, "
-        "which ssh would read as an option."
+        (
+            "error",
+            f"Could not mount router at {router_folder()}: its user begins with -, "
+            "which ssh would read as an option.",
+        )
     ]
 
 
@@ -478,7 +535,7 @@ def test_without_sshfs_it_says_so(app_module, monkeypatch, tmp_path):
     wmain.mount_files(host, router_folder())
 
     assert spawned.calls == []
-    assert shown == ["Mounting a host needs sshfs, which is not installed."]
+    assert shown == [("error", "Mounting a host needs sshfs, which is not installed.")]
 
 
 def test_sshfs_failing_to_start_is_reported(app_module, monkeypatch, tmp_path):
@@ -489,7 +546,7 @@ def test_sshfs_failing_to_start_is_reported(app_module, monkeypatch, tmp_path):
     wmain.mount_files(host, router_folder())
 
     assert shown == [
-        f"Could not mount router at {router_folder()}: Failed to execute child process"
+        ("error", f"Could not mount router at {router_folder()}: Failed to execute child process")
     ]
     assert wmain.mounting == frozenset()
 
@@ -523,13 +580,12 @@ def test_a_log_that_cannot_be_made_leaves_the_mount_to_run(app_module, monkeypat
 
 
 def unmounting(app_module, monkeypatch, installed):
-    shown: list[str] = []
-    monkeypatch.setattr(app_module, "msgbox", shown.append)
+    shown = said(app_module, monkeypatch)
     monkeypatch.setattr(
         app_module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
     )
     wmain = object.__new__(app_module.Wmain)
-    return wmain, Spawned(app_module, monkeypatch), shown
+    return make_host(app_module), wmain, Spawned(app_module, monkeypatch), shown
 
 
 @pytest.mark.parametrize(
@@ -542,34 +598,38 @@ def unmounting(app_module, monkeypatch, installed):
 def test_unmounting_uses_fuse_3s_fusermount_or_else_fuse_2s(
     app_module, monkeypatch, installed, program
 ):
-    wmain, spawned, shown = unmounting(app_module, monkeypatch, installed)
+    host, wmain, spawned, shown = unmounting(app_module, monkeypatch, installed)
 
-    wmain.unmount_files(router_folder())
+    wmain.unmount_files(host, router_folder())
     spawned.exit(0)
 
     assert spawned.calls[0][0] == [program, "-u", str(router_folder())]
-    assert shown == []
+    # Said once it is done, as mounting says so.
+    assert shown == [("info", f"Unmounted router from {router_folder()}.")]
 
 
 def test_a_failed_unmount_says_why(app_module, monkeypatch):
-    wmain, spawned, shown = unmounting(app_module, monkeypatch, ("fusermount3",))
+    host, wmain, spawned, shown = unmounting(app_module, monkeypatch, ("fusermount3",))
 
-    wmain.unmount_files(router_folder())
+    wmain.unmount_files(host, router_folder())
     spawned.exit(1, f"fusermount3: failed to unmount {router_folder()}: Device or resource busy\n")
 
     assert shown == [
-        f"Could not unmount {router_folder()}: fusermount3: failed to unmount "
-        f"{router_folder()}: Device or resource busy"
+        (
+            "error",
+            f"Could not unmount {router_folder()}: fusermount3: failed to unmount "
+            f"{router_folder()}: Device or resource busy",
+        )
     ]
 
 
 def test_without_fusermount_it_says_so(app_module, monkeypatch):
-    wmain, spawned, shown = unmounting(app_module, monkeypatch, ())
+    host, wmain, spawned, shown = unmounting(app_module, monkeypatch, ())
 
-    wmain.unmount_files(router_folder())
+    wmain.unmount_files(host, router_folder())
 
     assert spawned.calls == []
-    assert shown == ["Unmounting needs fusermount, which is not installed."]
+    assert shown == [("error", "Unmounting needs fusermount, which is not installed.")]
 
 
 # -- against real GTK, GIO, sshfs and sshd ------------------------------------------------
@@ -597,6 +657,7 @@ application.activate()
 w = application._controller
 shown = []
 app.msgbox = shown.append
+app.msginfo = shown.append
 
 def pump(seconds=0.2):
     end = time.monotonic() + seconds
@@ -720,7 +781,7 @@ if scenario == "the-tree-menu":
     opened, mounted, unmounted = [], [], []
     app.open_in_file_manager = opened.append
     w.mount_files = lambda host, folder: mounted.append((host.name, str(folder)))
-    w.unmount_files = lambda folder: unmounted.append(str(folder))
+    w.unmount_files = lambda host, folder: unmounted.append((host.name, str(folder)))
     folder = os.path.join(os.environ["HOME"], "mnt", "box")
     address = "sftp://eric@192.0.2.10:2222/"
 
@@ -761,7 +822,7 @@ if scenario == "the-tree-menu":
     right_click("box")
     assert offered() == (True, False, True), offered()
     choose(menu.mnuUnmount)
-    assert unmounted == [folder], unmounted
+    assert unmounted == [("box", folder)], unmounted
     assert len(mounted) == 2 and opened == [address, address]
     assert shown == [], shown
 
@@ -801,10 +862,14 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         return shown[0]
 
     def unmount(host):
+        shown.clear()
         w.selected = host
         w.unmount_selected_files()
-        assert until(lambda: not w.files_mounted(host)), "still mounted"
+        assert until(lambda: shown), "nothing was said"
         pump(0.3)
+        assert len(shown) == 1, shown
+        assert not w.files_mounted(host), "still mounted"
+        return shown[0]
 
     def mount_items(host):
         w.prepare_files_items(host)
@@ -842,8 +907,8 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         for program, (session, group) in tied.items():
             assert session != os.getsid(0) and group != os.getpgrp(), (program, tied)
         assert mount_items(box) == (False, True)
-        unmount(box)
-        assert shown == [said], shown
+        said = unmount(box)
+        assert said == f"Unmounted probe box from {folder}.", said
         assert mount_items(box) == (True, False)
 
         # A host key ssh does not know: the question is refused, at once, though there is
@@ -883,7 +948,8 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         oddly = ssh_host("odd", "127.0.0.1", user, port=port, key=os.path.join(odd, "id key"))
         said = mount(oddly)
         assert said == f"Mounted odd at {w.files_folder(oddly)}.", said
-        unmount(oddly)
+        said = unmount(oddly)
+        assert said == f"Unmounted odd from {w.files_folder(oddly)}.", said
 
         # Mounted for the test to find once GCM has gone.
         assert mount(box) == f"Mounted probe box at {folder}."
@@ -894,7 +960,8 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         said = mount(right)
         assert said == f"Mounted stored at {folder}.", said
         assert os.listdir(folder) == ["notes.txt"], os.listdir(folder)
-        unmount(right)
+        said = unmount(right)
+        assert said == f"Unmounted stored from {folder}.", said
         wrong = ssh_host("stored", "files.example", "eric", password="nope", port="2200")
         said = mount(wrong)
         reason = "eric@files.example: Permission denied (publickey,password)."

@@ -1853,6 +1853,9 @@ msgstr ""
 msgid "Mounted {} at {}."
 msgstr ""
 
+msgid "Unmounted {} from {}."
+msgstr ""
+
 msgid "Unmounting needs fusermount, which is not installed."
 msgstr ""
 

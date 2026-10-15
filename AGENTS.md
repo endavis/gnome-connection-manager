@@ -703,6 +703,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   across lines. `tests/test_i18n.py` gets this right; copy its pattern.
 - Favor the existing helpers (`msgbox`, `inputbox`, `vte_feed`, `HostUtils`, `sanitize_log_name`)
   instead of duplicating behavior — they already handle edge cases across VTE versions.
+  `msgbox` draws every message as an error: measured with the Yaru theme, GTK shows a
+  message's type as its icon, a no-entry sign for an error. Say that something worked, or
+  that there was nothing to do, with `msginfo`, which draws it as information.
 - When adding UI controls or config fields, keep these in sync: defaults (`conf`),
   `CONFIG_OPTIONS`, `writeConfig`, glade widgets, the preferences dialog, menus, export/import,
   and translations. `docs/TERMINAL-USAGE.md` names a setting by the label Preferences draws

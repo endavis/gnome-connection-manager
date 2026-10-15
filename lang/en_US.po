@@ -2009,6 +2009,9 @@ msgstr "Could not mount {} at {}: {}"
 msgid "Mounted {} at {}."
 msgstr "Mounted {} at {}."
 
+msgid "Unmounted {} from {}."
+msgstr "Unmounted {} from {}."
+
 msgid "Unmounting needs fusermount, which is not installed."
 msgstr "Unmounting needs fusermount, which is not installed."
 

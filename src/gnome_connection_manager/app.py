@@ -1301,6 +1301,21 @@ def msgbox(text: str, parent: Gtk.Window | None = None) -> None:
     msgBox.destroy()
 
 
+def msginfo(text: str, parent: Gtk.Window | None = None) -> None:
+    """Show a message that something worked, or that there was nothing to do: drawn as
+    information, where msgbox draws an error, its icon included."""
+    msgBox = Gtk.MessageDialog(
+        parent=parent,
+        modal=True,
+        message_type=Gtk.MessageType.INFO,
+        buttons=Gtk.ButtonsType.OK,
+        text=text,
+    )
+    msgBox.set_icon_from_file(ICON_PATH)
+    msgBox.run()
+    msgBox.destroy()
+
+
 def msgconfirm(text: str) -> int:
     """Show a confirmation dialog and return the response."""
     msgBox = Gtk.MessageDialog(
@@ -5296,7 +5311,7 @@ class Wmain(GladeComponent):
         folder = self.files_folder(host)
         mounted = remotefiles.mount_at(read_mount_table(), folder)
         if self.files_mounted(host):
-            msgbox(_("{} is mounted at {} already.").format(host.name, folder))
+            msginfo(_("{} is mounted at {} already.").format(host.name, folder))
         elif mounted is not None:
             msgbox(_("Something else is mounted at {}: {}").format(folder, mounted[1]))
         else:
@@ -5309,9 +5324,9 @@ class Wmain(GladeComponent):
             return
         folder = self.files_folder(host)
         if self.files_mounted(host):
-            self.unmount_files(folder)
+            self.unmount_files(host, folder)
         else:
-            msgbox(_("{} is not mounted at {}.").format(host.name, folder))
+            msginfo(_("{} is not mounted at {}.").format(host.name, folder))
 
     def mount_files(self, host, folder):
         """Mount a host's login folder at `folder` with sshfs, as a daemon in a session of
@@ -5381,7 +5396,7 @@ class Wmain(GladeComponent):
             output = read_finished(stderr)
             code = os.waitstatus_to_exitcode(status)
             if code == 0:
-                msgbox(_("Mounted {} at {}.").format(host.name, folder))
+                msginfo(_("Mounted {} at {}.").format(host.name, folder))
                 return
             try:
                 ssh_log = log.read_text(errors="replace") if log is not None else ""
@@ -5396,9 +5411,10 @@ class Wmain(GladeComponent):
 
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
 
-    def unmount_files(self, folder):
-        """Unmount a host's files with fusermount, FUSE 3's, or FUSE 2's where only that
-        is installed. The sshfs daemon and its ssh end with the mount."""
+    def unmount_files(self, host, folder):
+        """Unmount a host's files from `folder` with fusermount, FUSE 3's, or FUSE 2's
+        where only that is installed, and say so, as mounting does. The sshfs daemon and
+        its ssh end with the mount."""
         program = shutil.which("fusermount3") or shutil.which("fusermount")
         if program is None:
             msgbox(_("Unmounting needs fusermount, which is not installed."))
@@ -5419,15 +5435,16 @@ class Wmain(GladeComponent):
             GLib.spawn_close_pid(pid)
             output = read_finished(stderr)
             code = os.waitstatus_to_exitcode(status)
-            if code != 0:
-                reason = remotefiles.failure_reason("", output)
-                msgbox(
-                    _("Could not unmount {}: {}").format(
-                        folder,
-                        reason
-                        or "{} {} {}".format(Path(program).name, _("exited with status"), code),
-                    )
+            if code == 0:
+                msginfo(_("Unmounted {} from {}.").format(host.name, folder))
+                return
+            reason = remotefiles.failure_reason("", output)
+            msgbox(
+                _("Could not unmount {}: {}").format(
+                    folder,
+                    reason or "{} {} {}".format(Path(program).name, _("exited with status"), code),
                 )
+            )
 
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
 
