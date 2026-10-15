@@ -30,7 +30,7 @@ import pytest
 from gnome_connection_manager.utils import placeholders, remotefiles
 from tests.test_connections import glib_complaints
 from tests.test_console_window import _private_display
-from tests.test_wmain import make_host, make_wmain_with_host
+from tests.test_wmain import make_host, make_wmain_for_tree, make_wmain_with_host
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -236,12 +236,13 @@ def test_what_worked_is_drawn_as_information_and_a_failure_as_an_error(
     assert dialog.properties["text"] == "Unmounted router from /home/netops/mnt/router."
 
 
-def chosen(app_module, monkeypatch, action, *lines):
-    """Mount with SSHFS or Unmount SSHFS chosen for the selected host, with `lines` in
-    the mount table: what GCM went on to do, and what it said."""
+def chosen(app_module, monkeypatch, action, *lines, name="router"):
+    """Mount with SSHFS or Unmount SSHFS chosen for the selected host, called `name`, with
+    `lines` in the mount table: what GCM went on to do, and what it said."""
     shown = said(app_module, monkeypatch)
     calls: list[tuple] = []
     host = make_host(app_module)
+    host.name = name
     wmain, _iter = make_wmain_with_host(app_module, host)
     wmain.mount_files = lambda *args: calls.append(("mount", *args))
     wmain.unmount_files = lambda *args: calls.append(("unmount", *args))
@@ -275,9 +276,9 @@ def test_something_else_mounted_there_is_left_alone_and_named(app_module, monkey
 
 def test_unmount_sshfs_unmounts_that_folder(app_module, monkeypatch):
     line = mounted_line(router_folder())
-    host, calls, shown = chosen(app_module, monkeypatch, "unmount_selected_files", line)
+    _host, calls, shown = chosen(app_module, monkeypatch, "unmount_selected_files", line)
 
-    assert calls == [("unmount", host, router_folder())] and shown == []
+    assert calls == [("unmount", "router", router_folder())] and shown == []
 
 
 @pytest.mark.parametrize(
@@ -291,6 +292,106 @@ def test_unmount_sshfs_unmounts_nothing_but_that_host(app_module, monkeypatch, l
 
     assert calls == []
     assert shown == [("info", f"router is not mounted at {router_folder()}.")]
+
+
+def test_a_host_renamed_while_mounted_is_found_where_its_old_name_put_it(app_module, monkeypatch):
+    host = make_host(app_module)
+    host.name = "router-a"
+    wmain, _iter = make_wmain_with_host(app_module, host)
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+
+    assert offered(wmain, host) == (True, False, True)
+    assert wmain.files_mount(host) == router_folder()
+
+
+def test_mount_with_sshfs_does_not_mount_a_renamed_host_twice(app_module, monkeypatch):
+    line = mounted_line(router_folder())
+    _host, calls, shown = chosen(
+        app_module, monkeypatch, "mount_selected_files", line, name="router-a"
+    )
+
+    assert calls == []
+    assert shown == [("info", f"router-a is mounted at {router_folder()} already.")]
+
+
+def test_unmount_sshfs_unmounts_a_renamed_host_from_where_it_is(app_module, monkeypatch):
+    line = mounted_line(router_folder())
+    _host, calls, shown = chosen(
+        app_module, monkeypatch, "unmount_selected_files", line, name="router-a"
+    )
+
+    assert calls == [("unmount", "router-a", router_folder())] and shown == []
+
+
+def test_a_mount_either_of_two_hosts_could_have_made_is_neithers(app_module, monkeypatch):
+    """Two hosts at one address with one user, on two ports, as behind one gateway: the
+    mount table names no port, so a mount where neither's name puts it is left alone."""
+    host = make_host(app_module)
+    host.name = "router-1"
+    twin = make_host(app_module)
+    twin.name, twin.port = "router-2", "2201"
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": [host, twin]})
+    wmain, _iter = make_wmain_with_host(app_module, host)
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+
+    assert offered(wmain, host) == (True, True, False)
+    assert offered(wmain, twin) == (True, True, False)
+
+
+def test_a_host_whose_files_do_not_open_never_shares_a_mount(app_module, monkeypatch):
+    """A device in the tree twice, over SSH and over telnet: only the SSH host's files
+    open, so the renamed SSH host is still found, and the telnet host never is."""
+    host = make_host(app_module)
+    host.name = "router-a"
+    console = make_host(app_module)
+    console.name, console.type = "router-telnet", "telnet"
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": [host, console]})
+    wmain, _iter = make_wmain_with_host(app_module, host)
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+
+    assert wmain.find_mounts()[1] == {host: router_folder()}
+
+
+def test_a_mnt_that_is_a_link_is_found_where_it_leads(app_module, monkeypatch):
+    """Measured with sshfs 3.7.3, a mount made through a link is listed at the folder the
+    link leads to."""
+    home = Path(os.environ["HOME"])
+    (home / "elsewhere").mkdir()
+    (home / "mnt").symlink_to(home / "elsewhere")
+    host = make_host(app_module)
+    wmain, _iter = make_wmain_with_host(app_module, host)
+    mount_table(app_module, monkeypatch, mounted_line(home / "elsewhere" / "router"))
+
+    assert offered(wmain, host) == (True, False, True)
+    assert wmain.files_mount(host) == router_folder()
+
+
+def test_something_else_mounted_through_a_link_is_named(app_module, monkeypatch):
+    home = Path(os.environ["HOME"])
+    (home / "elsewhere").mkdir()
+    (home / "mnt").symlink_to(home / "elsewhere")
+    line = mounted_line(home / "elsewhere" / "router", kind="tmpfs", source="scratch")
+    _host, calls, shown = chosen(app_module, monkeypatch, "mount_selected_files", line)
+
+    assert calls == []
+    assert shown == [("error", f"Something else is mounted at {router_folder()}: scratch")]
+
+
+def test_a_host_still_being_mounted_is_not_yet_mounted(app_module, monkeypatch):
+    """sshfs mounts before it connects, measured, so the mount table has the host while
+    it may yet fail. Choosing Mount again meanwhile does nothing."""
+    shown = said(app_module, monkeypatch)
+    host = make_host(app_module)
+    wmain, _iter = make_wmain_with_host(app_module, host)
+    wmain.mounting = frozenset({router_folder()})
+    calls: list = []
+    wmain.mount_files = lambda *args: calls.append(args)
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+
+    assert offered(wmain, host) == (True, True, False)
+    assert wmain.find_mounts() == ({}, {})
+    wmain.mount_selected_files()
+    assert calls == [] and shown == []
 
 
 # -- Open in File Manager ------------------------------------------------------------------
@@ -379,7 +480,7 @@ class Spawned:
     of a pipe the test writes the child's stderr into."""
 
     def __init__(self, app_module, monkeypatch, fail=None):
-        self.calls, self.watches = [], []
+        self.calls, self.watches, self.pipes = [], [], []
         self.fail = fail
         monkeypatch.setattr(app_module.GLib, "spawn_async", self.spawn_async)
         monkeypatch.setattr(app_module.GLib, "child_watch_add", self.child_watch_add)
@@ -392,25 +493,38 @@ class Spawned:
                 SEARCH_PATH=1, DO_NOT_REAP_CHILD=2, STDIN_FROM_DEV_NULL=4, STDOUT_TO_DEV_NULL=8
             ),
         )
-        self.read, self.write = os.pipe()
 
     def spawn_async(self, argv, **kwargs):
         if self.fail:
             raise LaunchError(self.fail)
         self.calls.append((argv, kwargs))
-        return 4242, None, None, self.read
+        read, write = os.pipe()
+        self.pipes.append(write)
+        return 4242, None, None, read
 
     def child_watch_add(self, priority, pid, callback):
         self.watches.append((pid, callback))
 
-    def exit(self, code, stderr=""):
-        os.write(self.write, stderr.encode())
-        os.close(self.write)
-        pid, callback = self.watches.pop()
+    def exit(self, code, stderr="", which=-1):
+        """End a child, having written `stderr`: the last one started, or `which`."""
+        write = self.pipes.pop(which)
+        os.write(write, stderr.encode())
+        os.close(write)
+        pid, callback = self.watches.pop(which)
         callback(pid, code << 8)
 
     def environment(self):
         return dict(entry.split("=", 1) for entry in self.calls[0][1]["envp"])
+
+
+def count_refreshes(wmain):
+    """Count each time the tree's marks and Servers ▸ Mounted are brought up to date."""
+    wmain.refreshes = 0
+
+    def show_mounts():
+        wmain.refreshes += 1
+
+    wmain.show_mounts = show_mounts
 
 
 def mounting(app_module, monkeypatch, tmp_path, installed=("sshfs",), fail=None):
@@ -422,6 +536,7 @@ def mounting(app_module, monkeypatch, tmp_path, installed=("sshfs",), fail=None)
     monkeypatch.setattr(app_module.GLib, "get_user_runtime_dir", lambda: str(runtime))
     host = make_host(app_module)
     wmain, _iter = make_wmain_with_host(app_module, host)
+    count_refreshes(wmain)
     spawned = Spawned(app_module, monkeypatch, fail)
     return host, wmain, spawned, shown, runtime / "gcm" / "sshfs-router.log"
 
@@ -455,10 +570,13 @@ def test_mounting_runs_sshfs_as_a_daemon_with_the_password_in_its_environment(
     assert folder.is_dir() and log.read_text() == ""
     assert wmain.mounting == {folder}
 
+    assert wmain.refreshes == 0
     spawned.exit(0)
 
     assert shown == [("info", f"Mounted router at {folder}.")]
     assert wmain.mounting == set()
+    # Marked mounted, now that sshfs has connected.
+    assert wmain.refreshes == 1
     # Kept: the host is mounted there now.
     assert folder.is_dir()
 
@@ -603,6 +721,7 @@ def unmounting(app_module, monkeypatch, installed):
         app_module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
     )
     wmain = object.__new__(app_module.Wmain)
+    count_refreshes(wmain)
     return make_host(app_module), wmain, Spawned(app_module, monkeypatch), shown
 
 
@@ -618,12 +737,13 @@ def test_unmounting_uses_fuse_3s_fusermount_or_else_fuse_2s(
 ):
     host, wmain, spawned, shown = unmounting(app_module, monkeypatch, installed)
 
-    wmain.unmount_files(host, router_folder())
+    wmain.unmount_files(host.name, router_folder())
     spawned.exit(0)
 
     assert spawned.calls[0][0] == [program, "-u", str(router_folder())]
-    # Said once it is done, as mounting says so.
+    # Said once it is done, as mounting says so, and no longer marked mounted.
     assert shown == [("info", f"Unmounted router from {router_folder()}.")]
+    assert wmain.refreshes == 1
 
 
 def test_unmounting_removes_the_hosts_folder(app_module, monkeypatch):
@@ -631,7 +751,7 @@ def test_unmounting_removes_the_hosts_folder(app_module, monkeypatch):
     host, wmain, spawned, _shown = unmounting(app_module, monkeypatch, ("fusermount3",))
     router_folder().mkdir(parents=True)
 
-    wmain.unmount_files(host, router_folder())
+    wmain.unmount_files(host.name, router_folder())
     spawned.exit(0)
 
     assert not router_folder().exists() and router_folder().parent.is_dir()
@@ -643,7 +763,7 @@ def test_unmounting_keeps_a_folder_that_holds_anything(app_module, monkeypatch):
     router_folder().mkdir(parents=True)
     (router_folder() / "notes.txt").write_text("mine\n")
 
-    wmain.unmount_files(host, router_folder())
+    wmain.unmount_files(host.name, router_folder())
     spawned.exit(0)
 
     assert (router_folder() / "notes.txt").read_text() == "mine\n"
@@ -654,7 +774,7 @@ def test_a_failed_unmount_says_why(app_module, monkeypatch):
     host, wmain, spawned, shown = unmounting(app_module, monkeypatch, ("fusermount3",))
     router_folder().mkdir(parents=True)
 
-    wmain.unmount_files(host, router_folder())
+    wmain.unmount_files(host.name, router_folder())
     spawned.exit(1, f"fusermount3: failed to unmount {router_folder()}: Device or resource busy\n")
 
     assert shown == [
@@ -671,10 +791,444 @@ def test_a_failed_unmount_says_why(app_module, monkeypatch):
 def test_without_fusermount_it_says_so(app_module, monkeypatch):
     host, wmain, spawned, shown = unmounting(app_module, monkeypatch, ())
 
-    wmain.unmount_files(host, router_folder())
+    wmain.unmount_files(host.name, router_folder())
 
     assert spawned.calls == []
     assert shown == [("error", "Unmounting needs fusermount, which is not installed.")]
+
+
+# -- what is mounted: the tree's marks, and Servers ▸ Mounted -----------------------------
+
+
+class MenuModel:
+    """Gio.Menu, as list_mounts fills one. The real class has each (below)."""
+
+    def __init__(self):
+        self.items: list = []
+        self.emptied = 0
+
+    def remove_all(self):
+        self.items.clear()
+        self.emptied += 1
+
+    def append_item(self, item):
+        self.items.append((item.label, item.action, item.target))
+
+    def append(self, label, action):
+        self.items.append((label, action, None))
+
+
+class MenuEntry:
+    """Gio.MenuItem, as list_mounts makes one."""
+
+    def __init__(self, label, action):
+        self.label, self.action, self.target = label, action, None
+
+    @classmethod
+    def new(cls, label, action):
+        return cls(label, action)
+
+    def set_action_and_target_value(self, action, target):
+        self.action, self.target = action, target
+
+
+class Action:
+    """Gio.SimpleAction, as list_mounts enables one."""
+
+    def __init__(self):
+        self.enabled = True
+
+    def set_enabled(self, enabled):
+        self.enabled = enabled
+
+
+class Application:
+    """GcmApplication, as list_mounts reaches it: the Mounted list, and Unmount All."""
+
+    def __init__(self):
+        self.mounts_section = MenuModel()
+        self.unmount_all = Action()
+
+    def lookup_action(self, name):
+        assert name == "unmount-all", name
+        return self.unmount_all
+
+
+class Rows:
+    """Gtk.TreeStore, as show_mounts walks one: each row a list, as the tree has it."""
+
+    def __init__(self, *rows):
+        self.rows = [list(row) for row in rows]
+        self.changed: list = []
+
+    def foreach(self, func):
+        for index, row in enumerate(self.rows):
+            if func(self, index, row):
+                return
+
+    def get_value(self, row, column):
+        return row[column]
+
+    def set_value(self, row, column, value):
+        row[column] = value
+        self.changed.append((row[0], column))
+
+
+class Tree:
+    """The server tree, as its tooltip reads a row."""
+
+    def __init__(self, row):
+        self.row = row
+
+    def convert_widget_to_bin_window_coords(self, x, y):
+        return x, y
+
+    def get_path_at_pos(self, x, y):
+        return (0,), None, x, y
+
+    def get_model(self):
+        return {(0,): self.row}
+
+
+class Tooltip:
+    def set_markup(self, text):
+        self.text = text
+
+
+def test_the_menu_and_tree_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gio, Gtk
+
+    for fake, real, names in (
+        (MenuModel, Gio.Menu, ("remove_all", "append_item", "append")),
+        (MenuEntry, Gio.MenuItem, ("new", "set_action_and_target_value")),
+        (Action, Gio.SimpleAction, ("set_enabled",)),
+        (Application, Gtk.Application, ("lookup_action",)),
+        (Rows, Gtk.TreeStore, ("foreach", "get_value", "set_value")),
+        (
+            Tree,
+            Gtk.TreeView,
+            ("convert_widget_to_bin_window_coords", "get_path_at_pos", "get_model"),
+        ),
+        (Tooltip, Gtk.Tooltip, ("set_markup",)),
+    ):
+        for name in names:
+            assert hasattr(fake, name), f"{fake.__name__} is missing {name}"
+            assert hasattr(real, name), f"{real.__name__} has no {name}"
+
+
+def mnt(name):
+    return Path(os.environ["HOME"], "mnt", name)
+
+
+def host_called(app_module, name, address):
+    host = make_host(app_module)
+    host.name, host.host = name, address
+    return host
+
+
+def with_mounts(app_module, monkeypatch, hosts, *lines):
+    """A Wmain with `hosts` in the tree and `lines` in the mount table, and an application
+    whose Mounted list it fills."""
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": list(hosts)})
+    mount_table(app_module, monkeypatch, *lines)
+    monkeypatch.setattr(app_module.Gio, "MenuItem", MenuEntry)
+    monkeypatch.setattr(app_module.GLib, "Variant", lambda kind, value: (kind, value))
+    wmain = object.__new__(app_module.Wmain)
+    wmain.application = Application()
+    wmain.treeModel = Rows()
+    return wmain
+
+
+def three_mounts(app_module, monkeypatch):
+    """router and lab_box mounted where their names put them, and a mount of no host's."""
+    router = make_host(app_module)
+    lab = host_called(app_module, "lab_box", "lab.example")
+    lines = (
+        mounted_line(router_folder()),
+        mounted_line(mnt("old"), source="eric@gone.example:"),
+        mounted_line(mnt("lab_box"), source="netops@lab.example:"),
+        mounted_line(mnt("scratch"), kind="tmpfs", source="scratch"),
+        mounted_line(mnt("deeper") / "box", source="netops@router.example.com:"),
+    )
+    return router, lab, with_mounts(app_module, monkeypatch, [router, lab], *lines)
+
+
+def test_each_mount_in_mnt_is_listed_to_unmount_by_its_hosts_name(app_module, monkeypatch):
+    """Or by what is mounted, for a mount that is no host's. Each `_` is doubled, which a
+    menu built from a model would otherwise read as a mnemonic, measured."""
+    _router, _lab, wmain = three_mounts(app_module, monkeypatch)
+
+    wmain.show_mounts()
+
+    assert wmain.application.mounts_section.items == [
+        (
+            "Unmount router from ~/mnt/router",
+            "app.unmount-folder",
+            ("s", str(router_folder())),
+        ),
+        (
+            "Unmount eric@gone.example: from ~/mnt/old",
+            "app.unmount-folder",
+            ("s", str(mnt("old"))),
+        ),
+        (
+            "Unmount lab__box from ~/mnt/lab__box",
+            "app.unmount-folder",
+            ("s", str(mnt("lab_box"))),
+        ),
+    ]
+    assert wmain.application.unmount_all.enabled
+
+
+def test_with_nothing_mounted_the_list_says_so_greyed(app_module, monkeypatch):
+    """Given Unmount All, which is disabled, so that GTK draws it greyed: measured, an item
+    with no action is drawn as one to choose."""
+    wmain = with_mounts(app_module, monkeypatch, [make_host(app_module)])
+
+    wmain.show_mounts()
+
+    assert wmain.application.mounts_section.items == [
+        ("Nothing is mounted", "app.unmount-all", None)
+    ]
+    assert not wmain.application.unmount_all.enabled
+
+
+def test_the_list_is_rebuilt_only_when_what_is_mounted_changes(app_module, monkeypatch):
+    """The mount table changes for any mount at all, and a menu rebuilt under the pointer
+    loses its place."""
+    router = make_host(app_module)
+    wmain = with_mounts(app_module, monkeypatch, [router], mounted_line(router_folder()))
+
+    wmain.show_mounts()
+    wmain.show_mounts()
+    assert wmain.application.mounts_section.emptied == 1
+
+    mount_table(app_module, monkeypatch)
+    wmain.show_mounts()
+    assert wmain.application.mounts_section.emptied == 2
+    assert wmain.application.mounts_section.items == [
+        ("Nothing is mounted", "app.unmount-all", None)
+    ]
+    # And again once a host is renamed, which the list names it by.
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+    wmain.show_mounts()
+    router.name = "edge"
+    wmain.show_mounts()
+    assert wmain.application.mounts_section.emptied == 4
+    assert wmain.application.mounts_section.items[0][0] == "Unmount edge from ~/mnt/router"
+
+
+def test_the_tree_marks_each_host_mounted_and_unmarks_one_no_longer(app_module, monkeypatch):
+    router, lab, wmain = three_mounts(app_module, monkeypatch)
+    mail = host_called(app_module, "mail", "mail.example")
+    wmain.treeModel = rows = Rows(
+        ["prod", None, "gtk-directory", "#fff", "f1", ""],
+        ["router", router, "gtk-network", "#fff", "", ""],
+        ["mail", mail, "gtk-network", "#fff", "", str(mnt("mail"))],
+        ["lab_box", lab, "gtk-network", "#fff", "", str(mnt("lab_box"))],
+    )
+
+    wmain.show_mounts()
+
+    assert [row[5] for row in rows.rows] == ["", str(router_folder()), "", str(mnt("lab_box"))]
+    # Only what changed is set, as each change redraws its row.
+    assert rows.changed == [("router", 5), ("mail", 5)]
+    rows.changed.clear()
+    wmain.show_mounts()
+    assert rows.changed == []
+
+
+def test_the_tree_is_drawn_with_each_host_mounted_marked(app_module, monkeypatch):
+    """As updateTree draws it: again for a host renamed or deleted, which changes which
+    mount is whose."""
+    router = make_host(app_module)
+    mail = host_called(app_module, "mail", "mail.example")
+    wmain = make_wmain_for_tree(app_module, monkeypatch, {"ops/prod": [router, mail]})
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+
+    wmain.updateTree()
+
+    assert wmain.treeModel.find("router")[1].row[5:] == [str(router_folder())]
+    assert wmain.treeModel.find("mail")[1].row[5:] == [""]
+    assert wmain.treeModel.find("prod")[1].row[5:] == [""]
+
+
+def test_the_tooltip_says_where_a_host_is_mounted(app_module, monkeypatch):
+    escaped: list = []
+
+    def escape(text, length):
+        escaped.append(text)
+        return text.replace("&", "&amp;")
+
+    monkeypatch.setattr(app_module.GLib, "markup_escape_text", escape)
+    host = make_host(app_module)
+    wmain = object.__new__(app_module.Wmain)
+    row = [host.name, host, "gtk-network", "#fff", "", "/home/x/mnt/R&D"]
+    tooltip = Tooltip()
+
+    assert wmain.on_treeServers_tooltip(Tree(row), 5, 5, False, tooltip)
+
+    assert "\nMounted at /home/x/mnt/R&amp;D\n" in tooltip.text
+    assert escaped == ["Mounted at /home/x/mnt/R&D"]
+    row[5] = ""
+    wmain.on_treeServers_tooltip(Tree(row), 5, 5, False, tooltip)
+    assert "Mounted" not in tooltip.text
+
+
+class Cell:
+    """The tree's first Gtk.CellRendererPixbuf, as draw_mount_mark sets it."""
+
+    def __init__(self):
+        self.properties: dict = {}
+
+    def set_property(self, name, value):
+        self.properties[name] = value
+
+
+def test_a_host_mounted_is_drawn_with_a_folder_on_a_network(app_module):
+    """In place of its own icon, which the row's stock icon draws: its end is out of sight
+    where a name is wider than the tree, measured."""
+    model = Rows(["router", None, "gtk-network", "#fff", "", "/home/x/mnt/router"])
+    mounted, plain = Cell(), Cell()
+
+    app_module.draw_mount_mark(None, mounted, model, model.rows[0], None)
+    model.rows[0][5] = ""
+    app_module.draw_mount_mark(None, plain, model, model.rows[0], None)
+
+    assert mounted.properties == {"icon-name": "folder-remote"}
+    assert plain.properties == {}
+
+
+def test_the_cell_fake_matches_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    assert hasattr(Cell, "set_property")
+    assert Gtk.CellRendererPixbuf.find_property("icon-name") is not None
+    assert Gtk.IconTheme.get_default().has_icon("folder-remote")
+
+
+def test_unmounting_from_the_list_unmounts_that_folder(app_module, monkeypatch):
+    _router, _lab, wmain = three_mounts(app_module, monkeypatch)
+    calls: list = []
+    wmain.unmount_files = lambda *args: calls.append(args)
+
+    wmain.unmount_folder(router_folder())
+    wmain.unmount_folder(mnt("old"))
+
+    assert calls == [("router", router_folder()), ("eric@gone.example:", mnt("old"))]
+
+
+@pytest.mark.parametrize("name", ["scratch", "gone", "deeper/box"])
+def test_the_list_unmounts_nothing_but_an_sshfs_mount_in_mnt(app_module, monkeypatch, name):
+    shown = said(app_module, monkeypatch)
+    _router, _lab, wmain = three_mounts(app_module, monkeypatch)
+    calls: list = []
+    wmain.unmount_files = lambda *args: calls.append(args)
+
+    wmain.unmount_folder(mnt(name))
+
+    assert calls == []
+    assert shown == [("info", f"{mnt(name).name} is not mounted at {mnt(name)}.")]
+
+
+def unmounting_all(app_module, monkeypatch, installed=("fusermount3",)):
+    shown = said(app_module, monkeypatch)
+    monkeypatch.setattr(
+        app_module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
+    )
+    _router, _lab, wmain = three_mounts(app_module, monkeypatch)
+    count_refreshes(wmain)
+    return wmain, Spawned(app_module, monkeypatch), shown
+
+
+def test_unmount_all_unmounts_each_and_says_so_once_all_have_ended(app_module, monkeypatch):
+    wmain, spawned, shown = unmounting_all(app_module, monkeypatch)
+    for folder in (router_folder(), mnt("old"), mnt("lab_box")):
+        folder.mkdir(parents=True)
+
+    wmain.unmount_all_files()
+
+    assert [argv for argv, _options in spawned.calls] == [
+        ["/usr/bin/fusermount3", "-u", str(folder)]
+        for folder in (router_folder(), mnt("old"), mnt("lab_box"))
+    ]
+    spawned.exit(0)
+    spawned.exit(0, which=0)
+    assert shown == []
+    spawned.exit(0)
+    # In the order listed, whatever the order they ended in.
+    assert shown == [
+        (
+            "info",
+            f"Unmounted router from {router_folder()}.\n"
+            f"Unmounted eric@gone.example: from {mnt('old')}.\n"
+            f"Unmounted lab_box from {mnt('lab_box')}.",
+        )
+    ]
+    assert not any(folder.exists() for folder in (router_folder(), mnt("old"), mnt("lab_box")))
+    assert wmain.refreshes == 3
+
+
+def test_unmount_all_says_which_could_not_be_unmounted(app_module, monkeypatch):
+    wmain, spawned, shown = unmounting_all(app_module, monkeypatch)
+
+    wmain.unmount_all_files()
+    spawned.exit(0)
+    busy = f"fusermount3: failed to unmount {mnt('old')}: Device or resource busy\n"
+    spawned.exit(1, busy)
+    spawned.exit(0)
+
+    assert shown == [
+        (
+            "error",
+            f"Unmounted router from {router_folder()}.\n"
+            f"Could not unmount {mnt('old')}: {busy.strip()}\n"
+            f"Unmounted lab_box from {mnt('lab_box')}.",
+        )
+    ]
+
+
+def test_unmount_all_with_nothing_mounted_does_nothing(app_module, monkeypatch):
+    shown = said(app_module, monkeypatch)
+    wmain = with_mounts(app_module, monkeypatch, [make_host(app_module)])
+    spawned = Spawned(app_module, monkeypatch)
+
+    wmain.unmount_all_files()
+
+    assert spawned.calls == [] and shown == []
+
+
+def test_unmount_all_without_fusermount_says_so(app_module, monkeypatch):
+    wmain, spawned, shown = unmounting_all(app_module, monkeypatch, installed=())
+
+    wmain.unmount_all_files()
+
+    assert spawned.calls == []
+    assert shown == [("error", "Unmounting needs fusermount, which is not installed.")]
+
+
+def test_mount_changes_are_followed_as_the_mount_table_reports_them(app_module, monkeypatch):
+    """However they were made: GCM, a terminal, or a mount that dropped."""
+    connected: list = []
+    monitor = types.SimpleNamespace(
+        connect=lambda signal, handler: connected.append((signal, handler))
+    )
+    monkeypatch.setattr(
+        app_module.Gio, "UnixMountMonitor", types.SimpleNamespace(get=lambda: monitor)
+    )
+    wmain = object.__new__(app_module.Wmain)
+    count_refreshes(wmain)
+
+    wmain.watch_mounts()
+
+    [(signal, handler)] = connected
+    assert signal == "mounts-changed" and wmain.mount_monitor is monitor
+    handler(monitor)
+    assert wmain.refreshes == 1
 
 
 # -- against real GTK, GIO, sshfs and sshd ------------------------------------------------
@@ -826,7 +1380,7 @@ if scenario == "the-tree-menu":
     opened, mounted, unmounted = [], [], []
     app.open_in_file_manager = opened.append
     w.mount_files = lambda host, folder: mounted.append((host.name, str(folder)))
-    w.unmount_files = lambda host, folder: unmounted.append((host.name, str(folder)))
+    w.unmount_files = lambda name, folder: unmounted.append((name, str(folder)))
     folder = os.path.join(os.environ["HOME"], "mnt", "box")
     address = "sftp://eric@192.0.2.10:2222/"
 
@@ -871,6 +1425,103 @@ if scenario == "the-tree-menu":
     assert len(mounted) == 2 and opened == [address, address]
     assert shown == [], shown
 
+    # A host mounted is drawn with a folder on a network in place of its own icon, as read
+    # from the window, the row not selected. Each row is striped, so against itself.
+    from gi.repository import Gdk
+
+    def icon_of(name):
+        w.treeServers.get_selection().unselect_all()
+        w.wMain.present()
+        pump(0.5)
+        rows = []
+        w.treeModel.foreach(lambda model, path, it: rows.append((model.get_value(it, 0), path.copy())))
+        [path] = [path for row, path in rows if row == name]
+        area = w.treeServers.get_cell_area(path, w.treeServers.get_column(0))
+        return Gdk.pixbuf_get_from_window(
+            w.treeServers.get_bin_window(), area.x, area.y + area.height // 2 - 8, 14, 16
+        ).get_pixels()
+
+    # Not yet marked: the mount table was changed without GIO telling.
+    plain = icon_of("box")
+    w.show_mounts()
+    marked = icon_of("box")
+    assert marked != plain
+
+    def mounted_menu():
+        """Open Servers ▸ Mounted with real clicks: each item it draws, and whether it can
+        be chosen."""
+        servers = labelled(w.menubar, "Servers")
+        click(1, *widget_point(servers))
+        assert until(servers.get_submenu().get_visible), "the Servers menu did not open"
+        pump(0.3)
+        item = labelled(servers.get_submenu(), "Mounted")
+        click(1, *widget_point(item))
+        assert until(item.get_submenu().get_visible), "Servers ▸ Mounted did not open"
+        pump(0.4)
+        listed = item.get_submenu()
+        return listed, [
+            (each.get_child().get_text(), each.is_sensitive())
+            for each in listed.get_children()
+            if isinstance(each.get_child(), Gtk.Label)
+        ]
+
+    def from_mounted_menu(text):
+        listed, _drawn = mounted_menu()
+        click(1, *widget_point(labelled(listed, text)))
+        assert until(lambda: not listed.get_visible()), "Servers ▸ Mounted stayed open"
+        pump(0.3)
+
+    # Each mount listed, by its host's name, or by what is mounted for one of no host's,
+    # a `_` drawn as one.
+    table = (
+        f"300 1 0:90 / {folder} rw - fuse.sshfs eric@192.0.2.10: rw\n"
+        f"301 1 0:91 / {os.environ['HOME']}/mnt/an_old rw - fuse.sshfs ops@gone.example: rw\n"
+    )
+    app.read_mount_table = lambda: table
+    w.show_mounts()
+    listed, drawn = mounted_menu()
+    assert drawn == [
+        ("Unmount box from ~/mnt/box", True),
+        ("Unmount ops@gone.example: from ~/mnt/an_old", True),
+        ("Unmount All", True),
+    ], drawn
+    w.menubar.deactivate()
+    assert until(lambda: not listed.get_visible())
+    pump(0.3)
+    from_mounted_menu("Unmount ops@gone.example: from ~/mnt/an_old")
+    assert unmounted[-1] == ("ops@gone.example:", os.path.join(os.environ["HOME"], "mnt", "an_old"))
+    everything = []
+    w.unmount_all_files = lambda: everything.append(True)
+    from_mounted_menu("Unmount All")
+    assert everything == [True], everything
+
+    # Renamed while mounted: still found where its old name put it, in the tree's menu
+    # and in the list, and unmounted from there.
+    box.name = "box renamed"
+    w.updateTree()
+    w.treeServers.expand_all()
+    pump(0.5)
+    assert icon_of("box renamed") == marked
+    right_click("box renamed")
+    assert offered() == (True, False, True), offered()
+    choose(menu.mnuUnmount)
+    assert unmounted[-1] == ("box renamed", folder), unmounted
+    listed, drawn = mounted_menu()
+    assert drawn[0] == ("Unmount box renamed from ~/mnt/box", True), drawn
+    w.menubar.deactivate()
+    assert until(lambda: not listed.get_visible())
+    pump(0.3)
+
+    # Nothing mounted: no mark, and the list says so, greyed, as Unmount All is.
+    app.read_mount_table = lambda: ""
+    w.show_mounts()
+    assert icon_of("box renamed") == plain
+    listed, drawn = mounted_menu()
+    assert drawn == [("Nothing is mounted", False), ("Unmount All", False)], drawn
+    w.menubar.deactivate()
+    assert until(lambda: not listed.get_visible())
+    assert shown == [], shown
+
 elif scenario == "file-manager":
     address = "sftp://eric@files.example:2222/"
     marks, expected = os.environ["PROBE_MARKS"], os.environ["PROBE_EXPECT"]
@@ -913,7 +1564,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert until(lambda: shown), "nothing was said"
         pump(0.3)
         assert len(shown) == 1, shown
-        assert not w.files_mounted(host), "still mounted"
+        assert w.files_mount(host) is None, "still mounted"
         return shown[0]
 
     def mount_items(host):
@@ -932,7 +1583,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
             out.write(host_key)
         said = mount(box)
         assert said == f"Mounted probe box at {folder}.", said
-        assert w.files_mounted(box)
+        assert w.files_mount(box) == folder
         assert sorted(os.listdir(folder)) == sorted(os.listdir(remote)), os.listdir(folder)
         # Neither sshfs nor its ssh is in GCM's session or process group, so what a terminal
         # sends GCM, Ctrl+C or the hangup as it closes, reaches neither.
@@ -1002,6 +1653,54 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         assert said == f"Unmounted odd from {w.files_folder(oddly)}.", said
         assert not w.files_folder(oddly).exists()
 
+        # A mount made outside GCM, and its unmount: the tree and Servers ▸ Mounted follow
+        # them as GIO reports the mount table changing, with nothing asking GCM to look.
+        app.groups.clear()
+        app.groups["Lab"] = [box]
+        w.updateTree()
+        section = application.mounts_section
+
+        def marked():
+            found = []
+            w.treeModel.foreach(
+                lambda model, path, it: model.get_value(it, 1) is box
+                and found.append(model.get_value(it, 5))
+            )
+            return found[0]
+
+        def listed():
+            return [
+                section.get_item_attribute_value(index, "label").get_string()
+                for index in range(section.get_n_items())
+            ]
+
+        assert marked() == "" and listed() == ["Nothing is mounted"], (marked(), listed())
+        folder.mkdir()
+        by_hand = ["sshfs", "-p", port, "-o", f"IdentityFile={key}", f"{user}@127.0.0.1:", str(folder)]
+        import subprocess
+
+        subprocess.run(by_hand, check=True, timeout=30)
+        assert until(lambda: marked() == str(folder)), marked()
+        assert until(lambda: listed() == ["Unmount probe box from ~/mnt/probe box"]), listed()
+        subprocess.run([app.fusermount(), "-u", str(folder)], check=True, timeout=30)
+        assert until(lambda: marked() == ""), marked()
+        assert until(lambda: listed() == ["Nothing is mounted"]), listed()
+        folder.rmdir()
+
+        # Renamed while mounted: found where its old name put it, and unmounted from there.
+        assert mount(box) == f"Mounted probe box at {folder}."
+        assert marked() == str(folder)
+        box.name = "renamed box"
+        w.updateTree()
+        assert w.files_folder(box) != folder
+        assert w.files_mount(box) == folder and marked() == str(folder)
+        assert listed() == ["Unmount renamed box from ~/mnt/probe box"], listed()
+        assert mount_items(box) == (False, True)
+        said = unmount(box)
+        assert said == f"Unmounted renamed box from {folder}.", said
+        assert not folder.exists() and marked() == "" and listed() == ["Nothing is mounted"]
+        box.name = "probe box"
+
         # Mounted for the test to find once GCM has gone.
         assert mount(box) == f"Mounted probe box at {folder}."
         print("LEFT", folder)
@@ -1018,7 +1717,7 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         said = mount(wrong)
         reason = "eric@files.example: Permission denied (publickey,password)."
         assert said == f"Could not mount stored at {folder}: {reason}", said
-        assert not w.files_mounted(wrong)
+        assert w.files_mount(wrong) is None
         assert not folder.exists()
 
 else:

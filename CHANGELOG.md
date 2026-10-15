@@ -20,7 +20,10 @@ the git log.
   lasts until **Unmount SSHFS**, closing GCM or not. Unmounting removes the host's folder
   again, while it is empty, as does a mount that fails, and a failed mount says why in
   ssh's words. A host key never seen is not trusted there: connect once in a console
-  first.
+  first. A host mounted is drawn in the tree with a folder on a network in place of its
+  icon, its tooltip saying where, and **Servers ▸ Mounted** lists every mount in `~/mnt`
+  to unmount, one or all. Both follow mounts made or ended outside GCM too, and a host
+  renamed while mounted is still found where it was mounted.
 - A console can move to a window of its own, to keep it on another monitor or beside
   another program: **Move to New Window** in its tab's menu or under **View**,
   `Ctrl+Shift+M`, or dropping its tab anywhere but a tab strip. It keeps its session, its

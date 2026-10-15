@@ -2026,3 +2026,18 @@ msgstr "{} is not mounted at {}."
 
 msgid "its user begins with -, which ssh would read as an option."
 msgstr "its user begins with -, which ssh would read as an option."
+
+msgid "Mounted"
+msgstr "Mounted"
+
+msgid "Unmount All"
+msgstr "Unmount All"
+
+msgid "Unmount {} from {}"
+msgstr "Unmount {} from {}"
+
+msgid "Nothing is mounted"
+msgstr "Nothing is mounted"
+
+msgid "Mounted at {}"
+msgstr "Mounted at {}"

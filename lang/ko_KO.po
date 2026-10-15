@@ -2022,3 +2022,18 @@ msgstr ""
 
 msgid "its user begins with -, which ssh would read as an option."
 msgstr ""
+
+msgid "Mounted"
+msgstr ""
+
+msgid "Unmount All"
+msgstr ""
+
+msgid "Unmount {} from {}"
+msgstr ""
+
+msgid "Nothing is mounted"
+msgstr ""
+
+msgid "Mounted at {}"
+msgstr ""

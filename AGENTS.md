@@ -212,6 +212,19 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   mount, so that one is not left for every host ever mounted. `rmdir` alone: measured,
   it refuses a folder still mounted, as busy, and one holding anything, so files that
   were there before the mount stay, folder and all.
+  `find_mounts` says where each host is mounted: where its name puts it, or else, for a
+  host renamed while mounted, by its `user@host:` in another folder of `~/mnt`, only
+  while no other host has the same, as the mount table names no port. `Wmain.find_mounts`
+  reads the table for it, `~/mnt` resolved first, since measured, a mount made through a
+  link is listed where the link leads, and leaves out a folder still in `mounting`:
+  sshfs mounts before it connects, measured. `Wmain.show_mounts` marks each host mounted
+  in the tree and `list_mounts` lists every mount under Servers ▸ Mounted, rebuilt only
+  when what it lists changed. `watch_mounts` runs it on GIO's `mounts-changed`, so a
+  mount made or ended outside GCM shows too. The mark is `MOUNTED_ICON` drawn by
+  `draw_mount_mark` in place of the host's icon, not at the row's end, which a name wider
+  than the tree puts out of sight, measured, and as an icon name, as a `stock_id` that is
+  no stock item draws nothing, measured. The list's empty line is given Unmount All,
+  disabled then, since GTK draws an item with no action as one to choose, measured.
   Pure: the programs found and the mount table are arguments.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,

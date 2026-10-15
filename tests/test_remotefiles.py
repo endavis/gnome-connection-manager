@@ -249,6 +249,100 @@ def test_of_two_mounts_at_a_folder_the_one_on_top_counts():
     )
 
 
+def test_hosts_are_mounted_in_mnt():
+    assert remotefiles.mount_root("/home/eric") == Path("/home/eric/mnt")
+
+
+def test_the_sshfs_mounts_directly_inside_mnt_are_listed_in_the_tables_order():
+    table = (
+        "232 82 0:82 / /home/eric/mnt/zeta rw - fuse.sshfs eric@zeta.example: rw\n"
+        + MOUNTINFO
+        + "233 82 0:83 / /home/eric/mnt/deeper/web03 rw - fuse.sshfs eric@deep.example: rw\n"
+        "234 82 0:84 / /home/eric/elsewhere rw - fuse.sshfs eric@away.example: rw\n"
+        "235 82 0:85 / /home/eric/mnt rw - fuse.sshfs eric@whole.example: rw\n"
+    )
+
+    listed = remotefiles.sshfs_mounts(table, "/home/eric/mnt")
+
+    assert list(listed.items()) == [
+        (Path("/home/eric/mnt/zeta"), "eric@zeta.example:"),
+        (Path("/home/eric/mnt/web01"), "eric@files.example:"),
+        (Path("/home/eric/mnt/my files"), "tester@[2001:db8::7]:"),
+    ]
+
+
+def test_what_is_on_top_of_a_folder_decides_whether_it_is_an_sshfs_mount():
+    table = MOUNTINFO + (
+        "231 228 0:81 / /home/eric/mnt/web01 rw - tmpfs scratch rw\n"
+        "232 230 0:82 / /home/eric/mnt/back\\134slash rw - fuse.sshfs ops@other.example: rw\n"
+    )
+
+    assert remotefiles.sshfs_mounts(table, Path("/home/eric/mnt")) == {
+        Path("/home/eric/mnt/my files"): "tester@[2001:db8::7]:",
+        Path("/home/eric/mnt/back\\slash"): "ops@other.example:",
+    }
+
+
+ROOT = Path("/home/eric/mnt")
+
+
+def test_each_host_is_found_where_its_name_puts_it():
+    mounts = {ROOT / "prod_web01": "eric@web01:", ROOT / "db": "eric@db:"}
+    hosts = [("db", "eric@db:"), ("prod/web01", "eric@web01:"), ("mail", "eric@mail:")]
+
+    assert remotefiles.find_mounts(hosts, mounts, ROOT) == [ROOT / "db", ROOT / "prod_web01", None]
+
+
+def test_a_host_renamed_while_mounted_is_found_where_its_old_name_put_it():
+    mounts = {ROOT / "web01": "eric@files.example:"}
+
+    assert remotefiles.find_mounts([("web-a", "eric@files.example:")], mounts, ROOT) == [
+        ROOT / "web01"
+    ]
+
+
+def test_a_mount_that_could_be_either_of_two_hosts_is_neithers():
+    """Two hosts at one address with one user, on two ports, as behind one gateway: the
+    mount table names no port."""
+    mounts = {ROOT / "old": "eric@127.0.0.1:"}
+    hosts = [("web-a", "eric@127.0.0.1:"), ("web-b", "eric@127.0.0.1:")]
+
+    assert remotefiles.find_mounts(hosts, mounts, ROOT) == [None, None]
+
+
+def test_where_one_of_two_such_hosts_name_puts_a_mount_it_is_that_hosts():
+    mounts = {ROOT / "web-b": "eric@127.0.0.1:", ROOT / "old": "eric@127.0.0.1:"}
+    hosts = [("web-a", "eric@127.0.0.1:"), ("web-b", "eric@127.0.0.1:")]
+
+    assert remotefiles.find_mounts(hosts, mounts, ROOT) == [None, ROOT / "web-b"]
+
+
+def test_a_mount_at_one_hosts_folder_from_another_is_the_others():
+    """A host renamed while mounted, its old name given to another host since."""
+    mounts = {ROOT / "web": "eric@old.example:"}
+    hosts = [("web", "eric@new.example:"), ("web-old", "eric@old.example:")]
+
+    assert remotefiles.find_mounts(hosts, mounts, ROOT) == [None, ROOT / "web"]
+
+
+def test_of_several_mounts_of_a_host_it_has_one():
+    """Where its name puts it, or else the first in the mount table's order. The rest are
+    no host's."""
+    many = {
+        ROOT / "old": "eric@files.example:",
+        ROOT / "web01": "eric@files.example:",
+        ROOT / "older": "eric@files.example:",
+    }
+    renamed = {ROOT / "old": "eric@files.example:", ROOT / "older": "eric@files.example:"}
+
+    assert remotefiles.find_mounts([("web01", "eric@files.example:")], many, ROOT) == [
+        ROOT / "web01"
+    ]
+    assert remotefiles.find_mounts([("web-a", "eric@files.example:")], renamed, ROOT) == [
+        ROOT / "old"
+    ]
+
+
 @pytest.mark.parametrize(
     ("ssh_log", "sshfs_output", "reason"),
     [

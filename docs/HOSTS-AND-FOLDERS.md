@@ -337,9 +337,23 @@ there, its menu offers **Unmount SSHFS** in Mount's place, and GCM says when the
 unmounted, or why it could not be. Unmounting removes the host's folder from `~/mnt`
 again, as does a mount that fails, so that a folder is not left there for every host
 ever mounted. GCM removes only an empty folder: one that held files before the mount
-keeps them. `~/mnt` itself stays. The mount lasts until you unmount it: closing GCM
-leaves it mounted. If something else is mounted at that folder, GCM names it and leaves
-it alone, and Unmount SSHFS unmounts only what Mount with SSHFS mounted there.
+keeps them. `~/mnt` itself stays, and it can be a link to a folder elsewhere. The mount
+lasts until you unmount it: closing GCM leaves it mounted. If something else is mounted at
+that folder, GCM names it and leaves it alone, and Unmount SSHFS unmounts only the host's
+own SSHFS mount.
+
+**What is mounted.** A host mounted with SSHFS is drawn in the server tree with a folder
+on a network in place of its own icon, and its tooltip says where it is mounted.
+**Servers ▸ Mounted** lists every SSHFS mount in `~/mnt`, each by its host's name, and
+choosing one unmounts it. **Unmount All** below them unmounts them all and says once how
+each went. Both follow the system's list of mounts as it changes, so they show a mount
+made or ended outside GCM too, such as one unmounted from a terminal. A mount in `~/mnt`
+that is no host's, such as one you made yourself, is listed by what it mounts, as
+`user@host:`. A host renamed while mounted stays mounted where its old name put it, and
+GCM still finds it there, to mark it, list it and unmount it, rather than offer to mount
+it a second time. It finds it by the host's user and address, which is all the list of
+mounts records, so of two hosts with the same user and address, on different ports, each
+is found only where its own name puts it.
 
 The mount connects with the host's user, address, port and private key file. When ssh
 asks for a password, GCM answers with the host's stored one, which never goes into a

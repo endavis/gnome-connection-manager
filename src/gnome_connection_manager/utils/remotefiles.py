@@ -28,7 +28,7 @@ from gnome_connection_manager.utils.connections import is_ipv6
 from gnome_connection_manager.utils.logpaths import sanitize_log_name
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
 # Tried in order where GIO knows no default application for folders, as on a system with
 # no MIME cache. Read from the desktop files of Ubuntu 24.04's packages: each declares
@@ -84,10 +84,15 @@ def file_manager_command(which: Callable[[str], str | None]) -> list[str] | None
     return None
 
 
+def mount_root(home: str | Path) -> Path:
+    """The folder hosts are mounted in, ~/mnt."""
+    return Path(home, "mnt")
+
+
 def mount_folder(home: str | Path, name: str) -> Path:
     """Where a host is mounted: ~/mnt/<its name>, made safe for a folder name as a session
     log's is, so that a `/` in it cannot reach another folder."""
-    return Path(home, "mnt", sanitize_log_name(name))
+    return Path(mount_root(home), sanitize_log_name(name))
 
 
 def sshfs_source(address: str, user: str | None) -> str:
@@ -173,15 +178,56 @@ def _unescape(field: str) -> str:
     return "".join(out)
 
 
+def _mounts(mountinfo: str) -> Iterator[tuple[str, str, str]]:
+    """Each mount in the text of /proc/self/mountinfo, as (its folder, type, source)."""
+    for line in mountinfo.splitlines():
+        head, separator, tail = line.partition(" - ")
+        fields, rest = head.split(" "), tail.split(" ")
+        if separator and len(fields) > 4 and len(rest) > 1:
+            yield _unescape(fields[4]), rest[0], _unescape(rest[1])
+
+
 def mount_at(mountinfo: str, folder: str | Path) -> tuple[str, str] | None:
     """The type and source of what is mounted at `folder`, from the text of
     /proc/self/mountinfo, or None. The last of several, which is the one on top."""
     found = None
-    for line in mountinfo.splitlines():
-        head, separator, tail = line.partition(" - ")
-        fields, rest = head.split(" "), tail.split(" ")
-        if separator and len(fields) > 4 and len(rest) > 1 and _unescape(fields[4]) == str(folder):
-            found = (rest[0], _unescape(rest[1]))
+    for mounted, kind, source in _mounts(mountinfo):
+        if mounted == str(folder):
+            found = (kind, source)
+    return found
+
+
+def sshfs_mounts(mountinfo: str, root: str | Path) -> dict[Path, str]:
+    """Each folder directly inside `root`, ~/mnt, where what is on top is sshfs's, with what
+    it mounted, `user@host:`, from the text of /proc/self/mountinfo, in its order."""
+    on_top: dict[Path, tuple[str, str]] = {}
+    for mounted, kind, source in _mounts(mountinfo):
+        folder = Path(mounted)
+        if folder.parent == Path(root):
+            on_top[folder] = (kind, source)
+    return {folder: source for folder, (kind, source) in on_top.items() if kind == "fuse.sshfs"}
+
+
+def find_mounts(
+    hosts: Sequence[tuple[str, str]], mounts: Mapping[Path, str], root: str | Path
+) -> list[Path | None]:
+    """Where each of `hosts`, given as (its name, what sshfs mounts of it), is mounted, of
+    the folders in `mounts`, {folder: what is mounted there}, or None.
+
+    The folder its name gives, while that holds a mount of it. Else another holding one
+    that is no host's by its name, as a host renamed while mounted leaves its mount where
+    its old name put it. That only for a host whose `user@host:` is its own: two hosts can
+    share one, at one address on two ports, and the mount table names no port, so such a
+    mount could be either's.
+    """
+    found: list[Path | None] = []
+    for name, source in hosts:
+        folder = Path(root, sanitize_log_name(name))
+        found.append(folder if mounts.get(folder) == source else None)
+    for folder, source in mounts.items():
+        sharing = [index for index, (_name, mine) in enumerate(hosts) if mine == source]
+        if len(sharing) == 1 and found[sharing[0]] is None:
+            found[sharing[0]] = folder
     return found
 
 
