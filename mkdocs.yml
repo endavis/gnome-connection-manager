@@ -73,10 +73,10 @@ markdown_extensions:
 #
 # mkdocs 1.6 reports those identically to genuinely broken links
 # (`links.not_found`), so silencing one silences the other. `not_found` is
-# therefore ignored here and link validation lives in
-# `tests/test_docs_links.py`, which resolves every relative link against the
-# whole repository — including the out-of-docs links mkdocs can never check.
-# Anchors are still validated here, where mkdocs has the rendered headings.
+# therefore ignored here, and nothing else checks a link to another file:
+# `tests/test_docs.py` checks only that a link to a heading in the same
+# document lands on one. Anchors are still validated here, where mkdocs has
+# the rendered headings.
 #
 # Trade-off: the out-of-docs links do not resolve on the published site.
 # `decisions/adr-template.md` is a scaffold, not a decision record: it carries

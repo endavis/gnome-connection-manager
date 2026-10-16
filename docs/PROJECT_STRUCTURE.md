@@ -144,7 +144,7 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-vte-2.91 expe
 sudo dnf install python3-gobject gtk3 vte291 expect
 ```
 
-**Python:** 3.8+ (3.12.3 recommended)
+**Python:** 3.12+ (3.12.3 recommended)
 
 ### Benefits of New Structure
 

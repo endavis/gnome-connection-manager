@@ -12,6 +12,7 @@ import gettext
 import inspect
 import logging
 import re
+import tomllib
 import types
 from pathlib import Path
 
@@ -458,6 +459,34 @@ def test_no_doc_claims_the_test_suite_is_still_to_be_written():
 
     assert "- [ ] Add comprehensive test suite" not in structure, (
         "PROJECT_STRUCTURE.md still lists the test suite as unwritten"
+    )
+
+
+# The documents that say which Python GCM needs.
+_PYTHON_FLOOR_DOCS = (
+    "README.md",
+    "docs/index.md",
+    "docs/DEVELOPING.md",
+    "docs/PROJECT_STRUCTURE.md",
+)
+
+
+def test_every_python_floor_a_doc_states_is_pyprojects():
+    """`docs/PROJECT_STRUCTURE.md` said "Python: 3.8+" long after the floor went to 3.12,
+    which is what `pyproject.toml` requires and the README says."""
+    repo = Path(__file__).resolve().parents[1]
+    required = tomllib.loads((repo / "pyproject.toml").read_text())["project"]["requires-python"]
+    floor = re.fullmatch(r">=\s*(\d+\.\d+)", required)
+    assert floor, f"requires-python is {required!r}, not a floor this test can read"
+    stated: dict[str, list[str]] = {}
+    for relative in _PYTHON_FLOOR_DOCS:
+        body = (repo / relative).read_text(encoding="utf-8")
+        for version in re.findall(r"Python\W{0,6}(\d+\.\d+)\+", body):
+            stated.setdefault(version, []).append(relative)
+
+    assert stated, "no document says which Python GCM needs"
+    assert set(stated) == {floor.group(1)}, (
+        f"pyproject.toml requires Python {floor.group(1)}+, but the documents say {stated}"
     )
 
 
