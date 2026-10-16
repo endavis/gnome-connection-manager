@@ -2061,3 +2061,36 @@ msgstr "SSH"
 
 msgid "Terminal"
 msgstr "터미널"
+
+msgid "RDP"
+msgstr "RDP"
+
+msgid "Display"
+msgstr "표시"
+
+msgid "In a window"
+msgstr "창 모드"
+
+msgid "Full screen"
+msgstr "전체 화면"
+
+msgid "Full screen on all monitors"
+msgstr "모든 모니터에서 전체 화면"
+
+msgid "Resize with the window"
+msgstr "창 크기에 맞춰 조정"
+
+msgid "Size"
+msgstr "크기"
+
+msgid "Desktop scale"
+msgstr "데스크톱 배율"
+
+msgid "Size is a width and height, such as 1920x1080, or a share of the screen, such as 80%, and applies in a window. Desktop scale draws the remote desktop's text and icons larger, as a percentage from 100 to 500. Left empty, FreeRDP and the server choose."
+msgstr "크기는 1920x1080 같은 너비와 높이, 또는 80% 같은 화면 비율이며 창 모드에서 적용됩니다. 데스크톱 배율은 원격 데스크톱의 글자와 아이콘을 100에서 500 사이의 백분율로 크게 표시합니다. 비워 두면 FreeRDP와 서버가 정합니다."
+
+msgid "The size is a width and height from 200 to 32766, such as 1920x1080, or a share of the screen from 1% to 100%, such as 80%."
+msgstr "크기는 1920x1080처럼 200에서 32766 사이의 너비와 높이, 또는 80%처럼 1%에서 100% 사이의 화면 비율입니다."
+
+msgid "The desktop scale is a percentage from 100 to 500, such as 150."
+msgstr "데스크톱 배율은 150처럼 100에서 500 사이의 백분율입니다."

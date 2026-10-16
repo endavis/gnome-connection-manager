@@ -125,6 +125,7 @@ choose a type. This is deliberate:
 | **Properties** | every type |
 | **SSH** | SSH: the private key, keep-alive, X11 and agent forwarding, and compression |
 | **Port forwarding** | SSH, since tunnelling is an SSH feature |
+| **RDP** | an RDP host: how FreeRDP shows the remote desktop |
 | **Command line** | a command host |
 | **Commands** | every type |
 | **Terminal** | a host whose tab is a terminal: **Enable Logging**, **TERM**, the colours, and the Backspace and Delete keys |
@@ -207,10 +208,34 @@ The port is 3389 unless you change it, and the rest of the host goes to FreeRDP:
   for a domain, which GCM answers with none for a host with a stored password.
 - **Password**: GCM types a stored password at FreeRDP's prompt and never puts it on
   FreeRDP's command line. Without one, FreeRDP asks in the tab.
-- **Extra arguments**: FreeRDP's own options, after the host, port and user. For example,
-  `/size:1920x1080` sets the size of the desktop, and `/dynamic-resolution` resizes it
-  with FreeRDP's window. They are split as a shell splits them, so quote one that holds a
-  space.
+- **Extra arguments**: FreeRDP's own options, given last. For example,
+  `/drive:shared,/home/you/shared` shares a folder with the remote desktop. They are split
+  as a shell splits them, so quote one that holds a space.
+
+The **RDP** tab says how FreeRDP shows the remote desktop. Each setting is an option GCM
+gives FreeRDP, before the extra arguments, which can still ask for anything else:
+
+| Setting | Default | FreeRDP option |
+|---|---|---|
+| **Display**: **In a window**, **Full screen**, or **Full screen on all monitors** | In a window | none, `/f`, or `/f /multimon` |
+| **Resize with the window**: FreeRDP asks the server to resize the remote desktop as you resize its window | on | `/dynamic-resolution` |
+| **Size**: a width and height, such as `1920x1080`, or a share of the screen, such as `80%` | empty: FreeRDP's own, 1024x768 | `/size:` |
+| **Desktop scale**: the remote desktop's text and icons drawn larger, as a percentage from 100 to 500 | empty: the server's own | `/scale-desktop:` |
+
+- **Size** applies in a window. Full screen is as large as the screen whatever the size
+  says.
+- The dialog refuses a size or scale FreeRDP would refuse. Each side of a size runs from
+  200 to 32766 pixels, and a share of the screen from 1% to 100%. FreeRDP also refuses a
+  share that comes to under 200 pixels on the screen it opens on.
+- An RDP host saved before the tab existed resizes with the window, and has every other
+  setting at its default.
+- FreeRDP refuses to resize with the window and smart sizing together. A host whose extra
+  arguments ask for `/smart-sizing` keeps it, and is not resized with the window.
+  `-smart-sizing` and `/smart-sizing:off` leave resizing on.
+- On a high-DPI screen, a **Desktop scale** such as 200 asks the server to draw the
+  remote desktop's text and icons twice as large. Under WSLg, which reports every monitor
+  at scale 1, a full-screen session is otherwise the screen's whole resolution at a scale
+  of 100%.
 
 An RDP host sends no commands after login, and its dialog greys them. Its tab runs
 FreeRDP, which has no shell to run them, and a command typed while FreeRDP asks

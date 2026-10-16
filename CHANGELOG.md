@@ -12,6 +12,14 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- An **RDP** tab in an RDP host's dialog, for how FreeRDP shows the remote desktop:
+  **Display** in a window, full screen, or full screen on all monitors; **Resize with the
+  window**; **Size**; and **Desktop scale**. Each becomes the FreeRDP option for it,
+  before the extra arguments. The dialog refuses a size or scale FreeRDP would refuse.
+  Resizing is on by default, so an RDP host saved before now resizes the remote desktop
+  with FreeRDP's window. A host whose extra arguments ask for smart sizing is the
+  exception, since FreeRDP refuses the two together. Type settings gain a third kind, a
+  choice, drawn as a combo box.
 - A guide to running GCM on Windows, in Ubuntu under WSL: installing it from a clone, a
   Windows shortcut that starts it, one SSH agent for consoles, mounts and Nautilus through
   keychain and D-Bus, Nautilus and sshfs, setting the scale by hand on a high-DPI screen,

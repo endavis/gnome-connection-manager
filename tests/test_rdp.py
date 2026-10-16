@@ -57,7 +57,7 @@ def test_the_newest_freerdp_installed_is_used(app_module, monkeypatch, installed
 def test_freerdp_is_given_the_host_its_port_and_its_user(app_module):
     host = rdp_host(app_module, port="3390", user="CORP\\me")
 
-    assert app_module.connections.rdp_arguments(host) == [
+    assert app_module.connections.rdp_arguments(host)[:3] == [
         "/v:win.example.test",
         "/port:3390",
         "/u:CORP\\me",
@@ -67,7 +67,7 @@ def test_freerdp_is_given_the_host_its_port_and_its_user(app_module):
 def test_extra_arguments_follow_as_the_shell_would_split_them(app_module):
     host = rdp_host(app_module, extra_params="/size:1280x800 '/t:Build box' +clipboard")
 
-    assert app_module.connections.rdp_arguments(host)[3:] == [
+    assert app_module.connections.rdp_arguments(host)[-3:] == [
         "/size:1280x800",
         "/t:Build box",
         "+clipboard",
@@ -77,7 +77,127 @@ def test_extra_arguments_follow_as_the_shell_would_split_them(app_module):
 def test_without_a_user_freerdp_asks_for_one(app_module):
     host = rdp_host(app_module, user="", password="")
 
-    assert app_module.connections.rdp_arguments(host) == ["/v:win.example.test", "/port:3389"]
+    assert app_module.connections.rdp_arguments(host) == [
+        "/v:win.example.test",
+        "/port:3389",
+        "/dynamic-resolution",
+    ]
+
+
+# -- the RDP tab's settings (#278) ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("settings", "options"),
+    [
+        # A host saved before them resizes with the window, and has nothing else.
+        ({}, ["/dynamic-resolution"]),
+        ({"rdp.display": "full-screen"}, ["/f", "/dynamic-resolution"]),
+        # /multimon is full screen without /f too, measured; /f says so.
+        ({"rdp.display": "all-monitors"}, ["/f", "/multimon", "/dynamic-resolution"]),
+        ({"rdp.resize": "False"}, []),
+        ({"rdp.size": "1920x1080"}, ["/dynamic-resolution", "/size:1920x1080"]),
+        ({"rdp.size": "80%"}, ["/dynamic-resolution", "/size:80%"]),
+        ({"rdp.size": "80%h"}, ["/dynamic-resolution", "/size:80%h"]),
+        # FreeRDP reads only a lower case x, and took 1280X800 for no size, measured.
+        ({"rdp.size": "1280X800"}, ["/dynamic-resolution", "/size:1280x800"]),
+        # Full screen is the screen's size whatever /size says, measured.
+        ({"rdp.display": "full-screen", "rdp.size": "1920x1080"}, ["/f", "/dynamic-resolution"]),
+        ({"rdp.scale": "225"}, ["/dynamic-resolution", "/scale-desktop:225"]),
+        ({"rdp.scale": "150%"}, ["/dynamic-resolution", "/scale-desktop:150"]),
+        # What a hand edit left that FreeRDP would refuse is left out, not given to it.
+        (
+            {"rdp.display": "everywhere", "rdp.size": "199x800", "rdp.scale": "600"},
+            ["/dynamic-resolution"],
+        ),
+    ],
+)
+def test_each_rdp_setting_gives_freerdp_its_option(app_module, settings, options):
+    host = rdp_host(app_module)
+    host.type_settings = settings
+
+    assert app_module.connections.rdp_arguments(host)[3:] == options
+
+
+@pytest.mark.parametrize(
+    ("extra", "resizes"),
+    [
+        ("/smart-sizing", False),
+        ("+smart-sizing", False),
+        ("/smart-sizing:1280x800", False),
+        ("/smart-sizing:on", False),
+        ("/smart-sizing:off", True),
+        ("-smart-sizing", True),
+        ("/size:1280x800", True),
+    ],
+)
+def test_resizing_gives_way_to_smart_sizing_in_the_extra_arguments(app_module, extra, resizes):
+    """FreeRDP refuses both, measured: either order exits 22, "mutually exclusive
+    options". A host that asked for smart sizing before #278 keeps it, and connects."""
+    args = app_module.connections.rdp_arguments(rdp_host(app_module, extra_params=extra))
+
+    assert ("/dynamic-resolution" in args) is resizes
+    assert args[-1] == extra
+
+
+def test_the_extra_arguments_still_come_last(app_module):
+    """So that they can ask FreeRDP for anything else, or take back a setting: FreeRDP
+    reads its arguments in order."""
+    host = rdp_host(app_module, extra_params="/size:800x600 -dynamic-resolution")
+    host.type_settings = {"rdp.scale": "200"}
+
+    assert app_module.connections.rdp_arguments(host)[3:] == [
+        "/dynamic-resolution",
+        "/scale-desktop:200",
+        "/size:800x600",
+        "-dynamic-resolution",
+    ]
+
+
+SIZE_PROBLEM = "The size is a width and height from 200 to 32766"
+SCALE_PROBLEM = "The desktop scale is a percentage from 100 to 500"
+
+
+@pytest.mark.parametrize(
+    ("size", "scale", "problem"),
+    [
+        ("", "", None),
+        ("1920x1080", "", None),
+        (" 1920 x 1080 ", "", None),
+        # FreeRDP's limits on each side, measured at each edge: 199 and 32767 exit 136,
+        # "must be 200 <= 199 <= 32766".
+        ("200x200", "", None),
+        ("32766x32766", "", None),
+        ("199x800", "", SIZE_PROBLEM),
+        ("800x199", "", SIZE_PROBLEM),
+        ("32767x800", "", SIZE_PROBLEM),
+        ("0x0", "", SIZE_PROBLEM),
+        ("1920x", "", SIZE_PROBLEM),
+        ("big", "", SIZE_PROBLEM),
+        # FreeRDP refuses over 100% as it reads its command line; 0% it ignores.
+        ("80%", "", None),
+        ("80%w", "", None),
+        ("100%", "", None),
+        ("101%", "", SIZE_PROBLEM),
+        ("0%", "", SIZE_PROBLEM),
+        # And /scale-desktop: from 100 to 500; 99, 501 and abc exit 22, measured.
+        ("", "100", None),
+        ("", "500", None),
+        ("", "150%", None),
+        ("", "99", SCALE_PROBLEM),
+        ("", "501", SCALE_PROBLEM),
+        ("", "large", SCALE_PROBLEM),
+    ],
+)
+def test_the_dialog_refuses_a_size_or_scale_freerdp_would(app_module, size, scale, problem):
+    values = {"display": "window", "resize": True, "size": size, "scale": scale}
+
+    refused = app_module.connections.RDP.invalid(values)
+
+    if problem is None:
+        assert refused is None
+    else:
+        assert refused is not None and refused.startswith(problem)
 
 
 def test_the_password_is_never_among_freerdps_arguments(app_module):
@@ -262,11 +382,14 @@ def in_order(shown, *parts):
         at = found + len(part)
 
 if scenario == "a-stored-password-is-typed-at-the-prompt":
+    # The RDP tab's settings reach FreeRDP through the script as well (#278).
+    host.type_settings = {"rdp.display": "full-screen", "rdp.scale": "150"}
     app.wMain.addTab(nb, host)
     v = app.page_terminal(nb.get_nth_page(nb.get_n_pages() - 1))
+    rdp = ["/v:win.example.test", "/port:3389", "/u:me", "/f", "/dynamic-resolution"]
     assert v.command == (
         app.SSH_COMMAND,
-        [app.SSH_COMMAND, "rdp", "xfreerdp3", "/v:win.example.test", "/port:3389", "/u:me"],
+        [app.SSH_COMMAND, "rdp", "xfreerdp3", *rdp, "/scale-desktop:150"],
         "not-a-password",
         None,
     ), v.command
@@ -279,7 +402,8 @@ if scenario == "a-stored-password-is-typed-at-the-prompt":
     shown = whole(v)
     in_order(
         shown,
-        "arguments: [/v:win.example.test] [/port:3389] [/u:me]",
+        "arguments: [/v:win.example.test] [/port:3389] [/u:me] [/f] [/dynamic-resolution]"
+        " [/scale-desktop:150]",
         "Certificate details for win.example.test:3389 (RDP-Server):",
         "Do you trust the above certificate? (Y/T/N) Y",
         "Domain:",
@@ -292,7 +416,10 @@ elif scenario == "without-a-stored-password-freerdp-asks":
     app.wMain.addTab(nb, host)
     v = app.page_terminal(nb.get_nth_page(nb.get_n_pages() - 1))
     assert v.command == (
-        "xfreerdp3", ["xfreerdp3", "/v:win.example.test", "/port:3389", "/u:me"], "", None
+        "xfreerdp3",
+        ["xfreerdp3", "/v:win.example.test", "/port:3389", "/u:me", "/dynamic-resolution"],
+        "",
+        None,
     ), v.command
     for prompt, answer in (("(Y/T/N) ", "T\r"), ("Domain:", "\r"), ("Password:", "not-a-password\r")):
         pump(lambda: whole(v).rstrip().endswith(prompt.rstrip()), prompt)
@@ -305,7 +432,7 @@ elif scenario == "a-password-without-a-user-is-left-to-freerdp":
     app.wMain.addTab(nb, host)
     v = app.page_terminal(nb.get_nth_page(nb.get_n_pages() - 1))
     assert v.command == (
-        "xfreerdp3", ["xfreerdp3", "/v:win.example.test", "/port:3389"], "", None
+        "xfreerdp3", ["xfreerdp3", "/v:win.example.test", "/port:3389", "/dynamic-resolution"], "", None
     ), v.command
 elif scenario == "without-freerdp-a-message-and-no-tab":
     app.connections.RDP_CLIENTS = ("gcm-test-no-such-client",)

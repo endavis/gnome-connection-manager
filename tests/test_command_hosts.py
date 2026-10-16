@@ -124,10 +124,12 @@ def test_a_command_host_without_a_command_cannot_be_saved(line):
     )
 
 
-def test_one_with_a_command_can_and_no_other_type_refuses_its_settings():
+def test_one_with_a_command_can_and_no_other_type_refuses_its_defaults():
     assert COMMAND.invalid({"line": "mosh {address}"}) is None
-    others = [kind for kind in connections.CONNECTION_TYPES if kind is not COMMAND]
-    assert [kind.invalid({}) for kind in others] == [None] * len(others)
+    for kind in connections.CONNECTION_TYPES:
+        if kind is not COMMAND:
+            defaults = {setting.key: setting.default for setting in kind.settings}
+            assert kind.invalid(defaults) is None, kind.id
 
 
 @pytest.mark.parametrize(

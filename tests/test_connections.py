@@ -356,8 +356,8 @@ def test_a_type_gcm_does_not_know_gives_the_script_its_own_name():
 
 # -- settings of a type's own ------------------------------------------------
 #
-# None of the types here has any yet, so these use a type of their own, as the first
-# type with settings will declare them.
+# These use a type of their own, so that they hold whatever the real types' settings
+# become.
 
 
 class Example(connections.ConnectionType):
@@ -404,6 +404,48 @@ def test_text_reads_what_a_host_stored_or_its_default(text, expected):
 
     assert not text_setting.is_flag
     assert text_setting.value(text) == expected
+
+
+CODEC = connections.Setting("codec", "Codec", "tight", choices=(("raw", "Raw"), ("tight", "Tight")))
+
+
+class Chooser(connections.ConnectionType):
+    id = "chooser"
+    settings = (CODEC,)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (None, "tight"),
+        ("raw", "raw"),
+        ("tight", "tight"),
+        # One a newer GCM offers, or a hand edit, is the default, as a flag's is.
+        ("lossy", "tight"),
+        ("", "tight"),
+        ("Raw", "tight"),  # a label, not a value
+    ],
+)
+def test_a_choice_reads_what_a_host_stored_or_its_default(text, expected):
+    """A choice is a third kind of setting, drawn as a combo box (#278)."""
+    assert CODEC.is_choice and not CODEC.is_flag
+    assert CODEC.value(text) == expected
+
+
+def test_a_choice_is_kept_by_its_value_and_only_while_it_is_not_the_default():
+    chooser = Chooser()
+    record = host("chooser")
+
+    record.type_settings = chooser.stored_settings({"codec": "raw"})
+
+    assert record.type_settings == {"chooser.codec": "raw"}
+    assert chooser.settings_of(record) == {"codec": "raw"}
+    assert chooser.stored_settings({"codec": "tight"}) == {}
+
+
+def test_a_choices_default_is_one_of_its_choices():
+    with pytest.raises(ValueError, match="one of its choices"):
+        connections.Setting("codec", "Codec", "lossy", choices=(("raw", "Raw"),))
 
 
 @pytest.mark.parametrize("key", ["viewOnly", "view only", "view.only", "view=only", ""])
@@ -612,7 +654,8 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     assert shown == [("telnet", argv, None)] and command == ("telnet", argv, "", None), shown
 
     shown, command = open_host("rdp", "example.test")
-    argv = ["xfreerdp3", "/v:example.test", "/port:2222", "/u:me"]
+    # Resizing with the window is on for a host that never set it (#278).
+    argv = ["xfreerdp3", "/v:example.test", "/port:2222", "/u:me", "/dynamic-resolution"]
     assert shown == [("xfreerdp3", argv, None)] and command == ("xfreerdp3", argv, "", None), shown
 
     # A web host opens in the browser, and no tab: nothing is spawned or added.
@@ -771,12 +814,12 @@ elif scenario == "xdg-open-reaches-the-browser":
         "mail mailto:ops@example.test",
     ], open(opened).read()
     assert shown == [], shown
-elif scenario == "only-the-command-type-adds-a-page":
+elif scenario == "the-types-with-settings-add-pages":
     dialog = app.Whost()
     dialog.init("")
     notebook = dialog.get_widget("nbHost")
-    assert list(dialog.type_pages) == ["command"], dialog.type_pages
-    assert notebook.get_n_pages() == 6, notebook.get_n_pages()
+    assert list(dialog.type_pages) == ["rdp", "command"], dialog.type_pages
+    assert notebook.get_n_pages() == 7, notebook.get_n_pages()
     dialog.get_widget("wHost").destroy()
 elif scenario == "a-types-page-in-the-host-dialog":
     from gnome_connection_manager.utils import connections
@@ -788,11 +831,14 @@ elif scenario == "a-types-page-in-the-host-dialog":
             connections.Setting("view-only", "View only", False),
             connections.Setting("quality", "Quality", "high"),
             connections.Setting("shared", "Shared", True),
+            connections.Setting(
+                "codec", "Codec", "tight", choices=(("raw", "Raw"), ("tight", "Tight"))
+            ),
         )
 
     connections.CONNECTION_TYPES = (*connections.CONNECTION_TYPES, Example())
     # A type marks its labels with N_, and the dialog translates them as it draws them.
-    ours = ("Example", "View only", "Quality", "Shared")
+    ours = ("Example", "View only", "Quality", "Shared", "Codec", "Raw", "Tight")
     app._ = lambda text, gettext=app._: text.upper() if text in ours else gettext(text)
 
     def shown(dialog):
@@ -808,10 +854,9 @@ elif scenario == "a-types-page-in-the-host-dialog":
     page, controls = dialog.type_pages["example"]
     tunnels, example_tab = dialog.get_widget("tunnelGrid"), notebook.get_tab_label(page)
     assert example_tab.get_text() == "EXAMPLE"
-    # After Port forwarding, and after the pages of the types listed before it.
-    command_page = dialog.type_pages["command"][0]
-    assert notebook.page_num(command_page) == notebook.page_num(tunnels) + 1
-    assert notebook.page_num(page) == notebook.page_num(command_page) + 1
+    # After Port forwarding, in the order the types are listed.
+    places = [notebook.page_num(dialog.type_pages[kind][0]) for kind in ("rdp", "command", "example")]
+    assert places == [notebook.page_num(tunnels) + n for n in (1, 2, 3)], places
 
     ssh_tabs = shown(dialog)  # a new host is ssh
     assert notebook.get_tab_label(tunnels) in ssh_tabs and example_tab not in ssh_tabs
@@ -823,33 +868,40 @@ elif scenario == "a-types-page-in-the-host-dialog":
     # What a type with no settings of its own is shown, and its page besides.
     assert [tab for tab in example_tabs if tab != example_tab] == telnet_tabs
 
-    # Drawn as Properties is: a check box for a flag, an entry for text, each labelled.
+    # Drawn as Properties is: a check box for a flag, a combo box for a choice, an entry
+    # for text, each labelled.
     notebook.set_current_page(notebook.page_num(page))
     pump(0.2)
     assert isinstance(controls["view-only"], Gtk.CheckButton) and controls["view-only"].get_mapped()
     assert isinstance(controls["quality"], Gtk.Entry) and controls["quality"].get_mapped()
+    assert isinstance(controls["codec"], Gtk.ComboBoxText) and controls["codec"].get_mapped()
+    # Each choice by its label, translated.
+    assert [row[0] for row in controls["codec"].get_model()] == ["RAW", "TIGHT"]
     # At their defaults, which a new host starts with.
     assert controls["quality"].get_text() == "high" and not controls["view-only"].get_active()
-    assert controls["shared"].get_active()
+    assert controls["shared"].get_active() and controls["codec"].get_active_id() == "tight"
     [grid] = page.get_children()  # and no line of help, which Example has none of
     labels = {child.get_text() for child in grid.get_children() if isinstance(child, Gtk.Label)}
-    assert labels == {"VIEW ONLY", "QUALITY", "SHARED"}, labels
+    assert labels == {"VIEW ONLY", "QUALITY", "SHARED", "CODEC"}, labels
 
     # What was typed survives choosing another type and coming back.
     controls["view-only"].set_active(True)
     controls["quality"].set_text("low")
+    controls["codec"].set_active_id("raw")
     dialog.cmbType.set_active_id("ssh")
     dialog.cmbType.set_active_id("example")
     assert controls["view-only"].get_active() and controls["quality"].get_text() == "low"
+    assert controls["codec"].get_active_id() == "raw"
 
     dialog.cmbGroup.get_children()[0].set_text("Work")
     dialog.txtName.set_text("box")
     dialog.txtHost.set_text("example.test")
     dialog.on_okbutton1_clicked(None)
-    saved = {"example.view-only": "True", "example.quality": "low"}
+    saved = {"example.view-only": "True", "example.quality": "low", "example.codec": "raw"}
     assert app.groups["Work"][0].type_settings == saved, app.groups["Work"][0].type_settings
     written = [line.strip() for line in open(app.CONFIG_FILE) if line.startswith("example.")]
-    assert written == ["example.view-only = True", "example.quality = low"], written
+    expected = ["example.view-only = True", "example.quality = low", "example.codec = raw"]
+    assert written == expected, written
 
     # Read back as GCM starts, and shown again for an edit.
     app.groups.clear()
@@ -861,11 +913,13 @@ elif scenario == "a-types-page-in-the-host-dialog":
     page, controls = edit.type_pages["example"]
     assert edit.get_widget("nbHost").get_tab_label(page) in shown(edit)
     assert controls["view-only"].get_active() and controls["quality"].get_text() == "low"
+    assert controls["codec"].get_active_id() == "raw"
 
     # Back to the defaults, a host keeps nothing; and a host of another type keeps none
     # of what a hidden page holds. Text is read stripped, as the dialog's other fields are.
     controls["view-only"].set_active(False)
     controls["quality"].set_text("  high ")
+    controls["codec"].set_active_id("tight")
     edit.on_okbutton1_clicked(None)
     assert app.groups["Work"][0].type_settings == {}, app.groups["Work"][0].type_settings
     written = [line.strip() for line in open(app.CONFIG_FILE) if line.startswith("example.")]
@@ -876,6 +930,14 @@ elif scenario == "a-types-page-in-the-host-dialog":
     other.cmbType.set_active_id("telnet")
     other.on_okbutton1_clicked(None)
     assert app.groups["Work"][0].type == "telnet" and app.groups["Work"][0].type_settings == {}
+
+    # A choice stored that the type does not offer, such as one a newer GCM saved, opens
+    # as the default.
+    unknown = app.groups["Work"][0]
+    unknown.type, unknown.type_settings = "example", {"example.codec": "lossy"}
+    edit = app.Whost()
+    edit.init("Work", unknown)
+    assert edit.type_pages["example"][1]["codec"].get_active_id() == "tight"
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -894,7 +956,7 @@ print("OK")
         "a-types-page-opens-in-a-tab",
         "open-in-browser",
         "xdg-open-reaches-the-browser",
-        "only-the-command-type-adds-a-page",
+        "the-types-with-settings-add-pages",
         "a-types-page-in-the-host-dialog",
     ],
 )

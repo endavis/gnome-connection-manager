@@ -79,30 +79,47 @@ class Command:
 @dataclass(frozen=True)
 class Setting:
     """A setting of a type's own. A flag when its default is a bool, which the host dialog
-    draws as a check box, and text otherwise, drawn as an entry. A type that needs another
-    kind of control adds it here."""
+    draws as a check box. A choice when it has `choices`, each a value and its label,
+    drawn as a combo box of the labels (#278). Text otherwise, drawn as an entry. A type
+    that needs another kind of control adds it here."""
 
     key: str
     label: str  # marked with N_, and translated where the dialog draws it
     default: str | bool = ""
+    # A choice's values, as a host stores them, each with its label, marked with N_.
+    choices: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         # configparser folds an option's name to lower case as it writes it, so a key in
         # mixed case would be written and then never found again, once GCM restarts.
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", self.key):
             raise ValueError(f"a setting's key is lower case, digits and hyphens: {self.key!r}")
+        if self.choices and self.default not in self.values:
+            raise ValueError(f"a choice's default is one of its choices: {self.default!r}")
 
     @property
     def is_flag(self) -> bool:
         return isinstance(self.default, bool)
 
+    @property
+    def is_choice(self) -> bool:
+        return bool(self.choices)
+
+    @property
+    def values(self) -> tuple[str, ...]:
+        """A choice's values, as a host stores them."""
+        return tuple(value for value, _label in self.choices)
+
     def value(self, text: str | None) -> str | bool:
-        """The value a host stored as `text`. The default when it stored none, or when a
-        flag's text is not one configparser reads as a bool."""
+        """The value a host stored as `text`. The default when it stored none, when a
+        flag's text is not one configparser reads as a bool, or when a choice's is none
+        of its choices, such as one a newer GCM offers."""
         if text is None:
             return self.default
         if self.is_flag:
             return configparser.RawConfigParser.BOOLEAN_STATES.get(text.lower(), self.default)
+        if self.is_choice and text not in self.values:
+            return self.default
         return text
 
 
@@ -276,6 +293,36 @@ class Rdp(ConnectionType):
     # FreeRDP asks something is taken for the answer, to its certificate question or as
     # the password.
     sends_commands = False
+    # How FreeRDP shows the desktop (#278). rdp_arguments gives FreeRDP an option for each,
+    # before the host's extra arguments, which can still ask for anything else.
+    settings = (
+        Setting(
+            "display",
+            N_("Display"),
+            "window",
+            choices=(
+                ("window", N_("In a window")),
+                ("full-screen", N_("Full screen")),
+                ("all-monitors", N_("Full screen on all monitors")),
+            ),
+        ),
+        Setting("resize", N_("Resize with the window"), True),
+        Setting("size", N_("Size"), ""),
+        Setting("scale", N_("Desktop scale"), ""),
+    )
+    settings_title = N_("RDP")
+    settings_hint = N_(
+        "Size is a width and height, such as 1920x1080, or a share of the screen, such as 80%, and applies in a window. Desktop scale draws the remote desktop's text and icons larger, as a percentage from 100 to 500. Left empty, FreeRDP and the server choose."
+    )
+
+    def invalid(self, values: dict) -> str | None:
+        if rdp_size(str(values["size"])) is None:
+            return N_(
+                "The size is a width and height from 200 to 32766, such as 1920x1080, or a share of the screen from 1% to 100%, such as 80%."
+            )
+        if rdp_scale(str(values["scale"])) is None:
+            return N_("The desktop scale is a percentage from 100 to 500, such as 150.")
+        return None
 
     def dropped(self, status: int, tail: str) -> bool:
         # FreeRDP 3's status for `Network disconnect!`, measured for #225. Closing its
@@ -448,16 +495,80 @@ def vnc_viewer() -> str | None:
     return next((name for name in VNC_VIEWERS if shutil.which(name)), None)
 
 
+# A host's Size, as FreeRDP's /size: takes it: a width and height, or a share of the
+# screen, of its width or height alone with a w or an h. FreeRDP reads only a lower case
+# x, and took 1920X1080 for no size at all, measured.
+RDP_SIZE = re.compile(r"([0-9]+) *[xX] *([0-9]+)|([0-9]+) *% *([wh]?)")
+
+
+def rdp_size(text: str) -> str | None:
+    """FreeRDP's /size: value for a host's Size, "" for none, or None for one FreeRDP
+    refuses (#278).
+
+    Measured with FreeRDP 3.32.1, which says why in libfreerdp/core/settings.c: it
+    refuses to connect with a desktop under 200 pixels or over 32766 on either side, and
+    refuses a share of the screen over 100% as it reads its command line. A share that
+    comes to under 200 pixels it refuses too, which depends on the screen it opens on.
+    """
+    text = text.strip()
+    if not text:
+        return ""
+    match = RDP_SIZE.fullmatch(text)
+    if match is None:
+        return None
+    width, height, share, side = match.groups()
+    if share is not None:
+        return f"{int(share)}%{side}" if 1 <= int(share) <= 100 else None
+    if 200 <= int(width) <= 32766 and 200 <= int(height) <= 32766:
+        return f"{int(width)}x{int(height)}"
+    return None
+
+
+def rdp_scale(text: str) -> str | None:
+    """FreeRDP's /scale-desktop: value for a host's Desktop scale, a percentage with or
+    without its %, "" for none, or None for one outside the 100 to 500 FreeRDP takes."""
+    text = text.strip().removesuffix("%").strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"[0-9]+", text) and 100 <= int(text) <= 500:
+        return str(int(text))
+    return None
+
+
+def asks_for_smart_sizing(args: list[str]) -> bool:
+    """Whether FreeRDP's arguments `args` turn smart sizing on. FreeRDP refuses it beside
+    /dynamic-resolution, measured: either order exits 22, "mutually exclusive options",
+    and /smart-sizing:off is the one form it takes."""
+    return any(re.fullmatch(r"[/+]smart-sizing(:(?!off$).*)?", arg) for arg in args)
+
+
 def rdp_arguments(host) -> list[str]:
     """FreeRDP's arguments for an RDP host: everything but the program and the password.
 
     Never the password. FreeRDP 3 masks /p: in its own argv once it has read it, measured,
     but not in its parent's, and a session runs under relay.py when raw recording or OSC
     52 is on. ssh.expect types a stored one at FreeRDP's prompt instead (#225).
+
+    Then an option for each of the host's RDP settings (#278), and its extra arguments
+    last, so that they can still ask FreeRDP for anything else.
     """
     args = [f"/v:{host.host}", f"/port:{host.port}"]
     if host.user:
         args.append(f"/u:{host.user}")
-    if host.extra_params:
-        args += shlex.split(host.extra_params)
-    return args
+    extra = shlex.split(host.extra_params) if host.extra_params else []
+    settings = RDP.settings_of(host)
+    # /multimon is full screen whether or not /f is given, measured.
+    if settings["display"] == "full-screen":
+        args.append("/f")
+    elif settings["display"] == "all-monitors":
+        args += ["/f", "/multimon"]
+    if settings["resize"] and not asks_for_smart_sizing(extra):
+        args.append("/dynamic-resolution")
+    # Full screen is as large as the screen, whatever /size says, measured.
+    size = rdp_size(str(settings["size"]))
+    if size and settings["display"] == "window":
+        args.append(f"/size:{size}")
+    scale = rdp_scale(str(settings["scale"]))
+    if scale:
+        args.append(f"/scale-desktop:{scale}")
+    return args + extra

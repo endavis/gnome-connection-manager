@@ -131,6 +131,12 @@ elif scenario == "round-trip":
         host.after_command = "true" if kind.opens_tab else ""
         if kind.id == "command":
             host.type_settings = {"command.line": "echo {name}"}
+        if kind.id == "rdp":
+            # A choice, a flag and text, each off its default (#278).
+            host.type_settings = {
+                "rdp.display": "all-monitors", "rdp.resize": "False",
+                "rdp.size": "1920x1080", "rdp.scale": "150",
+            }
         app.groups.setdefault("Work", []).append(host)
     w.writeConfig()
     app.groups.clear()
@@ -172,7 +178,7 @@ def expected_tabs(vnc):
     return {
         "ssh": ["Properties", "SSH", "Port forwarding", "Commands", "Terminal"],
         "telnet": TERMINAL,
-        "rdp": TERMINAL,
+        "rdp": ["Properties", "RDP", "Commands", "Terminal"],
         "local": TERMINAL,
         # It opens no tab, and so no terminal.
         "web": ["Properties", "Commands"],
