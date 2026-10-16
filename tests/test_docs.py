@@ -22,6 +22,8 @@ import yaml
 DOC = Path(__file__).resolve().parents[1] / "docs" / "TERMINAL-USAGE.md"
 # The user-facing guides between them, for the settings check below.
 GUIDES = (DOC, DOC.with_name("HOSTS-AND-FOLDERS.md"))
+# Every guide for GCM's users, each of which the README has to link.
+USER_GUIDES = (*GUIDES, DOC.with_name("WSL-SETUP.md"))
 
 # Settings Preferences draws a control for that no guide names, and why not. Every one of
 # these predates the documentation this list was written with (#193); nothing added since
@@ -386,7 +388,7 @@ def test_documented_application_accelerators_are_real(app_module):
     assert not missing, f"documented accelerators that no action registers: {sorted(missing)}"
 
 
-@pytest.mark.parametrize("guide", [path.name for path in GUIDES])
+@pytest.mark.parametrize("guide", [path.name for path in USER_GUIDES])
 def test_each_guide_is_linked_from_the_readme(guide):
     """A guide nobody links to is a guide nobody finds."""
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
@@ -495,6 +497,7 @@ def test_every_python_floor_a_doc_states_is_pyprojects():
 _MARKDOWN_DOCS = [
     "docs/TERMINAL-USAGE.md",
     "docs/HOSTS-AND-FOLDERS.md",
+    "docs/WSL-SETUP.md",
     "docs/SPEC.md",
     "docs/DEVELOPING.md",
     "docs/PROJECT_STRUCTURE.md",
@@ -621,7 +624,7 @@ def test_the_toc_lists_our_guides_under_their_own_heading():
     toc = (DOCS_DIR / "TABLE_OF_CONTENTS.md").read_text(encoding="utf-8")
     guides = toc.split("<!-- BEGIN:tag=gcm-guide -->")[1].split("<!-- END:")[0]
 
-    for name in ("TERMINAL-USAGE.md", "HOSTS-AND-FOLDERS.md"):
+    for name in (path.name for path in USER_GUIDES):
         assert name in guides, f"the TOC's GCM section does not list {name}"
     assert "template/" not in guides, "the template's documents are back in GCM's section"
 

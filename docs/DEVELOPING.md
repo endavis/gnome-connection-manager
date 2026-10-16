@@ -145,10 +145,13 @@ GCM actually ships on -- set:
 GCM_TEST_REAL_DISPLAY=1 doit test
 ```
 
-Note that WSLg exports `GDK_SCALE=2.25` and both `DISPLAY` and `WAYLAND_DISPLAY`. The
-private display drops all three: GTK prefers Wayland whenever `WAYLAND_DISPLAY` is set,
-and on X11 `GDK_SCALE` is applied rather than absorbed, which would report a 960x540
-workarea for a 1920x1080 screen.
+Note that WSLg sets both `DISPLAY` and `WAYLAND_DISPLAY`. It sets no scale, but a launcher
+that scales GCM for a high-DPI screen, as
+[Running GCM on Windows with WSL](WSL-SETUP.md#setting-the-scale-on-a-high-dpi-screen)
+describes, may export `GDK_SCALE` or `GDK_DPI_SCALE`, and a shell in one of GCM's tabs
+inherits them. The private display replaces `DISPLAY` and drops the rest: GTK prefers
+Wayland whenever `WAYLAND_DISPLAY` is set, and on X11 `GDK_SCALE` is applied, in whole
+numbers, so 2 or 2.25 would report a 960x540 workarea for a 1920x1080 screen.
 
 #### What the full suite needs
 

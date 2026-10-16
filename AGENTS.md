@@ -460,6 +460,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   guide to code, and code to guide against `UNDOCUMENTED_SETTINGS`, whose entries each
   carry a reason. Four settings had shipped with a control and no mention anywhere before
   the second direction existed.
+- `docs/WSL-SETUP.md` – user-facing, GCM on Windows in Ubuntu under WSL (#274): a clone
+  run with `UV_PYTHON=/usr/bin/python3`, a `wslg.exe` shortcut, keychain above
+  `.bashrc`'s interactive check, `dbus-update-activation-environment` so that GVfs's
+  `ssh` has the agent, Nautilus with `gvfs-backends`, sshfs, the scale set by hand since
+  WSLg reports every monitor at scale 1, and WSLg's own faults. Each step was run on
+  WSL 2.7.13 with Ubuntu 24.04; one added to it must be too, or say it was not.
 - `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
 - **A new document under `docs/` needs three things**, and `tests/test_docs.py` checks each:
   YAML frontmatter with `title`, `description`, `audience` and `tags` including `gcm`; an
