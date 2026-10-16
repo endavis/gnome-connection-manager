@@ -39,6 +39,10 @@ from gnome_connection_manager.utils import placeholders
 # (freerdp3-x11) and FreeRDP 2's as xfreerdp (freerdp2-x11), side by side (#225).
 RDP_CLIENTS = ("xfreerdp3", "xfreerdp")
 
+# Windows' own RDP client, Remote Desktop Connection, which WSL's interop runs (#283). WSL
+# adds Windows' PATH to the distribution's by default, which finds it.
+WINDOWS_RDP_CLIENT = "mstsc.exe"
+
 # The VNC viewers a VNC host runs in, where gtk-vnc cannot draw it in the tab (#234).
 # vncviewer is whichever one Debian's alternatives chose.
 VNC_VIEWERS = ("vncviewer", "xtigervncviewer", "xtightvncviewer")
@@ -57,6 +61,9 @@ class Programs:
     username: str | None  # the local user, for an SSH host that names none
     ssh: str = "ssh"
     telnet: str = "telnet"
+    # The RDP client Preferences chose: "freerdp", or "mstsc" for Windows Remote Desktop,
+    # which an RDP host opens in only where it is found (#283).
+    rdp_client: str = "freerdp"
 
 
 @dataclass(frozen=True)
@@ -154,7 +161,7 @@ class ConnectionType:
         marked with N_, or None. The host dialog asks on OK."""
         return None
 
-    def missing(self) -> str | None:
+    def missing(self, programs: Programs) -> str | None:
         """Why a host of this type cannot be opened here, marked with N_, or None.
 
         Not asked of a type app.py draws a page for, which needs nothing more."""
@@ -285,7 +292,10 @@ class Telnet(ConnectionType):
 
 class Rdp(ConnectionType):
     """FreeRDP shows the desktop in a window of its own. The tab shows what it prints,
-    takes its questions and ends with its status (#225)."""
+    takes its questions and ends with its status (#225).
+
+    Or Windows Remote Desktop does, where Preferences chose it and WSL's interop finds it
+    (#283). Its tab shows nothing, and ends when it exits."""
 
     id = "rdp"
     default_port = "3389"
@@ -333,14 +343,18 @@ class Rdp(ConnectionType):
         # A logon failure, and a certificate not trusted, also measured for #225.
         return status in (134, 143)
 
-    def missing(self) -> str | None:
-        if rdp_client() is None:
+    def missing(self, programs: Programs) -> str | None:
+        if windows_rdp_client(programs) is None and rdp_client() is None:
             return N_(
                 "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
             )
         return None
 
     def command(self, host, programs: Programs) -> Command:
+        windows = windows_rdp_client(programs)
+        if windows is not None:
+            # Never the password: Windows asks for it itself, and remembers it when told to.
+            return Command([windows, *mstsc_arguments(host)], None)
         client = rdp_client()
         if host.user == "" or host.password == "":
             return Command([client, *rdp_arguments(host)], "")
@@ -364,7 +378,7 @@ class Web(ConnectionType):
     sends_commands = False
     opens_tab = False
 
-    def missing(self) -> str | None:
+    def missing(self, programs: Programs) -> str | None:
         if shutil.which("xdg-open") is None:
             return N_("xdg-open was not found. Install xdg-utils to open web hosts.")
         return None
@@ -394,7 +408,7 @@ class Vnc(ConnectionType):
     # A viewer has no shell to run them, and a tab gtk-vnc draws has no terminal.
     sends_commands = False
 
-    def missing(self) -> str | None:
+    def missing(self, programs: Programs) -> str | None:
         if vnc_viewer() is None:
             # One literal, or tests/test_i18n.py cannot find it to check the catalogs.
             return N_(
@@ -490,6 +504,17 @@ def rdp_client() -> str | None:
     return next((name for name in RDP_CLIENTS if shutil.which(name)), None)
 
 
+def windows_rdp() -> str | None:
+    """Windows Remote Desktop's program where WSL's interop finds it, or None (#283)."""
+    return shutil.which(WINDOWS_RDP_CLIENT)
+
+
+def windows_rdp_client(programs: Programs) -> str | None:
+    """Windows Remote Desktop's program when Preferences chose it and it is found, or None
+    for FreeRDP (#283)."""
+    return windows_rdp() if programs.rdp_client == "mstsc" else None
+
+
 def vnc_viewer() -> str | None:
     """The VNC viewer a VNC host runs in without gtk-vnc, or None when none is installed."""
     return next((name for name in VNC_VIEWERS if shutil.which(name)), None)
@@ -572,3 +597,30 @@ def rdp_arguments(host) -> list[str]:
     if scale:
         args.append(f"/scale-desktop:{scale}")
     return args + extra
+
+
+def mstsc_arguments(host) -> list[str]:
+    """Windows Remote Desktop's arguments for an RDP host (#283): its address, and an
+    option for each RDP setting mstsc.exe has one for.
+
+    Never the user or the password: Windows asks for both in its own dialog, and remembers
+    them when told to. Nor the extra arguments, which are FreeRDP's. Resize with the window,
+    Desktop scale and a share of the screen have no option here either, and mstsc's own
+    settings decide them, as they decide a window's size when the host gives none.
+
+    Options, not an .rdp file: since Windows' April 2026 security update, a connection
+    opened from a file waits on a security dialog every time, with the clipboard and the
+    drives off until ticked, while one started without a file is unchanged.
+    """
+    address = f"[{host.host}]" if is_ipv6(host.host) else host.host
+    args = [f"/v:{address}:{host.port}" if host.port else f"/v:{address}"]
+    settings = RDP.settings_of(host)
+    if settings["display"] == "full-screen":
+        args.append("/f")
+    elif settings["display"] == "all-monitors":
+        args += ["/f", "/multimon"]
+    size = rdp_size(str(settings["size"]))
+    if size and "x" in size and settings["display"] == "window":
+        width, height = size.split("x")
+        args += [f"/w:{width}", f"/h:{height}"]
+    return args

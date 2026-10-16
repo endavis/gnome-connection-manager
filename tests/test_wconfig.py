@@ -50,6 +50,19 @@ class ComboBoxStub:
         return self._value
 
 
+class ChoiceStub(ComboBoxStub):
+    """A choice Preferences saves by its value rather than its place in the list (#283)."""
+
+    by_value = True
+
+    def __init__(self, field: str, value: int, value_id: str):
+        super().__init__(field, value)
+        self._value_id = value_id
+
+    def get_active_id(self) -> str:
+        return self._value_id
+
+
 class EntryStub:
     def __init__(self, field: str, text: str):
         self.field = field
@@ -131,6 +144,7 @@ def make_wconfig(app_module):
         SpinButtonStub("conf.BUFFER_LINES", 4096),
         ComboBoxStub("conf.AUTO_CLOSE_TAB", 2),
         EntryStub("conf.APP_TITLE", "Custom Title"),
+        ChoiceStub("conf.RDP_CLIENT", 1, "mstsc"),
     ]
     wconfig.treeModel = [["Clipboard Copy", "CTRL+ALT+C"]]
     # The Snippets page's copies (#240): one without a name, and one without a key.
@@ -169,6 +183,7 @@ def test_wconfig_on_okbutton_updates_conf_shortcuts(monkeypatch, app_module):
     conf.BUFFER_LINES = 100
     conf.AUTO_CLOSE_TAB = 0
     conf.APP_TITLE = "Old"
+    conf.RDP_CLIENT = "freerdp"
     conf.FONT_COLOR = ""
     conf.BACK_COLOR = ""
     conf.FONT = ""
@@ -190,6 +205,8 @@ def test_wconfig_on_okbutton_updates_conf_shortcuts(monkeypatch, app_module):
     assert conf.BUFFER_LINES == 4096
     assert conf.AUTO_CLOSE_TAB == 2
     assert conf.APP_TITLE == "Custom Title"
+    # Its value, not the 1 of its place in the list.
+    assert conf.RDP_CLIENT == "mstsc"
     assert conf.FONT_COLOR == "#112233"
     assert conf.BACK_COLOR == "#445566"
     assert conf.FONT == "Monospace 14"
@@ -273,6 +290,15 @@ class CenteringWindow:
     def destroy(self):
         self._gdk_window = None
         self._visible = False
+
+
+def test_the_combo_box_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("get_active", "get_active_id"):
+        assert hasattr(Gtk.ComboBoxText, name), name
 
 
 def test_centering_window_fake_matches_real_gtk():

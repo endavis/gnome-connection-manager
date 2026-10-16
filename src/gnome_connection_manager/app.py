@@ -826,6 +826,9 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     OSC52_ENABLED = 0
     RAW_SESSION_LOG = 0
     APP_TITLE = app_name
+    # The program an RDP host opens in: "freerdp", or "mstsc" for Windows Remote Desktop,
+    # which Preferences offers only where WSL's interop finds it (#283).
+    RDP_CLIENT = "freerdp"
 
 
 # Every option stored in gcm.conf: (conf attribute, section, option, type).
@@ -868,6 +871,7 @@ CONFIG_OPTIONS = (
     ("OSC52_ENABLED", "options", "osc52-clipboard", bool),
     ("RAW_SESSION_LOG", "options", "raw-session-log", bool),
     ("APP_TITLE", "options", "app-title", str),
+    ("RDP_CLIENT", "options", "rdp-client", str),
     ("COLLAPSED_FOLDERS", "window", "collapsed-folders", str),
     ("COLLAPSED_FOLDER_IDS", "window", "collapsed-folder-ids", str),
     ("LEFT_PANEL_WIDTH", "window", "left-panel-width", int),
@@ -1962,7 +1966,9 @@ def vte_run(terminal, command, arg=None, environment=None):
 def connection_programs():
     """What a connection's command runs. Read at each spawn, so that a test which swaps
     SSH_COMMAND for a copy of the script is heard."""
-    return connections.Programs(SSH_COMMAND, get_username(), SSH_BIN, TEL_BIN)
+    return connections.Programs(
+        SSH_COMMAND, get_username(), SSH_BIN, TEL_BIN, rdp_client=conf.RDP_CLIENT
+    )
 
 
 def page_terminal(page):
@@ -3912,7 +3918,7 @@ class Wmain(GladeComponent):
                 )
                 return
 
-            problem = connections.named(host.type).missing()
+            problem = connections.named(host.type).missing(connection_programs())
             if problem:
                 msgbox(_(problem))
                 return
@@ -4536,6 +4542,7 @@ class Wmain(GladeComponent):
         cp.set("options", "osc52-clipboard", conf.OSC52_ENABLED)
         cp.set("options", "raw-session-log", conf.RAW_SESSION_LOG)
         cp.set("options", "app-title", conf.APP_TITLE or app_name)
+        cp.set("options", "rdp-client", conf.RDP_CLIENT)
         # A value that could not be read stays as written while its setting still holds
         # the default used in its place, rather than the default replacing it (#173).
         current = {
@@ -7336,6 +7343,20 @@ class Wconfig(GladeComponent):
             bool,
         )
         self.addParam(_("Título"), "conf.APP_TITLE", str)
+        # Only where WSL's interop finds Windows' own client (#283). Elsewhere an RDP host
+        # opens in FreeRDP whatever the setting says, so there is nothing to choose.
+        if connections.windows_rdp() is not None:
+            client = self.addParam(
+                _("RDP client"),
+                "conf.RDP_CLIENT",
+                dict,
+                {"freerdp": _("FreeRDP"), "mstsc": _("Windows Remote Desktop")},
+            )
+            client.set_tooltip_text(
+                _(
+                    "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
+                )
+            )
 
         if len(conf.FONT_COLOR) == 0:
             self.chkDefaultColors.set_active(True)
@@ -7477,6 +7498,25 @@ class Wconfig(GladeComponent):
             self.tblGeneral.attach(
                 obj, 1, 2, x, x + 1, Gtk.AttachOptions.EXPAND | Gtk.AttachOptions.FILL, 0
             )
+        elif ptype is dict:
+            # A choice saved by its value rather than its place in the list, each value
+            # with its label. A value it does not offer shows as the first (#283).
+            obj = Gtk.ComboBoxText()
+            for choice, label in args[0].items():
+                obj.append(choice, label)
+            if not obj.set_active_id(value):
+                obj.set_active(0)
+            obj.by_value = True
+            obj.show()
+            obj.field = field
+            lbl = Gtk.Label(label=name)
+            lbl.set_halign(Gtk.Align.START)
+            lbl.set_valign(Gtk.Align.CENTER)
+            lbl.show()
+            self.tblGeneral.attach(lbl, 0, 1, x, x + 1, Gtk.AttachOptions.FILL, 0)
+            self.tblGeneral.attach(
+                obj, 1, 2, x, x + 1, Gtk.AttachOptions.EXPAND | Gtk.AttachOptions.FILL, 0
+            )
         else:
             obj = Gtk.Entry()
             obj.set_text(value)
@@ -7491,6 +7531,7 @@ class Wconfig(GladeComponent):
             self.tblGeneral.attach(
                 obj, 1, 2, x, x + 1, Gtk.AttachOptions.EXPAND | Gtk.AttachOptions.FILL, 0
             )
+        return obj
 
     def on_edited(self, widget, rownum, value, model, colnum):
         model[rownum][colnum] = value
@@ -7749,7 +7790,9 @@ class Wconfig(GladeComponent):
                 elif isinstance(obj, Gtk.SpinButton):
                     value = obj.get_value_as_int()
                 elif isinstance(obj, Gtk.ComboBox):
-                    value = obj.get_active()
+                    value = (
+                        obj.get_active_id() if getattr(obj, "by_value", False) else obj.get_active()
+                    )
                 else:
                     value = obj.get_text()
                 owner, attribute = resolve_preference(obj.field)

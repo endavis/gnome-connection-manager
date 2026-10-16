@@ -168,6 +168,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the monitor `freerdp_settings_enforce_monitor_exists` builds, which reaches a server
   only in a session with more than one monitor. Its log also names blocks 0xC006 and
   0xC00A `CS_MONITOR` and `CS_MONITOR_EX`, which they are not.
+  Under WSL, Preferences' RDP client can choose Windows Remote Desktop, `mstsc.exe`,
+  which WSL's interop runs (#283). `Programs` carries the choice as `rdp_client` to
+  `Rdp.missing` and `Rdp.command`, which falls back to FreeRDP where `windows_rdp` finds
+  no `mstsc.exe`, and Preferences draws the setting only where it does. `mstsc_arguments`
+  gives `/v:` and an option for Display and a size in pixels, and never the user, the
+  password or the extra arguments: Windows asks for the password itself, as #283 decided
+  rather than a file holding it. Options rather than an `.rdp` file, since Windows' April 2026
+  security update shows a dialog before every connection opened from a file, with each
+  redirection off until ticked. The real `mstsc.exe` opens its windows on the Windows
+  desktop, so no test may reach it: `tests/test_windows_rdp.py` runs its scenarios with a
+  fake first on a PATH without the folders WSL adds under `/mnt`.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the

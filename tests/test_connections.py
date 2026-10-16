@@ -149,7 +149,7 @@ def test_what_the_host_dialog_asks_of_each_type():
 def test_what_a_type_needs_that_gcm_cannot_find(monkeypatch):
     monkeypatch.setattr(connections.shutil, "which", lambda _name: None)
 
-    missing = {kind.id: kind.missing() for kind in connections.CONNECTION_TYPES}
+    missing = {kind.id: kind.missing(PROGRAMS) for kind in connections.CONNECTION_TYPES}
 
     assert missing == {
         "ssh": None,
@@ -170,7 +170,7 @@ def test_a_web_host_needs_only_xdg_open(monkeypatch):
         lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None,
     )
 
-    assert WEB.missing() is None
+    assert WEB.missing(PROGRAMS) is None
 
 
 def test_a_local_shell_is_opened_by_addtab_not_by_a_command():
@@ -227,7 +227,7 @@ def test_a_vnc_host_runs_the_first_viewer_installed(monkeypatch, installed, view
         connections.shutil, "which", lambda name: f"/usr/bin/{name}" if name in installed else None
     )
 
-    assert VNC.missing() is None
+    assert VNC.missing(PROGRAMS) is None
     assert VNC.command(host("vnc"), PROGRAMS).program == viewer
 
 

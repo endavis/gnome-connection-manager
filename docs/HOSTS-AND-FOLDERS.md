@@ -241,6 +241,33 @@ An RDP host sends no commands after login, and its dialog greys them. Its tab ru
 FreeRDP, which has no shell to run them, and a command typed while FreeRDP asks
 something would be taken for the answer, to its certificate question or as the password.
 
+### Windows Remote Desktop under WSL
+
+Under WSL, GCM can open RDP hosts in Windows' own client, Remote Desktop Connection
+(`mstsc.exe`), instead of FreeRDP. Choose **Windows Remote Desktop** for **RDP client**
+in Preferences, saved as `rdp-client`, `mstsc` or `freerdp`. Preferences shows the
+setting only where WSL's interop finds `mstsc.exe`. Elsewhere RDP hosts open in FreeRDP
+whatever it says, and FreeRDP need not be installed for Remote Desktop Connection.
+
+- **User and password**: GCM gives Remote Desktop Connection neither. Windows asks for
+  both in its own dialog, and **Remember me** keeps them for the next connection, in
+  Windows' Credential Manager. Where Credential Guard runs, Windows does not send a
+  remembered RDP password, and a connection that tries fails with *Logon attempt
+  failed*.
+- **What it takes from the host**: the address and port, **Display**, as `/f` or
+  `/f /multimon`, and a **Size** in pixels in a window, as `/w:` and `/h:`.
+- **What it does not**: **Resize with the window**, **Desktop scale**, a size as a share
+  of the screen, and the extra arguments, which are FreeRDP's. Remote Desktop
+  Connection's own settings decide those, and the size of a window when the host gives
+  none. Set them in Remote Desktop Connection itself, on its Display and Local Resources
+  tabs, and save them as its defaults; the clipboard and drives it shares come from there
+  too.
+- **No `.rdp` file**: GCM starts Remote Desktop Connection with options rather than a
+  file. Since Windows' April 2026 security update, a connection opened from an `.rdp`
+  file waits on a security dialog every time, with the clipboard, drives and the rest
+  off until ticked. A connection started without one is unchanged.
+- **The tab** runs Remote Desktop Connection, shows nothing, and ends when it exits.
+
 ## VNC hosts
 
 A host of type **vnc** shows a remote desktop in its tab, drawn by gtk-vnc and scaled to
