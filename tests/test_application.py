@@ -446,9 +446,12 @@ def test_every_action_is_reachable_from_a_menu(app_module):
     """Menus are the discoverable surface; a command only on a key is invisible (#36)."""
     actions, reachable = _menu_sources(app_module)
 
+    # send-snippet and unmount-folder are reached from menus built as GCM runs, of the
+    # snippets and of what is mounted.
+    expected = {"donate", "send-snippet", "unmount-folder"}
     unreachable = actions - reachable
-    assert unreachable == {"donate", "send-snippet"}, (
-        f"unexpected actions missing from the menus: {sorted(unreachable - {'donate', 'send-snippet'})}"
+    assert unreachable == expected, (
+        f"unexpected actions missing from the menus: {sorted(unreachable - expected)}"
     )
 
 

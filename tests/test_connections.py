@@ -115,8 +115,8 @@ def test_what_a_host_opens_as(ctype, address, expected):
 def test_what_the_host_dialog_asks_of_each_type():
     """Port; whether the connection fields apply, and without an address whether the
     host still runs its command; of them the user and password, and the extra arguments;
-    whether SSH's controls and Port forwarding do; whether commands follow a login; and
-    whether the host opens a tab."""
+    whether SSH's controls and Port forwarding do; whether commands follow a login;
+    whether the host opens a tab; and whether its files open over SFTP (#267)."""
     asked = {
         kind.id: (
             kind.default_port,
@@ -127,21 +127,22 @@ def test_what_the_host_dialog_asks_of_each_type():
             kind.ssh_options,
             kind.sends_commands,
             kind.opens_tab,
+            kind.sftp,
         )
         for kind in connections.CONNECTION_TYPES
     }
 
     assert asked == {
-        "ssh": ("22", True, False, True, True, True, True, True),
-        "telnet": ("23", True, False, True, True, False, True, True),
-        "rdp": ("3389", True, False, True, True, False, False, True),
+        "ssh": ("22", True, False, True, True, True, True, True, True),
+        "telnet": ("23", True, False, True, True, False, True, True, False),
+        "rdp": ("3389", True, False, True, True, False, False, True, False),
         # 23, not empty: the dialog refuses to save a host without a valid port.
-        "local": ("23", False, False, True, True, False, True, True),
-        "web": ("443", True, False, False, False, False, False, False),
+        "local": ("23", False, False, True, True, False, True, True, False),
+        "web": ("443", True, False, False, False, False, False, False, False),
         # The user and password answer gtk-vnc, and the extra arguments go to a viewer.
-        "vnc": ("5900", True, False, True, True, False, False, True),
+        "vnc": ("5900", True, False, True, True, False, False, True, False),
         # Its line is the whole command, and names what it wants of the rest (#248).
-        "command": ("22", True, True, True, False, False, True, True),
+        "command": ("22", True, True, True, False, False, True, True, False),
     }
 
 

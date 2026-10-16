@@ -44,6 +44,9 @@ env:
   #
   # libxtst6 is for tests/test_console_window.py, which presses keys and drags tabs with
   # real X input through XTest, reached by ctypes, and fails without it (#255).
+  #
+  # sshfs and openssh-server are for tests/test_host_files.py, which mounts a host with
+  # sshfs through a real ssh and an sshd of its own, and skips without them (#267).
   SYSTEM_PACKAGES: >-
     python3-gi
     python3-gi-cairo
@@ -57,6 +60,8 @@ env:
     tigervnc-tools
     x11-xserver-utils
     libxtst6
+    sshfs
+    openssh-server
 
 jobs:
   test:

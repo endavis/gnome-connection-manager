@@ -107,8 +107,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   order the host dialog offers them, which fills its list from there. Code that used to
   compare `host.type` with a name asks the type instead: `addTab` for the `Command` to
   spawn, and the dialog and `host_sends_commands` for `default_port`, `remote`,
-  `ssh_options` and `sends_commands`. A new type adds a class here, not a branch in each of
-  those. `named` finds a type by name, and gives Telnet for a name GCM does not know;
+  `ssh_options` and `sends_commands`, and the server tree's menu for `sftp`, whether a
+  host's files open over SFTP (#267). A new type adds a class here, not a branch in each
+  of those. `named` finds a type by name, and gives Telnet for a name GCM does not know;
   `for_host` is what `addTab` opens a host as, a local shell for a host with no address
   unless its type has `runs_without_address`, since the Local button's host is of type
   ssh. Both keep what `addTab`
@@ -183,6 +184,51 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   test waited out its timeout. It starts `GcmApplication` as GCM does, `register` then
   `activate`: a bare `Wmain` has no accelerators, and a key test there passes with or
   without the fix.
+- `src/gnome_connection_manager/utils/remotefiles.py` – a host's files outside its console
+  (#267): the `sftp://` address the server tree's Open in File Manager hands on, and the
+  `sshfs` command its Mount with SSHFS runs, at `~/mnt/<name>` from `mount_folder`. Only a
+  type with `sftp` offers them, which is `Ssh`. Not `xdg-open`: measured, with nothing
+  for `sftp:` it gave the address to `x-www-browser` and exited 0, and no file manager in
+  Ubuntu 24.04 declares the scheme. So `open_in_file_manager` in `app.py` asks GIO for the
+  default application for `inode/directory`, which GIO finds only through a MIME cache or
+  `mimeapps.list`, measured, and else takes the first of `FILE_MANAGERS` on `PATH`.
+  sshfs runs as a daemon, its default: measured with sshfs 3.7.3, the mount appears
+  before it connects and goes again on a failure, while a daemon exits 0 only once
+  connected. A daemon drops ssh's messages and prints `read: Connection reset by peer`
+  for every failure, so ssh writes them to a log of its own, `ssh -E` in `ssh_command`,
+  which `failure_reason` reads. sshfs splits that command at spaces, and measured, an
+  escaped space reached ssh with its backslash, so `ssh_log` picks a folder whose path
+  holds none, and there is no log where the runtime folder's path has one. Never a
+  fallback in `/tmp`: another user could put a link where the log goes there, and GCM,
+  emptying the log for each attempt, would empty the file it names. `read_as_option`
+  refuses a user beginning with `-`: measured, sshfs hands ssh a source after `--` as it
+  is, so a user `-oProxyCommand=...` would run a command, where a console passes the user
+  as `-l`'s value. An address so made comes behind the user, and ssh refuses it. `SSHFS_OPTIONS` bounds the wait for a host that never answers: 15 s,
+  measured, where tcp(7) puts the kernel's own at about 127 s. The password reaches ssh in
+  `GCM_PASSWORD` through `data/scripts/gcm-askpass`, never in an argument.
+  `Wmain.mount_files` starts sshfs with `child_setup=os.setsid`, so the mount outlives
+  GCM, and `mount_at` reads `/proc/self/mountinfo` for what is mounted at the folder.
+  `remove_mount_folder` removes the folder again after an unmount and after a failed
+  mount, so that one is not left for every host ever mounted. `rmdir` alone: measured,
+  it refuses a folder still mounted, as busy, and one holding anything, so files that
+  were there before the mount stay, folder and all.
+  `find_mounts` says where each host is mounted: where its name puts it, or else, for a
+  host renamed while mounted, by its `user@host:` in another folder of `~/mnt`, only
+  while no other host has the same, as the mount table names no port. `Wmain.find_mounts`
+  reads the table for it, `~/mnt` resolved first, since measured, a mount made through a
+  link is listed where the link leads, and leaves out a folder still in `mounting`:
+  sshfs mounts before it connects, measured. `Wmain.show_mounts` marks each host mounted
+  in the tree and `list_mounts` lists every mount under Servers ▸ Mounted, rebuilt only
+  when what it lists changed. `watch_mounts` runs it on GIO's `mounts-changed`, so a
+  mount made or ended outside GCM shows too. The mark is `MOUNTED_MARK`, a tick before
+  the host's name, through `marked_name`: in the tree by `draw_mount_mark`, a data
+  function on the name's renderer, and in the Hosts menu on the item `host_items` keeps
+  for each host, which `show_mounts` relabels. Text, so that it is drawn at the name's
+  size: measured at a font scale of 2.25, the 16 pixel icon that took the host's place
+  sat beside a line of text 46 pixels tall, and went unnoticed. Not at the row's end,
+  which a name wider than the tree puts out of sight, measured. The list's empty line is
+  given Unmount All, disabled then, since GTK draws an item with no action as one to
+  choose, measured. Pure: the programs found and the mount table are arguments.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
@@ -353,6 +399,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `login` do; printing the prompt first races the script's answer, and the pty echoes it.
   A test that types Ctrl+C waits for `interact` to put the pty in raw mode: until then the
   terminal turns it into a SIGINT for the script, not the program.
+- `data/scripts/gcm-askpass` – ssh's askpass for a mount (#267), under
+  `SSH_ASKPASS_REQUIRE=force`. It answers a prompt ending in `assword:` with
+  `GCM_PASSWORD` from its environment and refuses every other question: a key's
+  passphrase, and the host key question above all, which is the user's to answer in a
+  console (#216). Measured, ssh then fails at once with `Host key verification failed.`
+  The Makefile installs it executable, and a test checks that of every script there.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
@@ -434,7 +486,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   output from View buffer (#179). The cursor is reported in the numbering
   `get_text_range_format` takes; the adjustment is not.
 - **Mutation-test new tests.** Revert the fix and confirm the test fails. This has caught
-  several tests that passed against broken code.
+  several tests that passed against broken code. In a worktree, unset `GCM_DATA_DIR`,
+  `GCM_GLADE_DIR` and `GCM_SCRIPTS_DIR`: `main()` sets them, a shell in a GCM tab inherits
+  them, and measured, they gave the worktree's GCM the main checkout's `data/`, so a
+  mutant of a script there went unseen and survived.
 - **Verify what is rendered, not what the model says.** A menubar was once "verified" by
   walking its `Gio.Menu` when it had never been rendered at all (#43). Walk the widget tree.
 - **A test that reads the screen raises its window first.** Every xdist worker's windows
@@ -461,6 +516,14 @@ Practices below have each caught real bugs in this repo. They are worth the time
   where it is. Measured, sway 1.9 often refused a drag begun seconds after a cancelled
   one, with GCM's handling of it and without, so a drag that never ends is sway's while
   its log says `Rejecting start_drag`.
+- **An ssh a test runs reads `~/.ssh` unless told not to.** Measured, `ssh -F <file>`
+  reads no other configuration but still offers the default keys in `~/.ssh`, unless
+  the file says `IdentityFile none`. `tests/test_host_files.py` gives ssh known hosts, a
+  key and no agent of its own, and runs sshd as the user on 127.0.0.1, serving SFTP from
+  a folder of the test's through `internal-sftp -d`. An sshd not run as root checks no
+  password, so the mount a stored password makes goes through a fake ssh that asks the
+  helper. Its GIO scenarios give GIO data folders that link everything of the system's
+  but `applications`, so that no folder application the system has can open.
 - **A signal handler's exception does not end a scenario.** PyGObject prints it and
   carries on, measured: the scenario exits 0 having printed OK. So
   `tests/test_console_window.py` also fails on a traceback in the scenario's stderr.
@@ -660,6 +723,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   across lines. `tests/test_i18n.py` gets this right; copy its pattern.
 - Favor the existing helpers (`msgbox`, `inputbox`, `vte_feed`, `HostUtils`, `sanitize_log_name`)
   instead of duplicating behavior — they already handle edge cases across VTE versions.
+  `msgbox` draws every message as an error: measured with the Yaru theme, GTK shows a
+  message's type as its icon, a no-entry sign for an error. Say that something worked, or
+  that there was nothing to do, with `msginfo`, which draws it as information.
 - When adding UI controls or config fields, keep these in sync: defaults (`conf`),
   `CONFIG_OPTIONS`, `writeConfig`, glade widgets, the preferences dialog, menus, export/import,
   and translations. `docs/TERMINAL-USAGE.md` names a setting by the label Preferences draws

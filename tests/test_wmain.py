@@ -140,6 +140,9 @@ class DummyMenuItem:
     def get_label(self):
         return self._label
 
+    def set_label(self, label):
+        self._label = label
+
     def show(self):
         pass
 
@@ -182,6 +185,9 @@ class RecordingTreeStore:
 
     def get_value(self, node, column):
         return node.row[column]
+
+    def set_value(self, node, column, value):
+        node.row[column] = value
 
     def get_iter_first(self):
         return self.roots[0] if self.roots else None
@@ -6255,7 +6261,15 @@ def test_folder_fakes_offer_only_what_gtk_has():
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk
 
-    for name in ("clear", "append", "get_value", "get_iter_first", "get_iter", "foreach"):
+    for name in (
+        "clear",
+        "append",
+        "get_value",
+        "set_value",
+        "get_iter_first",
+        "get_iter",
+        "foreach",
+    ):
         assert hasattr(RecordingTreeStore, name) and hasattr(Gtk.TreeStore, name), name
     for name in (
         "get_selection",

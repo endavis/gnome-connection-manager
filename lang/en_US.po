@@ -1984,3 +1984,60 @@ msgstr "Move to Main Window"
 
 msgid "Window {}"
 msgstr "Window {}"
+
+msgid "Open in File Manager"
+msgstr "Open in File Manager"
+
+msgid "Mount with SSHFS"
+msgstr "Mount with SSHFS"
+
+msgid "Unmount SSHFS"
+msgstr "Unmount SSHFS"
+
+msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
+msgstr "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
+
+msgid "Something else is mounted at {}: {}"
+msgstr "Something else is mounted at {}: {}"
+
+msgid "Mounting a host needs sshfs, which is not installed."
+msgstr "Mounting a host needs sshfs, which is not installed."
+
+msgid "Could not mount {} at {}: {}"
+msgstr "Could not mount {} at {}: {}"
+
+msgid "Mounted {} at {}."
+msgstr "Mounted {} at {}."
+
+msgid "Unmounted {} from {}."
+msgstr "Unmounted {} from {}."
+
+msgid "Unmounting needs fusermount, which is not installed."
+msgstr "Unmounting needs fusermount, which is not installed."
+
+msgid "Could not unmount {}: {}"
+msgstr "Could not unmount {}: {}"
+
+msgid "{} is mounted at {} already."
+msgstr "{} is mounted at {} already."
+
+msgid "{} is not mounted at {}."
+msgstr "{} is not mounted at {}."
+
+msgid "its user begins with -, which ssh would read as an option."
+msgstr "its user begins with -, which ssh would read as an option."
+
+msgid "Mounted"
+msgstr "Mounted"
+
+msgid "Unmount All"
+msgstr "Unmount All"
+
+msgid "Unmount {} from {}"
+msgstr "Unmount {} from {}"
+
+msgid "Nothing is mounted"
+msgstr "Nothing is mounted"
+
+msgid "Mounted at {}"
+msgstr "Mounted at {}"

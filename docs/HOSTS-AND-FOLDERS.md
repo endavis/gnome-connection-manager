@@ -1,6 +1,6 @@
 ---
 title: "Hosts and folders in GCM"
-description: "The server tree: making and moving folders, putting it in the order you want, what export and import carry, and remote desktop hosts"
+description: "The server tree: making and moving folders, putting it in the order you want, what export and import carry, remote desktop hosts, and a host's files"
 audience:
   - gcm-users
 tags:
@@ -14,8 +14,8 @@ tags:
 
 The panel on the left is the server tree: folders, and the hosts filed under them. This
 page covers making folders, moving things between them, putting them in the order you
-want, what a host carries with it when you export or import, and hosts that open a
-remote desktop.
+want, what a host carries with it when you export or import, hosts that open a remote
+desktop, and opening an SSH host's files.
 
 Every host lives in a folder. There is no such thing as a host at the top level — a drop
 there is refused — so the first thing a new installation needs is a folder.
@@ -307,6 +307,67 @@ as into any other.
 
 An older GCM opens a command host as Telnet, as it does any type it does not know, or as
 a local shell when it has no address. It keeps the command line when it saves.
+
+## A host's files
+
+Right-click an SSH host in the server tree for two more items, **Open in File Manager**
+and **Mount with SSHFS**. Neither needs a console, and neither uses one. Hosts of other
+types do not offer them, nor does an SSH host with no address, which opens a local shell.
+The **Servers** menu has them too, for the host selected in the tree, with **Unmount
+SSHFS** beside them.
+
+**Open in File Manager** opens the host's login folder over SFTP, at an address such as
+`sftp://eric@files.example:2222/`: the host's user, address and port, the port left out
+when it is 22. A host with no user is opened as you, as its console connects. GCM gives
+the address to the application your desktop opens folders with, and where it names none,
+to the first of Files (`nautilus`), Nemo, Caja, Thunar, Dolphin, PCManFM-Qt and PCManFM
+that is installed. Not to `xdg-open`: no file manager says it opens `sftp:` addresses, and
+`xdg-open` then gives them to the web browser. With none installed, GCM says so.
+
+The address is all the file manager is given. The host's stored password and its key
+file stay in GCM, and the file manager connects as it would to an address you typed into
+it, asking for a password where it needs one.
+
+**Mount with SSHFS** mounts the host's login folder at `~/mnt/<host name>`, with a
+character a folder's name should not hold, such as `/` or `:`, as `_`, so that any
+program can open the host's files as it opens its own. It needs
+`sshfs`, which Ubuntu installs with `sudo apt install sshfs`. GCM says when the mount is
+ready, or why it failed, in ssh's words where ssh gave any. While the host is mounted
+there, its menu offers **Unmount SSHFS** in Mount's place, and GCM says when the host is
+unmounted, or why it could not be. Unmounting removes the host's folder from `~/mnt`
+again, as does a mount that fails, so that a folder is not left there for every host
+ever mounted. GCM removes only an empty folder: one that held files before the mount
+keeps them. `~/mnt` itself stays, and it can be a link to a folder elsewhere. The mount
+lasts until you unmount it: closing GCM leaves it mounted. If something else is mounted at
+that folder, GCM names it and leaves it alone, and Unmount SSHFS unmounts only the host's
+own SSHFS mount.
+
+**What is mounted.** A host mounted with SSHFS has a ✓ before its name, in the server
+tree and in the **Hosts** menu, and its tooltip in the tree says where it is mounted.
+**Servers ▸ Mounted** lists every SSHFS mount in `~/mnt`, each by its host's name, and
+choosing one unmounts it. **Unmount All** below them unmounts them all and says once how
+each went. Both follow the system's list of mounts as it changes, so they show a mount
+made or ended outside GCM too, such as one unmounted from a terminal. A mount in `~/mnt`
+that is no host's, such as one you made yourself, is listed by what it mounts, as
+`user@host:`. A host renamed while mounted stays mounted where its old name put it, and
+GCM still finds it there, to mark it, list it and unmount it, rather than offer to mount
+it a second time. It finds it by the host's user and address, which is all the list of
+mounts records, so of two hosts with the same user and address, on different ports, each
+is found only where its own name puts it.
+
+The mount connects with the host's user, address, port and private key file. When ssh
+asks for a password, GCM answers with the host's stored one, which never goes into a
+command line. It answers nothing else: not a key's passphrase, and not whether to trust a
+host key ssh has never seen, so then the mount fails with **Host key verification
+failed.** Connect to the host once in a console and answer the question there, and the
+mount finds the key. sshfs makes a connection of its own, so the host's port forwarding,
+X11 and agent forwarding, compression, keep-alive and extra arguments are not used.
+
+GCM asks sshfs to reconnect when the connection drops, and to stop waiting for a host
+that does not answer after 15 seconds. When the reason GCM shows is not enough, ssh's
+messages for the last mount of a host are in `sshfs-<host name>.log`, with any spaces in
+the name as underscores, in the `gcm` folder under `$XDG_RUNTIME_DIR`, usually
+`/run/user/<your uid>`.
 
 ## See also
 

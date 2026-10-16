@@ -1,0 +1,17 @@
+#!/bin/sh
+# ssh's askpass for a host GCM mounts with sshfs (#267). ssh runs it with its question as
+# the only argument, and takes what it prints as the answer: GCM sets SSH_ASKPASS to it,
+# with SSH_ASKPASS_REQUIRE=force, since sshfs gives ssh no terminal to ask on.
+#
+# A password prompt is answered with the host's stored password, which GCM puts in
+# GCM_PASSWORD: in the environment, which only its owner can read, never on a command line.
+# Anything else is refused, the host key question above all, which is the user's to answer
+# in a console (#216). ssh then fails at once with "Host key verification failed.",
+# measured, rather than waiting on a question nobody sees. A key's passphrase is refused too:
+# it is not the host's password.
+case "$1" in
+*"assword:" | *"assword: ") ;;
+*) exit 1 ;;
+esac
+[ -n "$GCM_PASSWORD" ] || exit 1
+printf '%s\n' "$GCM_PASSWORD"

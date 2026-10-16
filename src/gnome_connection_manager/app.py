@@ -50,6 +50,7 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -113,6 +114,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     crypto,
     logpaths,
     placeholders,
+    remotefiles,
     transcript,
     urlregex,
     vtehtml,
@@ -327,6 +329,8 @@ MODIFIER_KEYS = frozenset(
 DEFAULT_TERM_TYPE = "xterm-256color"
 
 SSH_COMMAND = str(Path(BASE_PATH) / "scripts" / "ssh.expect")
+# ssh's askpass for a host mounted with sshfs, which answers with its stored password (#267).
+ASKPASS_COMMAND = str(Path(BASE_PATH) / "scripts" / "gcm-askpass")
 try:
     USERHOME_DIR = os.getenv("HOME")
 except (KeyError, OSError):
@@ -977,13 +981,18 @@ def open_in_browser(url):
     # went to $BROWSER where https: and mailto: found theirs. RFC 3986 makes a scheme's
     # case no part of it, so it goes in lower case.
     url = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*:", lambda scheme: scheme[0].lower(), url)
+    open_with(["xdg-open", url], url)
+
+
+def open_with(argv, target):
+    """Run `argv` to open `target`, without waiting for it, and say so if it fails."""
     try:
         pid, *_pipes = GLib.spawn_async(
-            ["xdg-open", url],
+            argv,
             flags=GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.DO_NOT_REAP_CHILD,
         )
     except GLib.Error as error:
-        msgbox("{} {}: {}".format(_("Could not open"), url, error.message))
+        msgbox("{} {}: {}".format(_("Could not open"), target, error.message))
         return
 
     def exited(pid, status):
@@ -991,12 +1000,120 @@ def open_in_browser(url):
         code = os.waitstatus_to_exitcode(status)
         if code != 0:
             msgbox(
-                "{} {}: xdg-open {} {}".format(
-                    _("Could not open"), url, _("exited with status"), code
+                "{} {}: {} {} {}".format(
+                    _("Could not open"),
+                    target,
+                    Path(argv[0]).name,
+                    _("exited with status"),
+                    code,
                 )
             )
 
     GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
+
+def open_in_file_manager(address):
+    """Open a host's `sftp://` address in the file manager (#267).
+
+    Not through xdg-open: measured, with nothing to handle sftp: it gave the address to the
+    web browser and exited 0. No file manager in Ubuntu 24.04 handles the scheme, and every
+    one opens folders and takes an address, read from their desktop files. So GIO's default
+    application for folders, and where GIO knows none, the first of
+    remotefiles.FILE_MANAGERS on PATH: GIO finds that default only through a MIME cache or
+    mimeapps.list, measured, and a system without either, as WSL can be, has none.
+    """
+    application = Gio.AppInfo.get_default_for_type("inode/directory", True)
+    if application is not None:
+        try:
+            application.launch_uris([address], None)
+        except GLib.Error as error:
+            msgbox("{} {}: {}".format(_("Could not open"), address, error.message))
+        return
+    command = remotefiles.file_manager_command(shutil.which)
+    if command is None:
+        # One literal: tests/test_i18n.py does not follow a message split across two.
+        msgbox(
+            _(
+                "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
+            ).format(address)
+        )
+        return
+    open_with([*command, address], address)
+
+
+def read_mount_table():
+    """The text of /proc/self/mountinfo, or nothing where it cannot be read."""
+    try:
+        return Path("/proc/self/mountinfo").read_text(errors="replace")
+    except OSError:
+        return ""
+
+
+def remove_mount_folder(folder):
+    """Remove a host's folder under ~/mnt once nothing is mounted there, so that one is not
+    left behind for every host ever mounted. rmdir, and only that: measured, it refuses a
+    folder still mounted, as busy, and one holding anything, which keeps what it holds."""
+    with contextlib.suppress(OSError):
+        folder.rmdir()
+
+
+def fusermount():
+    """What unmounts what sshfs mounted: FUSE 3's fusermount, or FUSE 2's where only that is
+    installed, or None."""
+    return shutil.which("fusermount3") or shutil.which("fusermount")
+
+
+# What the tree and the Hosts menu put before the name of a host mounted with sshfs. Text,
+# so that it is drawn at the name's size: measured at a font scale of 2.25, the 16 pixel
+# icon that took the host's place sat beside a line of text 46 pixels tall, and went
+# unnoticed. Before the name, not after it, where a name wider than the tree puts it out
+# of sight.
+MOUNTED_MARK = "✓"
+
+
+def mounted_at(host, found):
+    """The tree's column for where `host` is mounted, from `found`, {host: folder}: the
+    folder, or "" where it is not mounted."""
+    return str(found[host]) if host in found else ""
+
+
+def marked_name(name, folder):
+    """A host's name as the tree and the Hosts menu draw it: after MOUNTED_MARK while it is
+    mounted, at `folder`."""
+    return f"{MOUNTED_MARK} {name}" if folder else name
+
+
+def draw_mount_mark(_column, cell, model, iter_, *_data):
+    """Draw a host mounted with sshfs with MOUNTED_MARK before its name. Only that row's
+    text is set here: the name column sets every row's before this runs."""
+    folder = model.get_value(iter_, 5)
+    if folder:
+        cell.set_property("text", marked_name(model.get_value(iter_, 0), folder))
+
+
+def mount_names(mounts, found):
+    """What each of `mounts`, {folder: what is mounted there}, is called: the name of the
+    first host `found`, {host: folder}, has mounted there, or else what is mounted."""
+    named: dict = {}
+    for host, folder in found.items():
+        named.setdefault(folder, host.name)
+    return {folder: named.get(folder, source) for folder, source in mounts.items()}
+
+
+def read_finished(fd):
+    """What a finished child wrote to the pipe `fd`, which this closes.
+
+    Without waiting: a mount's ssh keeps its descriptors for as long as the mount lasts."""
+    os.set_blocking(fd, False)
+    chunks = []
+    try:
+        while chunk := os.read(fd, 65536):
+            chunks.append(chunk)
+    except BlockingIOError:
+        pass
+    finally:
+        os.close(fd)
+    return b"".join(chunks).decode(errors="replace")
 
 
 def session_tail(terminal, rows=4):
@@ -1227,6 +1344,21 @@ def msgbox(text: str, parent: Gtk.Window | None = None) -> None:
         parent=parent,
         modal=True,
         message_type=Gtk.MessageType.ERROR,
+        buttons=Gtk.ButtonsType.OK,
+        text=text,
+    )
+    msgBox.set_icon_from_file(ICON_PATH)
+    msgBox.run()
+    msgBox.destroy()
+
+
+def msginfo(text: str, parent: Gtk.Window | None = None) -> None:
+    """Show a message that something worked, or that there was nothing to do: drawn as
+    information, where msgbox draws an error, its icon included."""
+    msgBox = Gtk.MessageDialog(
+        parent=parent,
+        modal=True,
+        message_type=Gtk.MessageType.INFO,
         buttons=Gtk.ButtonsType.OK,
         text=text,
     )
@@ -1936,10 +2068,13 @@ def console_item_markup(entry):
 
 class Wmain(GladeComponent):
     # new() gives each Wmain its own. These are for one built without it, as tests
-    # build one: no console window, none in use, and no tab being dragged (#255).
+    # build one: no console window, none in use, and no tab being dragged (#255), and no
+    # host being mounted, and no application whose menus list the mounts (#267).
     console_windows: tuple = ()
     window_in_use: object = None
     dragged_tab: object = None
+    mounting: frozenset = frozenset()
+    application: object = None
 
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
@@ -2118,6 +2253,8 @@ class Wmain(GladeComponent):
         self.window_in_use = None
         # The tab a drag between notebooks carries, while it does (#255).
         self.dragged_tab = None
+        # The folders sshfs is mounting a host at, until it exits (#267).
+        self.mounting = frozenset()
         self.count = 0
         self.row_activated = False
 
@@ -3075,6 +3212,23 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.copy-address")
         menuItem.show()
 
+        # A host's files, for a type that opens them over SFTP (#267). Of Mount and
+        # Unmount, prepare_files_items shows the one that applies.
+        self.popupMenuFolder.mnuOpenFiles = menuItem = Gtk.MenuItem(label=_("Open in File Manager"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.open-files")
+        menuItem.show()
+
+        self.popupMenuFolder.mnuMount = menuItem = Gtk.MenuItem(label=_("Mount with SSHFS"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.mount-files")
+        menuItem.show()
+
+        self.popupMenuFolder.mnuUnmount = menuItem = Gtk.MenuItem(label=_("Unmount SSHFS"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.unmount-files")
+        menuItem.show()
+
         self.popupMenuFolder.mnuAdd = menuItem = Gtk.MenuItem(label=_("Agregar Host"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.add-host")
@@ -3943,8 +4097,11 @@ class Wmain(GladeComponent):
     def initLeftPane(self):
         global groups
 
-        # name, host (None on a folder row), stock icon, background, folder id ("" on a host)
-        self.treeModel = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_PYOBJECT, str, str, str)
+        # name, host (None on a folder row), stock icon, background, folder id ("" on a host),
+        # where the host is mounted with sshfs ("" where it is not, and on a folder row) (#267)
+        self.treeModel = Gtk.TreeStore(
+            GObject.TYPE_STRING, GObject.TYPE_PYOBJECT, str, str, str, str
+        )
         self.treeServers.set_model(self.treeModel)
 
         self.treeServers.set_level_indentation(5)
@@ -3963,6 +4120,7 @@ class Wmain(GladeComponent):
         column.pack_start(renderer, expand=True)
         column.add_attribute(renderer, "text", 0)
         column.add_attribute(renderer, "cell-background", 3)
+        column.set_cell_data_func(renderer, draw_mount_mark)
 
         self.treeServers.set_has_tooltip(True)
         self.treeServers.connect("query-tooltip", self.on_treeServers_tooltip)
@@ -3983,6 +4141,7 @@ class Wmain(GladeComponent):
         self.wMain.connect("notify::is-active", self.on_window_active_changed)
         self.loadConfig()
         self.updateTree()
+        self.watch_mounts()
 
     def on_treeServers_key_press(self, widget, event, *args):
         if event.keyval == Gdk.KEY_Delete:
@@ -3997,9 +4156,15 @@ class Wmain(GladeComponent):
         x, y = widget.convert_widget_to_bin_window_coords(x, y)
         pos = widget.get_path_at_pos(x, y)
         if pos:
-            host = list(widget.get_model()[pos[0]])[1]
+            row = list(widget.get_model()[pos[0]])
+            host, folder = row[1], row[5]
             if host:
-                text = f"<span><b>{host.name}</b>\n{host.type}:{host.user}@{host.host}\n</span><span size='smaller'>{host.description}</span>"
+                mounted = (
+                    GLib.markup_escape_text(_("Mounted at {}").format(folder), -1) + "\n"
+                    if folder
+                    else ""
+                )
+                text = f"<span><b>{host.name}</b>\n{host.type}:{host.user}@{host.host}\n{mounted}</span><span size='smaller'>{host.description}</span>"
                 tooltip.set_markup(text)
                 return True
         return False
@@ -4194,20 +4359,30 @@ class Wmain(GladeComponent):
             for folder_id in folders.folders
             if folders.is_ancestor(folder_id, host_folder)
         }
-        self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, contents, occupied)
+        # Read again with the hosts, as a host renamed or deleted changes which mount is whose.
+        mounts, found = self.find_mounts()
+        # The Hosts menu's item for each host, which show_mounts marks as the tree's row.
+        self.host_items = {}
+        self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, contents, occupied, found)
+        self.list_mounts(mounts, found)
 
         self.set_collapsed_nodes()
         conf.COLLAPSED_FOLDERS = None
         self.update_row_color()
 
-    def add_folder_rows(self, parent_id, parent_row, parent_menu, contents, occupied):
+    def add_folder_rows(self, parent_id, parent_row, parent_menu, contents, occupied, found):
         """A folder's children in their order, subfolders drawn with their own. Until
         someone arranges a folder that is subfolders, then hosts, each by name -- the
-        order the tree kept when it was drawn from path strings."""
+        order the tree kept when it was drawn from path strings. Each host mounted is
+        marked, from `found`, {host: where}, in the tree and in the Hosts menu."""
         for child in contents.get(parent_id, []):
             if isinstance(child, Host):
-                self.treeModel.append(parent_row, [child.name, child, "gtk-network", "#fff", ""])
-                mnuItem = Gtk.MenuItem(label=child.name)
+                folder = mounted_at(child, found)
+                self.treeModel.append(
+                    parent_row, [child.name, child, "gtk-network", "#fff", "", folder]
+                )
+                mnuItem = Gtk.MenuItem(label=marked_name(child.name, folder))
+                self.host_items[child] = mnuItem
                 mnuItem.show()
                 mnuItem.connect(
                     "activate", lambda arg, nb, h: self.addTab(nb, h), self.nbConsole, child
@@ -4215,7 +4390,7 @@ class Wmain(GladeComponent):
                 parent_menu.append(mnuItem)
                 continue
             row = self.treeModel.append(
-                parent_row, [child.name, None, "gtk-directory", "#fff", child.id]
+                parent_row, [child.name, None, "gtk-directory", "#fff", child.id, ""]
             )
             submenu = parent_menu
             if child.id in occupied:
@@ -4224,7 +4399,7 @@ class Wmain(GladeComponent):
                 item.set_submenu(submenu)
                 item.show()
                 parent_menu.append(item)
-            self.add_folder_rows(child.id, row, submenu, contents, occupied)
+            self.add_folder_rows(child.id, row, submenu, contents, occupied, found)
 
     def is_folder_row(self, iter_):
         """Folder rows carry no host. This used to be asked as iter_has_child, which
@@ -5158,6 +5333,325 @@ class Wmain(GladeComponent):
         cb.set_text(host.host, len(host.host))
         cb.store()
 
+    # A host's files, outside its console (#267).
+
+    def prepare_files_items(self, host):
+        """Offer a host's files in the tree's menu only for a type that opens them over
+        SFTP, with Unmount SSHFS in place of Mount with SSHFS while it is mounted."""
+        menu = self.popupMenuFolder
+        offered = host is not None and connections.for_host(host).sftp
+        mounted = offered and self.files_mount(host) is not None
+        menu.mnuOpenFiles.set_visible(offered)
+        menu.mnuMount.set_visible(offered and not mounted)
+        menu.mnuUnmount.set_visible(mounted)
+
+    def files_user(self, host):
+        """Who a host's files are opened as: its user, or the local one, as its console
+        connects when it names none."""
+        return host.user or get_username()
+
+    def files_folder(self, host):
+        """Where Mount with SSHFS puts a host: ~/mnt/<its name>."""
+        return remotefiles.mount_folder(Path.home(), host.name)
+
+    def files_source(self, host):
+        """What sshfs mounts of a host, which the mount table names its mount by."""
+        return remotefiles.sshfs_source(host.host, self.files_user(host))
+
+    def find_mounts(self, host=None):
+        """The sshfs mounts in ~/mnt but one still being made, {folder: what is mounted
+        there}, in the mount table's order, and where each host is mounted, {host: folder}:
+        each of the tree's hosts whose files open over SFTP, and `host`."""
+        root = remotefiles.mount_root(Path.home())
+        # Measured, a mount made through a link is listed at the folder the link leads to.
+        listed = remotefiles.sshfs_mounts(read_mount_table(), root.resolve())
+        mounts = {
+            root / folder.name: source
+            for folder, source in listed.items()
+            if root / folder.name not in self.mounting
+        }
+        hosts = [
+            each for filed in groups.values() for each in filed if connections.for_host(each).sftp
+        ]
+        if host is not None and all(each is not host for each in hosts):
+            hosts.append(host)
+        found = remotefiles.find_mounts(
+            [(each.name, self.files_source(each)) for each in hosts], mounts, root
+        )
+        return mounts, {
+            each: folder for each, folder in zip(hosts, found, strict=True) if folder is not None
+        }
+
+    def files_mount(self, host):
+        """The folder in ~/mnt `host` is mounted at by sshfs, or None: where its name puts
+        it, or, for a host renamed since, where its old name did."""
+        return self.find_mounts(host)[1].get(host)
+
+    def watch_mounts(self):
+        """Follow the mount table, so that the tree and Servers ▸ Mounted show what is
+        mounted however it was mounted or unmounted, by GCM or not."""
+        self.mount_monitor = Gio.UnixMountMonitor.get()
+        self.mount_monitor.connect("mounts-changed", lambda _monitor: self.show_mounts())
+
+    def show_mounts(self):
+        """Mark each host mounted in the tree and the Hosts menu, and list each mount in
+        Servers ▸ Mounted, as the mount table has them now."""
+        mounts, found = self.find_mounts()
+        items = getattr(self, "host_items", {})
+
+        def mark(model, _path, iter_):
+            host = model.get_value(iter_, 1)
+            if host is None:
+                return False
+            folder = mounted_at(host, found)
+            # Only a host whose mount changed, as each change redraws its row.
+            if model.get_value(iter_, 5) != folder:
+                model.set_value(iter_, 5, folder)
+                if host in items:
+                    items[host].set_label(marked_name(host.name, folder))
+            return False
+
+        self.treeModel.foreach(mark)
+        self.list_mounts(mounts, found)
+
+    def list_mounts(self, mounts, found):
+        """Servers ▸ Mounted: each mount in ~/mnt to unmount, by its host's name, or by what
+        is mounted where no host is found for it, and Unmount All while there is one."""
+        application = self.application
+        section = getattr(application, "mounts_section", None)
+        if section is None:
+            return
+        listed = [
+            (folder, name, "~/" + str(folder.relative_to(Path.home())))
+            for folder, name in mount_names(mounts, found).items()
+        ]
+        # Unchanged, it is left alone, as the mount table changes for any mount at all.
+        if listed == getattr(self, "listed_mounts", None):
+            return
+        self.listed_mounts = listed
+        section.remove_all()
+        for folder, name, shown in listed:
+            item = Gio.MenuItem.new(menu_label(_("Unmount {} from {}").format(name, shown)), None)
+            item.set_action_and_target_value("app.unmount-folder", GLib.Variant("s", str(folder)))
+            section.append_item(item)
+        if not listed:
+            # Given Unmount All, disabled now, so that GTK draws it greyed: measured, an
+            # item with no action is drawn as one to choose.
+            section.append(_("Nothing is mounted"), "app.unmount-all")
+        application.lookup_action("unmount-all").set_enabled(bool(listed))
+
+    def selected_files_host(self):
+        """The host the tree's menu was opened on, when its files open over SFTP."""
+        host = self.get_selected_host()
+        return host if host is not None and connections.for_host(host).sftp else None
+
+    def open_selected_files(self):
+        """Open in File Manager: the host's sftp:// address, which holds no password."""
+        host = self.selected_files_host()
+        if host is not None:
+            open_in_file_manager(
+                remotefiles.sftp_address(host.host, self.files_user(host), host.port)
+            )
+
+    def mount_selected_files(self):
+        """Mount with SSHFS: the host at ~/mnt/<its name>, where nothing is mounted yet.
+
+        Two actions, Mount and Unmount, and not one that does either: the Servers menu
+        names each, and a menubar's label cannot follow the host selected."""
+        host = self.selected_files_host()
+        if host is None:
+            return
+        folder = self.files_folder(host)
+        if folder in self.mounting:
+            return
+        mounted = self.files_mount(host)
+        # The folder as the mount table names it, as find_mounts reads it.
+        other = remotefiles.mount_at(read_mount_table(), folder.parent.resolve() / folder.name)
+        if mounted is not None:
+            msginfo(_("{} is mounted at {} already.").format(host.name, mounted))
+        elif other is not None:
+            msgbox(_("Something else is mounted at {}: {}").format(folder, other[1]))
+        else:
+            self.mount_files(host, folder)
+
+    def unmount_selected_files(self):
+        """Unmount SSHFS: the host, from where it is mounted, and nothing else."""
+        host = self.selected_files_host()
+        if host is None:
+            return
+        mounted = self.files_mount(host)
+        if mounted is not None:
+            self.unmount_files(host.name, mounted)
+        else:
+            msginfo(_("{} is not mounted at {}.").format(host.name, self.files_folder(host)))
+
+    def unmount_folder(self, folder):
+        """Servers ▸ Mounted: unmount the sshfs mount at `folder` it lists, while it is
+        there."""
+        names = mount_names(*self.find_mounts())
+        if folder in names:
+            self.unmount_files(names[folder], folder)
+        else:
+            msginfo(_("{} is not mounted at {}.").format(folder.name, folder))
+
+    def unmount_all_files(self):
+        """Servers ▸ Mounted ▸ Unmount All: each sshfs mount in ~/mnt, said once for all."""
+        names = mount_names(*self.find_mounts())
+        if not names:
+            return
+        program = fusermount()
+        if program is None:
+            msgbox(_("Unmounting needs fusermount, which is not installed."))
+            return
+        said, failed = {}, set()
+
+        def done(folder, reason):
+            if reason is None:
+                said[folder] = _("Unmounted {} from {}.").format(names[folder], folder)
+            else:
+                said[folder] = _("Could not unmount {}: {}").format(folder, reason)
+                failed.add(folder)
+            if len(said) == len(names):
+                (msgbox if failed else msginfo)("\n".join(said[each] for each in names))
+
+        for folder in names:
+            self.run_unmount(program, folder, lambda reason, folder=folder: done(folder, reason))
+
+    def mount_files(self, host, folder):
+        """Mount a host's login folder at `folder` with sshfs, as a daemon in a session of
+        its own, so that it lasts until it is unmounted, GCM or its terminal closing or not.
+
+        A daemon, since one exits 0 once connected, measured, and the mount, made before
+        connecting, says nothing. ssh's messages go to a log beside the runtime files, as
+        a daemon drops them, and a reconnect opens it again, so it stays. A mount that
+        fails removes `folder` again, while it is empty.
+        """
+        if folder in self.mounting:
+            return
+        if remotefiles.read_as_option(host.host, self.files_user(host)):
+            msgbox(
+                _("Could not mount {} at {}: {}").format(
+                    host.name,
+                    folder,
+                    _("its user begins with -, which ssh would read as an option."),
+                )
+            )
+            return
+        sshfs = shutil.which("sshfs")
+        if sshfs is None:
+            msgbox(_("Mounting a host needs sshfs, which is not installed."))
+            return
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            msgbox(_("Could not mount {} at {}: {}").format(host.name, folder, error.strerror))
+            return
+        # In the runtime folder, which is the user's alone, and nowhere shared such as
+        # /tmp, where another user could put a link where the log goes, for this to empty
+        # the file it names. Without it, sshfs's own words have to do.
+        log = remotefiles.ssh_log([Path(GLib.get_user_runtime_dir(), "gcm")], folder.name)
+        if log is not None:
+            try:
+                log.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                log.write_text("")  # this attempt's messages only
+            except OSError:
+                log = None
+        argv = remotefiles.sshfs_command(
+            sshfs, host.host, self.files_user(host), host.port, host.private_key, folder, log
+        )
+        # The password reaches ssh through the askpass helper, in the environment, which
+        # only its owner can read, never on a command line.
+        environment = dict(os.environ, SSH_ASKPASS=ASKPASS_COMMAND, SSH_ASKPASS_REQUIRE="force")
+        environment.pop(placeholders.PASSWORD_VARIABLE, None)
+        if host.password:
+            environment[placeholders.PASSWORD_VARIABLE] = host.password
+        try:
+            pid, _stdin, _stdout, stderr = GLib.spawn_async(
+                argv,
+                envp=[f"{name}={value}" for name, value in environment.items()],
+                flags=GLib.SpawnFlags.DO_NOT_REAP_CHILD
+                | GLib.SpawnFlags.STDIN_FROM_DEV_NULL
+                | GLib.SpawnFlags.STDOUT_TO_DEV_NULL,
+                child_setup=os.setsid,
+                standard_error=True,
+            )
+        except GLib.Error as error:
+            remove_mount_folder(folder)
+            msgbox(_("Could not mount {} at {}: {}").format(host.name, folder, error.message))
+            return
+        self.mounting = self.mounting | {folder}
+
+        def exited(pid, status):
+            GLib.spawn_close_pid(pid)
+            self.mounting = self.mounting - {folder}
+            # Mounted once sshfs has connected, which find_mounts leaves out until it has.
+            self.show_mounts()
+            output = read_finished(stderr)
+            code = os.waitstatus_to_exitcode(status)
+            if code == 0:
+                msginfo(_("Mounted {} at {}.").format(host.name, folder))
+                return
+            try:
+                ssh_log = log.read_text(errors="replace") if log is not None else ""
+            except OSError:
+                ssh_log = ""
+            reason = remotefiles.failure_reason(ssh_log, output)
+            # Measured, a failed sshfs has unmounted by the time it exits.
+            remove_mount_folder(folder)
+            msgbox(
+                _("Could not mount {} at {}: {}").format(
+                    host.name, folder, reason or "sshfs {} {}".format(_("exited with status"), code)
+                )
+            )
+
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
+    def unmount_files(self, name, folder):
+        """Unmount what sshfs mounted at `folder`, remove the folder, and say so, calling
+        the host `name`, as mounting does. The sshfs daemon and its ssh end with the
+        mount."""
+        program = fusermount()
+        if program is None:
+            msgbox(_("Unmounting needs fusermount, which is not installed."))
+            return
+
+        def done(reason):
+            if reason is None:
+                msginfo(_("Unmounted {} from {}.").format(name, folder))
+            else:
+                msgbox(_("Could not unmount {}: {}").format(folder, reason))
+
+        self.run_unmount(program, folder, done)
+
+    def run_unmount(self, program, folder, done):
+        """Unmount `folder` with `program`, a fusermount, then remove the folder and call
+        `done` with None, or, where it could not, with why."""
+        try:
+            pid, _stdin, _stdout, stderr = GLib.spawn_async(
+                [program, "-u", str(folder)],
+                flags=GLib.SpawnFlags.DO_NOT_REAP_CHILD
+                | GLib.SpawnFlags.STDIN_FROM_DEV_NULL
+                | GLib.SpawnFlags.STDOUT_TO_DEV_NULL,
+                standard_error=True,
+            )
+        except GLib.Error as error:
+            done(error.message)
+            return
+
+        def exited(pid, status):
+            GLib.spawn_close_pid(pid)
+            output = read_finished(stderr)
+            code = os.waitstatus_to_exitcode(status)
+            if code == 0:
+                remove_mount_folder(folder)
+                self.show_mounts()
+                done(None)
+                return
+            reason = remotefiles.failure_reason("", output)
+            done(reason or "{} {} {}".format(Path(program).name, _("exited with status"), code))
+
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, exited)
+
     def duplicate_selected_host(self):
         host = self.get_selected_host()
         if host is None:
@@ -5884,6 +6378,7 @@ class Wmain(GladeComponent):
                 self.popupMenuFolder.mnuCopyAddress.hide()
                 self.popupMenuFolder.mnuDup.hide()
                 self.popupMenuFolder.mnuRenameFolder.hide()
+                self.prepare_files_items(None)
             else:
                 path, col, cellx, celly = pthinfo
                 self.set_context_tree_path(path)
@@ -5892,11 +6387,13 @@ class Wmain(GladeComponent):
                     self.popupMenuFolder.mnuCopyAddress.hide()
                     self.popupMenuFolder.mnuDup.hide()
                     self.popupMenuFolder.mnuRenameFolder.show()
+                    self.prepare_files_items(None)
                 else:
                     self.popupMenuFolder.mnuEdit.show()
                     self.popupMenuFolder.mnuCopyAddress.show()
                     self.popupMenuFolder.mnuDup.show()
                     self.popupMenuFolder.mnuRenameFolder.hide()
+                    self.prepare_files_items(self.get_selected_host())
                 self.popupMenuFolder.mnuDel.show()
                 self.treeServers.grab_focus()
                 self.treeServers.set_cursor(path, col, 0)
@@ -8531,6 +9028,15 @@ class GcmApplication(Gtk.Application):
             parameter_type=GLib.VariantType.new("s"),
         )
         self._create_action("copy-address", self._on_action_copy_address)
+        self._create_action("open-files", self._on_action_open_files)
+        self._create_action("mount-files", self._on_action_mount_files)
+        self._create_action("unmount-files", self._on_action_unmount_files)
+        self._create_action(
+            "unmount-folder",
+            self._on_action_unmount_folder,
+            parameter_type=GLib.VariantType.new("s"),
+        )
+        self._create_action("unmount-all", self._on_action_unmount_all)
         self._create_action("duplicate-host", self._on_action_duplicate_host)
         self._create_action("new-folder", self._on_action_new_folder)
         self._create_action("rename-folder", self._on_action_rename_folder)
@@ -8677,6 +9183,20 @@ class GcmApplication(Gtk.Application):
         address_section = Gio.Menu()
         address_section.append(_("Copy Address"), "app.copy-address")
         servers_menu.append_section(None, address_section)
+        # The selected host's files (#267).
+        files_section = Gio.Menu()
+        files_section.append(_("Open in File Manager"), "app.open-files")
+        files_section.append(_("Mount with SSHFS"), "app.mount-files")
+        files_section.append(_("Unmount SSHFS"), "app.unmount-files")
+        # Every mount in ~/mnt, which Wmain.list_mounts lists in mounts_section.
+        mounted_menu = Gio.Menu()
+        self.mounts_section = Gio.Menu()
+        mounted_menu.append_section(None, self.mounts_section)
+        all_section = Gio.Menu()
+        all_section.append(_("Unmount All"), "app.unmount-all")
+        mounted_menu.append_section(None, all_section)
+        files_section.append_submenu(_("Mounted"), mounted_menu)
+        servers_menu.append_section(None, files_section)
         tree_section = Gio.Menu()
         tree_section.append(_("Expand All Groups"), "app.expand-groups")
         tree_section.append(_("Collapse All Groups"), "app.collapse-groups")
@@ -8957,6 +9477,29 @@ class GcmApplication(Gtk.Application):
         if self._controller is not None:
             self._controller.copy_selected_address()
             self._controller.clear_context_tree_path()
+
+    def _on_action_open_files(self, action, _param):
+        if self._controller is not None:
+            self._controller.open_selected_files()
+            self._controller.clear_context_tree_path()
+
+    def _on_action_mount_files(self, action, _param):
+        if self._controller is not None:
+            self._controller.mount_selected_files()
+            self._controller.clear_context_tree_path()
+
+    def _on_action_unmount_files(self, action, _param):
+        if self._controller is not None:
+            self._controller.unmount_selected_files()
+            self._controller.clear_context_tree_path()
+
+    def _on_action_unmount_folder(self, action, param):
+        if self._controller is not None:
+            self._controller.unmount_folder(Path(param.get_string()))
+
+    def _on_action_unmount_all(self, action, _param):
+        if self._controller is not None:
+            self._controller.unmount_all_files()
 
     def _on_action_duplicate_host(self, action, _param):
         if self._controller is not None:

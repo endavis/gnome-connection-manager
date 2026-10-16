@@ -61,6 +61,8 @@ install: translate
 	cp data/ui/donate.gif $(DATADIR)/ui/
 	cp data/scripts/ssh.expect $(DATADIR)/scripts/
 	chmod +x $(DATADIR)/scripts/ssh.expect
+	cp data/scripts/gcm-askpass $(DATADIR)/scripts/
+	chmod +x $(DATADIR)/scripts/gcm-askpass
 	cp data/icon.png $(DATADIR)/
 	cp data/style.css $(DATADIR)/
 
