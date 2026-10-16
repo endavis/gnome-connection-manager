@@ -1942,3 +1942,15 @@ msgstr "La taille est une largeur et une hauteur de 200 à 32766, comme 1920x108
 
 msgid "The desktop scale is a percentage from 100 to 500, such as 150."
 msgstr "L'échelle du bureau est un pourcentage de 100 à 500, comme 150."
+
+msgid "RDP client"
+msgstr "Client RDP"
+
+msgid "FreeRDP"
+msgstr "FreeRDP"
+
+msgid "Windows Remote Desktop"
+msgstr "Bureau à distance Windows"
+
+msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
+msgstr "Le Bureau à distance Windows demande lui-même le mot de passe, et reprend d'un hôte son Affichage et une taille en pixels. Ses propres réglages décident du reste."

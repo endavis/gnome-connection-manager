@@ -2094,3 +2094,15 @@ msgstr "크기는 1920x1080처럼 200에서 32766 사이의 너비와 높이, �
 
 msgid "The desktop scale is a percentage from 100 to 500, such as 150."
 msgstr "데스크톱 배율은 150처럼 100에서 500 사이의 백분율입니다."
+
+msgid "RDP client"
+msgstr "RDP 클라이언트"
+
+msgid "FreeRDP"
+msgstr "FreeRDP"
+
+msgid "Windows Remote Desktop"
+msgstr "Windows 원격 데스크톱"
+
+msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
+msgstr "Windows 원격 데스크톱은 암호를 직접 묻고, 호스트의 표시 설정과 픽셀 단위 크기를 사용합니다. 나머지는 자체 설정을 따릅니다."

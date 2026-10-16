@@ -1946,3 +1946,15 @@ msgstr "Размер — это ширина и высота от 200 до 32766
 
 msgid "The desktop scale is a percentage from 100 to 500, such as 150."
 msgstr "Масштаб рабочего стола — это процент от 100 до 500, например 150."
+
+msgid "RDP client"
+msgstr "RDP-клиент"
+
+msgid "FreeRDP"
+msgstr "FreeRDP"
+
+msgid "Windows Remote Desktop"
+msgstr "Удалённый рабочий стол Windows"
+
+msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
+msgstr "Удалённый рабочий стол Windows сам запрашивает пароль и берёт у узла «Отображение» и размер в пикселях. Остальное определяют его собственные настройки."
