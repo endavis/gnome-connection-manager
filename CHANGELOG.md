@@ -12,6 +12,12 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- The README lists the features the guides gained since its list was written: a host's
+  files over SFTP and SSHFS with the Mounted tab, commands on this computer, reconnecting
+  a dropped session, **Hide input**, snippets and console windows. A table gives the
+  optional programs they use, by Ubuntu package. The developing guide says which packages
+  the full test suite uses and what is skipped without each, the layout pages show every
+  module, and the screenshot shows the server pane's Servers tab.
 - A **Mounted** tab beside the server tree, while anything is mounted with SSHFS in
   `~/mnt`: each mount, by its host's name, to open in the file manager as a folder or over
   SFTP, or to unmount, from its menu, and a double-click opens its folder. The tree has a

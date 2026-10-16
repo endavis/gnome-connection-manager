@@ -21,23 +21,44 @@ gnome-connection-manager/
 ├── .python-version         # Pin Python version (3.12.3)
 ├── .gitignore             # Comprehensive Python gitignore
 ├── dodo.py                # Task runner entry point (doit)
-├── DEVELOPING.md          # Developer guide
+├── AGENTS.md              # Notes for contributors and coding agents, module by module
 ├── src/
 │   └── gnome_connection_manager/
 │       ├── __init__.py           # Package root
 │       ├── __main__.py           # Entry point
 │       ├── main.py               # Application launcher
-│       ├── app.py                # Main application code
+│       ├── app.py                # Main application code: windows, dialogs, consoles
+│       ├── relay.py              # PTY relay for OSC 52 and raw recording, its own process
 │       ├── ui/                   # UI components (future)
-│       └── utils/
-│           └── urlregex.py
+│       └── utils/                # Logic with no widgets in it, tested without a display
+│           ├── activity.py       # When a console busy out of sight has gone quiet
+│           ├── configfile.py     # Reading gcm.conf and an export; what a save keeps
+│           ├── configpaths.py    # Which directory holds gcm.conf
+│           ├── connections.py    # The connection types, one class per kind of host
+│           ├── crypto.py         # Encryption of stored passwords
+│           ├── folders.py        # The folder tree hosts are filed under
+│           ├── hosts.py          # The host record, read from and written to gcm.conf
+│           ├── logpaths.py       # Session log names and layout, and tab labels
+│           ├── osc52.py          # OSC 52 clipboard writes found in a byte stream
+│           ├── placeholders.py   # A host's values filled into a command
+│           ├── remotefiles.py    # A host's files: its sftp:// address, sshfs mounts
+│           ├── shortcuts.py      # Custom keys, font scale, a snippet's key
+│           ├── snippets.py       # The snippet library
+│           ├── transcript.py     # A readable transcript from a raw recording
+│           ├── urlregex.py       # Link and file:line patterns
+│           └── vtehtml.py        # VTE's HTML export, for the buffer viewer
 ├── data/                  # Non-Python assets
 │   ├── ui/
 │   │   └── gnome-connection-manager.glade
 │   ├── scripts/
-│   │   └── ssh.expect
+│   │   ├── ssh.expect     # Types a stored password for ssh, telnet and FreeRDP
+│   │   └── gcm-askpass    # ssh's askpass, for a mount with a stored password
 │   ├── style.css
 │   └── icon.png
+├── docs/                  # The guides, this page, and the decision records
+├── tests/                 # The pytest suite
+├── tools/                 # build_mo.py, generate_doc_toc.py, the doit tasks (GCM's in
+│                          # doit/gcm.py), and the vendored hooks and template tooling
 └── lang/                  # Translations
 ```
 
@@ -123,7 +144,7 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-vte-2.91 expe
 sudo dnf install python3-gobject gtk3 vte291 expect
 ```
 
-**Python:** 3.8+ (3.12.3 recommended)
+**Python:** 3.12+ (3.12.3 recommended)
 
 ### Benefits of New Structure
 

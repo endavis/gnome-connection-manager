@@ -1,8 +1,9 @@
 # Gnome Connection Manager (GCM)
 
-A tabbed SSH, telnet and local-shell manager for GTK 3 desktops. Keep your hosts in a
-folder tree, open them in tabs and split panes, and get sensible terminal behaviour —
-copy and paste that does not fight you, session logging, and shortcuts you can change.
+A tabbed SSH, telnet and local-shell manager for GTK 3 desktops, which keeps remote
+desktops, web consoles and any command line as hosts too. Keep your hosts in a folder
+tree, open them in tabs and split panes, and get sensible terminal behaviour — copy and
+paste that does not fight you, session logging, and shortcuts you can change.
 
 ![The GCM window: a folder tree of hosts on the left, four console tabs on the right](docs/images/screenshot.png)
 
@@ -26,7 +27,15 @@ Requires Python 3.12+ and GTK 3.
 - Passwords stored encrypted, plus private keys, SSH agent forwarding, X11 forwarding,
   compression and a keep-alive interval
 - Port forwarding per host: local forwards and dynamic (SOCKS) forwards, several at a time
-- Cluster mode: type once and send it to every console you have selected
+- An SSH host's files, opened over SFTP in your file manager, or mounted with SSHFS at
+  `~/mnt/<host name>`. A mounted host is ticked in the tree, and a **Mounted** tab beside
+  the tree lists every mount, to open or unmount
+- Commands run on this computer before connecting and after disconnecting, such as a VPN
+  brought up and taken down, with the host's values filled in
+- A dropped session reconnected by itself, a set number of times, when Preferences asks
+  for it
+- Cluster mode: type once and send it to every console you have selected, with **Hide
+  input** for a password
 - Commands sent automatically after login, with a delay syntax, and a checkbox that turns
   them off without discarding them
 
@@ -48,6 +57,10 @@ Requires Python 3.12+ and GTK 3.
   your editor
 - Drop files on a terminal to insert shell-quoted paths
 - Per-terminal font zoom, and tab labels that follow the program's title
+- Snippets: text you keep by name, in folders, typed into a console from a menu, a search
+  as you type, or a key of its own, with the host's values filled in and any value it
+  needs asked for first
+- A console moved to a window of its own, to keep it on another monitor, and back again
 - A tab you are not watching is marked when its output stops, when it rings the bell, or
   when its session ends, so an agent CLI working in another tab shows when it is done
 - Every shortcut configurable, plus custom byte sequences bound to keys of your choice
@@ -58,10 +71,13 @@ Requires Python 3.12+ and GTK 3.
 
 - [Using terminals in GCM](docs/TERMINAL-USAGE.md) — selection when an application has
   taken the mouse, what Copy All copies, pasting, session recording and transcripts, OSC 52,
-  the buffer viewer, tab titles, tabs that need your attention, font zoom, the shortcut
-  table, and what GCM does with a `gcm.conf` it cannot read
+  the buffer viewer, tab titles, consoles in windows of their own, typing into several
+  consoles at once, tabs that need your attention, sessions that end or drop, font zoom,
+  the shortcut table, snippets, and what GCM does with a `gcm.conf` it cannot read
 - [Hosts and folders in GCM](docs/HOSTS-AND-FOLDERS.md) — the server tree: making and moving
-  folders, putting it in the order you want, and what export and import carry
+  folders, putting it in the order you want, and what export and import carry; the host
+  dialog, commands on this computer, RDP, VNC, web and command hosts, and a host's files
+  over SFTP and SSHFS
 - [Developing](docs/DEVELOPING.md) and [Project structure](docs/PROJECT_STRUCTURE.md) — how
   to set up an environment, and what lives where
 - [Architecture decisions](docs/decisions/) — the records behind host ids and the folder tree
@@ -109,6 +125,21 @@ sudo apt install ./gnome-connection-manager_*_all.deb
 | `gir1.2-vte-2.91` | VTE terminal widget |
 | `python3-pyaes` | AES encryption for stored passwords |
 | `expect` | SSH password injection |
+
+### Optional programs
+
+Each is used by one kind of host or one feature, and GCM says what is missing when it is
+needed. Only `gir1.2-gtk-vnc-2.0` is installed with GCM, as a package it recommends, and
+not when apt is set to leave recommendations out.
+
+| Package (Ubuntu 24.04) | For |
+|---|---|
+| `freerdp3-x11` or `freerdp2-x11` | RDP hosts, through `xfreerdp3` or `xfreerdp` |
+| `gir1.2-gtk-vnc-2.0` | VNC hosts drawn in their tab |
+| `tigervnc-viewer` or `xtightvncviewer` | VNC hosts without gtk-vnc, through `xtigervncviewer` or `xtightvncviewer` |
+| `xdg-utils` | Web hosts and links, opened in your browser through `xdg-open` |
+| `sshfs` | **Mount with SSHFS** |
+| `nautilus` and `gvfs-backends`, or another file manager that opens `sftp:` addresses | **Open in File Manager**, and **Open Folder** and **Open over SFTP** in the **Mounted** tab |
 
 ---
 

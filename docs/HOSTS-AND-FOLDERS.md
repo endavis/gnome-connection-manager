@@ -1,6 +1,6 @@
 ---
 title: "Hosts and folders in GCM"
-description: "The server tree: making and moving folders, putting it in the order you want, what export and import carry, remote desktop hosts, and a host's files"
+description: "The server tree: making and moving folders, putting it in the order you want, and what export and import carry; the host dialog, commands on this computer, RDP, VNC, web and command hosts, and a host's files over SFTP and SSHFS"
 audience:
   - gcm-users
 tags:
@@ -14,8 +14,11 @@ tags:
 
 The panel on the left is the server tree: folders, and the hosts filed under them. This
 page covers making folders, moving things between them, putting them in the order you
-want, what a host carries with it when you export or import, hosts that open a remote
-desktop, and opening an SSH host's files.
+want, and what a host carries with it when you export or import. Then the hosts
+themselves: the host dialog, commands a host runs on this computer before connecting and
+after disconnecting, the kinds of host besides a terminal session (RDP and VNC desktops,
+web pages, and command lines of your own), and an SSH host's files, opened over SFTP or
+mounted with SSHFS and listed in the Mounted tab.
 
 Every host lives in a folder. There is no such thing as a host at the top level — a drop
 there is refused — so the first thing a new installation needs is a folder.

@@ -22,12 +22,12 @@ gnome-connection-manager/
 │   ├── __main__.py               # CLI entry point
 │   ├── main.py                   # Application launcher
 │   ├── app.py                    # Main application (legacy code)
+│   ├── relay.py                  # PTY relay for OSC 52 and raw recording
 │   ├── ui/                       # UI components
-│   └── utils/                    # Utility modules
-│       └── urlregex.py          # URL patterns
+│   └── utils/                    # Logic with no widgets in it, a module per concern
 ├── data/                         # Non-code assets
 │   ├── ui/                      # Glade UI files
-│   ├── scripts/                 # Expect scripts
+│   ├── scripts/                 # The Expect script, and ssh's askpass for a mount
 │   └── style.css                # GTK CSS
 ├── lang/                         # Translations
 ├── tests/                        # Test suite
@@ -48,6 +48,11 @@ gnome-connection-manager/
    # Fedora
    sudo dnf install python3-gobject gtk3 vte291 expect
    ```
+
+   The programs some kinds of host and some features use, such as FreeRDP for RDP hosts
+   and `sshfs` for mounting a host's files, are optional. The README's
+   [Optional programs](../README.md#optional-programs) lists them, and
+   [Project structure](PROJECT_STRUCTURE.md) has each module.
 
 2. **uv** (Python package manager):
    ```bash
@@ -144,6 +149,37 @@ Note that WSLg exports `GDK_SCALE=2.25` and both `DISPLAY` and `WAYLAND_DISPLAY`
 private display drops all three: GTK prefers Wayland whenever `WAYLAND_DISPLAY` is set,
 and on X11 `GDK_SCALE` is applied rather than absorbed, which would report a 960x540
 workarea for a 1920x1080 screen.
+
+#### What the full suite needs
+
+CI installs these, beside the GTK packages and Xvfb above, and so runs every test (the
+`SYSTEM_PACKAGES` in `.github/workflows/ci.yml`):
+
+```bash
+sudo apt install gettext libxtst6 \
+    gir1.2-gtk-vnc-2.0 tigervnc-standalone-server tigervnc-tools x11-xserver-utils \
+    sshfs openssh-server
+```
+
+- `libxtst6` gives the tests that move the pointer and type their `libXtst.so.6`.
+- `gettext`'s `msgfmt` is what a translation test checks the fallback compiler against.
+  Without it, that test is skipped.
+- `tests/test_vnc.py` needs gtk-vnc's GObject bindings, TigerVNC's server and tools, and
+  `xsetroot` from `x11-xserver-utils`, and is skipped without them.
+- The mounts in `tests/test_host_files.py` need `sshfs`, FUSE, and an `sshd` with its
+  `sftp-server`, and are skipped without them. The tests run an `sshd` of their own, as
+  you, on 127.0.0.1, and look for it on `PATH`, then in `/usr/sbin` and `/sbin`.
+
+To run the mounts without installing an ssh server, unpack its packages and put them on
+`PATH`. The tests find `sftp-server` beside the `sshd` they run:
+
+```bash
+mkdir -p ~/tmp/sshd && cd ~/tmp/sshd
+apt-get download openssh-server openssh-sftp-server
+for deb in *.deb; do dpkg -x "$deb" root; done
+cd -
+PATH="$HOME/tmp/sshd/root/usr/sbin:$PATH" doit test
+```
 
 ### Building
 
