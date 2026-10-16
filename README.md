@@ -16,7 +16,8 @@ Requires Python 3.12+ and GTK 3.
 **Connections**
 
 - SSH, Telnet and local shell sessions, each in a tab, with horizontal and vertical splits
-- Remote desktops over RDP, through FreeRDP in a window of its own, with the stored
+- Remote desktops over RDP, through FreeRDP in a window of its own or full screen, the
+  desktop resized with the window and scaled for a high-DPI screen, with the stored
   password typed at FreeRDP's prompt
 - Remote desktops over VNC, drawn in the tab by gtk-vnc, or run in a VNC viewer where
   gtk-vnc is not installed
