@@ -78,6 +78,10 @@ Requires Python 3.12+ and GTK 3.
   folders, putting it in the order you want, and what export and import carry; the host
   dialog, commands on this computer, RDP, VNC, web and command hosts, and a host's files
   over SFTP and SSHFS
+- [Running GCM on Windows with WSL](docs/WSL-SETUP.md) — Ubuntu 24.04 under WSL:
+  installing GCM from a clone, a Windows shortcut that starts it, one SSH agent for
+  consoles, mounts and Nautilus through keychain and D-Bus, Nautilus and sshfs, setting
+  the scale by hand on a high-DPI screen, and the faults that are WSLg's
 - [Developing](docs/DEVELOPING.md) and [Project structure](docs/PROJECT_STRUCTURE.md) — how
   to set up an environment, and what lives where
 - [Architecture decisions](docs/decisions/) — the records behind host ids and the folder tree

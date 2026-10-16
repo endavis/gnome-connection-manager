@@ -118,9 +118,10 @@ def pytest_configure(config):
     # WSLg exports both, and GTK prefers Wayland whenever WAYLAND_DISPLAY is set, which
     # would send the windows straight back to the real desktop.
     os.environ.pop("WAYLAND_DISPLAY", None)
-    # WSLg also exports GDK_SCALE=2.25. Wayland reports scale 1 and absorbs it, but on
-    # X11 it is applied, so a 1920x1080 screen reports a 960x540 workarea and the
-    # geometry assertions are measuring a screen that does not exist.
+    # A launcher that scales GCM under WSLg can export GDK_SCALE, and a shell in a GCM
+    # tab inherits it; WSLg itself sets none. Wayland ignores it, but on X11 it is
+    # applied, so a 1920x1080 screen reports a 960x540 workarea and the geometry
+    # assertions are measuring a screen that does not exist.
     os.environ.pop("GDK_SCALE", None)
     os.environ.pop("GDK_DPI_SCALE", None)
 

@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A guide to running GCM on Windows, in Ubuntu under WSL: installing it from a clone, a
+  Windows shortcut that starts it, one SSH agent for consoles, mounts and Nautilus through
+  keychain and D-Bus, Nautilus and sshfs, setting the scale by hand on a high-DPI screen,
+  and the faults that are WSLg's
 - The README lists the features the guides gained since its list was written: a host's
   files over SFTP and SSHFS with the Mounted tab, commands on this computer, reconnecting
   a dropped session, **Hide input**, snippets and console windows. A table gives the
@@ -176,6 +180,8 @@ the git log.
   colours of its own keeps them, and a console keeps its zoom when the font changes
 
 ### Fixed
+- The developing guide said WSLg sets `GDK_SCALE=2.25`. It sets no scale at all: a
+  launcher that scales GCM does, and a shell in one of GCM's tabs inherits it
 - A new tab took the keyboard again 200 ms after it opened, from wherever it had gone by
   then. A tab opened in that time lost it for a moment to the one before it, hidden
   behind it, and a click into another pane in that time was undone. It now takes the
