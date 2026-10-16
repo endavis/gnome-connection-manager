@@ -1356,7 +1356,6 @@ class Notebook:
     def __init__(self):
         self.pages = [Page(True), Page(False)]
         self.current = 0
-        self.tabs = False
 
     def get_nth_page(self, index):
         return self.pages[index]
@@ -1366,12 +1365,6 @@ class Notebook:
 
     def set_current_page(self, index):
         self.current = index
-
-    def get_show_tabs(self):
-        return self.tabs
-
-    def set_show_tabs(self, show):
-        self.tabs = show
 
 
 class TabLabel:
@@ -1436,17 +1429,7 @@ def test_the_mounted_tab_fakes_match_real_gtk():
         (Selection, Gtk.TreeSelection, ("select_path",)),
         (MountsTree, Gtk.TreeView, ("get_model", "get_selection", "get_path_at_pos")),
         (Page, Gtk.ScrolledWindow, ("show", "hide")),
-        (
-            Notebook,
-            Gtk.Notebook,
-            (
-                "get_nth_page",
-                "get_current_page",
-                "set_current_page",
-                "get_show_tabs",
-                "set_show_tabs",
-            ),
-        ),
+        (Notebook, Gtk.Notebook, ("get_nth_page", "get_current_page", "set_current_page")),
         (TabLabel, Gtk.Label, ("set_text",)),
         (Sensitive, Gtk.MenuItem, ("set_sensitive",)),
         (MountsMenu, Gtk.Menu, ("popup_at_pointer",)),
@@ -1492,7 +1475,7 @@ def test_the_mounted_tab_lists_each_mount_by_its_hosts_name(app_module, monkeypa
         ("lab_box", str(mnt("lab_box")), "~/mnt/lab_box\nnetops@lab.example:"),
     ]
     notebook = wmain.nbServers
-    assert notebook.tabs and notebook.pages[1].visible and notebook.current == 0
+    assert notebook.pages[1].visible and notebook.current == 0
     assert wmain.lblMountsTab.text == "Mounted (3)"
 
 
@@ -1509,27 +1492,27 @@ def test_a_tooltip_is_escaped_as_markup(app_module, monkeypatch):
     ]
 
 
-def test_with_nothing_mounted_the_pane_is_the_tree_alone(app_module, monkeypatch):
-    """No tabs, as before there was a Mounted tab. And once the last mount ends with the
-    Mounted tab showing, the tree is shown: never a tab no longer there."""
+def test_with_nothing_mounted_there_is_no_mounted_tab(app_module, monkeypatch):
+    """The Servers tab alone. And once the last mount ends with the Mounted tab showing,
+    the tree is shown: never a tab no longer there."""
     router = make_host(app_module)
     wmain = with_mounted_tab(app_module, monkeypatch, [router])
     notebook = wmain.nbServers
 
     wmain.show_mounts()
     assert wmain.treeMounts.store.rows == []
-    assert not notebook.tabs and not notebook.pages[1].visible and notebook.current == 0
+    assert not notebook.pages[1].visible and notebook.current == 0
 
     mount_table(app_module, monkeypatch, mounted_line(router_folder()))
     wmain.show_mounts()
-    assert notebook.tabs and notebook.pages[1].visible
+    assert notebook.pages[1].visible
     assert wmain.lblMountsTab.text == "Mounted (1)"
     notebook.set_current_page(1)
 
     mount_table(app_module, monkeypatch)
     wmain.show_mounts()
     assert wmain.treeMounts.store.rows == []
-    assert not notebook.tabs and not notebook.pages[1].visible and notebook.current == 0
+    assert not notebook.pages[1].visible and notebook.current == 0
 
 
 def test_the_mounted_tab_is_rebuilt_only_when_what_is_mounted_changes(app_module, monkeypatch):
@@ -2090,20 +2073,26 @@ elif scenario == "the-mounted-tab":
     notebook, menu = w.nbServers, w.popupMenuMounts
     servers_tab, mounted_tab = w.get_widget("lblServersTab"), w.lblMountsTab
 
-    def below_the_top(widget):
-        """How far `widget` is drawn below the top of the server pane."""
-        return widget.translate_coordinates(notebook, 0, 0)[-1]
+    def first_row():
+        """How far the tree's first row is drawn below the top of the server pane."""
+        tree = w.treeServers
+        area = tree.get_cell_area(Gtk.TreePath.new_first(), tree.get_column(0))
+        top = tree.translate_coordinates(notebook, 0, 0)[-1]
+        return top + tree.get_bin_window().get_position()[-1] + area.y
 
     def drawn_tab(tab):
-        """Whether a tab's label is drawn. Measured, with the tabs hidden from the start, GTK
-        maps the labels, 1 pixel square, outside the window."""
+        """Whether a tab's label is drawn."""
         return tab.get_mapped() and tab.get_allocated_width() > 1
 
-    # Nothing mounted: the pane is the tree alone, with no tabs, as before the Mounted tab.
-    assert not notebook.get_show_tabs()
-    assert not drawn_tab(servers_tab) and not drawn_tab(mounted_tab)
-    alone = below_the_top(w.treeServers)
-    assert alone < 5, alone
+    # Nothing mounted: the Servers tab alone, which names the pane in place of the tree's
+    # header, and the tree straight below it.
+    assert drawn_tab(servers_tab) and not drawn_tab(mounted_tab)
+    assert servers_tab.get_text() == "Servers"
+    assert not w.treeServers.get_headers_visible()
+    tab_end = servers_tab.translate_coordinates(notebook, 0, 0)[-1]
+    tab_end += servers_tab.get_allocated_height()
+    row = first_row()
+    assert tab_end < row < tab_end + 20, (tab_end, row)
 
     opened, unmounted, everything = [], [], []
     app.open_in_file_manager = opened.append
@@ -2116,7 +2105,7 @@ elif scenario == "the-mounted-tab":
         f"301 1 0:91 / {other} rw - fuse.sshfs ops@gone.example: rw\n"
     )
 
-    # Something mounted: a tab for the tree, and one listing the mounts, drawn above it.
+    # Something mounted: a tab listing the mounts beside it, and the tree where it was.
     app.read_mount_table = lambda: table
     w.show_mounts()
     assert until(lambda: drawn_tab(mounted_tab)), "the Mounted tab was not drawn"
@@ -2124,7 +2113,7 @@ elif scenario == "the-mounted-tab":
     assert drawn_tab(servers_tab) and notebook.get_current_page() == 0
     assert (servers_tab.get_text(), mounted_tab.get_text()) == ("Servers", "Mounted (2)")
     assert not any(tab.get_layout().is_ellipsized() for tab in (servers_tab, mounted_tab))
-    assert below_the_top(w.treeServers) > alone + 20, below_the_top(w.treeServers)
+    assert first_row() == row, (first_row(), row)
 
     click(1, *widget_point(mounted_tab))
     assert until(lambda: notebook.get_current_page() == 1), "the Mounted tab was not chosen"
@@ -2257,14 +2246,13 @@ elif scenario == "the-mounted-tab":
     w.hpMain.set_position(300)
     pump(0.6)
 
-    # The last mount ended with the list showing: the tree again, alone.
+    # The last mount ended with the list showing: the tree again, its tab alone.
     app.read_mount_table = lambda: ""
     w.show_mounts()
     assert until(lambda: not drawn_tab(mounted_tab)), "the Mounted tab stayed"
     pump(0.3)
     assert notebook.get_current_page() == 0 and w.treeServers.get_mapped()
-    assert not notebook.get_show_tabs() and not drawn_tab(servers_tab)
-    assert below_the_top(w.treeServers) == alone, below_the_top(w.treeServers)
+    assert drawn_tab(servers_tab) and first_row() == row, first_row()
 
     # The server pane is no pane of consoles. The keyboard in it, given by a click, leaves
     # new tabs to the consoles, and Split, Unsplit and a console window pass it over.
@@ -2494,20 +2482,23 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         def in_the_tab():
             return [tuple(row)[:2] for row in w.treeMounts.get_model()]
 
-        assert in_the_tab() == [] and not w.nbServers.get_show_tabs()
+        def the_tab_shown():
+            return w.nbServers.get_nth_page(1).get_visible()
+
+        assert in_the_tab() == [] and not the_tab_shown()
         subprocess.run(by_hand, check=True, timeout=30)
         assert until(lambda: marked() == str(folder)), marked()
         assert until(lambda: listed() == ["Unmount probe box from ~/mnt/probe box"]), listed()
         assert w.host_items[box].get_label() == "✓ probe box", w.host_items[box].get_label()
         # And the server pane's Mounted tab (#269).
         assert until(lambda: in_the_tab() == [("probe box", str(folder))]), in_the_tab()
-        assert w.nbServers.get_show_tabs() and w.lblMountsTab.get_text() == "Mounted (1)"
+        assert the_tab_shown() and w.lblMountsTab.get_text() == "Mounted (1)"
         subprocess.run([app.fusermount(), "-u", str(folder)], check=True, timeout=30)
         assert until(lambda: marked() == ""), marked()
         assert until(lambda: listed() == ["Nothing is mounted"]), listed()
         assert w.host_items[box].get_label() == "probe box", w.host_items[box].get_label()
         assert until(lambda: in_the_tab() == []), in_the_tab()
-        assert not w.nbServers.get_show_tabs()
+        assert not the_tab_shown()
         folder.rmdir()
 
         # Renamed while mounted: found where its old name put it, and unmounted from there.

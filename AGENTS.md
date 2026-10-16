@@ -229,9 +229,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   which a name wider than the tree puts out of sight, measured. The list's empty line is
   given Unmount All, disabled then, since GTK draws an item with no action as one to
   choose, measured. Pure: the programs found and the mount table are arguments.
-  The server pane is the notebook `nbServers` (#269): the tree, and a Mounted tab that
-  `list_mounts` fills through `fill_mounts_page`, its tabs shown only while anything is
-  mounted, so with nothing mounted the window draws as it did, every pixel, measured. Its
+  The server pane is the notebook `nbServers` (#269): the tree's tab, Servers, and a
+  Mounted tab that `list_mounts` fills through `fill_mounts_page`, shown only while
+  anything is mounted. The Servers tab is always there, and names the pane where the
+  tree's header did, which the glade hides: measured, with the header kept and the tabs
+  shown only while mounted, the tree's first row dropped from 27 pixels below the pane's
+  top to 64 at each mount, where now it stays at 39. The Mounted tab's
   menu, `popupMenuMounts`, acts on the folder `mount_menu_folder` holds, and Open over
   SFTP finds the host there through `mounted_host`, again each time, as Edit Host makes a
   new `Host`. Open Folder hands `open_in_file_manager` a `file://` address, and measured,

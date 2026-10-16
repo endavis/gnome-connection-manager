@@ -2358,7 +2358,6 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkNotebook" id="nbServers">
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
-                <property name="show-tabs">False</property>
                 <property name="show-border">False</property>
                 <style>
                   <class name="server-pane"/>
@@ -2372,6 +2371,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                       <object class="GtkTreeView" id="treeServers">
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
+                        <property name="headers-visible">False</property>
                         <signal name="button-press-event" handler="on_tvServers_button_press_event" swapped="no"/>
                         <signal name="row-activated" handler="on_tvServers_row_activated" swapped="no"/>
                         <signal name="row-collapsed" handler="on_tvServers_row_collapsed" swapped="no"/>

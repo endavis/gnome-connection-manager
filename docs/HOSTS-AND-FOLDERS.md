@@ -355,13 +355,12 @@ it a second time. It finds it by the host's user and address, which is all the l
 mounts records, so of two hosts with the same user and address, on different ports, each
 is found only where its own name puts it.
 
-**The Mounted tab.** While anything is mounted with SSHFS in `~/mnt`, the server pane has
-two tabs: **Servers**, the tree, and **Mounted**, with how many mounts there are, as
-**Mounted (2)**. With nothing mounted, the pane is the tree alone, with no tabs, and when
-the last mount ends with the Mounted tab showing, the pane goes back to the tree. The tab
-lists the mounts as Servers ▸ Mounted does, and follows them as it does. A mount's tooltip
-says where it is and what is mounted there. Double-click a mount to open its folder, or
-right-click it for:
+**The Mounted tab.** The tree is the server pane's **Servers** tab, and while anything is
+mounted with SSHFS in `~/mnt`, a second tab, **Mounted**, sits beside it, with how many
+mounts there are, as **Mounted (2)**. When the last mount ends with the Mounted tab
+showing, the pane goes back to the tree. The tab lists the mounts as Servers ▸ Mounted
+does, and follows them as it does. A mount's tooltip says where it is and what is mounted
+there. Double-click a mount to open its folder, or right-click it for:
 
 - **Open Folder**: the mount's folder in `~/mnt`, in the file manager Open in File
   Manager uses, to which it is a folder like any other.

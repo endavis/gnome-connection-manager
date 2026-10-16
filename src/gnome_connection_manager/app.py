@@ -2243,9 +2243,10 @@ class Wmain(GladeComponent):
         self.wMainWindow = self.builder.get_object("wMain")
         self.nbConsole = self.get_widget("nbConsole")
         self.treeServers = self.get_widget("treeServers")
-        # The server pane is a notebook: the tree, and beside it, while anything is mounted,
-        # a tab listing the mounts (#269). It is no console pane, so the code that looks
-        # for those looks right of it, in console_side.
+        # The server pane is a notebook: the tree's tab, Servers, which names the pane in
+        # place of the tree's header, and beside it, while anything is mounted, a tab
+        # listing the mounts (#269). It is no console pane, so the code that looks for
+        # those looks right of it, in console_side.
         self.nbServers = self.get_widget("nbServers")
         self.treeMounts = self.get_widget("treeMounts")
         self.lblMountsTab = self.get_widget("lblMountsTab")
@@ -5495,9 +5496,9 @@ class Wmain(GladeComponent):
         application.lookup_action("unmount-all").set_enabled(bool(listed))
 
     def fill_mounts_page(self, listed, mounts):
-        """The Mounted tab's rows, from `listed`, and its tabs: shown only while something
-        is mounted, so that with nothing mounted the pane is the tree alone, as it was.
-        Back to the tree, so that the pane is never left on a tab no longer shown."""
+        """The Mounted tab's rows, from `listed`, and the tab itself, shown only while
+        something is mounted. Back to the tree as it goes, so that the pane is never left
+        on a tab no longer shown."""
         notebook = getattr(self, "nbServers", None)
         if notebook is None:
             return
@@ -5513,7 +5514,6 @@ class Wmain(GladeComponent):
         else:
             notebook.set_current_page(0)
             page.hide()
-        notebook.set_show_tabs(bool(listed))
 
     def mounted_host(self, folder):
         """The host whose mount the Mounted tab lists at `folder`, or None for a mount that
