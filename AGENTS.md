@@ -127,7 +127,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   host did until `addTab` made its terminal last. The registry scenarios fail on a GLib
   critical since, and not on a warning: on CI, GTK warns that it has no accessibility
   bus and no icon theme.
-  A type's own settings are the `Setting`s in its `settings`, each a flag or text. The
+  A type's own settings are the `Setting`s in its `settings`, each a flag, a choice or
+  text. A choice has `choices`, each a value and its label, drawn as a combo box, and a
+  value it does not offer reads as its default (#278). The
   host dialog draws them on a page titled `settings_title`, which
   `Whost.build_type_pages` places after Port forwarding and `on_cmbType_changed` shows
   only while that type is chosen. A host keeps them in `Host.type_settings`, by the name
@@ -150,6 +152,22 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `on_terminal_keypress` read. Nothing is typed at a command host's prompts.
   `tests/test_connections.py` gives a type of its own settings, as
   `tests/test_tab_pages.py` opens a page of its own.
+  RDP's settings (#278) are how FreeRDP shows the desktop: Display, Resize with the
+  window, on by default, Size and Desktop scale. `rdp_arguments` gives FreeRDP an option
+  for each, `/f`, `/f /multimon`, `/dynamic-resolution`, `/size:` in a window only and
+  `/scale-desktop:`, before the extra arguments. `rdp_size` and `rdp_scale` hold a value
+  to what FreeRDP 3.32.1 takes, measured at each edge: a side from 200 to 32766, a share
+  from 1% to 100%, a scale from 100 to 500. FreeRDP refuses `/dynamic-resolution`
+  beside smart sizing, exit 22, so `asks_for_smart_sizing` leaves it out for extra
+  arguments that ask for that. These were measured against `freerdp-shadow-cli3`,
+  unpacked from Ubuntu's packages and serving one Xvfb to a client on another. Its
+  desktop keeps its own size, so neither a resize nor the scale could be seen to take.
+  Under `/sec:rdp` the client's MCS Connect Initial is not encrypted, and decoded
+  through a relay it carried `/scale-desktop:`'s value in its core data as given.
+  FreeRDP's own log line for its monitor swaps the desktop and device scales. So does
+  the monitor `freerdp_settings_enforce_monitor_exists` builds, which reaches a server
+  only in a session with more than one monitor. Its log also names blocks 0xC006 and
+  0xC00A `CS_MONITOR` and `CS_MONITOR_EX`, which they are not.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the

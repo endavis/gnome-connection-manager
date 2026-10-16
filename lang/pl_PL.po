@@ -1907,3 +1907,36 @@ msgstr "SSH"
 
 msgid "Terminal"
 msgstr "Terminal"
+
+msgid "RDP"
+msgstr "RDP"
+
+msgid "Display"
+msgstr "Wyświetlanie"
+
+msgid "In a window"
+msgstr "W oknie"
+
+msgid "Full screen"
+msgstr "Pełny ekran"
+
+msgid "Full screen on all monitors"
+msgstr "Pełny ekran na wszystkich monitorach"
+
+msgid "Resize with the window"
+msgstr "Zmieniaj rozmiar razem z oknem"
+
+msgid "Size"
+msgstr "Rozmiar"
+
+msgid "Desktop scale"
+msgstr "Skalowanie pulpitu"
+
+msgid "Size is a width and height, such as 1920x1080, or a share of the screen, such as 80%, and applies in a window. Desktop scale draws the remote desktop's text and icons larger, as a percentage from 100 to 500. Left empty, FreeRDP and the server choose."
+msgstr "Rozmiar to szerokość i wysokość, np. 1920x1080, lub część ekranu, np. 80%, i dotyczy okna. Skalowanie pulpitu powiększa tekst i ikony zdalnego pulpitu, jako procent od 100 do 500. Puste pole pozostawia wybór FreeRDP i serwerowi."
+
+msgid "The size is a width and height from 200 to 32766, such as 1920x1080, or a share of the screen from 1% to 100%, such as 80%."
+msgstr "Rozmiar to szerokość i wysokość od 200 do 32766, np. 1920x1080, lub część ekranu od 1% do 100%, np. 80%."
+
+msgid "The desktop scale is a percentage from 100 to 500, such as 150."
+msgstr "Skalowanie pulpitu to procent od 100 do 500, np. 150."

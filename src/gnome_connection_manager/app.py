@@ -6717,6 +6717,11 @@ class Whost(GladeComponent):
                 # what a stored one has.
                 if setting.is_flag:
                     control = Gtk.CheckButton(active=setting.default)
+                elif setting.is_choice:
+                    control = Gtk.ComboBoxText(hexpand=True)
+                    for value, label in setting.choices:
+                        control.append(value, _(label))
+                    control.set_active_id(setting.default)
                 else:
                     control = Gtk.Entry(text=setting.default, hexpand=True)
                 control.set_margin_start(10)
@@ -6742,25 +6747,33 @@ class Whost(GladeComponent):
     def fill_type_pages(self, host):
         """Each type's page from what `host` stored, or the defaults."""
         for type_id, (_page, controls) in self.type_pages.items():
-            for key, value in connections.named(type_id).settings_of(host).items():
-                if isinstance(value, bool):
-                    controls[key].set_active(value)
+            kind = connections.named(type_id)
+            values = kind.settings_of(host)
+            for setting in kind.settings:
+                value, control = values[setting.key], controls[setting.key]
+                if setting.is_flag:
+                    control.set_active(value)
+                elif setting.is_choice:
+                    control.set_active_id(value)
                 else:
-                    controls[key].set_text(value)
+                    control.set_text(value)
 
     def type_page_values(self, kind):
-        """What the page of `kind` holds, by setting key. Nothing for a type without one."""
+        """What the page of `kind` holds, by setting key: every one of its settings, which
+        `invalid` and `stored_settings` read. Its defaults where no page was built."""
         if kind.id not in self.type_pages:
-            return {}
+            return {setting.key: setting.default for setting in kind.settings}
         _page, controls = self.type_pages[kind.id]
-        return {
-            setting.key: (
-                controls[setting.key].get_active()
-                if setting.is_flag
-                else controls[setting.key].get_text().strip()
-            )
-            for setting in kind.settings
-        }
+        values = {}
+        for setting in kind.settings:
+            control = controls[setting.key]
+            if setting.is_flag:
+                values[setting.key] = control.get_active()
+            elif setting.is_choice:
+                values[setting.key] = control.get_active_id()
+            else:
+                values[setting.key] = control.get_text().strip()
+        return values
 
     def init(self, group, host=None):
         self.cmbGroup.get_children()[0].set_text(group)
