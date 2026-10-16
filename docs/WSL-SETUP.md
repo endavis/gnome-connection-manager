@@ -22,10 +22,13 @@ This guide sets that up on a new Ubuntu:
 - Nautilus and sshfs, for a host's files.
 - The scale a high-DPI screen needs when WSLg does not give it.
 
-Every command here was run on Windows 11 (build 26200) with WSL 2.7.13.0, WSLg 1.0.73.2
-and Ubuntu 24.04.4 LTS. `wsl --list --online` also offers Ubuntu 26.04. The steps should be
-the same there, with the one difference [Installing GCM](#installing-gcm) describes, but GCM
-has not been tried on it.
+It was measured on Windows 11 (build 26200) with WSL 2.7.13.0, WSLg 1.0.73.2 and Ubuntu
+24.04.4 LTS. A step that would have changed that machine was run with a scratch home, a
+settings store of its own or a Windows temp folder instead, and a step that was not run at
+all says so.
+`wsl --list --online` also offers Ubuntu 26.04. The steps should be the same there, with
+the one difference [Installing GCM](#installing-gcm) describes, but GCM has not been tried
+on it.
 
 ## Before you start
 
@@ -51,6 +54,9 @@ again, as that documentation describes:
 systemd=true
 ```
 
+The Ubuntu this guide was measured on ran systemd already, so these steps were not run for
+it.
+
 Each `apt install` below names every package it needs, including some that the program
 using them only recommends. apt leaves a recommended package out when it is set to skip
 recommendations, so install them by name even where apt would have added them.
@@ -63,8 +69,10 @@ sudo apt install git curl python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-vte-
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-The installer puts `uv` in `~/.local/bin`. Open a new terminal so that it is on `PATH`,
-then:
+The installer puts `uv` in `~/.local/bin`, and adds a line to `~/.profile` and to
+`~/.bashrc` that puts that folder on `PATH`. Open a new terminal so that the line takes
+effect. Measured with a scratch home: a new terminal found `uv`, and so did a login shell,
+which is what a shortcut starts. Then:
 
 ```bash
 git clone https://github.com/endavis/gnome-connection-manager.git ~/src/gnome-connection-manager
@@ -227,6 +235,10 @@ cp /mnt/c/Users/<windows user>/.ssh/id_ed25519 ~/.ssh/
 chmod 600 ~/.ssh/id_ed25519
 ```
 
+Measured with a key placed in a Windows folder by Windows: it was copied in as 0744,
+readable by others, and `ssh-keygen` refused it as too open. After `chmod 600` it read
+the key.
+
 ## Opening a host's files in Nautilus
 
 **Open in File Manager** needs a file manager, and so do **Open Folder** and **Open over
@@ -341,9 +353,11 @@ Nautilus both. It is kept from one session to the next:
 gsettings set org.gnome.desktop.interface text-scaling-factor 2.25
 ```
 
-Measured on Wayland, for GTK 3 and for GTK 4, it gave the same 216 dots per inch and
-46-pixel line as `GDK_DPI_SCALE=2.25`. Restart GCM and Nautilus after changing it.
-`gsettings reset org.gnome.desktop.interface text-scaling-factor` undoes it.
+Measured on Wayland, in a settings store of its own so that nothing else changed: for GTK 3
+and for GTK 4, it gave the same 216 dots per inch and 46-pixel line as `GDK_DPI_SCALE=2.25`.
+Restart GCM and Nautilus after changing it.
+`gsettings reset org.gnome.desktop.interface text-scaling-factor` undoes it, and in that
+store it brought the factor back to 1.0.
 
 **Use one or the other, not both.** They multiply: with both at 2.25, GTK's resolution went
 to 486 dots per inch and a console's cell to 41×79 pixels.
@@ -403,8 +417,11 @@ In WSL those keep GNOME's defaults until you change them.
 
 - **The font.** GNOME's default interface font is Cantarell 11, which may not be installed.
   Here it was not, and `fc-match Cantarell` named Noto Sans, the font that stands in for it.
-  `sudo apt install fonts-cantarell` installs it. To choose another font, use
-  `gsettings set org.gnome.desktop.interface font-name '<font> <size>'`.
+  `sudo apt install fonts-cantarell` installs it. That was measured without installing
+  anything: with the package's fonts unpacked into a scratch home, `fc-match Cantarell`
+  named Cantarell. To choose another font, use
+  `gsettings set org.gnome.desktop.interface font-name '<font> <size>'`. Set to
+  `'Noto Sans 12'` in a settings store of its own, it was the font GTK took on Wayland.
 
 ## The clipboard and notifications
 
