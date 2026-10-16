@@ -445,12 +445,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 ## Documentation
 - `docs/TERMINAL-USAGE.md` – user-facing, everything inside a tab: selection and what a
   word is, copy when nothing is selected, pasting, session logs and raw recording, OSC 52,
-  the buffer viewer, tab titles, the bell, font zoom, the shortcut table, a host's first
-  connection, and what GCM does with a `gcm.conf` it cannot read.
+  the buffer viewer, tab titles, consoles in windows of their own, the cluster window, the
+  bell and a tab's other marks, a session that ends or drops, font zoom, the shortcut
+  table, snippets, a host's first connection, and what GCM does with a `gcm.conf` it
+  cannot read.
 - `docs/HOSTS-AND-FOLDERS.md` – user-facing, everything in the server tree: making,
   renaming and deleting folders, what a drop does where, the order a folder keeps, host
-  ids, and export/import. Written because the only account of folders was `docs/SPEC.md`,
-  which specifies a Qt port that is not being built (#193).
+  ids, and export/import; then the host dialog, commands on this computer, each
+  connection type besides SSH and Telnet, and a host's files over SFTP and SSHFS, with the
+  Mounted tab. Written because the only account of folders was `docs/SPEC.md`, which
+  specifies a Qt port that is not being built (#193).
 - Every setting Preferences draws a control for must be named in one of those two, by its
   `gcm.conf` key or by its label. `tests/test_docs.py` enforces both directions now:
   guide to code, and code to guide against `UNDOCUMENTED_SETTINGS`, whose entries each

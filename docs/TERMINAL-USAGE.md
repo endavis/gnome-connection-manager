@@ -1,6 +1,6 @@
 ---
 title: "Using terminals in GCM"
-description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, consoles in windows of their own, tabs that need your attention, font zoom, the shortcut table, a host's first connection, and what GCM does with a gcm.conf it cannot read"
+description: "Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, consoles in windows of their own, typing into several consoles at once, tabs that need your attention, sessions that end or drop, font zoom, the shortcut table, snippets, a host's first connection, and what GCM does with a gcm.conf it cannot read"
 audience:
   - gcm-users
 tags:
@@ -16,7 +16,10 @@ tags:
 Copy, paste, selection and scrollback behave differently depending on what is running
 inside the tab. Most of what looks like broken copy/paste is a full-screen application
 holding the mouse, or the alternate screen having no scrollback of its own. This page
-covers both, plus the shortcut table and how to change it.
+covers both, and the rest of what happens in a tab: recording it, finding a console and
+moving it to a window of its own, typing into several consoles at once, what happens when
+a session ends or its connection drops, the shortcut table and how to change it, and
+snippets.
 
 `gcm.conf` is in `~/.config/gcm/` — or wherever `$XDG_CONFIG_HOME` points — on a new
 installation. One that already had `~/.gcm/` from an older version goes on using it, in
