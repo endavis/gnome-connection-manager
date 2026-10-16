@@ -3,19 +3,32 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest import mock
 
 import pytest
 
 from gnome_connection_manager import main as gcm_main
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+PATH_VARIABLES = ("GCM_DATA_DIR", "GCM_GLADE_DIR", "GCM_SCRIPTS_DIR")
+
 
 @pytest.fixture(autouse=True)
-def clear_gcm_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure each test starts with a clean environment."""
-    for key in ("GCM_DATA_DIR", "GCM_GLADE_DIR", "GCM_SCRIPTS_DIR"):
-        monkeypatch.delenv(key, raising=False)
+def clear_gcm_env() -> Iterator[None]:
+    """Start each test without the path variables, and put the environment back
+    afterwards as it was. `monkeypatch.delenv` records nothing for a variable that is not
+    set, so the values `main.run` sets outlived the test, and every later test on the
+    same worker read GCM's data from /usr/share (#281)."""
+    with mock.patch.dict(os.environ):
+        for key in PATH_VARIABLES:
+            os.environ.pop(key, None)
+        yield
 
 
 @pytest.fixture
@@ -81,3 +94,57 @@ def test_run_respects_preconfigured_environment(
     assert os.environ["GCM_GLADE_DIR"] == "/tmp/custom-ui"
     assert os.environ["GCM_SCRIPTS_DIR"] == "/tmp/custom-scripts"
     assert dummy_app["count"] == 1
+
+
+def test_these_tests_leave_the_environment_as_they_found_it(tmp_path: Path) -> None:
+    """Which test runs after these is xdist's choice, so they run in a pytest of their
+    own, followed by one that reads what they left: a variable that was not set must
+    still not be, and one that was must keep its value (#281)."""
+    probe = tmp_path / "test_left_behind.py"
+    expected = {"GCM_DATA_DIR": None, "GCM_GLADE_DIR": None, "GCM_SCRIPTS_DIR": "/before"}
+    probe.write_text(
+        "import os\n\n\n"
+        "def test_left_behind():\n"
+        f"    assert {{key: os.environ.get(key) for key in {PATH_VARIABLES!r}}} == {expected!r}\n"
+    )
+    root = Path(__file__).resolve().parent.parent
+    tests = [
+        f"{__file__}::{name}"
+        for name in (
+            "test_run_sets_default_paths",
+            "test_run_falls_back_to_installed_paths",
+            "test_run_respects_preconfigured_environment",
+        )
+    ]
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in PATH_VARIABLES and not key.startswith("PYTEST_")
+    }
+    env["GCM_SCRIPTS_DIR"] = "/before"
+    # These tests open no window, so the run needs no Xvfb of its own.
+    env["GCM_TEST_REAL_DISPLAY"] = "1"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "--no-cov",
+            "--rootdir",
+            str(root),
+            "-c",
+            str(root / "pyproject.toml"),
+            *tests,
+            str(probe),
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
+    assert "4 passed" in result.stdout, result.stdout[-3000:]
