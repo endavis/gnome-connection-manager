@@ -478,6 +478,23 @@ def test_with_no_file_manager_at_all_it_says_so_and_opens_nothing(app_module, mo
     assert shown[0].startswith("No file manager was found to open sftp://eric@files.example/.")
 
 
+def test_with_no_file_manager_a_folder_is_named_by_its_path(app_module, monkeypatch):
+    """Not as the host's address is, with mounting it as the way round: it is mounted."""
+    _asked, shown, ran = file_managers(app_module, monkeypatch)
+    folders = types.SimpleNamespace(
+        new_for_uri=lambda uri: types.SimpleNamespace(get_path=lambda: "/home/x/mnt/R D")
+    )
+    monkeypatch.setattr(app_module.Gio, "File", folders)
+
+    app_module.open_in_file_manager("file:///home/x/mnt/R%20D")
+
+    assert ran == []
+    assert shown == [
+        "No file manager was found to open /home/x/mnt/R D. Install one, such as Files"
+        " (nautilus), Nemo, Thunar or Dolphin."
+    ]
+
+
 # -- Mount with SSHFS, and Unmount SSHFS --------------------------------------------------
 
 
@@ -1268,6 +1285,431 @@ def test_mount_changes_are_followed_as_the_mount_table_reports_them(app_module, 
     assert wmain.refreshes == 1
 
 
+# -- the server pane's Mounted tab (#269) -------------------------------------------------
+
+
+class Store:
+    """Gtk.ListStore, as the Mounted tab keeps its rows: name, folder, tooltip."""
+
+    def __init__(self):
+        self.rows: list = []
+        self.emptied = 0
+
+    def clear(self):
+        self.rows.clear()
+        self.emptied += 1
+
+    def append(self, row):
+        self.rows.append(tuple(row))
+
+    def get_iter(self, path):
+        return path[0]
+
+    def get_value(self, iter_, column):
+        return self.rows[iter_][column]
+
+
+class Selection:
+    """Gtk.TreeSelection, as a right-click selects the row under it."""
+
+    def __init__(self):
+        self.selected = None
+
+    def select_path(self, path):
+        self.selected = path
+
+
+class MountsTree:
+    """The Mounted tab's Gtk.TreeView, its rows 10 pixels tall."""
+
+    def __init__(self):
+        self.store = Store()
+        self.selection = Selection()
+
+    def get_model(self):
+        return self.store
+
+    def get_selection(self):
+        return self.selection
+
+    def get_path_at_pos(self, x, y):
+        row = int(y) // 10
+        return ((row,), None, x, y % 10) if row < len(self.store.rows) else None
+
+
+class Page:
+    """A page of the server pane's notebook, a Gtk.ScrolledWindow."""
+
+    def __init__(self, visible):
+        self.visible = visible
+
+    def show(self):
+        self.visible = True
+
+    def hide(self):
+        self.visible = False
+
+
+class Notebook:
+    """The server pane's Gtk.Notebook: Servers, and Mounted, hidden as built."""
+
+    def __init__(self):
+        self.pages = [Page(True), Page(False)]
+        self.current = 0
+        self.tabs = False
+
+    def get_nth_page(self, index):
+        return self.pages[index]
+
+    def get_current_page(self):
+        return self.current
+
+    def set_current_page(self, index):
+        self.current = index
+
+    def get_show_tabs(self):
+        return self.tabs
+
+    def set_show_tabs(self, show):
+        self.tabs = show
+
+
+class TabLabel:
+    """The Mounted tab's Gtk.Label."""
+
+    def __init__(self):
+        self.text = "Mounted"
+
+    def set_text(self, text):
+        self.text = text
+
+
+class Sensitive:
+    """A Gtk.MenuItem of the Mounted tab's menu, as it is greyed."""
+
+    def __init__(self):
+        self.sensitive = True
+
+    def set_sensitive(self, sensitive):
+        self.sensitive = sensitive
+
+
+class MountsMenu:
+    """The Mounted tab's Gtk.Menu, as a right-click opens it."""
+
+    def __init__(self):
+        self.mnuOpenFolder, self.mnuOpenSftp = Sensitive(), Sensitive()
+        self.mnuUnmount, self.mnuUnmountAll = Sensitive(), Sensitive()
+        self.opened: list = []
+
+    def popup_at_pointer(self, event):
+        self.opened.append(event)
+
+    def offered(self):
+        """Whether each of Open Folder, Open over SFTP, Unmount and Unmount All can be
+        chosen."""
+        items = (self.mnuOpenFolder, self.mnuOpenSftp, self.mnuUnmount, self.mnuUnmountAll)
+        return tuple(item.sensitive for item in items)
+
+
+class Divider:
+    """hpMain, the Gtk.Paned between the server pane and the consoles."""
+
+    def __init__(self, position=300):
+        self.handle = object()
+        self.position = position
+
+    def get_handle_window(self):
+        return self.handle
+
+    def get_position(self):
+        return self.position
+
+
+def test_the_mounted_tab_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for fake, real, names in (
+        (Store, Gtk.ListStore, ("clear", "append", "get_iter", "get_value")),
+        (Selection, Gtk.TreeSelection, ("select_path",)),
+        (MountsTree, Gtk.TreeView, ("get_model", "get_selection", "get_path_at_pos")),
+        (Page, Gtk.ScrolledWindow, ("show", "hide")),
+        (
+            Notebook,
+            Gtk.Notebook,
+            (
+                "get_nth_page",
+                "get_current_page",
+                "set_current_page",
+                "get_show_tabs",
+                "set_show_tabs",
+            ),
+        ),
+        (TabLabel, Gtk.Label, ("set_text",)),
+        (Sensitive, Gtk.MenuItem, ("set_sensitive",)),
+        (MountsMenu, Gtk.Menu, ("popup_at_pointer",)),
+        (Divider, Gtk.Paned, ("get_handle_window", "get_position")),
+    ):
+        for name in names:
+            assert hasattr(fake, name), f"{fake.__name__} is missing {name}"
+            assert hasattr(real, name), f"{real.__name__} has no {name}"
+
+
+def with_mounted_tab(app_module, monkeypatch, hosts, *lines):
+    """with_mounts, and the server pane as a notebook, its Mounted tab and that tab's menu."""
+    wmain = with_mounts(app_module, monkeypatch, hosts, *lines)
+    monkeypatch.setattr(
+        app_module.GLib, "markup_escape_text", lambda text, length: text.replace("&", "&amp;")
+    )
+    wmain.nbServers = Notebook()
+    wmain.treeMounts = MountsTree()
+    wmain.lblMountsTab = TabLabel()
+    wmain.popupMenuMounts = MountsMenu()
+    wmain.mount_menu_folder = None
+    return wmain
+
+
+def three_mounts_in_the_tab(app_module, monkeypatch):
+    """three_mounts, with the server pane's Mounted tab."""
+    router, lab, _wmain = three_mounts(app_module, monkeypatch)
+    wmain = with_mounted_tab(app_module, monkeypatch, [router, lab], app_module.read_mount_table())
+    return router, lab, wmain
+
+
+def test_the_mounted_tab_lists_each_mount_by_its_hosts_name(app_module, monkeypatch):
+    """Or by what is mounted, for a mount that is no host's, as Servers ▸ Mounted lists
+    them. A `_` is drawn as one: a tree, unlike a menu, reads no mnemonic. The tooltip says
+    where each is mounted and what, as markup."""
+    _router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+
+    wmain.show_mounts()
+
+    assert wmain.treeMounts.store.rows == [
+        ("router", str(router_folder()), "~/mnt/router\nnetops@router.example.com:"),
+        ("eric@gone.example:", str(mnt("old")), "~/mnt/old\neric@gone.example:"),
+        ("lab_box", str(mnt("lab_box")), "~/mnt/lab_box\nnetops@lab.example:"),
+    ]
+    notebook = wmain.nbServers
+    assert notebook.tabs and notebook.pages[1].visible and notebook.current == 0
+    assert wmain.lblMountsTab.text == "Mounted (3)"
+
+
+def test_a_tooltip_is_escaped_as_markup(app_module, monkeypatch):
+    host = host_called(app_module, "R&D", "lab.example")
+    wmain = with_mounted_tab(
+        app_module, monkeypatch, [host], mounted_line(mnt("R&D"), source="netops@lab.example:")
+    )
+
+    wmain.show_mounts()
+
+    assert wmain.treeMounts.store.rows == [
+        ("R&D", str(mnt("R&D")), "~/mnt/R&amp;D\nnetops@lab.example:")
+    ]
+
+
+def test_with_nothing_mounted_the_pane_is_the_tree_alone(app_module, monkeypatch):
+    """No tabs, as before there was a Mounted tab. And once the last mount ends with the
+    Mounted tab showing, the tree is shown: never a tab no longer there."""
+    router = make_host(app_module)
+    wmain = with_mounted_tab(app_module, monkeypatch, [router])
+    notebook = wmain.nbServers
+
+    wmain.show_mounts()
+    assert wmain.treeMounts.store.rows == []
+    assert not notebook.tabs and not notebook.pages[1].visible and notebook.current == 0
+
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+    wmain.show_mounts()
+    assert notebook.tabs and notebook.pages[1].visible
+    assert wmain.lblMountsTab.text == "Mounted (1)"
+    notebook.set_current_page(1)
+
+    mount_table(app_module, monkeypatch)
+    wmain.show_mounts()
+    assert wmain.treeMounts.store.rows == []
+    assert not notebook.tabs and not notebook.pages[1].visible and notebook.current == 0
+
+
+def test_the_mounted_tab_is_rebuilt_only_when_what_is_mounted_changes(app_module, monkeypatch):
+    """As Servers ▸ Mounted is: a list rebuilt loses its selection and its place. With no
+    application, which has that menu, as well."""
+    router = make_host(app_module)
+    wmain = with_mounted_tab(app_module, monkeypatch, [router], mounted_line(router_folder()))
+    wmain.application = None
+
+    wmain.show_mounts()
+    wmain.show_mounts()
+    assert wmain.treeMounts.store.emptied == 1
+    assert [row[0] for row in wmain.treeMounts.store.rows] == ["router"]
+
+    router.name = "edge"
+    wmain.show_mounts()
+    assert wmain.treeMounts.store.emptied == 2
+    assert [row[0] for row in wmain.treeMounts.store.rows] == ["edge"]
+
+
+def press(app_module, button, y, kind=None):
+    """A press of `button` on the Mounted tab's list, `y` pixels down it."""
+    return types.SimpleNamespace(
+        type=kind or app_module.Gdk.EventType.BUTTON_PRESS, button=button, x=5.0, y=float(y)
+    )
+
+
+def test_the_mounted_tabs_menu_is_for_the_row_clicked(app_module, monkeypatch):
+    """Open over SFTP only for a host's mount: the mount table names no port. Below the
+    rows, only Unmount All."""
+    _router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+    wmain.show_mounts()
+    menu, tree = wmain.popupMenuMounts, wmain.treeMounts
+
+    event = press(app_module, 3, 5)
+    assert wmain.on_treeMounts_button_press_event(tree, event) is True
+    assert menu.opened == [event] and tree.selection.selected == (0,)
+    assert wmain.mount_menu_folder == router_folder()
+    assert menu.offered() == (True, True, True, True)
+
+    assert wmain.on_treeMounts_button_press_event(tree, press(app_module, 3, 15)) is True
+    assert tree.selection.selected == (1,) and wmain.mount_menu_folder == mnt("old")
+    assert menu.offered() == (True, False, True, True)
+
+    assert wmain.on_treeMounts_button_press_event(tree, press(app_module, 3, 25)) is True
+    assert wmain.mount_menu_folder == mnt("lab_box")
+    assert menu.offered() == (True, True, True, True)
+
+    assert wmain.on_treeMounts_button_press_event(tree, press(app_module, 3, 95)) is True
+    assert wmain.mount_menu_folder is None
+    assert menu.offered() == (False, False, False, True)
+    assert len(menu.opened) == 4
+
+
+def test_the_mounted_tabs_menu_opens_for_a_right_click_alone(app_module, monkeypatch):
+    _router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+    wmain.show_mounts()
+    menu, tree = wmain.popupMenuMounts, wmain.treeMounts
+    double = app_module.Gdk.EventType._2BUTTON_PRESS
+
+    assert wmain.on_treeMounts_button_press_event(tree, press(app_module, 1, 5)) is False
+    assert wmain.on_treeMounts_button_press_event(tree, press(app_module, 3, 5, double)) is False
+    assert menu.opened == [] and tree.selection.selected is None
+
+
+def test_with_nothing_mounted_the_menu_offers_nothing(app_module, monkeypatch):
+    """The tab is not shown then, but its list can be reached until it is hidden."""
+    wmain = with_mounted_tab(app_module, monkeypatch, [make_host(app_module)])
+    wmain.show_mounts()
+
+    wmain.on_treeMounts_button_press_event(wmain.treeMounts, press(app_module, 3, 5))
+
+    assert wmain.popupMenuMounts.offered() == (False, False, False, False)
+
+
+class Folders:
+    """Gio.File, as a folder's address is made: file://, and its path quoted."""
+
+    @staticmethod
+    def new_for_path(path):
+        return types.SimpleNamespace(get_uri=lambda: "file://" + path.replace(" ", "%20"))
+
+
+def opening(app_module, monkeypatch):
+    opened: list = []
+    monkeypatch.setattr(app_module, "open_in_file_manager", opened.append)
+    monkeypatch.setattr(app_module.Gio, "File", Folders)
+    return opened
+
+
+def test_open_folder_opens_the_mount_in_the_file_manager(app_module, monkeypatch):
+    _router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+    opened = opening(app_module, monkeypatch)
+
+    wmain.open_mounted_folder(mnt("old"))
+
+    assert opened == ["file://" + str(mnt("old")).replace(" ", "%20")]
+
+
+def test_open_over_sftp_opens_the_host_mounted_there(app_module, monkeypatch):
+    """Its address, as Open in File Manager gives it from the tree: its user, its port.
+    Found by the folder, as a host renamed while mounted stays mounted where it was."""
+    router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+    opened = opening(app_module, monkeypatch)
+
+    wmain.open_mounted_over_sftp(router_folder())
+    router.name = "edge"
+    wmain.open_mounted_over_sftp(router_folder())
+    wmain.open_mounted_over_sftp(mnt("lab_box"))
+
+    assert opened == [
+        "sftp://netops@router.example.com:2200/",
+        "sftp://netops@router.example.com:2200/",
+        "sftp://netops@lab.example:2200/",
+    ]
+
+
+def test_open_over_sftp_opens_a_host_with_no_user_as_you(app_module, monkeypatch):
+    """As its console connects, and as the tree's Open in File Manager opens it."""
+    monkeypatch.setattr(app_module, "get_username", lambda: "eric")
+    router = make_host(app_module)
+    router.user = ""
+    line = mounted_line(router_folder(), source="eric@router.example.com:")
+    wmain = with_mounted_tab(app_module, monkeypatch, [router], line)
+    opened = opening(app_module, monkeypatch)
+
+    wmain.open_mounted_over_sftp(router_folder())
+
+    assert opened == ["sftp://eric@router.example.com:2200/"]
+
+
+def test_open_over_sftp_opens_nothing_for_a_mount_that_is_no_hosts(app_module, monkeypatch):
+    _router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+    opened = opening(app_module, monkeypatch)
+
+    wmain.open_mounted_over_sftp(mnt("old"))
+    wmain.open_mounted_over_sftp(mnt("scratch"))
+
+    assert opened == []
+
+
+def test_a_double_click_opens_the_rows_folder(app_module, monkeypatch):
+    _router, _lab, wmain = three_mounts_in_the_tab(app_module, monkeypatch)
+    wmain.show_mounts()
+    opened = opening(app_module, monkeypatch)
+
+    wmain.on_treeMounts_row_activated(wmain.treeMounts, (2,), None)
+
+    assert opened == ["file://" + str(mnt("lab_box")).replace(" ", "%20")]
+
+
+def test_a_double_click_shows_or_hides_the_server_pane_on_the_divider_alone(
+    app_module, monkeypatch
+):
+    """Measured, one the server pane let through, on its tabs or below the Mounted tab's
+    rows, reached the divider's handler too, and hid the pane."""
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = divider = Divider()
+    wmain.row_activated = False
+    toggled: list = []
+    wmain.set_panel_visible = toggled.append
+    double = app_module.Gdk.EventType._2BUTTON_PRESS
+
+    def double_click(window):
+        event = types.SimpleNamespace(type=double, window=window)
+        wmain.on_hpMain_button_press_event(divider, event)
+
+    double_click(object())
+    assert toggled == []
+    double_click(divider.handle)
+    assert toggled == [False]
+    divider.position = 0
+    double_click(divider.handle)
+    assert toggled == [False, True]
+    # And not on the double-click that opened a host, as before.
+    wmain.row_activated = True
+    double_click(divider.handle)
+    assert toggled == [False, True] and wmain.row_activated is False
+
+
 # -- against real GTK, GIO, sshfs and sshd ------------------------------------------------
 
 _SCRIPT = r'''
@@ -1311,8 +1753,8 @@ def until(condition, seconds=20):
 def ssh_host(name, address, user="", password="", port="22", key="", group=""):
     return app.Host(group, name, "", address, user, password, key, port, "", "ssh", "")
 
-if scenario == "the-tree-menu":
-    # Real clicks, through XTest, on the scenario's own display.
+def real_input():
+    """Real clicks, through XTest, on the scenario's own display: click, and move."""
     import ctypes
     x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
     xtst = ctypes.cdll.LoadLibrary("libXtst.so.6")
@@ -1326,14 +1768,36 @@ if scenario == "the-tree-menu":
     display = x11.XOpenDisplay(None)
     assert display, "no connection to the display for XTest"
 
-    def click(number, x, y):
+    def move(x, y):
         xtst.XTestFakeMotionEvent(display, -1, int(x), int(y), 0)
         x11.XFlush(display)
+
+    def click(number, x, y, times=1):
+        move(x, y)
         pump(0.1)
-        xtst.XTestFakeButtonEvent(display, number, True, 0)
-        xtst.XTestFakeButtonEvent(display, number, False, 0)
+        for _press in range(times):
+            xtst.XTestFakeButtonEvent(display, number, True, 0)
+            xtst.XTestFakeButtonEvent(display, number, False, 0)
         x11.XFlush(display)
 
+    return click, move
+
+def widget_point(widget):
+    allocation = widget.get_allocation()
+    _, x, y = widget.get_window().get_origin()
+    return x + allocation.x + allocation.width // 2, y + allocation.y + allocation.height // 2
+
+def labelled(shell, text):
+    """The item of a menu or menubar drawn with `text`."""
+    drawn = {}
+    for item in shell.get_children():
+        if isinstance(item.get_child(), Gtk.Label):
+            drawn[item.get_child().get_text()] = item
+    assert text in drawn, sorted(drawn)
+    return drawn[text]
+
+if scenario == "the-tree-menu":
+    click, move = real_input()
     box = ssh_host("box", "192.0.2.10", "eric", port="2222", group="Lab")
     switch = ssh_host("switch", "192.0.2.11", "admin", group="Lab")
     switch.type = "telnet"
@@ -1374,20 +1838,6 @@ if scenario == "the-tree-menu":
         click(3, *row_point(name))
         assert until(menu.get_visible), "the tree's menu did not open"
         pump(0.6)
-
-    def widget_point(widget):
-        allocation = widget.get_allocation()
-        _, x, y = widget.get_window().get_origin()
-        return x + allocation.x + allocation.width // 2, y + allocation.y + allocation.height // 2
-
-    def labelled(shell, text):
-        """The item of a menu or menubar drawn with `text`."""
-        drawn = {}
-        for item in shell.get_children():
-            if isinstance(item.get_child(), Gtk.Label):
-                drawn[item.get_child().get_text()] = item
-        assert text in drawn, sorted(drawn)
-        return drawn[text]
 
     def from_servers_menu(text):
         """Choose `text` in the menubar's Servers menu, with real clicks."""
@@ -1473,8 +1923,7 @@ if scenario == "the-tree-menu":
         """The row called `name` as drawn: its icon, and the whole row."""
         w.treeServers.get_selection().unselect_all()
         # Off the window, so that the pointer is over no row.
-        xtst.XTestFakeMotionEvent(display, -1, 1900, 1060, 0)
-        x11.XFlush(display)
+        move(1900, 1060)
         w.wMain.present()
         pump(0.5)
         rows = []
@@ -1620,6 +2069,249 @@ if scenario == "the-tree-menu":
     assert until(lambda: not listed.get_visible())
     assert shown == [], shown
 
+elif scenario == "the-mounted-tab":
+    from gi.repository import Gio
+
+    click, move = real_input()
+    box = ssh_host("box", "192.0.2.10", "eric", port="2222", group="Lab")
+    app.groups.clear()
+    app.groups["Lab"] = [box]
+    w.updateTree()
+    w.treeServers.expand_all()
+    w.wMain.resize(900, 600)
+    w.wMain.present()
+    assert until(w.wMain.is_active)
+    assert until(lambda: w.treeServers.get_allocated_height() > 200)
+    # After the pane is set to its saved width, which GCM does 900 ms after starting.
+    pump(1)
+    w.hpMain.set_position(300)
+    pump(0.5)
+    assert w.hpMain.get_position() == 300
+    notebook, menu = w.nbServers, w.popupMenuMounts
+    servers_tab, mounted_tab = w.get_widget("lblServersTab"), w.lblMountsTab
+
+    def below_the_top(widget):
+        """How far `widget` is drawn below the top of the server pane."""
+        return widget.translate_coordinates(notebook, 0, 0)[-1]
+
+    def drawn_tab(tab):
+        """Whether a tab's label is drawn. Measured, with the tabs hidden from the start, GTK
+        maps the labels, 1 pixel square, outside the window."""
+        return tab.get_mapped() and tab.get_allocated_width() > 1
+
+    # Nothing mounted: the pane is the tree alone, with no tabs, as before the Mounted tab.
+    assert not notebook.get_show_tabs()
+    assert not drawn_tab(servers_tab) and not drawn_tab(mounted_tab)
+    alone = below_the_top(w.treeServers)
+    assert alone < 5, alone
+
+    opened, unmounted, everything = [], [], []
+    app.open_in_file_manager = opened.append
+    w.unmount_files = lambda name, folder: unmounted.append((name, str(folder)))
+    w.unmount_all_files = lambda: everything.append(True)
+    home = os.environ["HOME"]
+    folder, other = os.path.join(home, "mnt", "box"), os.path.join(home, "mnt", "an_old")
+    table = (
+        f"300 1 0:90 / {folder} rw - fuse.sshfs eric@192.0.2.10: rw\n"
+        f"301 1 0:91 / {other} rw - fuse.sshfs ops@gone.example: rw\n"
+    )
+
+    # Something mounted: a tab for the tree, and one listing the mounts, drawn above it.
+    app.read_mount_table = lambda: table
+    w.show_mounts()
+    assert until(lambda: drawn_tab(mounted_tab)), "the Mounted tab was not drawn"
+    pump(0.3)
+    assert drawn_tab(servers_tab) and notebook.get_current_page() == 0
+    assert (servers_tab.get_text(), mounted_tab.get_text()) == ("Servers", "Mounted (2)")
+    assert not any(tab.get_layout().is_ellipsized() for tab in (servers_tab, mounted_tab))
+    assert below_the_top(w.treeServers) > alone + 20, below_the_top(w.treeServers)
+
+    click(1, *widget_point(mounted_tab))
+    assert until(lambda: notebook.get_current_page() == 1), "the Mounted tab was not chosen"
+    assert until(w.treeMounts.get_mapped), "the mounts were not drawn"
+    pump(0.3)
+    store, column = w.treeMounts.get_model(), w.treeMounts.get_column(0)
+
+    def drawn():
+        """The text each row of the Mounted tab is drawn with."""
+        texts = []
+        for row in store:
+            column.cell_set_cell_data(store, row.iter, False, False)
+            texts.append(column.get_cells()[0].props.text)
+        return texts
+
+    assert drawn() == ["box", "ops@gone.example:"], drawn()
+
+    def row_point(index):
+        """Where row `index` of the list is on the screen, or with None the space below
+        the rows."""
+        _, x, y = w.treeMounts.get_bin_window().get_origin()
+        last = len(store) - 1 if index is None else index
+        area = w.treeMounts.get_cell_area(Gtk.TreePath.new_from_indices([last]), column)
+        if index is None:
+            return x + 20, y + area.y + area.height + 40
+        return x + 20, y + area.y + area.height // 2
+
+    # The tooltip says where a mount is, and what is mounted there.
+    move(*row_point(0))
+    pump(0.1)
+    move(row_point(0)[0] + 5, row_point(0)[1])
+
+    def tooltip():
+        """The text of the tooltip on the screen, or None."""
+        for window in Gtk.Window.list_toplevels():
+            if window.get_visible() and window.__gtype__.name == "GtkTooltipWindow":
+                labels, pending = [], [window]
+                while pending:
+                    widget = pending.pop()
+                    if isinstance(widget, Gtk.Label):
+                        labels.append(widget.get_text())
+                    if isinstance(widget, Gtk.Container):
+                        pending.extend(widget.get_children())
+                return labels
+        return None
+
+    assert until(lambda: tooltip() is not None, 5), "no tooltip"
+    assert tooltip() == ["~/mnt/box\neric@192.0.2.10:"], tooltip()
+    move(1900, 1060)
+    pump(0.3)
+
+    def right_click(index):
+        click(3, *row_point(index))
+        assert until(menu.get_visible), "the Mounted tab's menu did not open"
+        pump(0.5)
+
+    def offered():
+        """Each item the menu draws, and whether it can be chosen."""
+        return [
+            (item.get_child().get_text(), item.is_sensitive())
+            for item in menu.get_children()
+            if isinstance(item.get_child(), Gtk.Label)
+        ]
+
+    def choose(text):
+        click(1, *widget_point(labelled(menu, text)))
+        assert until(lambda: not menu.get_visible()), "the menu stayed open"
+        pump(0.3)
+
+    def address(path):
+        return Gio.File.new_for_path(path).get_uri()
+
+    # A host's mount.
+    right_click(0)
+    assert offered() == [
+        ("Open Folder", True), ("Open over SFTP", True), ("Unmount", True), ("Unmount All", True)
+    ], offered()
+    choose("Open Folder")
+    assert opened == [address(folder)] and opened[0].startswith("file:///"), opened
+    right_click(0)
+    choose("Open over SFTP")
+    assert opened[1:] == ["sftp://eric@192.0.2.10:2222/"], opened
+    right_click(0)
+    choose("Unmount")
+    assert unmounted == [("box", folder)], unmounted
+    # One that is no host's: no address to open it over SFTP by.
+    right_click(1)
+    assert offered() == [
+        ("Open Folder", True), ("Open over SFTP", False), ("Unmount", True), ("Unmount All", True)
+    ], offered()
+    choose("Open Folder")
+    assert opened[2:] == [address(other)], opened
+    right_click(1)
+    choose("Unmount")
+    assert unmounted[1:] == [("ops@gone.example:", other)], unmounted
+    # Below the rows: Unmount All alone.
+    right_click(None)
+    assert offered() == [
+        ("Open Folder", False), ("Open over SFTP", False), ("Unmount", False), ("Unmount All", True)
+    ], offered()
+    choose("Unmount All")
+    assert everything == [True], everything
+
+    # A double-click on a row opens its folder, and leaves the pane where it was. One the
+    # pane lets through, on a tab or below the rows, does nothing.
+    click(1, *row_point(1), times=2)
+    assert until(lambda: len(opened) == 4), opened
+    assert opened[3:] == [address(other)], opened
+    pump(0.6)
+    click(1, *widget_point(mounted_tab), times=2)
+    pump(0.6)
+    click(1, *row_point(None), times=2)
+    pump(0.6)
+    click(1, *widget_point(servers_tab), times=2)
+    pump(0.6)
+    assert w.hpMain.get_position() == 300 and len(opened) == 4, (w.hpMain.get_position(), opened)
+    click(1, *widget_point(mounted_tab))
+    assert until(lambda: notebook.get_current_page() == 1)
+
+    # GCM's narrowest pane: the tabs share it and cut their labels short, and nothing of
+    # the pane is cut off.
+    w.hpMain.set_position(100)
+    pump(0.6)
+    assert notebook.translate_coordinates(w.hpMain, 0, 0)[-2] >= 0
+    assert notebook.get_allocated_width() <= 100, notebook.get_allocated_width()
+    assert all(tab.get_layout().is_ellipsized() for tab in (servers_tab, mounted_tab))
+    # With room to spare for a larger font, which the narrowest tabs are made of. Measured
+    # here, 66 pixels, and 92 at a font scale of 2.25; with the theme's padding, 98 and 124.
+    assert notebook.get_preferred_width()[0] <= 80, notebook.get_preferred_width()
+    w.hpMain.set_position(300)
+    pump(0.6)
+
+    # The last mount ended with the list showing: the tree again, alone.
+    app.read_mount_table = lambda: ""
+    w.show_mounts()
+    assert until(lambda: not drawn_tab(mounted_tab)), "the Mounted tab stayed"
+    pump(0.3)
+    assert notebook.get_current_page() == 0 and w.treeServers.get_mapped()
+    assert not notebook.get_show_tabs() and not drawn_tab(servers_tab)
+    assert below_the_top(w.treeServers) == alone, below_the_top(w.treeServers)
+
+    # The server pane is no pane of consoles. The keyboard in it, given by a click, leaves
+    # new tabs to the consoles, and Split, Unsplit and a console window pass it over.
+    app.read_mount_table = lambda: table
+    w.show_mounts()
+    assert until(lambda: drawn_tab(mounted_tab))
+    application.activate_action("new-local", None)
+    application.activate_action("new-local", None)
+    assert until(lambda: w.nbConsole.get_n_pages() == 2)
+    pump(0.5)
+    click(1, *widget_point(mounted_tab))
+    assert until(lambda: notebook.get_current_page() == 1)
+    click(1, *row_point(0))
+    assert until(w.treeMounts.has_focus), "the list did not take the keyboard"
+    application.activate_action("new-local", None)
+    assert until(lambda: w.nbConsole.get_n_pages() == 3), w.nbConsole.get_n_pages()
+    pump(0.5)
+    servers_pages = [notebook.get_nth_page(index) for index in range(notebook.get_n_pages())]
+    assert servers_pages == [w.treeServers.get_parent(), w.treeMounts.get_parent()]
+    click(1, *row_point(0))
+    assert until(w.treeMounts.has_focus)
+    application.activate_action("split-horizontal", None)
+    pump(0.5)
+    consoles = w.console_notebooks()
+    assert len(consoles) == 2 and notebook not in consoles, consoles
+    assert [notebook.get_nth_page(index) for index in range(notebook.get_n_pages())] == servers_pages
+    assert w.hpMain.get_child1() is notebook
+    click(1, *widget_point(servers_tab))
+    assert until(lambda: notebook.get_current_page() == 0)
+    application.activate_action("unsplit", None)
+    pump(0.5)
+    assert w.console_notebooks() == [w.nbConsole] and w.nbConsole.get_n_pages() == 3
+    assert [notebook.get_nth_page(index) for index in range(notebook.get_n_pages())] == servers_pages
+    page = w.nbConsole.get_nth_page(0)
+    w.toggle_console_window(page)
+    assert until(lambda: len(w.console_windows) == 1)
+    pump(0.5)
+    w.treeServers.grab_focus()
+    w.wMain.present()
+    assert until(w.wMain.is_active)
+    pump(0.3)
+    w.toggle_console_window(page)
+    pump(0.5)
+    assert page.get_parent() is w.nbConsole and w.nbConsole.get_n_pages() == 3
+    assert [notebook.get_nth_page(index) for index in range(notebook.get_n_pages())] == servers_pages
+    assert shown == [], shown
+
 elif scenario == "file-manager":
     address = "sftp://eric@files.example:2222/"
     marks, expected = os.environ["PROBE_MARKS"], os.environ["PROBE_EXPECT"]
@@ -1641,6 +2333,28 @@ elif scenario == "file-manager":
         pump(1)
         assert len(shown) == 1, shown
         assert shown[0].startswith(f"No file manager was found to open {address}."), shown
+        assert marked() == [], marked()
+
+    # The Mounted tab's Open Folder (#269): the mount's folder, as an address.
+    folder = app.Path(os.environ["HOME"], "mnt", "box two")
+    folder.mkdir(parents=True)
+    shown.clear()
+    w.open_mounted_folder(folder)
+    if expected:
+        assert until(lambda: len(marked()) == 2), marked()
+        pump(0.5)
+        # Measured, GIO hands the application it launches a folder's path, though GCM gave
+        # it the address, as it does a file manager on PATH.
+        address = f"file://{folder.parent}/box%20two"
+        given = str(folder) if expected == "files-app" else address
+        assert marked()[1] == f"{expected}|{given}", marked()
+        assert shown == [], shown
+    else:
+        pump(1)
+        assert shown == [
+            f"No file manager was found to open {folder}. Install one, such as Files"
+            " (nautilus), Nemo, Thunar or Dolphin."
+        ], shown
         assert marked() == [], marked()
 
 elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
@@ -1777,14 +2491,23 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         by_hand = ["sshfs", "-p", port, "-o", f"IdentityFile={key}", f"{user}@127.0.0.1:", str(folder)]
         import subprocess
 
+        def in_the_tab():
+            return [tuple(row)[:2] for row in w.treeMounts.get_model()]
+
+        assert in_the_tab() == [] and not w.nbServers.get_show_tabs()
         subprocess.run(by_hand, check=True, timeout=30)
         assert until(lambda: marked() == str(folder)), marked()
         assert until(lambda: listed() == ["Unmount probe box from ~/mnt/probe box"]), listed()
         assert w.host_items[box].get_label() == "✓ probe box", w.host_items[box].get_label()
+        # And the server pane's Mounted tab (#269).
+        assert until(lambda: in_the_tab() == [("probe box", str(folder))]), in_the_tab()
+        assert w.nbServers.get_show_tabs() and w.lblMountsTab.get_text() == "Mounted (1)"
         subprocess.run([app.fusermount(), "-u", str(folder)], check=True, timeout=30)
         assert until(lambda: marked() == ""), marked()
         assert until(lambda: listed() == ["Nothing is mounted"]), listed()
         assert w.host_items[box].get_label() == "probe box", w.host_items[box].get_label()
+        assert until(lambda: in_the_tab() == []), in_the_tab()
+        assert not w.nbServers.get_show_tabs()
         folder.rmdir()
 
         # Renamed while mounted: found where its old name put it, and unmounted from there.
@@ -1850,6 +2573,18 @@ def run_scenario(scenario, tmp_path, display=None, **extra):
     assert "Traceback" not in result.stderr, result.stderr[-3000:]
     assert glib_complaints(result.stderr) == []
     return result
+
+
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
+def test_the_mounted_tab_against_real_gtk(tmp_path):
+    """With real clicks, so on a display of its own, as the tree's menu is tested."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    process, display = _private_display()
+    try:
+        run_scenario("the-mounted-tab", tmp_path, display=display)
+    finally:
+        process.terminate()
+        process.wait()
 
 
 @pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")

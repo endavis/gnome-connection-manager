@@ -2355,23 +2355,78 @@ Ej: ##D=1000&lt;/span&gt;</property>
             <property name="can-focus">True</property>
             <signal name="button-press-event" handler="on_hpMain_button_press_event" swapped="no"/>
             <child>
-              <object class="GtkScrolledWindow">
+              <object class="GtkNotebook" id="nbServers">
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
-                <property name="shadow-type">in</property>
+                <property name="show-tabs">False</property>
+                <property name="show-border">False</property>
+                <style>
+                  <class name="server-pane"/>
+                </style>
                 <child>
-                  <object class="GtkTreeView" id="treeServers">
+                  <object class="GtkScrolledWindow" id="swServers">
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
-                    <signal name="button-press-event" handler="on_tvServers_button_press_event" swapped="no"/>
-                    <signal name="row-activated" handler="on_tvServers_row_activated" swapped="no"/>
-                    <signal name="row-collapsed" handler="on_tvServers_row_collapsed" swapped="no"/>
-                    <signal name="row-expanded" handler="on_tvServers_row_expanded" swapped="no"/>
-                    <signal name="style-updated" handler="on_tvServers_style_updated" swapped="no"/>
-                    <child internal-child="selection">
-                      <object class="GtkTreeSelection"/>
+                    <property name="shadow-type">in</property>
+                    <child>
+                      <object class="GtkTreeView" id="treeServers">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <signal name="button-press-event" handler="on_tvServers_button_press_event" swapped="no"/>
+                        <signal name="row-activated" handler="on_tvServers_row_activated" swapped="no"/>
+                        <signal name="row-collapsed" handler="on_tvServers_row_collapsed" swapped="no"/>
+                        <signal name="row-expanded" handler="on_tvServers_row_expanded" swapped="no"/>
+                        <signal name="style-updated" handler="on_tvServers_style_updated" swapped="no"/>
+                        <child internal-child="selection">
+                          <object class="GtkTreeSelection"/>
+                        </child>
+                      </object>
                     </child>
                   </object>
+                  <packing>
+                    <property name="tab-expand">True</property>
+                  </packing>
+                </child>
+                <child type="tab">
+                  <object class="GtkLabel" id="lblServersTab">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <property name="label" translatable="yes">Servers</property>
+                    <property name="ellipsize">end</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkScrolledWindow" id="swMounts">
+                    <property name="can-focus">True</property>
+                    <property name="shadow-type">in</property>
+                    <child>
+                      <object class="GtkTreeView" id="treeMounts">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="headers-visible">False</property>
+                        <signal name="button-press-event" handler="on_treeMounts_button_press_event" swapped="no"/>
+                        <signal name="row-activated" handler="on_treeMounts_row_activated" swapped="no"/>
+                        <child internal-child="selection">
+                          <object class="GtkTreeSelection"/>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="position">1</property>
+                    <property name="tab-expand">True</property>
+                  </packing>
+                </child>
+                <child type="tab">
+                  <object class="GtkLabel" id="lblMountsTab">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <property name="label" translatable="yes">Mounted</property>
+                    <property name="ellipsize">end</property>
+                  </object>
+                  <packing>
+                    <property name="position">1</property>
+                  </packing>
                 </child>
               </object>
               <packing>

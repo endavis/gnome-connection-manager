@@ -355,6 +355,22 @@ it a second time. It finds it by the host's user and address, which is all the l
 mounts records, so of two hosts with the same user and address, on different ports, each
 is found only where its own name puts it.
 
+**The Mounted tab.** While anything is mounted with SSHFS in `~/mnt`, the server pane has
+two tabs: **Servers**, the tree, and **Mounted**, with how many mounts there are, as
+**Mounted (2)**. With nothing mounted, the pane is the tree alone, with no tabs, and when
+the last mount ends with the Mounted tab showing, the pane goes back to the tree. The tab
+lists the mounts as Servers ▸ Mounted does, and follows them as it does. A mount's tooltip
+says where it is and what is mounted there. Double-click a mount to open its folder, or
+right-click it for:
+
+- **Open Folder**: the mount's folder in `~/mnt`, in the file manager Open in File
+  Manager uses, to which it is a folder like any other.
+- **Open over SFTP**: the host's address, as Open in File Manager opens it from the tree.
+  A mount that is no host's does not offer it, since the list of mounts names no port.
+- **Unmount**, and **Unmount All**, as in Servers ▸ Mounted.
+
+The two tabs share the pane's width, and in a narrow pane their names are cut short.
+
 The mount connects with the host's user, address, port and private key file. When ssh
 asks for a password, GCM answers with the host's stored one, which never goes into a
 command line. It answers nothing else: not a key's passphrase, and not whether to trust a

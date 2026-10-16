@@ -78,6 +78,19 @@ class FakePaned:
     def get_children(self):
         return self.children
 
+    def get_child2(self):
+        return self.children[1]
+
+
+def test_the_paned_fake_matches_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    for name in ("get_children", "get_child2"):
+        assert hasattr(FakePaned, name), f"FakePaned is missing {name}"
+        assert hasattr(Gtk.Paned, name), f"Gtk.Paned has no {name}"
+
 
 class FakeMenuItem:
     def __init__(self, label=None, **_kwargs):
@@ -155,13 +168,15 @@ def console_env(monkeypatch, app_module):
 
 
 def make_wmain(app_module, root, in_use=None):
-    """A Wmain over fake panes, with `in_use` as the tab in use.
+    """A Wmain over fake panes, `root` the consoles' side, with `in_use` as the tab in use.
 
-    Which tab that is comes from the keyboard, and is tested against real GTK in
-    test_tab_pages.py; here it is given.
+    Left of the consoles is the server pane, a notebook too (#269), whose tabs are no
+    consoles to list. Which tab is in use comes from the keyboard, and is tested against
+    real GTK in test_tab_pages.py; here it is given.
     """
     wmain = object.__new__(app_module.Wmain)
-    wmain.hpMain = root
+    servers = FakeNotebook([FakeTabLabel("Servers"), FakeTabLabel("Mounted")])
+    wmain.hpMain = FakePaned(servers, root)
     wmain.page_in_use = lambda: in_use
     wmain.window = object()
     return wmain
@@ -327,7 +342,7 @@ def test_collect_notebooks_finds_every_pane_in_order(console_env):
     right = FakeNotebook([FakeTabLabel("b")])
     wmain = make_wmain(console_env, FakePaned(left, FakePaned(right)))
 
-    assert wmain.collect_notebooks(wmain.hpMain) == [left, right]
+    assert wmain.collect_notebooks(wmain.console_side()) == [left, right]
 
 
 def test_collect_notebooks_does_not_descend_into_a_notebook(console_env):
@@ -337,7 +352,7 @@ def test_collect_notebooks_does_not_descend_into_a_notebook(console_env):
     outer.pages[0].extra = [buried]
     wmain = make_wmain(console_env, FakePaned(outer))
 
-    assert wmain.collect_notebooks(wmain.hpMain) == [outer]
+    assert wmain.collect_notebooks(wmain.console_side()) == [outer]
 
 
 def test_open_console_groups_keeps_panes_apart(console_env, monkeypatch):

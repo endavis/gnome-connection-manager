@@ -1972,3 +1972,21 @@ msgstr ""
 
 msgid "Mounted at {}"
 msgstr ""
+
+msgid "Servers"
+msgstr "Server"
+
+msgid "Mounted ({})"
+msgstr ""
+
+msgid "Open Folder"
+msgstr ""
+
+msgid "Open over SFTP"
+msgstr ""
+
+msgid "Unmount"
+msgstr ""
+
+msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
+msgstr ""
