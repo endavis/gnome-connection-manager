@@ -124,6 +124,15 @@ the git log.
   Name hands one back to that (ADR-0002)
 
 ### Changed
+- The host dialog shows a host only the tabs its type uses. SSH's own options, the
+  private key, keep-alive, X11 and agent forwarding and compression, moved from
+  **Properties** to an **SSH** tab, shown for SSH alone, as **Port forwarding** is.
+  **Enable Logging** and **TERM** moved to **Colors and Keys**, renamed **Terminal**,
+  which a web host is not shown, nor a VNC host whose desktop GCM draws, since neither
+  has a terminal. The box of commands after login keeps ten lines however short the
+  dialog gets. The keep-alive and compression level fields are greyed until their boxes
+  are ticked, a new host's too, and choosing another type unticks keep-alive, which it
+  turns off. Hosts are saved as they were
 - Custom commands are snippets: named, filed in folders, listed by name in the
   **Snippets** menus, and kept and sent without a key as well as with one. A snippet can
   name the values of the tab's host, `{name}`, `{address}` and the rest, typed as they

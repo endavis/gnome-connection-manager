@@ -319,13 +319,14 @@ gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
 from gi.repository import Gtk
 from gnome_connection_manager import app
 
+SCREEN = [1024, 600]
 real_workarea = app.monitor_workarea
 def small(window=None):
     area = real_workarea(window)
     if area is None:
         sys.exit("no monitor")
     area.x = area.y = 0
-    area.width, area.height = 1024, 600
+    area.width, area.height = SCREEN
     return area
 app.monitor_workarea = small
 
@@ -362,6 +363,10 @@ config = app.Wconfig()
 settle()
 check("Settings", config, "wConfig", _("General"))
 
+# Since SSH's options moved to a tab of their own (#277), Edit Host is about as tall as
+# 1024x600 leaves room for: 4 pixels over where this was written, and under on CI, where
+# it was not wrapped. A shorter screen makes it scroll whatever the font.
+SCREEN[1] = 400
 host = app.Host("g", "n", "", "example.test", "u", "", "", "22", "", "ssh")
 # Host defaults some fields to ints; init() feeds them straight to set_text().
 host.keep_alive = "0"

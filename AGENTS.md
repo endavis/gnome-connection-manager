@@ -612,14 +612,21 @@ Practices below have each caught real bugs in this repo. They are worth the time
   in `app.py`, so adding an attribute crosses both files. A setting of one connection
   type's own is not an attribute: it goes in the type's `settings`, and all of those
   carry it already (#228).
-- `Whost` shows a different number of tabs per connection type, on purpose: `on_cmbType_changed`
-  hides the Port forwarding page for a type without `ssh_options`, which only SSH has, so a
-  Telnet or RDP host's
-  dialog has three tabs and an SSH host's has four. A command host's has four too, its
-  Command line page shown where Port forwarding would be. It looks like a bug from the outside --
-  a whole tab vanishing -- and it is not. Every other SSH-only control in that branch is
-  made insensitive instead, which is the inconsistency behind the confusion, not the
-  hiding itself.
+- `Whost` shows a type only the tabs it uses, on purpose (#277): `on_cmbType_changed`
+  shows the SSH page, `sshGrid`, and Port forwarding, `tunnelGrid`, for a type with
+  `ssh_options`, which only SSH has, and the Terminal page, `terminalPage`, where
+  `opens_terminal` says the host's tab is a terminal: not a web host's, nor a VNC host's
+  that gtk-vnc draws. A type's own page shows as `show_type_page` says. So an SSH host's
+  dialog has five tabs and a web host's two. A control on a tab every type is shown goes
+  insensitive where the type does not use it, and is never hidden. A hidden page keeps
+  what its widgets hold, and OK reads them all, so a host saved before #277 is saved as
+  it was, which `tests/test_host_dialog_tabs.py` checks for a host of each type.
+  A new host's dialog runs no `on_cmbType_changed` until another type is chosen:
+  `GladeComponent` connects the signals after `new()` has chosen ssh. So the glade's
+  starting state must be an SSH host's, every page shown and each spin button greyed as
+  its box starts unticked. The dialog is as tall as its tallest page, and `new()` gives
+  the commands box ten lines of its font: once SSH's rows left Properties it had two at
+  a font scale of 2.25, measured.
 - Session logs are named from the host entry, never the tab label:
   `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.log`. The naming lives in
   `src/gnome_connection_manager/utils/logpaths.py`. Raw recording adds `.raw` beside

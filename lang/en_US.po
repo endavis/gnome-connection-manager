@@ -2059,3 +2059,9 @@ msgstr "Unmount"
 
 msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
 msgstr "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
+
+msgid "SSH"
+msgstr "SSH"
+
+msgid "Terminal"
+msgstr "Terminal"
