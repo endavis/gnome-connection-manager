@@ -16,3 +16,13 @@ notebook tab {
 notebook > header > tabs > tab box.attention {
     background-color: #F57900;
 }
+
+/* The server pane's tabs, Servers and Mounted, share its width and cut their labels short
+   (#269). With the theme's padding and minimum width, measured, the strip could not be
+   narrower than 136 pixels, and in a narrower pane, GCM's default is 100, the tree lost
+   its left side. */
+notebook.server-pane > header > tabs > tab {
+    min-width: 0;
+    padding-left: 4px;
+    padding-right: 4px;
+}

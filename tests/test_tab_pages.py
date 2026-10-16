@@ -53,10 +53,10 @@ def title(page):
 
 def names():
     """Each pane's tabs, by title."""
-    return [[title(page) for page in tabs(notebook)] for notebook in w.collect_notebooks(w.hpMain)]
+    return [[title(page) for page in tabs(notebook)] for notebook in w.collect_notebooks(w.console_side())]
 
 def page_of(name):
-    for notebook in w.collect_notebooks(w.hpMain):
+    for notebook in w.collect_notebooks(w.console_side()):
         for page in tabs(notebook):
             if title(page) == name:
                 return page

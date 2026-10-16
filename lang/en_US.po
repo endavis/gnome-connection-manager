@@ -2041,3 +2041,21 @@ msgstr "Nothing is mounted"
 
 msgid "Mounted at {}"
 msgstr "Mounted at {}"
+
+msgid "Servers"
+msgstr "Servers"
+
+msgid "Mounted ({})"
+msgstr "Mounted ({})"
+
+msgid "Open Folder"
+msgstr "Open Folder"
+
+msgid "Open over SFTP"
+msgstr "Open over SFTP"
+
+msgid "Unmount"
+msgstr "Unmount"
+
+msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
+msgstr "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."

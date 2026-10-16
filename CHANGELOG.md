@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- A **Mounted** tab beside the server tree, while anything is mounted with SSHFS in
+  `~/mnt`: each mount, by its host's name, to open in the file manager as a folder or over
+  SFTP, or to unmount, from its menu, and a double-click opens its folder. The tree has a
+  tab of its own, **Servers**, which names the pane in place of the tree's column header.
 - An SSH host's files, from its menu in the server tree or the **Servers** menu. **Open
   in File Manager** opens its login folder over SFTP in the file manager your desktop
   opens folders with, given the address alone, never the password. **Mount with SSHFS**

@@ -229,6 +229,21 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   which a name wider than the tree puts out of sight, measured. The list's empty line is
   given Unmount All, disabled then, since GTK draws an item with no action as one to
   choose, measured. Pure: the programs found and the mount table are arguments.
+  The server pane is the notebook `nbServers` (#269): the tree's tab, Servers, and a
+  Mounted tab that `list_mounts` fills through `fill_mounts_page`, shown only while
+  anything is mounted. The Servers tab is always there, and names the pane where the
+  tree's header did, which the glade hides: measured, with the header kept and the tabs
+  shown only while mounted, the tree's first row dropped from 27 pixels below the pane's
+  top to 64 at each mount, where now it stays at 39. The Mounted tab's
+  menu, `popupMenuMounts`, acts on the folder `mount_menu_folder` holds, and Open over
+  SFTP finds the host there through `mounted_host`, again each time, as Edit Host makes a
+  new `Host`. Open Folder hands `open_in_file_manager` a `file://` address, and measured,
+  GIO gives the application a folder's path for it. The tabs ellipsize and share the
+  strip, and `data/style.css` trims their padding: measured, the theme's left the strip
+  136 pixels at its narrowest, and in GCM's default pane of 100 the tree lost its left
+  side; now 68, and 96 at a font scale of 2.25. `on_hpMain_button_press_event` shows and
+  hides the pane only for a double-click on the divider's own window: measured, one on a
+  tab, or below the Mounted tab's rows, reached it too, and hid the pane.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
@@ -671,8 +686,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   panes, and no splits: `split_notebook` refuses there, both menus hide Split, and
   `check_notebook_pages` passes its notebook over. Code that reaches every console walks
   `console_notebooks`, the main window's panes and then each console window's;
-  `collect_notebooks(self.hpMain)` is the main window's alone, which is what
-  `on_window_set_focus` and `main_notebook` want. The window in use, `window_in_use`, is
+  `collect_notebooks(self.console_side())` is the main window's alone, which is what
+  `on_window_set_focus` and `main_notebook` want. `console_side` is right of the server
+  pane, never all of `hpMain`: the server pane is a notebook too (#269), and taken for a
+  pane of consoles, the keyboard in its tree made it the pane in use. The window in use, `window_in_use`, is
   the last of them to become active, through `on_window_active_changed`, or the one
   `use_window` brought forward, and `current_notebook` reads it. A console window joins
   the application, so the application's keys work there: measured, without that the

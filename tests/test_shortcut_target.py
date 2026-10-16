@@ -52,10 +52,10 @@ def consoles(notebook):
 def names():
     """Each pane's tabs, by the name of the host each one runs."""
     return [[page.get_children()[0].host.name for page in consoles(notebook)]
-            for notebook in w.collect_notebooks(w.hpMain)]
+            for notebook in w.collect_notebooks(w.console_side())]
 
 def page_of(name):
-    for notebook in w.collect_notebooks(w.hpMain):
+    for notebook in w.collect_notebooks(w.console_side()):
         for page in consoles(notebook):
             if page.get_children()[0].host.name == name:
                 return page

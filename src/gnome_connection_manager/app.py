@@ -1013,7 +1013,8 @@ def open_with(argv, target):
 
 
 def open_in_file_manager(address):
-    """Open a host's `sftp://` address in the file manager (#267).
+    """Open a host's `sftp://` address in the file manager (#267), or a folder's `file://`
+    one, a mount's in ~/mnt (#269).
 
     Not through xdg-open: measured, with nothing to handle sftp: it gave the address to the
     web browser and exited 0. No file manager in Ubuntu 24.04 handles the scheme, and every
@@ -1031,7 +1032,15 @@ def open_in_file_manager(address):
         return
     command = remotefiles.file_manager_command(shutil.which)
     if command is None:
-        # One literal: tests/test_i18n.py does not follow a message split across two.
+        # One literal each: tests/test_i18n.py does not follow a message split across two.
+        if address.startswith("file:"):
+            # A folder on this computer, which mounting a host is no way round.
+            msgbox(
+                _(
+                    "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
+                ).format(Gio.File.new_for_uri(address).get_path())
+            )
+            return
         msgbox(
             _(
                 "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
@@ -2234,6 +2243,13 @@ class Wmain(GladeComponent):
         self.wMainWindow = self.builder.get_object("wMain")
         self.nbConsole = self.get_widget("nbConsole")
         self.treeServers = self.get_widget("treeServers")
+        # The server pane is a notebook: the tree's tab, Servers, which names the pane in
+        # place of the tree's header, and beside it, while anything is mounted, a tab
+        # listing the mounts (#269). It is no console pane, so the code that looks for
+        # those looks right of it, in console_side.
+        self.nbServers = self.get_widget("nbServers")
+        self.treeMounts = self.get_widget("treeMounts")
+        self.lblMountsTab = self.get_widget("lblMountsTab")
         # The host list is a nested widget menu rebuilt by updateTree, so it stays a
         # real Gtk.Menu rather than moving into the menu model.
         self.menuServers = Gtk.Menu()
@@ -2532,13 +2548,19 @@ class Wmain(GladeComponent):
                 self.collect_notebooks(child, found)
         return found
 
+    def console_side(self):
+        """The main window's consoles: right of the server pane, a console notebook or the
+        panes a split made. Never the whole window, where the server pane's notebook, the
+        tree and its Mounted tab, would count as a console pane (#269)."""
+        return self.hpMain.get_child2()
+
     def console_notebooks(self):
         """Every console notebook: the main window's panes, then each console window's.
 
         A console window holds one notebook and no splits (#255). Those are listed in the
         order the windows opened.
         """
-        notebooks = self.collect_notebooks(self.hpMain)
+        notebooks = self.collect_notebooks(self.console_side())
         notebooks.extend(window.notebook for window in self.console_windows)
         return notebooks
 
@@ -2784,7 +2806,7 @@ class Wmain(GladeComponent):
         the keyboard is in, or was last in. Only the notebooks laid out in the panes
         count: a notebook inside a page is passed over.
         """
-        notebooks = self.collect_notebooks(self.hpMain)
+        notebooks = self.collect_notebooks(self.console_side())
         while widget is not None and widget not in notebooks:
             widget = widget.get_parent()
         if widget is not None:
@@ -2823,7 +2845,7 @@ class Wmain(GladeComponent):
         The notebook the keyboard is in or was last in there, and the main pane failing
         that.
         """
-        if self.last_notebook in self.collect_notebooks(self.hpMain):
+        if self.last_notebook in self.collect_notebooks(self.console_side()):
             return self.last_notebook
         return self.nbConsole
 
@@ -4139,9 +4161,40 @@ class Wmain(GladeComponent):
         self.treeServers.connect("drag-motion", self.on_treeServers_drag_motion)
         self.treeServers.connect("drag-data-received", self.on_treeServers_drag_data_received)
         self.wMain.connect("notify::is-active", self.on_window_active_changed)
+        self.init_mounts_page()
         self.loadConfig()
         self.updateTree()
         self.watch_mounts()
+
+    def init_mounts_page(self):
+        """The server pane's Mounted tab (#269): a row for each mount, by the name
+        list_mounts gives it, with its folder and what is mounted there as its tooltip,
+        and a menu of what can be done with it."""
+        # name, folder, tooltip (markup)
+        self.treeMounts.set_model(Gtk.ListStore(str, str, str))
+        column = Gtk.TreeViewColumn()
+        renderer = Gtk.CellRendererText()
+        column.pack_start(renderer, True)
+        column.add_attribute(renderer, "text", 0)
+        self.treeMounts.append_column(column)
+        self.treeMounts.set_tooltip_column(2)
+        # The folder whose menu is open.
+        self.mount_menu_folder = None
+        menu = self.popupMenuMounts = Gtk.Menu()
+        for name, label, act in (
+            ("mnuOpenFolder", _("Open Folder"), self.open_mounted_folder),
+            ("mnuOpenSftp", _("Open over SFTP"), self.open_mounted_over_sftp),
+            ("mnuUnmount", _("Unmount"), self.unmount_folder),
+        ):
+            item = Gtk.MenuItem(label=label)
+            item.connect("activate", lambda _item, act=act: act(self.mount_menu_folder))
+            setattr(menu, name, item)
+            menu.append(item)
+        menu.append(Gtk.SeparatorMenuItem())
+        menu.mnuUnmountAll = item = Gtk.MenuItem(label=_("Unmount All"))
+        item.connect("activate", lambda _item: self.unmount_all_files())
+        menu.append(item)
+        menu.show_all()
 
     def on_treeServers_key_press(self, widget, event, *args):
         if event.keyval == Gdk.KEY_Delete:
@@ -5388,14 +5441,14 @@ class Wmain(GladeComponent):
         return self.find_mounts(host)[1].get(host)
 
     def watch_mounts(self):
-        """Follow the mount table, so that the tree and Servers ▸ Mounted show what is
-        mounted however it was mounted or unmounted, by GCM or not."""
+        """Follow the mount table, so that the tree, Servers ▸ Mounted and the Mounted tab
+        show what is mounted however it was mounted or unmounted, by GCM or not."""
         self.mount_monitor = Gio.UnixMountMonitor.get()
         self.mount_monitor.connect("mounts-changed", lambda _monitor: self.show_mounts())
 
     def show_mounts(self):
         """Mark each host mounted in the tree and the Hosts menu, and list each mount in
-        Servers ▸ Mounted, as the mount table has them now."""
+        Servers ▸ Mounted and the Mounted tab, as the mount table has them now."""
         mounts, found = self.find_mounts()
         items = getattr(self, "host_items", {})
 
@@ -5415,12 +5468,9 @@ class Wmain(GladeComponent):
         self.list_mounts(mounts, found)
 
     def list_mounts(self, mounts, found):
-        """Servers ▸ Mounted: each mount in ~/mnt to unmount, by its host's name, or by what
-        is mounted where no host is found for it, and Unmount All while there is one."""
-        application = self.application
-        section = getattr(application, "mounts_section", None)
-        if section is None:
-            return
+        """Each mount in ~/mnt, by its host's name, or by what is mounted where no host is
+        found for it: in the server pane's Mounted tab (#269), and in Servers ▸ Mounted, to
+        unmount, with Unmount All while there is one."""
         listed = [
             (folder, name, "~/" + str(folder.relative_to(Path.home())))
             for folder, name in mount_names(mounts, found).items()
@@ -5429,6 +5479,11 @@ class Wmain(GladeComponent):
         if listed == getattr(self, "listed_mounts", None):
             return
         self.listed_mounts = listed
+        self.fill_mounts_page(listed, mounts)
+        application = self.application
+        section = getattr(application, "mounts_section", None)
+        if section is None:
+            return
         section.remove_all()
         for folder, name, shown in listed:
             item = Gio.MenuItem.new(menu_label(_("Unmount {} from {}").format(name, shown)), None)
@@ -5439,6 +5494,70 @@ class Wmain(GladeComponent):
             # item with no action is drawn as one to choose.
             section.append(_("Nothing is mounted"), "app.unmount-all")
         application.lookup_action("unmount-all").set_enabled(bool(listed))
+
+    def fill_mounts_page(self, listed, mounts):
+        """The Mounted tab's rows, from `listed`, and the tab itself, shown only while
+        something is mounted. Back to the tree as it goes, so that the pane is never left
+        on a tab no longer shown."""
+        notebook = getattr(self, "nbServers", None)
+        if notebook is None:
+            return
+        store = self.treeMounts.get_model()
+        store.clear()
+        for folder, name, shown in listed:
+            tooltip = GLib.markup_escape_text(f"{shown}\n{mounts[folder]}", -1)
+            store.append([name, str(folder), tooltip])
+        page = notebook.get_nth_page(1)
+        if listed:
+            self.lblMountsTab.set_text(_("Mounted ({})").format(len(listed)))
+            page.show()
+        else:
+            notebook.set_current_page(0)
+            page.hide()
+
+    def mounted_host(self, folder):
+        """The host whose mount the Mounted tab lists at `folder`, or None for a mount that
+        is no host's. Read again, as a host edited since was made anew."""
+        _mounts, found = self.find_mounts()
+        return next((host for host, at in found.items() if at == folder), None)
+
+    def open_mounted_folder(self, folder):
+        """Open Folder: the mount itself, its folder in ~/mnt, in the file manager."""
+        open_in_file_manager(Gio.File.new_for_path(str(folder)).get_uri())
+
+    def open_mounted_over_sftp(self, folder):
+        """Open over SFTP: the host mounted at `folder`, as Open in File Manager opens it
+        from the tree. Offered only for a host's mount, as the mount table names no port."""
+        host = self.mounted_host(folder)
+        if host is not None:
+            open_in_file_manager(
+                remotefiles.sftp_address(host.host, self.files_user(host), host.port)
+            )
+
+    def on_treeMounts_button_press_event(self, widget, event, *args):
+        """The Mounted tab's menu, for the row clicked: Open over SFTP greyed for a mount
+        that is no host's, and below the rows, all but Unmount All."""
+        if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3:
+            return False
+        hit = widget.get_path_at_pos(int(event.x), int(event.y))
+        folder = None
+        if hit is not None:
+            widget.get_selection().select_path(hit[0])
+            store = widget.get_model()
+            folder = Path(store.get_value(store.get_iter(hit[0]), 1))
+        self.mount_menu_folder = folder
+        menu = self.popupMenuMounts
+        menu.mnuOpenFolder.set_sensitive(folder is not None)
+        menu.mnuOpenSftp.set_sensitive(folder is not None and self.mounted_host(folder) is not None)
+        menu.mnuUnmount.set_sensitive(folder is not None)
+        menu.mnuUnmountAll.set_sensitive(bool(getattr(self, "listed_mounts", None)))
+        menu.popup_at_pointer(event)
+        return True
+
+    def on_treeMounts_row_activated(self, widget, path, _column):
+        """A double-click opens the row's folder, as Open Folder does."""
+        store = widget.get_model()
+        self.open_mounted_folder(Path(store.get_value(store.get_iter(path), 1)))
 
     def selected_files_host(self):
         """The host the tree's menu was opened on, when its files open over SFTP."""
@@ -5486,8 +5605,8 @@ class Wmain(GladeComponent):
             msginfo(_("{} is not mounted at {}.").format(host.name, self.files_folder(host)))
 
     def unmount_folder(self, folder):
-        """Servers ▸ Mounted: unmount the sshfs mount at `folder` it lists, while it is
-        there."""
+        """Servers ▸ Mounted, and the Mounted tab's Unmount: unmount the sshfs mount at
+        `folder` they list, while it is there."""
         names = mount_names(*self.find_mounts())
         if folder in names:
             self.unmount_files(names[folder], folder)
@@ -5495,7 +5614,8 @@ class Wmain(GladeComponent):
             msginfo(_("{} is not mounted at {}.").format(folder.name, folder))
 
     def unmount_all_files(self):
-        """Servers ▸ Mounted ▸ Unmount All: each sshfs mount in ~/mnt, said once for all."""
+        """Unmount All, in Servers ▸ Mounted and the Mounted tab: each sshfs mount in ~/mnt,
+        said once for all."""
         names = mount_names(*self.find_mounts())
         if not names:
             return
@@ -6225,12 +6345,12 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_btnUnsplit_clicked {
     def on_btnUnsplit_clicked(self, widget, *args):
-        wid = self.find_notebook(self.hpMain, self.nbConsole)
+        wid = self.find_notebook(self.console_side(), self.nbConsole)
         while wid is not None:
             # Mover los tabs al notebook principal
             while wid.get_n_pages() != 0:
                 self.move_page(wid.get_nth_page(0), self.nbConsole)
-            wid = self.find_notebook(self.hpMain, self.nbConsole)
+            wid = self.find_notebook(self.console_side(), self.nbConsole)
         self.on_tab_focus(
             self.nbConsole, self.nbConsole.get_nth_page(self.nbConsole.get_current_page())
         )
@@ -6331,7 +6451,14 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_hpMain_button_press_event {
     def on_hpMain_button_press_event(self, widget, event, *args):
-        if event.type in [Gdk.EventType._2BUTTON_PRESS] and not self.row_activated:
+        # A double-click on the divider. Not one in the server pane that no widget there
+        # took, which reaches here too: measured, one on a tab of its, or below the
+        # Mounted tab's rows, hid the pane (#269).
+        if (
+            event.type in [Gdk.EventType._2BUTTON_PRESS]
+            and not self.row_activated
+            and event.window == widget.get_handle_window()
+        ):
             p = self.hpMain.get_position()
             self.set_panel_visible(p == 0)
         self.row_activated = False
