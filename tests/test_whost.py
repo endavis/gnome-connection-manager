@@ -8,6 +8,7 @@ import subprocess
 import sys
 import types
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -235,78 +236,13 @@ def test_only_an_ssh_host_keeps_its_port_forwards(monkeypatch, app_module, ctype
 # -- the dialog changes shape by connection type, on purpose (#103) -----------
 
 
-def test_only_ssh_hosts_get_a_port_forwarding_tab(app_module):
-    """Documented in SPEC.md and AGENTS.md; this keeps the documentation true.
-
-    Hiding the page takes its tab with it, so a Telnet host's dialog has three tabs
-    where an SSH host's has four. That reads as a glitch unless you know it is meant,
-    which is why it is written down -- and why this holds it to what is written.
-    """
-    hidden = []
-    shown = []
-
-    class Grid:
-        def hide(self):
-            hidden.append(True)
-
-        def show(self):
-            shown.append(True)
-
-    class Toggle:
-        def __init__(self):
-            self.sensitive = None
-            self.active = False
-
-        def set_sensitive(self, value):
-            self.sensitive = value
-
-        def get_active(self):
-            return self.active
-
-        def set_text(self, _text):
-            pass
-
-    dialog = app_module.Whost.__new__(app_module.Whost)
-    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
-    controls = {
-        name: Toggle()
-        for name in (
-            "txtKeepAlive",
-            "chkKeepAlive",
-            "chkX11",
-            "chkAgent",
-            "chkCompression",
-            "txtCompressionLevel",
-            "txtPrivateKey",
-            "btnBrowse",
-            "txtPort",
-            "txtUser",
-            "txtPassword",
-            "txtHost",
-            "txtExtraParams",
-            "chkCommands",
-            "txtCommands",
-            "txtAfterCommand",
-        )
-    }
-    for name, widget in controls.items():
-        setattr(dialog, name, widget)
-    dialog.get_widget = lambda name: Grid() if name == "tunnelGrid" else controls.get(name)
-
-    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "ssh"))
-    assert shown and not hidden, "SSH must keep the Port forwarding tab"
-
-    shown.clear()
-    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "telnet"))
-    assert hidden and not shown, "Telnet must not offer port forwarding"
-
-
 class Field:
     """A dialog control, as far as the type handler uses one."""
 
     def __init__(self):
         self.text = "kept"
         self.sensitive = None
+        self.active = False
 
     def set_text(self, text):
         self.text = text
@@ -315,10 +251,127 @@ class Field:
         self.sensitive = value
 
     def get_active(self):
-        return False
+        return self.active
+
+    def set_active(self, value):
+        self.active = value
 
 
 CONNECTION_FIELDS = ("txtUser", "txtPassword", "txtPort", "txtHost", "txtExtraParams")
+# What else the type handler reads or sets.
+HANDLED_FIELDS = (
+    *CONNECTION_FIELDS,
+    "chkKeepAlive",
+    "txtKeepAlive",
+    "chkCommands",
+    "txtCommands",
+    "txtAfterCommand",
+)
+# The tabs a type may not be shown: SSH's options, its port forwarding, and the terminal's
+# settings (#277).
+TYPE_TABS = ("sshGrid", "tunnelGrid", "terminalPage")
+
+
+class Page:
+    """A tab's page, as far as the type handler uses one."""
+
+    def __init__(self):
+        self.visible = None
+
+    def set_visible(self, visible):
+        self.visible = visible
+
+
+def choose_type(app_module, ctype):
+    """The dialog's controls and tabs once `ctype` is chosen, with no type's own page."""
+    dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.type_pages = {}
+    fields = {name: Field() for name in HANDLED_FIELDS}
+    for name, field in fields.items():
+        setattr(dialog, name, field)
+    pages = {name: Page() for name in TYPE_TABS}
+    dialog.get_widget = lambda name: pages[name] if name in pages else fields[name]
+
+    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
+    return fields, pages
+
+
+@pytest.mark.parametrize(
+    ("ctype", "shown"),
+    [
+        ("ssh", {"sshGrid", "tunnelGrid", "terminalPage"}),
+        ("telnet", {"terminalPage"}),
+        ("rdp", {"terminalPage"}),
+        ("local", {"terminalPage"}),
+        ("command", {"terminalPage"}),
+        # It opens no tab, and so no terminal.
+        ("web", set()),
+    ],
+)
+def test_a_type_is_shown_only_the_tabs_it_uses(app_module, ctype, shown):
+    """SSH's options and its port forwarding for SSH alone, and the Terminal tab for a
+    host whose tab is a terminal (#277). Written down in HOSTS-AND-FOLDERS.md and
+    AGENTS.md, since a tab that comes and goes with the type reads as a glitch unless you
+    know it is meant, and this holds the dialog to what is written."""
+    _fields, pages = choose_type(app_module, ctype)
+
+    assert {name: page.visible for name, page in pages.items()} == {
+        name: name in shown for name in TYPE_TABS
+    }
+
+
+@pytest.mark.parametrize("drawn_by_gcm", [True, False])
+def test_a_vnc_host_has_a_terminal_tab_only_without_gtk_vnc(app_module, monkeypatch, drawn_by_gcm):
+    """With gtk-vnc GCM draws the desktop in the tab itself, and without it a viewer runs
+    in a terminal, which the Terminal tab's settings then apply to (#234, #277)."""
+    monkeypatch.setattr(app_module, "TYPE_PAGES", {"vnc": object} if drawn_by_gcm else {})
+
+    _fields, pages = choose_type(app_module, "vnc")
+
+    assert pages["terminalPage"].visible is not drawn_by_gcm
+    assert pages["sshGrid"].visible is False and pages["tunnelGrid"].visible is False
+
+
+GLADE = Path(__file__).resolve().parents[1] / "data" / "ui" / "gnome-connection-manager.glade"
+
+
+def ids_on(page_id):
+    """The id of every widget on the notebook page `page_id`."""
+    page = ElementTree.parse(GLADE).getroot().find(f".//object[@id='{page_id}']")
+    return {widget.get("id") for widget in page.iter("object")} - {None}
+
+
+SSH_OPTIONS = (
+    "txtPrivateKey",
+    "btnBrowse",
+    "chkKeepAlive",
+    "txtKeepAlive",
+    "chkX11",
+    "chkAgent",
+    "chkCompression",
+    "txtCompressionLevel",
+)
+TERMINAL_OPTIONS = (
+    "chkLogging",
+    "txtTerm",
+    "chkDefaultColors",
+    "btnFColor",
+    "btnBColor",
+    "cmbBackspace",
+    "cmbDelete",
+)
+
+
+def test_every_ssh_option_is_on_the_ssh_tab():
+    """Hidden with its tab for any other type. They sat on Properties, greyed for every
+    other type, which made the one tab that vanished look like a fault (#277)."""
+    assert set(SSH_OPTIONS) <= ids_on("sshGrid")
+
+
+def test_the_terminal_tab_holds_what_only_a_terminal_uses():
+    """Logging and TERM moved from Properties to the tab with the colours and keys, and
+    the tab is shown only for a host whose tab is a terminal (#277)."""
+    assert set(TERMINAL_OPTIONS) <= ids_on("terminalPage")
 
 
 @pytest.mark.parametrize(
@@ -340,29 +393,7 @@ def test_a_type_greys_and_clears_the_connection_fields_it_does_not_use(
     """A local shell has no address, user, password or port. The port is then 23, since
     the dialog refuses to save a host without a valid one. A web host has an address and
     a port and nothing else, and keeps no password it never uses (#231)."""
-    dialog = app_module.Whost.__new__(app_module.Whost)
-    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
-    names = (
-        *CONNECTION_FIELDS,
-        "txtKeepAlive",
-        "chkKeepAlive",
-        "chkX11",
-        "chkAgent",
-        "chkCompression",
-        "txtCompressionLevel",
-        "txtPrivateKey",
-        "btnBrowse",
-        "chkCommands",
-        "txtCommands",
-        "txtAfterCommand",
-    )
-    fields = {name: Field() for name in names}
-    for name, field in fields.items():
-        setattr(dialog, name, field)
-    grid = types.SimpleNamespace(show=lambda: None, hide=lambda: None)
-    dialog.get_widget = lambda name: grid if name == "tunnelGrid" else fields[name]
-
-    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
+    fields, _pages = choose_type(app_module, ctype)
 
     assert {name: fields[name].sensitive for name in CONNECTION_FIELDS} == {
         name: name in live for name in CONNECTION_FIELDS
@@ -377,96 +408,11 @@ def test_a_type_greys_and_clears_the_connection_fields_it_does_not_use(
 def test_the_command_after_disconnecting_needs_a_session_to_end(app_module, ctype):
     """A web host opens no tab, so it has no session to end (#238). The command before
     connecting applies to every type: the handler leaves it alone."""
-    dialog = app_module.Whost.__new__(app_module.Whost)
-    dialog.type_pages = {}
-    names = (
-        *CONNECTION_FIELDS,
-        "txtKeepAlive",
-        "chkKeepAlive",
-        "chkX11",
-        "chkAgent",
-        "chkCompression",
-        "txtCompressionLevel",
-        "txtPrivateKey",
-        "btnBrowse",
-        "chkCommands",
-        "txtCommands",
-        "txtAfterCommand",
-    )
-    fields = {name: Field() for name in names}
-    for name, field in fields.items():
-        setattr(dialog, name, field)
-    grid = types.SimpleNamespace(show=lambda: None, hide=lambda: None)
-    dialog.get_widget = lambda name: grid if name == "tunnelGrid" else fields[name]
-
-    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
+    fields, _pages = choose_type(app_module, ctype)
 
     after = fields["txtAfterCommand"]
     assert after.sensitive is (ctype != "web")
     assert after.text == ("" if ctype == "web" else "kept")
-
-
-def test_the_other_ssh_only_controls_are_disabled_rather_than_hidden(app_module):
-    """The tunnel page is the only thing that disappears; everything else greys out.
-
-    That asymmetry is what makes the vanishing tab look like a fault, so it is worth
-    holding in place: if these ever start hiding too, the documentation is wrong.
-    """
-
-    class Control:
-        def __init__(self):
-            self.sensitive = None
-
-        def set_sensitive(self, value):
-            self.sensitive = value
-
-        def get_active(self):
-            return False
-
-        def set_text(self, _text):
-            pass
-
-    class Grid:
-        def hide(self):
-            pass
-
-        def show(self):
-            pass
-
-    dialog = app_module.Whost.__new__(app_module.Whost)
-    dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
-    ssh_only = (
-        "txtKeepAlive",
-        "chkKeepAlive",
-        "chkX11",
-        "chkAgent",
-        "chkCompression",
-        "txtCompressionLevel",
-        "txtPrivateKey",
-        "btnBrowse",
-    )
-    controls = {
-        name: Control()
-        for name in (
-            *ssh_only,
-            "txtPort",
-            "txtUser",
-            "txtPassword",
-            "txtHost",
-            "txtExtraParams",
-            "chkCommands",
-            "txtCommands",
-            "txtAfterCommand",
-        )
-    }
-    for name, widget in controls.items():
-        setattr(dialog, name, widget)
-    dialog.get_widget = lambda name: Grid() if name == "tunnelGrid" else controls.get(name)
-
-    dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: "telnet"))
-
-    still_there = [n for n in ssh_only if controls[n].sensitive is not False]
-    assert not still_there, f"these should be insensitive for telnet: {still_there}"
 
 
 # -- the commands box keeps its text when the box is unticked (#151) ----------

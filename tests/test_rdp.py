@@ -103,31 +103,19 @@ class Control:
     def get_active(self):
         return self.active
 
+    def set_active(self, value):
+        self.active = value
+
     def set_text(self, text):
         self.text = text
 
 
-class Grid:
+class Page:
     def __init__(self):
         self.visible = None
 
-    def hide(self):
-        self.visible = False
-
-    def show(self):
-        self.visible = True
-
-
-SSH_ONLY = (
-    "txtKeepAlive",
-    "chkKeepAlive",
-    "chkX11",
-    "chkAgent",
-    "chkCompression",
-    "txtCompressionLevel",
-    "txtPrivateKey",
-    "btnBrowse",
-)
+    def set_visible(self, visible):
+        self.visible = visible
 
 
 def choose_type(app_module, ctype, *, commands_ticked=False):
@@ -136,7 +124,8 @@ def choose_type(app_module, ctype, *, commands_ticked=False):
     controls = {
         name: Control()
         for name in (
-            *SSH_ONLY,
+            "chkKeepAlive",
+            "txtKeepAlive",
             "txtPort",
             "txtUser",
             "txtPassword",
@@ -150,11 +139,11 @@ def choose_type(app_module, ctype, *, commands_ticked=False):
     controls["chkCommands"].active = commands_ticked
     for name, widget in controls.items():
         setattr(dialog, name, widget)
-    grid = Grid()
-    dialog.get_widget = lambda name: grid if name == "tunnelGrid" else controls.get(name)
+    pages = {name: Page() for name in ("sshGrid", "tunnelGrid", "terminalPage")}
+    dialog.get_widget = lambda name: pages[name] if name in pages else controls.get(name)
 
     dialog.on_cmbType_changed(types.SimpleNamespace(get_active_text=lambda: ctype))
-    return controls, grid
+    return controls, pages
 
 
 @pytest.mark.parametrize(("ctype", "port"), [("ssh", "22"), ("telnet", "23"), ("rdp", "3389")])
@@ -165,12 +154,15 @@ def test_choosing_a_type_offers_its_port(app_module, ctype, port):
 
 
 def test_an_rdp_host_is_offered_what_telnet_is(app_module):
-    """No port forwarding tab, and the SSH-only controls greyed, as for Telnet. The
-    host, port, user, password and extra arguments all apply."""
-    controls, grid = choose_type(app_module, "rdp")
+    """No SSH or port forwarding tab, as for Telnet, and the Terminal tab, since FreeRDP
+    runs in one (#277). The host, port, user, password and extra arguments all apply."""
+    controls, pages = choose_type(app_module, "rdp")
 
-    assert grid.visible is False
-    assert [name for name in SSH_ONLY if controls[name].sensitive is not False] == []
+    assert {name: page.visible for name, page in pages.items()} == {
+        "sshGrid": False,
+        "tunnelGrid": False,
+        "terminalPage": True,
+    }
     for name in ("txtPort", "txtUser", "txtPassword", "txtHost", "txtExtraParams"):
         assert controls[name].sensitive is True, name
 

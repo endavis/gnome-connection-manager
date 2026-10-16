@@ -117,15 +117,26 @@ by hand from two exports still imports cleanly.
 
 ## The host dialog
 
-A host's dialog shows a different number of tabs depending on its connection type, and
-this is deliberate. **Port forwarding** is shown for SSH only: tunnelling is an SSH
-feature, so a Telnet, RDP, Local, web or VNC host has three tabs where an SSH host has four.
-A new host shows the tab until you choose a type. A command host has four as well, with
-its **Command line** tab where Port forwarding would be.
+A host's dialog shows only the tabs its connection type uses, so the tabs change as you
+choose a type. This is deliberate:
 
-It is the only control that is hidden rather than disabled. The other SSH-only fields on
-the Properties tab — keep-alive, X11 forwarding, agent forwarding, compression, private
-key — stay where they are and go grey instead.
+| Tab | Shown for |
+|---|---|
+| **Properties** | every type |
+| **SSH** | SSH: the private key, keep-alive, X11 and agent forwarding, and compression |
+| **Port forwarding** | SSH, since tunnelling is an SSH feature |
+| **Command line** | a command host |
+| **Commands** | every type |
+| **Terminal** | a host whose tab is a terminal: **Enable Logging**, **TERM**, the colours, and the Backspace and Delete keys |
+
+A web host has no Terminal tab, since it opens no tab, and neither has a VNC host while
+GCM draws its desktop with gtk-vnc. A new host is an SSH host until you choose another
+type. On a tab every type is shown, a field the type does not use goes grey instead,
+such as a web host's user and password.
+
+What a hidden tab holds stays while you choose another type and back, but for
+keep-alive, which another type turns off. Saved, a host keeps its port forwards only as
+an SSH host.
 
 Automatic commands on connect are kept separately from the checkbox that runs them, so
 unticking **Send commands after login** stops them running without discarding what you

@@ -995,10 +995,11 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <child>
-              <!-- n-columns=2 n-rows=16 -->
+              <!-- n-columns=2 n-rows=9 -->
               <object class="GtkGrid">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
+                <property name="valign">start</property>
                 <property name="row-homogeneous">True</property>
                 <child>
                   <object class="GtkLabel">
@@ -1094,18 +1095,6 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   <packing>
                     <property name="left-attach">0</property>
                     <property name="top-attach">7</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkLabel">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="halign">start</property>
-                    <property name="label" translatable="yes">Clave Privada</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">0</property>
-                    <property name="top-attach">8</property>
                   </packing>
                 </child>
                 <child>
@@ -1209,6 +1198,61 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </packing>
                 </child>
                 <child>
+                  <object class="GtkLabel">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <property name="halign">start</property>
+                    <property name="label" translatable="yes">Opciones extra</property>
+                  </object>
+                  <packing>
+                    <property name="left-attach">0</property>
+                    <property name="top-attach">8</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkEntry" id="txtExtraParams">
+                    <property name="visible">True</property>
+                    <property name="can-focus">True</property>
+                    <property name="tooltip-text" translatable="yes">Parámetros extra a pasar a la línea de comandos</property>
+                    <property name="margin-start">10</property>
+                  </object>
+                  <packing>
+                    <property name="left-attach">1</property>
+                    <property name="top-attach">8</property>
+                  </packing>
+                </child>
+              </object>
+            </child>
+            <child type="tab">
+              <object class="GtkLabel">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="label" translatable="yes">Propiedades</property>
+              </object>
+              <packing>
+                <property name="tab-fill">False</property>
+              </packing>
+            </child>
+            <child>
+              <!-- n-columns=2 n-rows=5 -->
+              <object class="GtkGrid" id="sshGrid">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="valign">start</property>
+                <property name="row-homogeneous">True</property>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <property name="halign">start</property>
+                    <property name="label" translatable="yes">Clave Privada</property>
+                  </object>
+                  <packing>
+                    <property name="left-attach">0</property>
+                    <property name="top-attach">0</property>
+                  </packing>
+                </child>
+                <child>
                   <!-- n-columns=2 n-rows=1 -->
                   <object class="GtkGrid">
                     <property name="visible">True</property>
@@ -1247,7 +1291,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
-                    <property name="top-attach">8</property>
+                    <property name="top-attach">0</property>
                   </packing>
                 </child>
                 <child>
@@ -1262,7 +1306,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
-                    <property name="top-attach">9</property>
+                    <property name="top-attach">1</property>
                   </packing>
                 </child>
                 <child>
@@ -1274,7 +1318,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
-                    <property name="top-attach">10</property>
+                    <property name="top-attach">2</property>
                   </packing>
                 </child>
                 <child>
@@ -1286,7 +1330,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
-                    <property name="top-attach">11</property>
+                    <property name="top-attach">3</property>
                   </packing>
                 </child>
                 <child>
@@ -1301,55 +1345,20 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
-                    <property name="top-attach">12</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkLabel">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="halign">start</property>
-                    <property name="label" translatable="yes">Opciones extra</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">0</property>
-                    <property name="top-attach">13</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkLabel">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="halign">start</property>
-                    <property name="label" translatable="yes">Habilitar Log</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">0</property>
-                    <property name="top-attach">14</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkLabel">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="halign">start</property>
-                    <property name="label" translatable="yes">TERM</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">0</property>
-                    <property name="top-attach">15</property>
+                    <property name="top-attach">4</property>
                   </packing>
                 </child>
                 <child>
                   <object class="GtkSpinButton" id="txtKeepAlive">
                     <property name="visible">True</property>
+                    <property name="sensitive">False</property>
                     <property name="can-focus">True</property>
                     <property name="tooltip-text" translatable="yes">Intervalo en segundos para enviar paquetes keep-alive</property>
                     <property name="margin-start">10</property>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
-                    <property name="top-attach">9</property>
+                    <property name="top-attach">1</property>
                   </packing>
                 </child>
                 <child>
@@ -1363,7 +1372,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
-                    <property name="top-attach">10</property>
+                    <property name="top-attach">2</property>
                   </packing>
                 </child>
                 <child>
@@ -1377,12 +1386,13 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
-                    <property name="top-attach">11</property>
+                    <property name="top-attach">3</property>
                   </packing>
                 </child>
                 <child>
                   <object class="GtkSpinButton" id="txtCompressionLevel">
                     <property name="visible">True</property>
+                    <property name="sensitive">False</property>
                     <property name="can-focus">True</property>
                     <property name="tooltip-text" translatable="yes">Nivel de compresión: 
 blanco: por defecto
@@ -1392,55 +1402,22 @@ blanco: por defecto
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
-                    <property name="top-attach">12</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkEntry" id="txtExtraParams">
-                    <property name="visible">True</property>
-                    <property name="can-focus">True</property>
-                    <property name="tooltip-text" translatable="yes">Parámetros extra a pasar a la línea de comandos</property>
-                    <property name="margin-start">10</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">1</property>
-                    <property name="top-attach">13</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="chkLogging">
-                    <property name="visible">True</property>
-                    <property name="can-focus">True</property>
-                    <property name="receives-default">False</property>
-                    <property name="margin-start">10</property>
-                    <property name="use-stock">True</property>
-                    <property name="draw-indicator">True</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">1</property>
-                    <property name="top-attach">14</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkEntry" id="txtTerm">
-                    <property name="visible">True</property>
-                    <property name="can-focus">True</property>
-                    <property name="margin-start">10</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">1</property>
-                    <property name="top-attach">15</property>
+                    <property name="top-attach">4</property>
                   </packing>
                 </child>
               </object>
+              <packing>
+                <property name="position">1</property>
+              </packing>
             </child>
             <child type="tab">
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Propiedades</property>
+                <property name="label" translatable="yes">SSH</property>
               </object>
               <packing>
+                <property name="position">1</property>
                 <property name="tab-fill">False</property>
               </packing>
             </child>
@@ -1667,7 +1644,7 @@ blanco: por defecto
                 </child>
               </object>
               <packing>
-                <property name="position">1</property>
+                <property name="position">2</property>
               </packing>
             </child>
             <child type="tab">
@@ -1677,7 +1654,7 @@ blanco: por defecto
                 <property name="label" translatable="yes">Túnel</property>
               </object>
               <packing>
-                <property name="position">1</property>
+                <property name="position">2</property>
                 <property name="tab-fill">False</property>
               </packing>
             </child>
@@ -1798,7 +1775,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                 </child>
               </object>
               <packing>
-                <property name="position">2</property>
+                <property name="position">3</property>
               </packing>
             </child>
             <child type="tab">
@@ -1808,15 +1785,89 @@ Ej: ##D=1000&lt;/span&gt;</property>
                 <property name="label" translatable="yes">Comandos</property>
               </object>
               <packing>
-                <property name="position">2</property>
+                <property name="position">3</property>
                 <property name="tab-fill">False</property>
               </packing>
             </child>
             <child>
-              <object class="GtkBox">
+              <object class="GtkBox" id="terminalPage">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
                 <property name="orientation">vertical</property>
+                <child>
+                  <!-- n-columns=2 n-rows=2 -->
+                  <object class="GtkGrid">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <property name="row-homogeneous">True</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="halign">start</property>
+                        <property name="label" translatable="yes">Habilitar Log</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">0</property>
+                        <property name="top-attach">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="halign">start</property>
+                        <property name="label" translatable="yes">TERM</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">0</property>
+                        <property name="top-attach">1</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkCheckButton" id="chkLogging">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="receives-default">False</property>
+                        <property name="margin-start">10</property>
+                        <property name="use-stock">True</property>
+                        <property name="draw-indicator">True</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">1</property>
+                        <property name="top-attach">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkEntry" id="txtTerm">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="hexpand">True</property>
+                        <property name="margin-start">10</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">1</property>
+                        <property name="top-attach">1</property>
+                      </packing>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkSeparator">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
                 <child>
                   <object class="GtkBox">
                     <property name="visible">True</property>
@@ -1906,7 +1957,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">0</property>
+                    <property name="position">2</property>
                   </packing>
                 </child>
                 <child>
@@ -1919,7 +1970,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">1</property>
+                    <property name="position">3</property>
                   </packing>
                 </child>
                 <child>
@@ -2019,22 +2070,22 @@ Ej: ##D=1000&lt;/span&gt;</property>
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">2</property>
+                    <property name="position">4</property>
                   </packing>
                 </child>
               </object>
               <packing>
-                <property name="position">3</property>
+                <property name="position">4</property>
               </packing>
             </child>
             <child type="tab">
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Colores y Teclas</property>
+                <property name="label" translatable="yes">Terminal</property>
               </object>
               <packing>
-                <property name="position">3</property>
+                <property name="position">4</property>
                 <property name="tab-fill">False</property>
               </packing>
             </child>

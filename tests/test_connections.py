@@ -776,7 +776,7 @@ elif scenario == "only-the-command-type-adds-a-page":
     dialog.init("")
     notebook = dialog.get_widget("nbHost")
     assert list(dialog.type_pages) == ["command"], dialog.type_pages
-    assert notebook.get_n_pages() == 5, notebook.get_n_pages()
+    assert notebook.get_n_pages() == 6, notebook.get_n_pages()
     dialog.get_widget("wHost").destroy()
 elif scenario == "a-types-page-in-the-host-dialog":
     from gnome_connection_manager.utils import connections
@@ -815,10 +815,13 @@ elif scenario == "a-types-page-in-the-host-dialog":
 
     ssh_tabs = shown(dialog)  # a new host is ssh
     assert notebook.get_tab_label(tunnels) in ssh_tabs and example_tab not in ssh_tabs
+    dialog.cmbType.set_active_id("telnet")
+    telnet_tabs = shown(dialog)
     dialog.cmbType.set_active_id("example")
     example_tabs = shown(dialog)
     assert example_tab in example_tabs and notebook.get_tab_label(tunnels) not in example_tabs
-    assert len(example_tabs) == len(ssh_tabs)
+    # What a type with no settings of its own is shown, and its page besides.
+    assert [tab for tab in example_tabs if tab != example_tab] == telnet_tabs
 
     # Drawn as Properties is: a check box for a flag, an entry for text, each labelled.
     notebook.set_current_page(notebook.page_num(page))

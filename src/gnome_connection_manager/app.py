@@ -6646,6 +6646,12 @@ class Whost(GladeComponent):
         buf.create_tag("DELAY1", style=Pango.Style.ITALIC, foreground="darkgray")
         buf.create_tag("DELAY2", style=Pango.Style.ITALIC, foreground="cadetblue")
         buf.connect("changed", self.update_texttags)
+        # Ten lines of commands at the least, in the font they are drawn in. The dialog is
+        # as tall as its tallest page, which Properties was while SSH's options were on it:
+        # moved to a tab of their own, they left the box five lines, and two at a font
+        # scale of 2.25, measured (#277).
+        line = self.txtComamnds.create_pango_layout("Xg").get_pixel_size()[1]
+        self.txtComamnds.get_parent().set_min_content_height(10 * line)
         self.chkKeepAlive = self.get_widget("chkKeepAlive")
         self.txtKeepAlive = self.get_widget("txtKeepAlive")
         # Done programaticaly because engine does not see top-level abjustment object
@@ -7041,27 +7047,17 @@ class Whost(GladeComponent):
         if not kind.arguments:
             self.txtExtraParams.set_text("")
 
-        if kind.ssh_options:
-            self.get_widget("tunnelGrid").show()
-            self.txtKeepAlive.set_sensitive(True)
-            self.chkKeepAlive.set_sensitive(True)
-            self.chkX11.set_sensitive(True)
-            self.chkAgent.set_sensitive(True)
-            self.chkCompression.set_sensitive(True)
-            self.txtCompressionLevel.set_sensitive(self.chkCompression.get_active())
-            self.txtPrivateKey.set_sensitive(True)
-            self.btnBrowse.set_sensitive(True)
-        else:
-            self.get_widget("tunnelGrid").hide()
+        # A type is shown the tabs it uses and no others (#277): SSH's own options and its
+        # port forwarding for SSH alone, and the Terminal tab for a host whose tab is a
+        # terminal. A field on a tab every type shows is greyed instead.
+        self.get_widget("sshGrid").set_visible(kind.ssh_options)
+        self.get_widget("tunnelGrid").set_visible(kind.ssh_options)
+        self.get_widget("terminalPage").set_visible(opens_terminal(kind))
+        if not kind.ssh_options:
+            # Unticked too, so that choosing SSH again shows keep-alive off, as it then is.
+            # It stayed ticked over a keep-alive of 0.
+            self.chkKeepAlive.set_active(False)
             self.txtKeepAlive.set_text("0")
-            self.txtKeepAlive.set_sensitive(False)
-            self.chkKeepAlive.set_sensitive(False)
-            self.chkX11.set_sensitive(False)
-            self.chkAgent.set_sensitive(False)
-            self.chkCompression.set_sensitive(False)
-            self.txtCompressionLevel.set_sensitive(False)
-            self.txtPrivateKey.set_sensitive(False)
-            self.btnBrowse.set_sensitive(False)
             if not kind.remote:
                 self.txtUser.set_text("")
                 self.txtPassword.set_text("")
@@ -8696,6 +8692,12 @@ class VncPage(Gtk.Box):
 # takes the keyboard as `keyboard`, a child of the page. A type without one here opens
 # as the registry says, with its command in a terminal.
 TYPE_PAGES = {"vnc": VncPage} if GtkVnc is not None else {}
+
+
+def opens_terminal(kind):
+    """Whether a host of `kind` opens in a terminal, which the host dialog's Terminal tab is
+    for (#277): not a web host, which opens no tab, nor one whose tab is a page of its own."""
+    return kind.opens_tab and kind.id not in TYPE_PAGES
 
 
 class NotebookTabLabel(Gtk.HBox):
