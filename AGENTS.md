@@ -220,12 +220,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   sshfs mounts before it connects, measured. `Wmain.show_mounts` marks each host mounted
   in the tree and `list_mounts` lists every mount under Servers ▸ Mounted, rebuilt only
   when what it lists changed. `watch_mounts` runs it on GIO's `mounts-changed`, so a
-  mount made or ended outside GCM shows too. The mark is `MOUNTED_ICON` drawn by
-  `draw_mount_mark` in place of the host's icon, not at the row's end, which a name wider
-  than the tree puts out of sight, measured, and as an icon name, as a `stock_id` that is
-  no stock item draws nothing, measured. The list's empty line is given Unmount All,
-  disabled then, since GTK draws an item with no action as one to choose, measured.
-  Pure: the programs found and the mount table are arguments.
+  mount made or ended outside GCM shows too. The mark is `MOUNTED_MARK`, a tick before
+  the host's name, through `marked_name`: in the tree by `draw_mount_mark`, a data
+  function on the name's renderer, and in the Hosts menu on the item `host_items` keeps
+  for each host, which `show_mounts` relabels. Text, so that it is drawn at the name's
+  size: measured at a font scale of 2.25, the 16 pixel icon that took the host's place
+  sat beside a line of text 46 pixels tall, and went unnoticed. Not at the row's end,
+  which a name wider than the tree puts out of sight, measured. The list's empty line is
+  given Unmount All, disabled then, since GTK draws an item with no action as one to
+  choose, measured. Pure: the programs found and the mount table are arguments.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the

@@ -342,8 +342,8 @@ lasts until you unmount it: closing GCM leaves it mounted. If something else is 
 that folder, GCM names it and leaves it alone, and Unmount SSHFS unmounts only the host's
 own SSHFS mount.
 
-**What is mounted.** A host mounted with SSHFS is drawn in the server tree with a folder
-on a network in place of its own icon, and its tooltip says where it is mounted.
+**What is mounted.** A host mounted with SSHFS has a ✓ before its name, in the server
+tree and in the **Hosts** menu, and its tooltip in the tree says where it is mounted.
 **Servers ▸ Mounted** lists every SSHFS mount in `~/mnt`, each by its host's name, and
 choosing one unmounts it. **Unmount All** below them unmounts them all and says once how
 each went. Both follow the system's list of mounts as it changes, so they show a mount

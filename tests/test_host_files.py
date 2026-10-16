@@ -30,7 +30,13 @@ import pytest
 from gnome_connection_manager.utils import placeholders, remotefiles
 from tests.test_connections import glib_complaints
 from tests.test_console_window import _private_display
-from tests.test_wmain import make_host, make_wmain_for_tree, make_wmain_with_host
+from tests.test_wmain import (
+    DummyMenuItem,
+    make_host,
+    make_wmain_for_tree,
+    make_wmain_with_host,
+    menu_shape,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -912,6 +918,7 @@ def test_the_menu_and_tree_fakes_match_real_gtk():
             ("convert_widget_to_bin_window_coords", "get_path_at_pos", "get_model"),
         ),
         (Tooltip, Gtk.Tooltip, ("set_markup",)),
+        (DummyMenuItem, Gtk.MenuItem, ("get_label", "set_label")),
     ):
         for name in names:
             assert hasattr(fake, name), f"{fake.__name__} is missing {name}"
@@ -1078,7 +1085,7 @@ def test_the_tooltip_says_where_a_host_is_mounted(app_module, monkeypatch):
 
 
 class Cell:
-    """The tree's first Gtk.CellRendererPixbuf, as draw_mount_mark sets it."""
+    """The tree's Gtk.CellRendererText for the name, as draw_mount_mark sets it."""
 
     def __init__(self):
         self.properties: dict = {}
@@ -1087,9 +1094,9 @@ class Cell:
         self.properties[name] = value
 
 
-def test_a_host_mounted_is_drawn_with_a_folder_on_a_network(app_module):
-    """In place of its own icon, which the row's stock icon draws: its end is out of sight
-    where a name is wider than the tree, measured."""
+def test_a_host_mounted_is_drawn_with_a_tick_before_its_name(app_module):
+    """As text, the name's size: an icon in place of the host's went unseen at a large font
+    scale. A row not mounted is left as the name column set it."""
     model = Rows(["router", None, "gtk-network", "#fff", "", "/home/x/mnt/router"])
     mounted, plain = Cell(), Cell()
 
@@ -1097,7 +1104,7 @@ def test_a_host_mounted_is_drawn_with_a_folder_on_a_network(app_module):
     model.rows[0][5] = ""
     app_module.draw_mount_mark(None, plain, model, model.rows[0], None)
 
-    assert mounted.properties == {"icon-name": "folder-remote"}
+    assert mounted.properties == {"text": "✓ router"}
     assert plain.properties == {}
 
 
@@ -1107,8 +1114,38 @@ def test_the_cell_fake_matches_real_gtk():
     from gi.repository import Gtk
 
     assert hasattr(Cell, "set_property")
-    assert Gtk.CellRendererPixbuf.find_property("icon-name") is not None
-    assert Gtk.IconTheme.get_default().has_icon("folder-remote")
+    assert Gtk.CellRendererText.find_property("text") is not None
+
+
+def test_the_hosts_menu_marks_each_host_mounted(app_module, monkeypatch):
+    """As the tree does, drawn with the tree: the menu is for connecting, and was the other
+    place to look for what is mounted."""
+    router = make_host(app_module)
+    mail = host_called(app_module, "mail", "mail.example")
+    wmain = make_wmain_for_tree(app_module, monkeypatch, {"ops/prod": [router, mail]})
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+
+    wmain.updateTree()
+
+    assert menu_shape(wmain.menuServers) == [("ops", [("prod", ["mail", "✓ router"])])]
+
+
+def test_the_hosts_menu_follows_what_is_mounted(app_module, monkeypatch):
+    """With the tree, as the mount table changes, however the mount was made or ended."""
+    router = make_host(app_module)
+    mail = host_called(app_module, "mail", "mail.example")
+    wmain = make_wmain_for_tree(app_module, monkeypatch, {"ops/prod": [router, mail]})
+    mount_table(app_module, monkeypatch)
+    wmain.updateTree()
+    assert menu_shape(wmain.menuServers) == [("ops", [("prod", ["mail", "router"])])]
+
+    mount_table(app_module, monkeypatch, mounted_line(router_folder()))
+    wmain.show_mounts()
+    assert menu_shape(wmain.menuServers) == [("ops", [("prod", ["mail", "✓ router"])])]
+
+    mount_table(app_module, monkeypatch)
+    wmain.show_mounts()
+    assert menu_shape(wmain.menuServers) == [("ops", [("prod", ["mail", "router"])])]
 
 
 def test_unmounting_from_the_list_unmounts_that_folder(app_module, monkeypatch):
@@ -1326,7 +1363,10 @@ if scenario == "the-tree-menu":
         found = [path for row, path in rows if row == name]
         assert found, [row for row, path in rows]
         area = w.treeServers.get_cell_area(found[0], column)
-        return x + area.x + area.width // 2, y + area.y + area.height // 2
+        # In the part of the row in sight: the tree is narrower than a long name, and the
+        # middle of its row can be past the pane's edge.
+        middle = min(area.x + area.width // 2, w.treeServers.get_allocated_width() // 2)
+        return x + middle, y + area.y + area.height // 2
 
     def right_click(name):
         """Right-click the row called `name`, or with None the space below the rows, and
@@ -1425,27 +1465,79 @@ if scenario == "the-tree-menu":
     assert len(mounted) == 2 and opened == [address, address]
     assert shown == [], shown
 
-    # A host mounted is drawn with a folder on a network in place of its own icon, as read
+    # A host mounted is drawn with a tick before its name, and keeps its own icon, as read
     # from the window, the row not selected. Each row is striped, so against itself.
     from gi.repository import Gdk
 
-    def icon_of(name):
+    def drawing(name):
+        """The row called `name` as drawn: its icon, and the whole row."""
         w.treeServers.get_selection().unselect_all()
+        # Off the window, so that the pointer is over no row.
+        xtst.XTestFakeMotionEvent(display, -1, 1900, 1060, 0)
+        x11.XFlush(display)
         w.wMain.present()
         pump(0.5)
         rows = []
         w.treeModel.foreach(lambda model, path, it: rows.append((model.get_value(it, 0), path.copy())))
         [path] = [path for row, path in rows if row == name]
         area = w.treeServers.get_cell_area(path, w.treeServers.get_column(0))
-        return Gdk.pixbuf_get_from_window(
-            w.treeServers.get_bin_window(), area.x, area.y + area.height // 2 - 8, 14, 16
-        ).get_pixels()
+        window = w.treeServers.get_bin_window()
+        icon = Gdk.pixbuf_get_from_window(window, area.x, area.y + area.height // 2 - 8, 14, 16)
+        row = Gdk.pixbuf_get_from_window(window, area.x, area.y, area.width, area.height)
+        return icon.get_pixels(), row.get_pixels()
+
+    def text_of(name):
+        """The text the name's renderer is given to draw the row called `name`."""
+        found = []
+        w.treeModel.foreach(
+            lambda model, path, it: model.get_value(it, 0) == name and found.append(it.copy())
+        )
+        column = w.treeServers.get_column(0)
+        column.cell_set_cell_data(w.treeModel, found[0], False, False)
+        return column.get_cells()[1].props.text
+
+    def hosts_menu():
+        """Open Hosts ▸ Lab with real clicks: each item it draws."""
+        hosts = labelled(w.menubar, "Hosts")
+        click(1, *widget_point(hosts))
+        assert until(hosts.get_submenu().get_visible), "the Hosts menu did not open"
+        pump(0.3)
+        lab = labelled(hosts.get_submenu(), "Lab")
+        click(1, *widget_point(lab))
+        assert until(lab.get_submenu().get_visible), "Hosts ▸ Lab did not open"
+        pump(0.4)
+        items = [
+            each.get_child().get_text()
+            for each in lab.get_submenu().get_children()
+            if isinstance(each.get_child(), Gtk.Label)
+        ]
+        w.menubar.deactivate()
+        assert until(lambda: not lab.get_submenu().get_visible())
+        pump(0.3)
+        return items
 
     # Not yet marked: the mount table was changed without GIO telling.
-    plain = icon_of("box")
+    plain_icon, plain = drawing("box")
+    assert text_of("box") == "box", text_of("box")
+    items = hosts_menu()
+    assert items == ["box", "switch"], items
     w.show_mounts()
-    marked = icon_of("box")
-    assert marked != plain
+    icon, marked = drawing("box")
+    assert marked != plain and icon == plain_icon
+    assert text_of("box") == "✓ box", text_of("box")
+    # Drawn: the tree's font, or one it falls back to, has the tick.
+    assert w.treeServers.create_pango_layout(app.MOUNTED_MARK).get_unknown_glyphs_count() == 0
+    items = hosts_menu()
+    assert items == ["✓ box", "switch"], items
+    # And drawn as before once unmounted, the tick on no other row.
+    mounted_there = app.read_mount_table
+    app.read_mount_table = lambda: ""
+    w.show_mounts()
+    assert drawing("box") == (plain_icon, plain)
+    assert text_of("switch") == "switch", text_of("switch")
+    app.read_mount_table = mounted_there
+    w.show_mounts()
+    assert drawing("box") == (plain_icon, marked)
 
     def mounted_menu():
         """Open Servers ▸ Mounted with real clicks: each item it draws, and whether it can
@@ -1501,7 +1593,10 @@ if scenario == "the-tree-menu":
     w.updateTree()
     w.treeServers.expand_all()
     pump(0.5)
-    assert icon_of("box renamed") == marked
+    assert drawing("box renamed")[0] == plain_icon
+    assert text_of("box renamed") == "✓ box renamed", text_of("box renamed")
+    items = hosts_menu()
+    assert items == ["✓ box renamed", "switch"], items
     right_click("box renamed")
     assert offered() == (True, False, True), offered()
     choose(menu.mnuUnmount)
@@ -1515,7 +1610,10 @@ if scenario == "the-tree-menu":
     # Nothing mounted: no mark, and the list says so, greyed, as Unmount All is.
     app.read_mount_table = lambda: ""
     w.show_mounts()
-    assert icon_of("box renamed") == plain
+    assert drawing("box renamed")[0] == plain_icon
+    assert text_of("box renamed") == "box renamed", text_of("box renamed")
+    items = hosts_menu()
+    assert items == ["box renamed", "switch"], items
     listed, drawn = mounted_menu()
     assert drawn == [("Nothing is mounted", False), ("Unmount All", False)], drawn
     w.menubar.deactivate()
@@ -1682,9 +1780,11 @@ elif scenario in ("sshfs-real-sshd", "sshfs-stored-password"):
         subprocess.run(by_hand, check=True, timeout=30)
         assert until(lambda: marked() == str(folder)), marked()
         assert until(lambda: listed() == ["Unmount probe box from ~/mnt/probe box"]), listed()
+        assert w.host_items[box].get_label() == "✓ probe box", w.host_items[box].get_label()
         subprocess.run([app.fusermount(), "-u", str(folder)], check=True, timeout=30)
         assert until(lambda: marked() == ""), marked()
         assert until(lambda: listed() == ["Nothing is mounted"]), listed()
+        assert w.host_items[box].get_label() == "probe box", w.host_items[box].get_label()
         folder.rmdir()
 
         # Renamed while mounted: found where its old name put it, and unmounted from there.

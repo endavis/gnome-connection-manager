@@ -1063,9 +1063,12 @@ def fusermount():
     return shutil.which("fusermount3") or shutil.which("fusermount")
 
 
-# What the tree draws a host mounted with sshfs with, in place of its own icon: a folder
-# on a network. Not at the row's end, which a name wider than the tree puts out of sight.
-MOUNTED_ICON = "folder-remote"
+# What the tree and the Hosts menu put before the name of a host mounted with sshfs. Text,
+# so that it is drawn at the name's size: measured at a font scale of 2.25, the 16 pixel
+# icon that took the host's place sat beside a line of text 46 pixels tall, and went
+# unnoticed. Before the name, not after it, where a name wider than the tree puts it out
+# of sight.
+MOUNTED_MARK = "✓"
 
 
 def mounted_at(host, found):
@@ -1074,11 +1077,18 @@ def mounted_at(host, found):
     return str(found[host]) if host in found else ""
 
 
+def marked_name(name, folder):
+    """A host's name as the tree and the Hosts menu draw it: after MOUNTED_MARK while it is
+    mounted, at `folder`."""
+    return f"{MOUNTED_MARK} {name}" if folder else name
+
+
 def draw_mount_mark(_column, cell, model, iter_, *_data):
-    """Draw a host mounted with sshfs with MOUNTED_ICON. As an icon name: measured, a
-    stock-id that is no stock item draws nothing, and the tree's icons are stock items."""
-    if model.get_value(iter_, 5):
-        cell.set_property("icon-name", MOUNTED_ICON)
+    """Draw a host mounted with sshfs with MOUNTED_MARK before its name. Only that row's
+    text is set here: the name column sets every row's before this runs."""
+    folder = model.get_value(iter_, 5)
+    if folder:
+        cell.set_property("text", marked_name(model.get_value(iter_, 0), folder))
 
 
 def mount_names(mounts, found):
@@ -4105,12 +4115,12 @@ class Wmain(GladeComponent):
         column.pack_start(renderer, expand=False)
         column.add_attribute(renderer, "stock_id", 2)
         column.add_attribute(renderer, "cell-background", 3)
-        column.set_cell_data_func(renderer, draw_mount_mark)
 
         renderer = Gtk.CellRendererText()
         column.pack_start(renderer, expand=True)
         column.add_attribute(renderer, "text", 0)
         column.add_attribute(renderer, "cell-background", 3)
+        column.set_cell_data_func(renderer, draw_mount_mark)
 
         self.treeServers.set_has_tooltip(True)
         self.treeServers.connect("query-tooltip", self.on_treeServers_tooltip)
@@ -4351,6 +4361,8 @@ class Wmain(GladeComponent):
         }
         # Read again with the hosts, as a host renamed or deleted changes which mount is whose.
         mounts, found = self.find_mounts()
+        # The Hosts menu's item for each host, which show_mounts marks as the tree's row.
+        self.host_items = {}
         self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, contents, occupied, found)
         self.list_mounts(mounts, found)
 
@@ -4362,14 +4374,15 @@ class Wmain(GladeComponent):
         """A folder's children in their order, subfolders drawn with their own. Until
         someone arranges a folder that is subfolders, then hosts, each by name -- the
         order the tree kept when it was drawn from path strings. Each host mounted is
-        marked, from `found`, {host: where}."""
+        marked, from `found`, {host: where}, in the tree and in the Hosts menu."""
         for child in contents.get(parent_id, []):
             if isinstance(child, Host):
+                folder = mounted_at(child, found)
                 self.treeModel.append(
-                    parent_row,
-                    [child.name, child, "gtk-network", "#fff", "", mounted_at(child, found)],
+                    parent_row, [child.name, child, "gtk-network", "#fff", "", folder]
                 )
-                mnuItem = Gtk.MenuItem(label=child.name)
+                mnuItem = Gtk.MenuItem(label=marked_name(child.name, folder))
+                self.host_items[child] = mnuItem
                 mnuItem.show()
                 mnuItem.connect(
                     "activate", lambda arg, nb, h: self.addTab(nb, h), self.nbConsole, child
@@ -5381,15 +5394,21 @@ class Wmain(GladeComponent):
         self.mount_monitor.connect("mounts-changed", lambda _monitor: self.show_mounts())
 
     def show_mounts(self):
-        """Mark each host mounted in the tree, and list each mount in Servers ▸ Mounted, as
-        the mount table has them now."""
+        """Mark each host mounted in the tree and the Hosts menu, and list each mount in
+        Servers ▸ Mounted, as the mount table has them now."""
         mounts, found = self.find_mounts()
+        items = getattr(self, "host_items", {})
 
         def mark(model, _path, iter_):
             host = model.get_value(iter_, 1)
-            # Only a row whose mount changed, as each change redraws it.
-            if host is not None and model.get_value(iter_, 5) != mounted_at(host, found):
-                model.set_value(iter_, 5, mounted_at(host, found))
+            if host is None:
+                return False
+            folder = mounted_at(host, found)
+            # Only a host whose mount changed, as each change redraws its row.
+            if model.get_value(iter_, 5) != folder:
+                model.set_value(iter_, 5, folder)
+                if host in items:
+                    items[host].set_label(marked_name(host.name, folder))
             return False
 
         self.treeModel.foreach(mark)
