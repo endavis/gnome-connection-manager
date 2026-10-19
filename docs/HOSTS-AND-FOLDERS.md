@@ -250,11 +250,12 @@ setting only where WSL's interop finds `mstsc.exe`. Elsewhere RDP hosts open in 
 whatever it says, and FreeRDP need not be installed for Remote Desktop Connection.
 
 - **User and password**: GCM gives Remote Desktop Connection neither. Windows asks for
-  both in its own dialog. **Remember me** keeps them for the next connection, in
-  Windows' Credential Manager, unless the policy *Do not allow passwords to be saved* is
-  set, which takes it away. The managed desktop this was tried on sets it. Where
-  Credential Guard runs, as it does there too, Windows does not send a remembered RDP
-  password, and a connection that tries fails with *Logon attempt failed*.
+  both in its own dialog. **Remember me** saves them in Windows' Credential Manager,
+  unless the policy *Do not allow passwords to be saved* is set, which takes it away. The
+  managed desktop this was tried on sets it, so whether Windows then uses a saved
+  password was not measured. Where Credential Guard runs, as it does there too, Windows
+  does not send a remembered RDP password, and a connection that tries fails with *Logon
+  attempt failed*.
 - **What it takes from the host**: the address and port, **Display**, as `/f` or
   `/f /multimon`, and a **Size** in pixels in a window, as `/w:` and `/h:`. Tried with
   the real one, each did what it says.
