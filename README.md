@@ -94,32 +94,85 @@ Requires Python 3.12+ and GTK 3.
 
 ## Installation
 
-No pre-built packages are published yet, so build from source.
+On Ubuntu, or another system with apt, one line installs the newest release:
 
-### 1. Install build tools
+```bash
+wget -qO- https://raw.githubusercontent.com/endavis/gnome-connection-manager/main/install.sh | bash
+```
+
+It uses `wget` because a new Ubuntu desktop has it, and does not have `curl`. Where `curl`
+is installed, `curl -fsSL <the same address> | bash` does the same.
+
+GCM is then in your desktop's menu, and `gnome-connection-manager` starts it in a
+terminal. The script, [install.sh](install.sh), has apt install whichever of the
+[packages GCM needs](#runtime-dependencies) are missing, through `sudo`, which asks for
+your password. Everything else goes in your home:
+
+- `~/.local/share/gnome-connection-manager`: a clone of this repository, with each version
+  installed in a folder of its own.
+- `~/.local/bin/gnome-connection-manager`: the command, which starts the version in use.
+- `~/.local/share/applications/gnome-connection-manager.desktop`: the menu entry.
+
+Ubuntu's `~/.profile` puts `~/.local/bin` on your `PATH` when you log in, once the folder
+exists. The script says so if it is not there yet: until you log in again, start GCM as
+`~/.local/bin/gnome-connection-manager`.
+
+### Updating
+
+Run the same line again. It installs the newest release beside the one you have, and the
+menu and the command start the new one from then on. A GCM already running goes on with
+the version it started with until it is closed. An update keeps the version it replaces,
+and removes older ones that no running GCM was started from.
+
+With **Check updates** on, GCM says when a newer release exists, as
+[Update check](#update-check) describes.
+
+### Choosing a version
+
+Give the script an argument after `bash -s --`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/endavis/gnome-connection-manager/main/install.sh | bash -s -- main
+```
+
+| Argument | Installs |
+|---|---|
+| `release` | The newest release, a `vX.Y.Z` tag. The default. |
+| `main` | The newest commit on `main`, with every change as it merges. |
+| `vX.Y.Z` | That release. |
+
+Run with no argument, the line follows `release` or `main`, whichever was given last.
+
+### Uninstalling
+
+```bash
+wget -qO- https://raw.githubusercontent.com/endavis/gnome-connection-manager/main/install.sh | bash -s -- --uninstall
+```
+
+This removes the clone, the command and the menu entry, and refuses while GCM is running.
+It keeps GCM's configuration, with your hosts, in `~/.config/gcm` or `~/.gcm`, and the
+packages apt installed.
+
+### Building a .deb instead
+
+A `.deb` installs GCM for every user of the computer, and does not update itself.
 
 ```bash
 sudo apt install git ruby ruby-dev build-essential gettext python3-pip -y
 sudo gem install fpm
-```
-
-### 2. Clone and build
-
-```bash
-git clone <this repository>
+git clone https://github.com/endavis/gnome-connection-manager.git
 cd gnome-connection-manager
 make deb
+sudo apt install ./gnome-connection-manager_*_all.deb
 ```
 
 `make deb` prints the name of the package it wrote to the current directory.
 
-### 3. Install
+### Runtime dependencies
 
-```bash
-sudo apt install ./gnome-connection-manager_*_all.deb
-```
-
-### Runtime dependencies (resolved automatically by apt)
+The `.deb` depends on these, and the install line has apt install them, with
+`gir1.2-gtk-vnc-2.0` and `git`. It reads the list from the `Makefile` of the version it
+installs, so a version that needs another package gets it.
 
 | Package | Purpose |
 |---|---|
@@ -134,8 +187,8 @@ sudo apt install ./gnome-connection-manager_*_all.deb
 ### Optional programs
 
 Each is used by one kind of host or one feature, and GCM says what is missing when it is
-needed. Only `gir1.2-gtk-vnc-2.0` is installed with GCM, as a package it recommends, and
-not when apt is set to leave recommendations out.
+needed. Only `gir1.2-gtk-vnc-2.0` is installed with GCM: the install line names it, and the
+`.deb` recommends it, which apt installs unless it is set to leave recommendations out.
 
 | Package (Ubuntu 24.04) | For |
 |---|---|
@@ -183,7 +236,7 @@ With **Check updates** on in Preferences, the default, GCM asks GitHub for this
 repository's release tags two seconds after it starts, and says so when one is newer than
 the version running. It asks for the list of tags and nothing more, and says nothing when
 GitHub cannot be reached. Turn it off in Preferences, or with `check-updates = False`
-under `[options]` in `gcm.conf`.
+under `[options]` in `gcm.conf`. [Updating](#updating) says how to install the new one.
 
 ---
 

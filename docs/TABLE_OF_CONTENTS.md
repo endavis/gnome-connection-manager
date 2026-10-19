@@ -11,7 +11,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 <!-- BEGIN:tag=gcm-guide -->
 - [Gnome Connection Manager](index.md) - What GCM is, and where to start reading
 - [Hosts and folders in GCM](HOSTS-AND-FOLDERS.md) - The server tree: making and moving folders, putting it in the order you want, and what export and import carry; the host dialog, commands on this computer, RDP, VNC, web and command hosts, and a host's files over SFTP and SSHFS
-- [Running GCM on Windows with WSL](WSL-SETUP.md) - Setting GCM up on Ubuntu 24.04 under WSL: installing it from a clone, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's
+- [Running GCM on Windows with WSL](WSL-SETUP.md) - Setting GCM up on Ubuntu 24.04 under WSL: installing it with one line, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's
 - [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, consoles in windows of their own, typing into several consoles at once, tabs that need your attention, sessions that end or drop, font zoom, the shortcut table, snippets, a host's first connection, and what GCM does with a gcm.conf it cannot read
 <!-- END:tag=gcm-guide -->
 
@@ -122,7 +122,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Python Project Coding Standards](development/coding-standards.md) - Guidelines for exceptions, typing, structure, testing, and documentation
 - [Release Automation & Security](development/release-and-automation.md) - Automated versioning, release management, and security tooling
 - [Ruff Auto-Fix on Edit Hook](development/ai/ruff-fix-hook.md) - PostToolUse hook that runs ruff --fix on edited Python files
-- [Running GCM on Windows with WSL](WSL-SETUP.md) - Setting GCM up on Ubuntu 24.04 under WSL: installing it from a clone, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's
+- [Running GCM on Windows with WSL](WSL-SETUP.md) - Setting GCM up on Ubuntu 24.04 under WSL: installing it with one line, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's
 - [Slash Commands and Workflows](development/ai/slash-commands.md) - Reference for the slash commands and dual-agent workflow this template ships with
 - [Template Management](template/manage.md) - Unified interface for creating projects, checking updates, and syncing
 - [Template Tools Reference](template/tools-reference.md) - Complete reference for all template tools in tools/pyproject_template/
