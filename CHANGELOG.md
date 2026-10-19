@@ -11,6 +11,15 @@ the git log.
 
 ## [Unreleased]
 
+### Added
+- One line installs GCM, `wget -qO-
+  https://raw.githubusercontent.com/endavis/gnome-connection-manager/main/install.sh | bash`,
+  on Ubuntu or another system with apt. It installs the newest release in your home, with
+  the packages it needs from apt, a command and a menu entry, and run again it updates GCM.
+  Each version goes in a folder of its own, so a GCM already running goes on with the one
+  it started with. It can follow `main` instead, or install a given release, and
+  `--uninstall` removes it, keeping the configuration.
+
 ### Fixed
 - The update check asks this repository for its releases, the `vX.Y.Z` tags, and compares
   versions as numbers. It asked the original author's site, which serves that GCM's

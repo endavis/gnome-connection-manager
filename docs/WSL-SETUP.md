@@ -1,6 +1,6 @@
 ---
 title: "Running GCM on Windows with WSL"
-description: "Setting GCM up on Ubuntu 24.04 under WSL: installing it from a clone, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's"
+description: "Setting GCM up on Ubuntu 24.04 under WSL: installing it with one line, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's"
 audience:
   - gcm-users
 tags:
@@ -27,8 +27,8 @@ It was measured on Windows 11 (build 26200) with WSL 2.7.13.0, WSLg 1.0.73.2 and
 settings store of its own or a Windows temp folder instead, and a step that was not run at
 all says so.
 `wsl --list --online` also offers Ubuntu 26.04. The steps should be the same there, with
-the one difference [Installing GCM](#installing-gcm) describes, but GCM has not been tried
-on it.
+the one difference [From a clone](#from-a-clone) describes for a clone, but GCM has not
+been tried on it.
 
 ## Before you start
 
@@ -62,6 +62,36 @@ using them only recommends. apt leaves a recommended package out when it is set 
 recommendations, so install them by name even where apt would have added them.
 
 ## Installing GCM
+
+```bash
+wget -qO- https://raw.githubusercontent.com/endavis/gnome-connection-manager/main/install.sh | bash
+```
+
+The script has apt install what GCM needs, through `sudo`, and installs GCM in your home,
+as the README's
+[Installation](../README.md#installation) describes. Then open a new Ubuntu terminal, and
+start GCM:
+
+```bash
+gnome-connection-manager
+```
+
+GCM's window opens, and it has made its configuration directory, `~/.config/gcm`, which
+the README's [Configuration](../README.md#configuration) describes.
+
+The new terminal is needed the first time only. The command is in `~/.local/bin`, which
+Ubuntu's `~/.profile` puts on `PATH` for a login shell once the folder exists, and an
+Ubuntu terminal starts one: measured here, its shell was `-bash`, started by
+`/bin/login -f`. The script was run with a scratch home, with apt faked, and GCM started
+from the command it wrote, on a display of its own rather than WSLg's. pyaes, which apt
+would have installed, was given to it from a folder of its own.
+
+To update GCM later, run the same line again, as [Updating](../README.md#updating)
+describes.
+
+### From a clone
+
+To work on GCM, run it from a clone with `uv` instead:
 
 ```bash
 sudo apt update
@@ -99,7 +129,7 @@ the README's [Configuration](../README.md#configuration) describes.
   variable set, the environment stays on the interpreter it names. GCM's own tests run on
   3.12 only.
 
-To update GCM later:
+To update a clone:
 
 ```bash
 cd ~/src/gnome-connection-manager
@@ -107,15 +137,31 @@ git pull
 UV_PYTHON=/usr/bin/python3 uv sync
 ```
 
-The README's [Installation](../README.md#installation) builds a `.deb` package instead,
-which needs Ruby and `fpm`. This guide runs GCM from the clone, and only that route was
-measured.
+The README's [Building a .deb instead](../README.md#building-a-deb-instead) makes a
+package, which needs Ruby and `fpm`. That route was not measured for this guide.
 
 ## Starting GCM from Windows
 
-### A launcher
+### A shortcut
 
-Save this as `~/bin/gcm.sh`:
+On the Windows desktop, right-click, choose **New ▸ Shortcut**, and give it this location,
+with your Ubuntu user name in place of `<you>`:
+
+```text
+"C:\Program Files\WSL\wslg.exe" -d Ubuntu-24.04 /home/<you>/.local/bin/gnome-connection-manager
+```
+
+`wslg.exe` is what WSLg's own Start menu entries run. **Files**, the entry Nautilus gets,
+is `wslg.exe -d Ubuntu-24.04 --cd "~" -- nautilus --new-window`. It starts a command with
+the environment a login shell has, so keychain's agent, below, is there, and
+`~/.local/bin` is on `PATH`. `wsl.exe` does not. Measured with a script that reported
+both, started each way: from `wslg.exe`, with or without `--`, it found the agent, and
+`uv` in `~/.local/bin`. From `wsl.exe`, plain, with `--` or with `-e`, it found neither.
+The command the installer writes ran from `wslg.exe` as well, measured with a scratch
+home: it started the version installed, with the agent there.
+
+For a clone, make the shortcut run a script of your own, `~/bin/gcm.sh`, made executable
+with `chmod +x`:
 
 ```bash
 #!/bin/bash
@@ -125,29 +171,7 @@ cd ~/src/gnome-connection-manager || exit 1
 exec uv run gnome-connection-manager
 ```
 
-Make it executable, and try it from a terminal:
-
-```bash
-chmod +x ~/bin/gcm.sh
-~/bin/gcm.sh
-```
-
-### A shortcut
-
-On the Windows desktop, right-click, choose **New ▸ Shortcut**, and give it this location,
-with your Ubuntu user name in place of `<you>`:
-
-```text
-"C:\Program Files\WSL\wslg.exe" -d Ubuntu-24.04 /home/<you>/bin/gcm.sh
-```
-
-`wslg.exe` is what WSLg's own Start menu entries run. **Files**, the entry Nautilus gets,
-is `wslg.exe -d Ubuntu-24.04 --cd "~" -- nautilus --new-window`. It starts a command with
-the environment a login shell has, so `uv` is on `PATH` and keychain's agent, below, is
-there too. `wsl.exe` does not. Measured with a script that reported both, started each
-way: from `wslg.exe`, with or without `--`, it found `uv` and the agent. From `wsl.exe`,
-plain, with `--` or with `-e`, it found neither, and the launcher stops at
-`exec: uv: not found`.
+From `wsl.exe` that stops at `exec: uv: not found`.
 
 In the shortcut's **Properties**:
 
@@ -156,7 +180,7 @@ In the shortcut's **Properties**:
 
   ```bash
   sudo apt install imagemagick
-  convert ~/src/gnome-connection-manager/data/icon.png \
+  convert ~/.local/share/gnome-connection-manager/current/data/icon.png \
       -define icon:auto-resize=128,64,48,32,16 /mnt/c/Users/<windows user>/gcm.ico
   ```
 
@@ -166,7 +190,10 @@ In the shortcut's **Properties**:
   like this one, never reached GCM.
 
 To have GCM in the Start menu, copy the shortcut into the folder **Win+R** opens for
-`shell:programs`. WSLg's entries are there too, in a folder named `Ubuntu-24.04`.
+`shell:programs`. WSLg's entries are there too, in a folder named `Ubuntu-24.04`. The
+installer writes a menu entry for Linux desktops,
+`~/.local/share/applications/gnome-connection-manager.desktop`. Whether WSLg adds that to
+the Start menu was not measured.
 
 **Each start is a GCM of its own.** Starting GCM again while it runs opens a second window
 in a second process, rather than bringing the first one forward. Each writes its
@@ -391,7 +418,7 @@ With screens at different scales in Windows, make a launcher for each, such as
 #!/bin/bash
 # GCM for the screen Windows scales to 225%.
 export GDK_DPI_SCALE=2.25
-exec ~/bin/gcm.sh
+exec ~/.local/bin/gnome-connection-manager
 ```
 
 Start only one GCM at a time, as [A shortcut](#a-shortcut) says.
@@ -479,18 +506,23 @@ menu works, and the tooltip is not shown.
 **A mount fails with "Host key verification failed."** Connect to the host once in a
 console and accept its key.
 
-**The shortcut does nothing.** Whatever the launcher prints from a shortcut goes nowhere.
-To keep it, end the launcher with this line instead, and read `~/.cache/gcm.log`:
+**The shortcut does nothing.** Whatever GCM prints when a shortcut starts it goes nowhere.
+To keep it, point the shortcut at a script of your own, made executable with `chmod +x`,
+and read `~/.cache/gcm.log`:
 
 ```bash
-exec uv run gnome-connection-manager >>~/.cache/gcm.log 2>&1
+#!/bin/bash
+exec ~/.local/bin/gnome-connection-manager >>~/.cache/gcm.log 2>&1
 ```
 
-`exec: uv: not found` there means the shortcut runs `wsl.exe` rather than `wslg.exe`: see
-[A shortcut](#a-shortcut). Running `~/bin/gcm.sh` in an Ubuntu terminal shows the rest.
+For a clone, end `~/bin/gcm.sh` with `exec uv run gnome-connection-manager
+>>~/.cache/gcm.log 2>&1` instead. There, `exec: uv: not found` means the shortcut runs
+`wsl.exe` rather than `wslg.exe`: see [A shortcut](#a-shortcut). Running
+`gnome-connection-manager`, or `~/bin/gcm.sh`, in an Ubuntu terminal shows the rest.
 
-**`ModuleNotFoundError: No module named 'gi'`.** The environment was built without the
-system's packages, or on another Python. Rebuild it:
+**`ModuleNotFoundError: No module named 'gi'`**, or `'pyaes'`. A package GCM needs is not
+installed: run the install line again, which installs what is missing. In a clone, the
+environment was built without the system's packages, or on another Python. Rebuild it:
 
 ```bash
 cd ~/src/gnome-connection-manager

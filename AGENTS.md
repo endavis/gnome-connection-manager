@@ -476,6 +476,25 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, en, fr, it, ko, pl, pt, ru.
 - `docs/` – see [Documentation](#documentation).
 - `gnome-connection-manager.desktop`, `postinst`, `Makefile`, `dodo.py`, `pyproject.toml`.
+- `install.sh` – the one-line installer (#294), served from `main` and piped to bash. It
+  clones the repository bare into `~/.local/share/gnome-connection-manager/repo`, adds
+  each version as a worktree under `versions/`, and moves the link `current` to the one
+  in use. An update never changes a version's files, since a running GCM reads its glade
+  file for every dialog and runs `data/scripts/ssh.expect` for each tab. The launcher it
+  writes, `~/.local/bin/gnome-connection-manager`, resolves `current` once and holds a
+  shared `flock` on that version while GCM runs, and drops the `GCM_*_DIR` a GCM started
+  from another's tab inherits. An update keeps the version it replaces, as `previous`,
+  and removes an older one only if it can lock it exclusively. Measured: `flock(1)`
+  creates a file at a path that does not exist, so it is given only folders found; and
+  git exits 128 in a folder that is gone, `Unable to read current working directory`, so
+  the script works from `/`, as it may remove the one it was run from. The packages come
+  from the version's own `Makefile`, the `deb` recipe's `-d` and `--deb-recommends`, and
+  git. Everything runs from a `main` called on the last line, in braces: a download cut
+  short just after `main` would run it without its arguments. GLib's `get_executable`
+  reads a quoted Exec up to the first space, quote included, measured, so the desktop
+  entry quotes the launcher's path only where it must.
+  `tests/test_install.py` pipes it to bash against a repository of the test's own, with
+  `sudo`, `apt-get` and `dpkg-query` faked and `awk` as mawk, which a new Ubuntu has.
 
 - `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/` – agent
   configuration. `.claude/settings.json`
@@ -802,6 +821,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `CHANGELOG.md`'s hand-written `## [Unreleased]` with commit subjects. `--dry-run`
   showed only the new section, which hid that. `doit release_tag` tags the tip of
   `main`, so run it straight after the release PR merges.
+- `install.sh` installs the newest of those tags, so a release reaches every install the
+  next time it runs, and the script itself reaches new installs as soon as it merges. A
+  package the `.deb` needs goes in the Makefile's `deb` recipe, which the script reads,
+  and in `PACKAGES` in `tests/test_install.py`, which checks what it installs.
 
 ## Coding Conventions & Tips
 - This file deliberately names symbols rather than line numbers. The previous version
