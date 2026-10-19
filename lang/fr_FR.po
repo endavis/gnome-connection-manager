@@ -918,16 +918,6 @@ msgstr "William"
 msgid "Comprobar actualizaciones"
 msgstr "Rechercher mise à jour"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2431
-#: ../gnome_connection_manager.py:2729 ../gnome_connection_manager.py:2844
-#: ../gnome_connection_manager.py:2980 ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr ""
-"Il y a une nouvelle version disponible sur http://kuthulu.com/gcm/?"
-"module=download"
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -1954,3 +1944,9 @@ msgstr "Bureau à distance Windows"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "Le Bureau à distance Windows demande lui-même le mot de passe, et reprend d'un hôte son Affichage et une taille en pixels. Ses propres réglages décident du reste."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "GCM {new} est disponible. Version utilisée : {current}."
+
+msgid "How to install it: {url}"
+msgstr "Pour l'installer : {url}"

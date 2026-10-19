@@ -1033,16 +1033,6 @@ msgstr "번역자 : leejh76@gmail.com"
 msgid "Comprobar actualizaciones"
 msgstr "업데이트 확인"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2430
-#: ../gnome_connection_manager.py:2431 ../gnome_connection_manager.py:2527
-#: ../gnome_connection_manager.py:2609 ../gnome_connection_manager.py:2729
-#: ../gnome_connection_manager.py:2844 ../gnome_connection_manager.py:2980
-#: ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr "새로운 버전이 있습니다. http://kuthulu.com/gcm/?module=download"
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -2106,3 +2096,9 @@ msgstr "Windows 원격 데스크톱"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "Windows 원격 데스크톱은 암호를 직접 묻고, 호스트의 표시 설정과 픽셀 단위 크기를 사용합니다. 나머지는 자체 설정을 따릅니다."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "GCM {new} 버전이 나왔습니다. 현재 버전: {current}."
+
+msgid "How to install it: {url}"
+msgstr "설치 방법: {url}"

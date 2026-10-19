@@ -923,17 +923,6 @@ msgstr ""
 msgid "Comprobar actualizaciones"
 msgstr "Проверять обновления"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2430
-#: ../gnome_connection_manager.py:2431 ../gnome_connection_manager.py:2729
-#: ../gnome_connection_manager.py:2844 ../gnome_connection_manager.py:2980
-#: ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr ""
-"На сайте http://kuthulu.com/gcm/?module=download доступна новая версия "
-"программы"
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -1958,3 +1947,9 @@ msgstr "Удалённый рабочий стол Windows"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "Удалённый рабочий стол Windows сам запрашивает пароль и берёт у узла «Отображение» и размер в пикселях. Остальное определяют его собственные настройки."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "Доступен GCM {new}. Используемая версия: {current}."
+
+msgid "How to install it: {url}"
+msgstr "Как установить: {url}"

@@ -11,6 +11,13 @@ the git log.
 
 ## [Unreleased]
 
+### Fixed
+- The update check asks this repository for its releases, the `vX.Y.Z` tags, and compares
+  versions as numbers. It asked the original author's site, which serves that GCM's
+  version, 1.2.1, and compared versions as text, so it could not report a release of this
+  one. A newer release shows as information rather than as an error, and the About
+  dialog's website is this repository too.
+
 ## [2.0.0] - 2026-10-19
 
 ### Added

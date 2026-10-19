@@ -177,6 +177,14 @@ GCM_LOG_LEVEL=DEBUG gnome-connection-manager
 
 The first line it prints names the configuration directory in use.
 
+### Update check
+
+With **Check updates** on in Preferences, the default, GCM asks GitHub for this
+repository's release tags two seconds after it starts, and says so when one is newer than
+the version running. It asks for the list of tags and nothing more, and says nothing when
+GitHub cannot be reached. Turn it off in Preferences, or with `check-updates = False`
+under `[options]` in `gcm.conf`.
+
 ---
 
 ## Running from source

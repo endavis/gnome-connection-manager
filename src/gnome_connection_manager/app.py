@@ -57,6 +57,7 @@ import sys
 import tempfile
 import time
 import tokenize
+import urllib.request
 import weakref
 from pathlib import Path
 from threading import Thread
@@ -116,6 +117,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     placeholders,
     remotefiles,
     transcript,
+    updates,
     urlregex,
     vtehtml,
 )
@@ -273,7 +275,7 @@ def require_readable_config() -> None:
 
 app_name = "Gnome Connection Manager"
 app_version = "2.0.0"
-app_web = "http://www.kuthulu.com/gcm"
+app_web = "https://github.com/endavis/gnome-connection-manager"
 app_fileversion = "1"
 
 # Get paths for resources
@@ -9123,50 +9125,36 @@ class EntryDialog(Gtk.Dialog):
 
 
 class CheckUpdates(Thread):
+    """Asks this repository for its release tags, and says when one is newer than the
+    running GCM (#295). A daemon, so that a slow answer never holds up quitting."""
+
     def __init__(self, p):
-        Thread.__init__(self)
+        Thread.__init__(self, daemon=True)
         self.parent = p
 
-    def msg(self, text, parent):
-        self.msgBox = Gtk.MessageDialog(
-            parent=parent,
-            modal=True,
-            message_type=Gtk.MessageType.ERROR,
-            buttons=Gtk.ButtonsType.OK,
-            text=text,
+    def show(self, release):
+        available = _("GCM {new} is available. You are running {current}.").format(
+            new=release, current=app_version
         )
-        self.msgBox.set_icon_from_file(ICON_PATH)
-        self.msgBox.connect("response", self.on_clicked)
-        self.msgBox.show_all()
+        install = _("How to install it: {url}").format(url=updates.INSTALL_PAGE)
+        msginfo(f"{available}\n\n{install}", self.parent.get_widget("wMain"))
         return False
 
-    def on_clicked(self, *args):
-        self.msgBox.destroy()
-
     def run(self):
+        request = urllib.request.Request(
+            updates.TAGS_URL, headers={"Accept": "application/vnd.github+json"}
+        )
         try:
-            import socket
-            import urllib.request as urllib
-
-            socket.setdefaulttimeout(5)
-            web = urllib.urlopen("http://kuthulu.com/gcm/_current.html")
-            if web.getcode() == 200:
-                new_version = web.readline().strip().decode("utf-8")
-                if len(new_version) > 0 and new_version > app_version:
-                    self.tag = GLib.timeout_add(
-                        0,
-                        self.msg,
-                        "{}\n\nCURRENT VERSION: {}\nNEW VERSION: {}".format(
-                            _(
-                                "Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-                            ),
-                            app_version,
-                            new_version,
-                        ),
-                        self.parent.get_widget("wMain"),
-                    )
+            # A timeout for this request alone: socket.setdefaulttimeout, which the
+            # check used before #295, sets one for every socket the process opens after.
+            with urllib.request.urlopen(request, timeout=5) as answer:
+                tags = updates.tag_names(json.load(answer))
         except Exception:
-            pass
+            # No network, a refused request, an answer that is not JSON: no notice.
+            return
+        release = updates.newer_release(tags, app_version)
+        if release:
+            GLib.idle_add(self.show, release)
 
 
 class GcmApplication(Gtk.Application):

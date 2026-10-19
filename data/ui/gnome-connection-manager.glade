@@ -10,7 +10,7 @@
     <property name="copyright" translatable="yes">This is gnome-connection-manager, written and maintained by
 Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
     <property name="comments" translatable="yes">A simple ssh connection manager for gnome</property>
-    <property name="website">http://kuthulu.com/gcm</property>
+    <property name="website">https://github.com/endavis/gnome-connection-manager</property>
     <property name="website-label" translatable="yes">Project's Homepage</property>
     <property name="logo">icon.png</property>
     <property name="license-type">gpl-3-0</property>
