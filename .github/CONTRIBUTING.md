@@ -438,7 +438,9 @@ To cut a release, from an up-to-date `main`:
    `Addresses #N`, as the checks require an issue for any change outside the docs.
 5. Once it is merged, run `doit release_tag` on `main`, before anything else is merged. It
    finds the merged `release/v*` PR, takes the version from its title, and tags the tip of
-   `main`, not the PR's merge commit.
+   `main`, not the PR's merge commit. It ends by saying to watch GitHub Actions for a build
+   and to check TestPyPI and PyPI, the template's steps: GCM publishes nowhere, and no
+   workflow runs on a tag.
 
 `uv run cz bump --get-next --yes` prints the version commitizen proposes from the commits
 since the last tag. Step 2 takes whichever version is chosen.
@@ -590,6 +592,11 @@ Features:
 **PR Description Requirements (enforced by CI):**
 - Minimum 50 characters
 - Reference related issue: "Addresses #42"
+- `Addresses #42` closes nothing, which is why it is used. A
+  [closing keyword](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)
+  before an issue's number closes it, anywhere in the description and negated or not:
+  "This does not close #291" closed #291 when #292 merged, before the release it tracked
+  existed. To see what a PR will close: `gh pr view <n> --json closingIssuesReferences`.
 - Describe what changed and why
 - Include testing information
 

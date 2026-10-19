@@ -857,6 +857,10 @@ commands once wired (#119).
 - **`--body-file` for anything long.** A body passed inline is scanned as command
   arguments, so a message that merely names a blocked pattern is refused. Write it under
   `tmp/agents/` and pass the path. The same applies to commit messages: `git commit -F`.
+- **A closing keyword closes its issue wherever it stands in a PR's description, negated
+  or not.** "This does not close #291" in #292's closed #291 at the merge, before the
+  release it tracked existed. `Addresses #N` closes nothing; check a PR with
+  `gh pr view <n> --json closingIssuesReferences` before it merges.
 - **`ready-to-merge` is a governance label**, applied by a person. An agent may not add it,
   and `require-label` blocks the merge until someone does.
 - Section headings in an issue body must be `##`; the validator parses on that and reports
