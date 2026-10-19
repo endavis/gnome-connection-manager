@@ -432,7 +432,10 @@ To cut a release, from an up-to-date `main`:
    refuses a commit of `pyproject.toml` without it.
 3. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, and put a new,
    empty `## [Unreleased]` above it.
-4. Commit, and open the PR with `doit pr --title="release: vX.Y.Z" --body-file=...`.
+4. Commit as `chore: release X.Y.Z`, since the commit-msg hook refuses `release` as a
+   commit's type. Open the PR with `doit pr --title="release: vX.Y.Z" --body-file=...`:
+   the PR checks accept `release` in a title. Its body names the release's issue,
+   `Addresses #N`, as the checks require an issue for any change outside the docs.
 5. Once it is merged, run `doit release_tag` on `main`, before anything else is merged. It
    finds the merged `release/v*` PR, takes the version from its title, and tags the tip of
    `main`, not the PR's merge commit.

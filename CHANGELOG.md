@@ -11,6 +11,8 @@ the git log.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-19
+
 ### Added
 - Releases. GCM is released as `vX.Y.Z` tags in git, 2.0.0 the first, and the
   contributing guide says how one is cut. Nothing is published to PyPI, since a wheel
