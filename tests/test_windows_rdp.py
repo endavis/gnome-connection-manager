@@ -158,6 +158,64 @@ def test_the_client_preferences_chose_reaches_each_spawn(app_module, monkeypatch
     assert app_module.connection_programs().rdp_client == "mstsc"
 
 
+# -- what the host dialog greys (#285) -----------------------------------------
+
+IGNORED_BY_MSTSC = frozenset({"credentials", "arguments", "resize", "scale"})
+
+
+@pytest.mark.parametrize(
+    ("programs", "found", "ignored"),
+    [
+        (WINDOWS, ("mstsc.exe",), IGNORED_BY_MSTSC),
+        (WINDOWS, ("mstsc.exe", "xfreerdp3"), IGNORED_BY_MSTSC),
+        # FreeRDP opens the host, and uses every one of them.
+        (WINDOWS, ("xfreerdp3",), frozenset()),
+        (FREERDP, ("mstsc.exe", "xfreerdp3"), frozenset()),
+    ],
+)
+def test_an_rdp_host_ignores_what_its_client_is_never_given(monkeypatch, programs, found, ignored):
+    installed(monkeypatch, *found)
+
+    assert connections.RDP.ignores(programs) == ignored
+
+
+def test_what_windows_remote_desktop_ignores_changes_nothing_it_is_given(monkeypatch):
+    """The dialog greys what mstsc's command is the same without, and nothing else, so
+    an option mstsc is one day given for a setting cannot stay greyed."""
+    installed(monkeypatch, "mstsc.exe")
+
+    def argv(host):
+        return connections.RDP.command(host, WINDOWS).argv
+
+    someone_else = rdp_host()
+    someone_else.user, someone_else.password = "CORP\\other", "another-password"
+    other_arguments = rdp_host()
+    other_arguments.extra_params = "/sound"
+    unchanged = {
+        name
+        for name, host in {
+            "credentials": someone_else,
+            "arguments": other_arguments,
+            "display": rdp_host(display="full-screen"),
+            "resize": rdp_host(resize="False"),
+            "size": rdp_host(size="1600x900"),
+            "scale": rdp_host(scale="150"),
+        }.items()
+        if argv(host) == argv(rdp_host())
+    }
+
+    assert connections.RDP.ignores(WINDOWS) == unchanged == IGNORED_BY_MSTSC
+
+
+def test_no_other_type_ignores_anything_whichever_client(monkeypatch):
+    installed(monkeypatch, "mstsc.exe", "xfreerdp3")
+
+    for kind in connections.CONNECTION_TYPES:
+        if kind is not connections.RDP:
+            assert kind.ignores(WINDOWS) == frozenset(), kind.id
+            assert kind.ignores(FREERDP) == frozenset(), kind.id
+
+
 # -- against real GTK ---------------------------------------------------------
 
 _FAKE_MSTSC = r"""#!/bin/sh
@@ -202,11 +260,38 @@ def row(prefs, field):
     labels = [child.get_text() for child in prefs.tblGeneral.get_children() if isinstance(child, Gtk.Label)]
     return controls, labels
 
+def dialog_for(host):
+    dialog = app.Whost()
+    dialog.init("Work", host)
+    return dialog
+
+def greyed(dialog):
+    # What the host dialog greys, of the fields an RDP host uses: Properties' by name, and
+    # the RDP page's by setting.
+    _page, controls = dialog.type_pages["rdp"]
+    fields = {"user": dialog.txtUser, "password": dialog.txtPassword, "arguments": dialog.txtExtraParams}
+    return sorted(name for name, widget in {**fields, **controls}.items() if not widget.get_sensitive())
+
+def saved_host():
+    app.groups.clear()
+    app.wMain.loadConfig()
+    [saved] = app.groups["Work"]
+    return saved
+
+def stored(host):
+    # The host as GCM holds it, read back from gcm.conf, which is what the dialog is
+    # given. A saved key and commands are text, where the Host below leaves them None.
+    host.private_key, host.commands = "", ""
+    app.groups.setdefault("Work", []).append(host)
+    app.wMain.writeConfig()
+    return saved_host()
+
 app.wMain = app.Wmain(application=None)
 nb = app.wMain.nbConsole
 host = app.Host("Work", "build box", "", "win.example.test", "CORP\\me", "not-a-password")
 host.type, host.port = "rdp", "3389"
 mstsc = os.path.join(os.environ["GCM_TEST_BIN"], "mstsc.exe")
+IGNORED = ["arguments", "password", "resize", "scale", "user"]
 
 if scenario == "preferences-offers-windows-remote-desktop-where-mstsc-is-found":
     prefs = app.Wconfig()
@@ -257,6 +342,53 @@ elif scenario == "without-mstsc-an-rdp-host-opens-in-freerdp":
     assert v.command[0] == "xfreerdp3", v.command
     pump(lambda: "xfreerdp3: [/v:win.example.test]" in whole(v), "FreeRDP's arguments")
     assert shown_messages == [], shown_messages
+elif scenario == "the-dialog-greys-what-windows-remote-desktop-ignores":
+    app.conf.RDP_CLIENT = "mstsc"
+    host.extra_params = "/sound"
+    host.type_settings = {"rdp.resize": "False", "rdp.size": "1600x900", "rdp.scale": "150"}
+    dialog = dialog_for(stored(host))
+    assert greyed(dialog) == IGNORED, greyed(dialog)
+    # Greyed, not cleared: FreeRDP has them still, if the client changes back.
+    texts = [dialog.txtUser.get_text(), dialog.txtPassword.get_text(), dialog.txtExtraParams.get_text()]
+    assert texts == ["CORP\\me", "not-a-password", "/sound"], texts
+    _page, controls = dialog.type_pages["rdp"]
+    assert not controls["resize"].get_active() and controls["scale"].get_text() == "150"
+    dialog.on_okbutton1_clicked(None)
+    assert shown_messages == [], shown_messages
+    saved = saved_host()
+    assert (saved.user, saved.password, saved.extra_params) == ("CORP\\me", "not-a-password", "/sound")
+    assert saved.type_settings == host.type_settings, saved.type_settings
+    # Another type uses them, and RDP greys them again, still without clearing them. init()
+    # fills them in after choosing the type, so only a change of type here would show it.
+    dialog = dialog_for(saved)
+    dialog.cmbType.set_active_id("telnet")
+    assert [widget.get_sensitive() for widget in (dialog.txtUser, dialog.txtPassword, dialog.txtExtraParams)] == [True] * 3
+    dialog.cmbType.set_active_id("rdp")
+    assert greyed(dialog) == IGNORED, greyed(dialog)
+    texts = [dialog.txtUser.get_text(), dialog.txtPassword.get_text(), dialog.txtExtraParams.get_text()]
+    assert texts == ["CORP\\me", "not-a-password", "/sound"], texts
+elif scenario in ("freerdp-chosen-greys-nothing", "windows-remote-desktop-not-found-greys-nothing"):
+    app.conf.RDP_CLIENT = "freerdp" if scenario.startswith("freerdp") else "mstsc"
+    host.type_settings = {"rdp.resize": "False", "rdp.scale": "150"}
+    dialog = dialog_for(stored(host))
+    assert greyed(dialog) == [], greyed(dialog)
+elif scenario == "a-greyed-setting-left-wrong-by-hand-does-not-block-ok":
+    host.type_settings = {"rdp.scale": "abc"}
+    host = stored(host)
+    # FreeRDP uses it, so the dialog refuses it, as before.
+    dialog = dialog_for(host)
+    dialog.on_okbutton1_clicked(None)
+    expected = app._("The desktop scale is a percentage from 100 to 500, such as 150.")
+    assert shown_messages == [expected], shown_messages
+    dialog.get_widget("wHost").destroy()
+    shown_messages.clear()
+    # Windows Remote Desktop leaves it unused, and greyed, it could not be corrected.
+    app.conf.RDP_CLIENT = "mstsc"
+    dialog = dialog_for(host)
+    assert "scale" in greyed(dialog), greyed(dialog)
+    dialog.on_okbutton1_clicked(None)
+    assert shown_messages == [], shown_messages
+    assert saved_host().type_settings == {"rdp.scale": "abc"}
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -275,6 +407,10 @@ print("OK")
         ("a-client-gcm-does-not-know-shows-as-freerdp", ("mstsc.exe",)),
         ("an-rdp-host-opens-in-windows-remote-desktop", ("mstsc.exe", "xfreerdp3")),
         ("without-mstsc-an-rdp-host-opens-in-freerdp", ("xfreerdp3",)),
+        ("the-dialog-greys-what-windows-remote-desktop-ignores", ("mstsc.exe",)),
+        ("freerdp-chosen-greys-nothing", ("mstsc.exe",)),
+        ("windows-remote-desktop-not-found-greys-nothing", ()),
+        ("a-greyed-setting-left-wrong-by-hand-does-not-block-ok", ("mstsc.exe",)),
     ],
 )
 def test_windows_remote_desktop_against_real_gtk(tmp_path, scenario, programs):

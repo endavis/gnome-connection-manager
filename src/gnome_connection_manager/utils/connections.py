@@ -167,6 +167,13 @@ class ConnectionType:
         Not asked of a type app.py draws a page for, which needs nothing more."""
         return None
 
+    def ignores(self, programs: Programs) -> frozenset[str]:
+        """What the program a host of this type opens in, with `programs`, leaves unused,
+        of what the type uses: "credentials", "arguments", and the keys of its settings.
+        The host dialog greys them, and keeps what they hold for a program that uses them,
+        where it clears what the type never uses (#285)."""
+        return frozenset()
+
     def command(self, host, programs: Programs) -> Command:
         raise NotImplementedError(f"a {self.id or 'local'} host runs no command")
 
@@ -295,7 +302,9 @@ class Rdp(ConnectionType):
     takes its questions and ends with its status (#225).
 
     Or Windows Remote Desktop does, where Preferences chose it and WSL's interop finds it
-    (#283). Its tab shows nothing, and ends when it exits."""
+    (#283). Its tab shows nothing, and ends when it exits. Closing the tab leaves it
+    running, measured (#285). It exits 0 however its session ends, a connection that
+    failed included, measured, so it is never taken as dropped or refused."""
 
     id = "rdp"
     default_port = "3389"
@@ -349,6 +358,12 @@ class Rdp(ConnectionType):
                 "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
             )
         return None
+
+    def ignores(self, programs: Programs) -> frozenset[str]:
+        if windows_rdp_client(programs) is None:
+            return frozenset()
+        # What mstsc_arguments never gives Windows Remote Desktop.
+        return frozenset({"credentials", "arguments", "resize", "scale"})
 
     def command(self, host, programs: Programs) -> Command:
         windows = windows_rdp_client(programs)
@@ -604,9 +619,13 @@ def mstsc_arguments(host) -> list[str]:
     option for each RDP setting mstsc.exe has one for.
 
     Never the user or the password: Windows asks for both in its own dialog, and remembers
-    them when told to. Nor the extra arguments, which are FreeRDP's. Resize with the window,
-    Desktop scale and a share of the screen have no option here either, and mstsc's own
-    settings decide them, as they decide a window's size when the host gives none.
+    them when told to, where a policy allows it. Nor the extra arguments, which are
+    FreeRDP's. Resize with the window, Desktop scale and a share of the screen have no
+    option here either: mstsc's usage text lists none, and it has no dynamic resolution,
+    its binary naming no such setting (#287). Measured with the real one (#285), its
+    window could not be resized by dragging, and Smart sizing scales the image instead. A
+    size given applies each time, and it saves the /w: and /h: into its Default.rdp,
+    which a window with no size then opens at.
 
     Options, not an .rdp file: since Windows' April 2026 security update, a connection
     opened from a file waits on a security dialog every time, with the clipboard and the

@@ -6747,9 +6747,13 @@ class Whost(GladeComponent):
             self.type_pages[kind.id] = (page, controls)
         self.show_type_page(connections.named(self.cmbType.get_active_text()))
 
-    def show_type_page(self, kind):
-        for type_id, (page, _controls) in self.type_pages.items():
+    def show_type_page(self, kind, ignored=frozenset()):
+        """The page of `kind` alone, with the settings in `ignored` greyed (#285)."""
+        for type_id, (page, controls) in self.type_pages.items():
             page.set_visible(type_id == kind.id)
+            if type_id == kind.id:
+                for key, control in controls.items():
+                    control.set_sensitive(key not in ignored)
 
     def fill_type_pages(self, host):
         """Each type's page from what `host` stored, or the defaults."""
@@ -6938,7 +6942,15 @@ class Whost(GladeComponent):
             msgbox(_("Los campos grupo, nombre y host son obligatorios"))
             return
         type_values = self.type_page_values(kind)
-        problem = kind.invalid(type_values)
+        # A greyed setting is checked as if it held its default: only a hand edit gives it
+        # a value this refuses, and greyed, it could not be corrected here (#285).
+        ignored = kind.ignores(connection_programs())
+        problem = kind.invalid(
+            {
+                setting.key: setting.default if setting.key in ignored else type_values[setting.key]
+                for setting in kind.settings
+            }
+        )
         if problem:
             msgbox(_(problem))
             return
@@ -7055,11 +7067,18 @@ class Whost(GladeComponent):
     # -- Whost.on_cmbType_changed {
     def on_cmbType_changed(self, widget, *args):
         kind = connections.named(widget.get_active_text())
-        self.txtUser.set_sensitive(kind.remote and kind.credentials)
-        self.txtPassword.set_sensitive(kind.remote and kind.credentials)
+        # Greyed and kept, what the program the host opens in leaves unused, such as an RDP
+        # host's user and password while Windows Remote Desktop opens it (#285). What the
+        # type never uses is cleared too, below.
+        ignored = kind.ignores(connection_programs())
+        credentials = kind.remote and kind.credentials and "credentials" not in ignored
+        self.txtUser.set_sensitive(credentials)
+        self.txtPassword.set_sensitive(credentials)
         self.txtPort.set_sensitive(kind.remote)
         self.txtHost.set_sensitive(kind.remote)
-        self.txtExtraParams.set_sensitive(kind.remote and kind.arguments)
+        self.txtExtraParams.set_sensitive(
+            kind.remote and kind.arguments and "arguments" not in ignored
+        )
         # Cleared as a local host's are, so a host keeps no password it never uses.
         if not kind.credentials:
             self.txtUser.set_text("")
@@ -7091,7 +7110,7 @@ class Whost(GladeComponent):
         self.txtAfterCommand.set_sensitive(kind.opens_tab)
         if not kind.opens_tab:
             self.txtAfterCommand.set_text("")
-        self.show_type_page(kind)
+        self.show_type_page(kind, ignored)
 
     # -- Whost.on_cmbType_changed }
 
