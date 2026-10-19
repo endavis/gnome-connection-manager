@@ -368,7 +368,7 @@ class Rdp(ConnectionType):
     def command(self, host, programs: Programs) -> Command:
         windows = windows_rdp_client(programs)
         if windows is not None:
-            # Never the password: Windows asks for it itself, and remembers it when told to.
+            # Never the password: Windows asks for it itself, and can save it when told to.
             return Command([windows, *mstsc_arguments(host)], None)
         client = rdp_client()
         if host.user == "" or host.password == "":
@@ -618,8 +618,9 @@ def mstsc_arguments(host) -> list[str]:
     """Windows Remote Desktop's arguments for an RDP host (#283): its address, and an
     option for each RDP setting mstsc.exe has one for.
 
-    Never the user or the password: Windows asks for both in its own dialog, and remembers
-    them when told to, where a policy allows it. Nor the extra arguments, which are
+    Never the user or the password: Windows asks for both in its own dialog, and can save
+    them when told to, where a policy allows it; using a saved one was not measured (#288).
+    Nor the extra arguments, which are
     FreeRDP's. Resize with the window, Desktop scale and a share of the screen have no
     option here either: mstsc's usage text lists none, and it has no dynamic resolution,
     its binary naming no such setting (#287). Measured with the real one (#285), its

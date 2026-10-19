@@ -15,7 +15,7 @@ the git log.
 - Under WSL, RDP hosts can open in Windows' own Remote Desktop Connection, `mstsc.exe`,
   chosen once for every host by **RDP client** in Preferences, which shows only where WSL
   finds it. GCM gives it the address, **Display** and a size in pixels, and never the user
-  or the password: Windows asks for them in its own dialog, and can remember them where a
+  or the password: Windows asks for them in its own dialog, and can save them where a
   policy allows it. While it is chosen, an RDP host's dialog greys out what it ignores:
   the user, the password, the extra arguments, **Resize with the window** and **Desktop
   scale**. It is started with options rather than an `.rdp` file, since Windows now shows
