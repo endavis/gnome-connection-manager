@@ -179,6 +179,14 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   redirection off until ticked. The real `mstsc.exe` opens its windows on the Windows
   desktop, so no test may reach it: `tests/test_windows_rdp.py` runs its scenarios with a
   fake first on a PATH without the folders WSL adds under `/mnt`.
+  What the program a host opens in leaves unused is its type's `ignores`, given the
+  `Programs`. `on_cmbType_changed` greys it and keeps what it holds, where it clears
+  what a type never uses: Windows Remote Desktop ignores an RDP host's user, password,
+  extra arguments, Resize and Desktop scale (#285). OK checks a setting so greyed at its
+  default, or a value a hand edit left would refuse it with no way to correct it. Tried
+  with the real one on a managed desktop: before connecting, a certificate warning, not
+  a file's dialog. The remote desktop kept its size as the window was resized,
+  Remember me was not allowed, and closing the tab left mstsc running.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the
