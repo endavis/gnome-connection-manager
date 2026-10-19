@@ -263,12 +263,16 @@ whatever it says, and FreeRDP need not be installed for Remote Desktop Connectio
   extra arguments, which are FreeRDP's. While Windows Remote Desktop is chosen, a host's
   dialog greys out the user, the password, the extra arguments and those two settings,
   and keeps what they hold for FreeRDP.
-- **Its window**: tried with the real one, the window could not be resized, with a
-  **Size** or without. The pointer changed at its edges, but they could not be dragged.
-  Remote Desktop Connection saves the size it is given as its own default, in its
-  `Default.rdp`. A host with no **Size** opens at the size the last connection used, so
-  give each host a **Size** for a window of the size you want. The clipboard and drives
-  it shares are its own settings, on its Local Resources tab.
+- **Its window**: Remote Desktop Connection has no setting to resize the remote desktop
+  with its window, so the desktop keeps the size it started at. Tried with the real one,
+  its window could not be resized by dragging. **Smart sizing**, on its window menu,
+  lets the window be resized, and scales the desktop's image to fit instead of changing
+  its size. To have the remote desktop follow the window, use FreeRDP, whose **Resize
+  with the window** asks the server to.
+- **Its size**: a host's **Size** sets the desktop's size each time it opens. Remote
+  Desktop Connection saves the size it is given as its own default, in its
+  `Default.rdp`, so a host with no **Size** opens at the size the last connection used.
+  The clipboard and drives it shares are its own settings, on its Local Resources tab.
 - **No `.rdp` file**: GCM starts Remote Desktop Connection with options rather than a
   file. Since Windows' April 2026 security update, a connection opened from an `.rdp`
   file waits on a security dialog every time, with the clipboard, drives and the rest

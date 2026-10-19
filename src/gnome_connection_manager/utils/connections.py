@@ -621,9 +621,11 @@ def mstsc_arguments(host) -> list[str]:
     Never the user or the password: Windows asks for both in its own dialog, and remembers
     them when told to, where a policy allows it. Nor the extra arguments, which are
     FreeRDP's. Resize with the window, Desktop scale and a share of the screen have no
-    option here either: mstsc's usage text lists none. Measured with the real one (#285),
-    its window could not be resized at all. It saves the /w: and /h: it is given into its
-    Default.rdp, which a window with no size then opens at.
+    option here either: mstsc's usage text lists none, and it has no dynamic resolution,
+    its binary naming no such setting (#287). Measured with the real one (#285), its
+    window could not be resized by dragging, and Smart sizing scales the image instead. A
+    size given applies each time, and it saves the /w: and /h: into its Default.rdp,
+    which a window with no size then opens at.
 
     Options, not an .rdp file: since Windows' April 2026 security update, a connection
     opened from a file waits on a security dialog every time, with the clipboard and the

@@ -185,12 +185,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   extra arguments, Resize and Desktop scale (#285). OK checks a setting so greyed at its
   default, or a value a hand edit left would refuse it with no way to correct it.
   Measured with the real mstsc on a managed desktop (#283): a certificate warning before
-  connecting, not a file's dialog; a window that could not be resized at all; Remember
-  me gone, under the policy *Do not allow passwords to be saved*,
-  `DisablePasswordSaving`; and closing the tab left mstsc running. mstsc saves the `/w:`
-  and `/h:` it is given into its `Default.rdp`, which a connection with no size then
-  opens at. It exits 0 however a session ends, a failed connection included, so
-  `Rdp.dropped` and `Rdp.refused` never apply to it.
+  connecting, not a file's dialog; a window that could not be resized by dragging, which
+  Smart sizing allows, scaling the image; Remember me gone, under the policy *Do not
+  allow passwords to be saved*, `DisablePasswordSaving`; and closing the tab left mstsc
+  running. mstsc has no dynamic resolution (#287): of 19 `.rdp` setting names, its
+  binary holds 16, not `dynamic resolution`, nor the two Microsoft lists as Windows
+  App's alone. A size given applies each time, and mstsc saves the `/w:` and `/h:` into
+  its `Default.rdp`, which a connection with no size then opens at. It exits 0 however a
+  session ends, a failed connection included, so `Rdp.dropped` and `Rdp.refused` never
+  apply to it.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the
