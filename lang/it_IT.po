@@ -977,17 +977,6 @@ msgstr "Vincenzo Reale"
 msgid "Comprobar actualizaciones"
 msgstr "Controlla gli aggiornamenti"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2430
-#: ../gnome_connection_manager.py:2431 ../gnome_connection_manager.py:2527
-#: ../gnome_connection_manager.py:2729 ../gnome_connection_manager.py:2844
-#: ../gnome_connection_manager.py:2980 ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr ""
-"Una nuova versione è disponibile presso http://kuthulu.com/gcm/?"
-"module=download"
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -2031,3 +2020,9 @@ msgstr "Desktop remoto di Windows"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "Desktop remoto di Windows chiede da sé la password e prende da un host la Visualizzazione e una dimensione in pixel. Il resto lo decidono le sue impostazioni."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "GCM {new} è disponibile. Versione in uso: {current}."
+
+msgid "How to install it: {url}"
+msgstr "Come installarlo: {url}"

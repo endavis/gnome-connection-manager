@@ -399,6 +399,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the time is an argument. `Wmain.on_terminal_contents_changed` feeds it, and `check_quiet`
   polls it on a timer that exists only while a tab is waiting, so an idle console costs
   nothing. It, the bell and a session ending all mark through `request_attention`.
+- `src/gnome_connection_manager/utils/updates.py` – whether this repository has released a
+  newer GCM (#295). `newer_release` compares the `vX.Y.Z` tags GitHub lists at
+  `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original
+  author's site, which serves that GCM's 1.2.1, and compared strings, under which 10.0.0
+  is less than 9.0.0. Pure. `CheckUpdates` in `app.py` asks on a daemon thread two
+  seconds after start, while `check-updates` is on, and says nothing on any failure.
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
   without a terminal, a display or a pty.

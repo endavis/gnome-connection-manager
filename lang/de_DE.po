@@ -971,17 +971,6 @@ msgstr "Merlin Schumacher"
 msgid "Comprobar actualizaciones"
 msgstr "Nach Updates suchen"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2430
-#: ../gnome_connection_manager.py:2431 ../gnome_connection_manager.py:2527
-#: ../gnome_connection_manager.py:2729 ../gnome_connection_manager.py:2844
-#: ../gnome_connection_manager.py:2980 ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr ""
-"Es ist eine neue Version auf http://kuthulu.com/gcm/?module=download "
-"verfügbar."
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -2041,3 +2030,9 @@ msgstr "Windows-Remotedesktop"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "Windows-Remotedesktop fragt selbst nach dem Kennwort und übernimmt von einem Host die Anzeige und eine Größe in Pixeln. Den Rest bestimmen seine eigenen Einstellungen."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "GCM {new} ist verfügbar. Verwendete Version: {current}."
+
+msgid "How to install it: {url}"
+msgstr "Installationsanleitung: {url}"

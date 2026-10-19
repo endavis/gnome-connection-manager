@@ -918,16 +918,6 @@ msgstr "E. A. Semchechen"
 msgid "Comprobar actualizaciones"
 msgstr "Verificar atualizações"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2430
-#: ../gnome_connection_manager.py:2431 ../gnome_connection_manager.py:2729
-#: ../gnome_connection_manager.py:2844 ../gnome_connection_manager.py:2980
-#: ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr ""
-"Existe uma nova versão disponível em http://kuthulu.com/gcm/?module=download"
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -1953,3 +1943,9 @@ msgstr "Área de Trabalho Remota do Windows"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "A Área de Trabalho Remota do Windows pede a senha por conta própria e usa a Exibição e um tamanho em pixels do host. Suas próprias configurações decidem o resto."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "O GCM {new} está disponível. Versão em uso: {current}."
+
+msgid "How to install it: {url}"
+msgstr "Como instalá-lo: {url}"

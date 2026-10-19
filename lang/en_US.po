@@ -1048,17 +1048,6 @@ msgstr "kuthulu"
 msgid "Comprobar actualizaciones"
 msgstr "Check updates"
 
-#: ../gnome_connection_manager.py:1781 ../gnome_connection_manager.py:1993
-#: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2430
-#: ../gnome_connection_manager.py:2431 ../gnome_connection_manager.py:2527
-#: ../gnome_connection_manager.py:2609 ../gnome_connection_manager.py:2729
-#: ../gnome_connection_manager.py:2844 ../gnome_connection_manager.py:2980
-#: ../gnome_connection_manager.py:3154
-msgid ""
-"Hay una nueva version disponible en http://kuthulu.com/gcm/?module=download"
-msgstr ""
-"There's a new version available at http://kuthulu.com/gcm/?module=download"
-
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:491
 #: ../gnome_connection_manager.py:449 ../gnome_connection_manager.py:569
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:637
@@ -2110,3 +2099,9 @@ msgstr "Windows Remote Desktop"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
 msgstr "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "GCM {new} is available. You are running {current}."
+
+msgid "How to install it: {url}"
+msgstr "How to install it: {url}"
