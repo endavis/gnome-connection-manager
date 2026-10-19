@@ -12,6 +12,9 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- Releases. GCM is released as `vX.Y.Z` tags in git, 2.0.0 the first, and the
+  contributing guide says how one is cut. Nothing is published to PyPI, since a wheel
+  cannot supply GTK 3, VTE or PyGObject.
 - Under WSL, RDP hosts can open in Windows' own Remote Desktop Connection, `mstsc.exe`,
   chosen once for every host by **RDP client** in Preferences, which shows only where WSL
   finds it. GCM gives it the address, **Display** and a size in pixels, and never the user

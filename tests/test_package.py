@@ -36,27 +36,31 @@ def test_main_dunder_module_invokes_run(monkeypatch: pytest.MonkeyPatch) -> None
 # -- one version, four places it is written down ----------------------------
 
 
-def _declared_versions() -> dict[str, str]:
-    """Every place the release version is spelled out, and what it currently says."""
+def _declared_versions(repo: Path | None = None) -> dict[str, str]:
+    """Every place the release version is spelled out, by the file's path from the root
+    of `repo`, this repository unless given, and what it currently says."""
     import re
     import tomllib
-    from pathlib import Path
 
-    repo = Path(__file__).resolve().parents[1]
-    found = {
+    repo = repo or Path(__file__).resolve().parents[1]
+
+    def written(path: str, pattern: str) -> str:
+        match = re.search(pattern, (repo / path).read_text(), re.MULTILINE)
+        assert match, f"{path} no longer matches {pattern}"
+        return match.group(1)
+
+    return {
         "pyproject.toml": tomllib.loads((repo / "pyproject.toml").read_text())["project"][
             "version"
         ],
-        "__init__.py": gnome_connection_manager.__version__,
+        "src/gnome_connection_manager/__init__.py": written(
+            "src/gnome_connection_manager/__init__.py", r'^__version__ = "([^"]+)"'
+        ),
+        "src/gnome_connection_manager/app.py": written(
+            "src/gnome_connection_manager/app.py", r'^app_version = "([^"]+)"'
+        ),
+        "Makefile": written("Makefile", r"^PKG_VERSION=(\S+)"),
     }
-    app_source = (repo / "src/gnome_connection_manager/app.py").read_text()
-    found["app.py app_version"] = re.search(
-        r'^app_version = "([^"]+)"', app_source, re.MULTILINE
-    ).group(1)
-    found["Makefile PKG_VERSION"] = re.search(
-        r"^PKG_VERSION=(\S+)", (repo / "Makefile").read_text(), re.MULTILINE
-    ).group(1)
-    return found
 
 
 def test_every_declared_version_agrees() -> None:
@@ -69,6 +73,52 @@ def test_every_declared_version_agrees() -> None:
     declared = _declared_versions()
 
     assert len(set(declared.values())) == 1, f"version drift: {declared}"
+
+
+def test_commitizen_names_every_declared_version_file() -> None:
+    """A release writes the version with `cz bump --files-only` (#291), which rewrites
+    `[project].version` through its pep621 provider and each file in `version_files`, and
+    nothing else. A file named above alone would keep the old version through a release;
+    one named there alone would be bumped outside the test that keeps them equal."""
+    import tomllib
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    config = tomllib.loads(pyproject.read_text())["tool"]["commitizen"]
+    named = {entry.split(":")[0] for entry in config["version_files"]}
+
+    assert config["version_provider"] == "pep621"
+    assert named | {"pyproject.toml"} == set(_declared_versions())
+
+
+def test_a_release_bump_reaches_every_declared_version(tmp_path: Path) -> None:
+    """Naming the right files is not enough. Measured with commitizen 4.18.0, a
+    `version_files` pattern that matches no line, `^app_versio_typo` for app.py, left that
+    file at the old version and still exited 0. So bump a copy of the four files as a
+    release does, and read them back."""
+    import os
+    import shutil
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[1]
+    for path in _declared_versions():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(repo / path, tmp_path / path)
+    # commitizen refuses to run outside a git repository, though it needs no commit. git
+    # exports GIT_DIR and its like to a hook, and run from one, these would act on the
+    # repository the hook is for.
+    env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, env=env, check=True)
+
+    subprocess.run(
+        [sys.executable, "-m", "commitizen", "bump", "--files-only", "--yes", "9.9.9"],
+        cwd=tmp_path,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        check=True,
+        timeout=60,
+    )
+
+    assert _declared_versions(tmp_path) == dict.fromkeys(_declared_versions(), "9.9.9")
 
 
 def test_the_readme_does_not_write_the_version_out() -> None:

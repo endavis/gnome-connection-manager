@@ -788,6 +788,14 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - `postinst` registers the desktop entry through `xdg-desktop-menu`; update it if install
   paths change, along with `gnome-connection-manager.desktop`.
 - `make check` and `make style-strip-trailing-whitespace` enforce newline cleanliness.
+- A release is a `vX.Y.Z` tag on `main`, made through a `release/vX.Y.Z` PR as
+  `.github/CONTRIBUTING.md` describes (#291). `cz bump --files-only` writes the version
+  into the four files `tests/test_package.py` keeps equal, which `[tool.commitizen]` in
+  `pyproject.toml` names, and the test fails if the two lists part. Never `doit release`:
+  it writes no version, and its `cz changelog --incremental`, tried on a copy, replaced
+  `CHANGELOG.md`'s hand-written `## [Unreleased]` with commit subjects. `--dry-run`
+  showed only the new section, which hid that. `doit release_tag` tags the tip of
+  `main`, so run it straight after the release PR merges.
 
 ## Coding Conventions & Tips
 - This file deliberately names symbols rather than line numbers. The previous version
