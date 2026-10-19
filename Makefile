@@ -1,6 +1,6 @@
 PKG_NAME=gnome-connection-manager
 PKG_DESCRIPTION="Simple tabbed SSH and telnet connection manager for GTK environments"
-PKG_VERSION=1.2.2
+PKG_VERSION=2.0.0
 PKG_MAINTAINER="Renzo Bertuzzi <kuthalu@gmail.com>"
 PKG_ARCH=all
 PKG_ARCH_RPM=noarch
