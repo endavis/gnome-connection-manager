@@ -251,10 +251,10 @@ whatever it says, and FreeRDP need not be installed for Remote Desktop Connectio
 
 - **User and password**: GCM gives Remote Desktop Connection neither. Windows asks for
   both in its own dialog. **Remember me** keeps them for the next connection, in
-  Windows' Credential Manager, where a policy allows it. On the managed desktop this was
-  tried on, Windows did not allow it. Where Credential Guard runs, Windows does not send a
-  remembered RDP password, and a connection that tries fails with *Logon attempt
-  failed*.
+  Windows' Credential Manager, unless the policy *Do not allow passwords to be saved* is
+  set, which takes it away. The managed desktop this was tried on sets it. Where
+  Credential Guard runs, as it does there too, Windows does not send a remembered RDP
+  password, and a connection that tries fails with *Logon attempt failed*.
 - **What it takes from the host**: the address and port, **Display**, as `/f` or
   `/f /multimon`, and a **Size** in pixels in a window, as `/w:` and `/h:`. Tried with
   the real one, each did what it says.
@@ -263,11 +263,12 @@ whatever it says, and FreeRDP need not be installed for Remote Desktop Connectio
   extra arguments, which are FreeRDP's. While Windows Remote Desktop is chosen, a host's
   dialog greys out the user, the password, the extra arguments and those two settings,
   and keeps what they hold for FreeRDP.
-- **Its window**: tried with the real one, the remote desktop kept its size as the
-  window was resized. With no **Size**, the window opened at the size Remote Desktop
-  Connection used last, and could not be resized. Give a host a **Size** for a window of
-  the size you want. The clipboard and drives it shares are its own settings, on its
-  Local Resources tab.
+- **Its window**: tried with the real one, the window could not be resized, with a
+  **Size** or without. The pointer changed at its edges, but they could not be dragged.
+  Remote Desktop Connection saves the size it is given as its own default, in its
+  `Default.rdp`. A host with no **Size** opens at the size the last connection used, so
+  give each host a **Size** for a window of the size you want. The clipboard and drives
+  it shares are its own settings, on its Local Resources tab.
 - **No `.rdp` file**: GCM starts Remote Desktop Connection with options rather than a
   file. Since Windows' April 2026 security update, a connection opened from an `.rdp`
   file waits on a security dialog every time, with the clipboard, drives and the rest
@@ -276,7 +277,10 @@ whatever it says, and FreeRDP need not be installed for Remote Desktop Connectio
   the remote computer's identity, from the server's certificate.
 - **The tab** runs Remote Desktop Connection, shows nothing, and ends when it exits.
   Closing the tab leaves Remote Desktop Connection running, so end the session in its
-  own window.
+  own window. Remote Desktop Connection exits 0 however the session ends, measured:
+  closed, signed out, a password prompt cancelled, or no answer from the host. GCM
+  cannot tell a failed connection from one you ended, so **Close console**'s **Only on
+  clean exit** closes the tab after either.
 
 ## VNC hosts
 
