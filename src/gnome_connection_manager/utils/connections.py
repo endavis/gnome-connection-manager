@@ -368,7 +368,8 @@ class Rdp(ConnectionType):
     def command(self, host, programs: Programs) -> Command:
         windows = windows_rdp_client(programs)
         if windows is not None:
-            # Never the password: Windows asks for it itself, and can save it when told to.
+            # Never the password: Windows asks for it itself, and can save it when told to,
+            # where a policy allows it.
             return Command([windows, *mstsc_arguments(host)], None)
         client = rdp_client()
         if host.user == "" or host.password == "":
