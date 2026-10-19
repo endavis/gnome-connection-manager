@@ -10,18 +10,18 @@ tags:
   - automation
 ---
 
-!!! warning "This project does not release"
+!!! warning "This project releases by tag alone"
 
-    GCM installs from a `.deb` built by the `Makefile` with `fpm`, not from PyPI — a wheel
-    cannot supply GTK 3, VTE or PyGObject. There is no `release.yml`, no `testpypi.yml`
-    and no `hatch-vcs`: the version is static in `pyproject.toml`, and
-    `tests/test_package.py::test_every_declared_version_agrees` keeps its four copies in
-    step.
+    A GCM release is a `vX.Y.Z` tag on `main`. Nothing is published to PyPI — a wheel
+    cannot supply GTK 3, VTE or PyGObject — and there is no `release.yml`, no
+    `testpypi.yml` and no `hatch-vcs`. The version is static, in four files that
+    `tests/test_package.py` keeps equal, and `CHANGELOG.md` is written by hand, so
+    `doit release`, which generates the changelog and writes no version, does not fit.
 
     The page is kept because the machinery it describes is present in the vendored
     `tools/doit/`, and because other pages link into its sections. Read it as the
     template's flow, not this project's. See
-    [Contributing](../../.github/CONTRIBUTING.md) for what replaces it here.
+    [Contributing](../../.github/CONTRIBUTING.md#release-process) for how GCM releases.
 
 # Release Automation & Security
 

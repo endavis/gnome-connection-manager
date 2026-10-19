@@ -329,13 +329,15 @@ This is acceptable because:
    doit check
    ```
 
-2. **Use conventional commit messages** - Your commit messages (`feat:`, `fix:`, etc.) automatically become changelog entries during release. See [Commit Guidelines](#commit-guidelines).
+2. **Use conventional commit messages** - See [Commit Guidelines](#commit-guidelines).
 
-3. **Update documentation** (if needed)
+3. **Update `CHANGELOG.md`**, under `## [Unreleased]`, for a change a user would notice. It is written by hand: commit messages do not become its entries, and no release step generates them.
 
-4. **Update related ADRs** (if implementing an architectural decision) - Add your issue link to the Related section
+4. **Update documentation** (if needed)
 
-5. **Self-review your code**
+5. **Update related ADRs** (if implementing an architectural decision) - Add your issue link to the Related section
+
+6. **Self-review your code**
 
 ### PR Title
 
@@ -406,22 +408,44 @@ The label and approval are independent checks - both must pass. The label serves
 
 ## Release Process
 
-The template this project is built on releases to PyPI from git tags. **GCM does not.**
-A wheel cannot supply GTK 3, VTE or PyGObject — those come from the distribution — so a
-PyPI install would not produce a working application.
+GCM is released by tag. A release is a `vX.Y.Z` tag on `main`, and nothing more: no
+workflow runs on a tag, and nothing goes to PyPI. The template this project is built on
+publishes there, but a wheel cannot supply GTK 3, VTE or PyGObject — those come from the
+distribution — so a PyPI install would not produce a working application.
 
-What that means in practice:
-
-- **The version is static**, in `pyproject.toml`. There is no `hatch-vcs`, no
-  `dynamic = ["version"]`, and no release tag driving it. Four files carry the version and
-  `tests/test_package.py::test_every_declared_version_agrees` fails if they disagree.
-- **`release.yml` and `testpypi.yml` are deliberately absent.** So are `doit release` and
-  `doit release_tag`; they are present in the vendored task modules but not wired to
-  anything here.
+- **The version is static.** Four files carry it: `pyproject.toml`, `__version__` in
+  `src/gnome_connection_manager/__init__.py`, `app_version` in
+  `src/gnome_connection_manager/app.py` and `PKG_VERSION` in the `Makefile`. There is no
+  `hatch-vcs` and no `dynamic = ["version"]`. `[tool.commitizen]` in `pyproject.toml`
+  names the four, and `tests/test_package.py` fails if they disagree, or if commitizen's
+  list and the test's part.
+- **`CHANGELOG.md` is written by hand.** A release turns its `## [Unreleased]` into the
+  release's own section, and never generates one.
 - **Packaging is a `.deb`**, built by the `Makefile` with `fpm`. See the installation
   section of the README.
 
-If PyPI publishing is ever wanted, the pieces are all still in the template — see
+To cut a release, from an up-to-date `main`:
+
+1. Create the branch `release/vX.Y.Z`. A branch so named needs no issue number.
+2. Write the version into the four files with `uv run cz bump --files-only --yes X.Y.Z`,
+   then run `uv lock`. `uv.lock` records the version too, and the `uv-lock-check` hook
+   refuses a commit of `pyproject.toml` without it.
+3. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, and put a new,
+   empty `## [Unreleased]` above it.
+4. Commit, and open the PR with `doit pr --title="release: vX.Y.Z" --body-file=...`.
+5. Once it is merged, run `doit release_tag` on `main`, before anything else is merged. It
+   finds the merged `release/v*` PR, takes the version from its title, and tags the tip of
+   `main`, not the PR's merge commit.
+
+`uv run cz bump --get-next --yes` prints the version commitizen proposes from the commits
+since the last tag. Step 2 takes whichever version is chosen.
+
+**Not `doit release`.** It is the template's, and it assumes what GCM does not: it never
+writes the version into the files, and it runs `cz changelog --incremental`, which, tried
+on a copy of this repository, replaced the hand-written `## [Unreleased]` with generated
+commit subjects (#291). Teaching it both is
+[pyproject-template#971](https://github.com/endavis/pyproject-template/issues/971).
+`release.yml` and `testpypi.yml` stay deliberately absent; see
 [#115](https://github.com/endavis/gnome-connection-manager/issues/115) for what was
 skipped and why.
 

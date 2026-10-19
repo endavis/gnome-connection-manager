@@ -288,3 +288,15 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+# Releases (#291). `cz bump --files-only --yes <version>` writes the version into
+# pyproject.toml and the three files below, the four tests/test_package.py keeps equal.
+# CHANGELOG.md is written by hand, so no release step generates it.
+[tool.commitizen]
+version_provider = "pep621"
+tag_format = "v$version"
+version_files = [
+    "src/gnome_connection_manager/__init__.py:__version__",
+    "src/gnome_connection_manager/app.py:^app_version",
+    "Makefile:^PKG_VERSION",
+]
