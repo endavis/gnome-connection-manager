@@ -189,4 +189,5 @@ def test_every_translation_of_the_notice_takes_its_values(language):
     filled = available.format(new="9.9.9", current="2.0.0")
     assert "9.9.9" in filled
     assert "2.0.0" in filled
-    assert "https://example.invalid" in install.format(url="https://example.invalid")
+    # Not an address: CodeQL reads `"https://..." in text` as a URL checked by substring.
+    assert "WHERE-TO-INSTALL" in install.format(url="WHERE-TO-INSTALL")
