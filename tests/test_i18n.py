@@ -7,6 +7,7 @@ untranslated buttons, and how 80 other strings had drifted before it.
 
 from __future__ import annotations
 
+import ast
 import gettext
 import re
 from pathlib import Path
@@ -90,15 +91,36 @@ def catalog_msgids(po):
     return ids
 
 
+def gettext_calls(text):
+    """The messages `_()` is given in `text`, each literal read as Python reads it.
+
+    The catalogs' msgids are unescaped, so a message kept as written, `\\n` as a
+    backslash and an n, never matched its entry and was reported missing from every
+    catalog (#298).
+    """
+    return {ast.literal_eval(f'"{s}"') for s in _GETTEXT_CALL.findall(text) if s}
+
+
 def translatable_strings():
-    return {
-        s for path in SOURCES for s in _GETTEXT_CALL.findall(path.read_text(encoding="utf-8")) if s
-    }
+    return {s for path in SOURCES for s in gettext_calls(path.read_text(encoding="utf-8"))}
 
 
 def test_extraction_finds_a_realistic_number_of_strings():
     """Guards the guard: a broken regex would make every check below vacuous."""
     assert len(translatable_strings()) > 100
+
+
+def test_a_message_is_read_as_python_reads_it():
+    """Not as `unescape` reads a msgid, which knows nothing of `\\u00e9`."""
+    source = r'_("one\ntwo") _("a \"quoted\" word") _("\u00e9t\u00e9")'
+    assert gettext_calls(source) == {"one\ntwo", 'a "quoted" word', "été"}
+
+
+def test_a_message_with_an_escape_matches_its_catalog_entry(tmp_path):
+    """The case #298 measured: `\\n` in the source and in a catalog's msgid."""
+    po = tmp_path / "xx.po"
+    po.write_text('msgid "one\\ntwo"\nmsgstr "eins\\nzwei"\n', encoding="utf-8")
+    assert gettext_calls(r'_("one\ntwo")') <= catalog_msgids(po)
 
 
 def test_every_string_has_an_english_translation():
