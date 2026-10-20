@@ -11,6 +11,8 @@ the git log.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-20
+
 ### Added
 - One line installs GCM, `wget -qO-
   https://raw.githubusercontent.com/endavis/gnome-connection-manager/main/install.sh | bash`,

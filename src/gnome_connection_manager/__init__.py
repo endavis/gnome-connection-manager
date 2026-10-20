@@ -1,6 +1,6 @@
 """Gnome Connection Manager - A tabbed SSH and telnet connection manager."""
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Renzo Bertuzzi"
 __email__ = "kuthulu@gmail.com"
 
