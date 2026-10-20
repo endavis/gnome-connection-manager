@@ -438,9 +438,8 @@ To cut a release, from an up-to-date `main`:
    `Addresses #N`, as the checks require an issue for any change outside the docs.
 5. Once it is merged, run `doit release_tag` on `main`, before anything else is merged. It
    finds the merged `release/v*` PR, takes the version from its title, and tags the tip of
-   `main`, not the PR's merge commit. It ends by saying to watch GitHub Actions for a build
-   and to check TestPyPI and PyPI, the template's steps: GCM publishes nowhere, and no
-   workflow runs on a tag.
+   `main`, not the PR's merge commit. It ends by saying that nothing is built or
+   published, as there is no release workflow: the tag is the release.
 
 `uv run cz bump --get-next --yes` prints the version commitizen proposes from the commits
 since the last tag. Step 2 takes whichever version is chosen.

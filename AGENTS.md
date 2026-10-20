@@ -573,8 +573,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Preferred tooling: the doit tasks — `doit launch`, `doit test`, `doit lint`,
   `doit type_check`, `doit translate`. `doit list` shows them all. Project-specific
   tasks live in `tools/doit/gcm.py`; the rest of `tools/doit/` is vendored from
-  pyproject-template and is replaced wholesale on a sync. For anything without a task,
-  use `uv run …` so the repo's environment is honored.
+  pyproject-template and is replaced wholesale on a sync. One change of GCM's own sits
+  in a vendored file, and a sync must keep it: `task_release_tag` in
+  `tools/doit/release.py` prints the template's publishing steps only where the project
+  has a release workflow, and GCM has none (#306). `tests/test_release_tag.py` fails
+  without it. For anything without a task, use `uv run …` so the repo's environment is
+  honored.
 
 ## Testing & Verification
 
@@ -829,7 +833,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   it writes no version, and its `cz changelog --incremental`, tried on a copy, replaced
   `CHANGELOG.md`'s hand-written `## [Unreleased]` with commit subjects. `--dry-run`
   showed only the new section, which hid that. `doit release_tag` tags the tip of
-  `main`, so run it straight after the release PR merges.
+  `main`, so run it straight after the release PR merges. A person runs it:
+  `tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent.
 - `install.sh` installs the newest of those tags, so a release reaches every install the
   next time it runs, and the script itself reaches new installs as soon as it merges. A
   package the `.deb` needs goes in the Makefile's `deb` recipe, which the script reads,

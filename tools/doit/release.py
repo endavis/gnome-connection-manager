@@ -573,7 +573,8 @@ def task_release_tag() -> dict[str, Any]:
     """Tag the release after a release PR is merged.
 
     This task finds the most recently merged release PR, extracts the version,
-    creates a git tag, and pushes it to trigger the release workflow.
+    creates a git tag, and pushes it, which triggers the release workflow where the
+    project has one.
     """
 
     def create_release_tag() -> None:
@@ -700,6 +701,16 @@ def task_release_tag() -> dict[str, Any]:
         console.print("\n" + "=" * 70)
         console.print(f"[bold green]✓ Release {tag_name} tagged![/bold green]")
         console.print("=" * 70)
+        # The steps below follow the release workflow, which builds and publishes on a
+        # tag. A project that has removed it publishes nowhere, and the steps would send
+        # its developers looking for a build that never runs and a package that does not
+        # exist.
+        if not Path(".github/workflows/release.yml").is_file():
+            console.print(
+                "\nThere is no release workflow, .github/workflows/release.yml, so nothing "
+                "is built or published: the tag is the release."
+            )
+            return
         console.print("\nNext steps:")
         console.print("1. Monitor GitHub Actions for build and publish.")
         # Resolve the PyPI name at runtime from pyproject.toml so the same
