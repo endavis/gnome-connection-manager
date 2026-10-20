@@ -77,7 +77,8 @@ install: translate
 	mkdir -p $(TMPINSTALLDIR)/usr/share/pixmaps
 	cp data/icon.png $(TMPINSTALLDIR)/usr/share/pixmaps/$(PKG_NAME).png
 
-# Build the .deb package using fpm
+# Build the .deb package using fpm. install.sh reads its packages from this recipe: it
+# installs the depends (-d) and recommends, and asks whether to install the suggests.
 deb: install
 	rm -f $(PKG_DEB)
 	fpm -t deb -p $(PKG_DEB) $(FPM_OPTS) \
@@ -89,6 +90,11 @@ deb: install
 		-d expect \
 		-d python3-pyaes \
 		--deb-recommends gir1.2-gtk-vnc-2.0 \
+		--deb-suggests freerdp3-x11 \
+		--deb-suggests xdg-utils \
+		--deb-suggests sshfs \
+		--deb-suggests nautilus \
+		--deb-suggests gvfs-backends \
 		--after-install postinst \
 		--deb-priority optional \
 		usr

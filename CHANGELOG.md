@@ -18,7 +18,9 @@ the git log.
   the packages it needs from apt, a command and a menu entry, and run again it updates GCM.
   Each version goes in a folder of its own, so a GCM already running goes on with the one
   it started with. It can follow `main` instead, or install a given release, and
-  `--uninstall` removes it, keeping the configuration.
+  `--uninstall` removes it, keeping the configuration. It asks once whether to install
+  the optional programs that are missing too, FreeRDP, sshfs, Nautilus and the rest,
+  naming them, which the `.deb` now suggests.
 
 ### Fixed
 - The update check asks this repository for its releases, the `vX.Y.Z` tags, and compares

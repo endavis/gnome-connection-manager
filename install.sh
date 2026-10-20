@@ -23,6 +23,10 @@
 # `release` and `main` are remembered, so a run given neither follows the last one given.
 # GCM_REPO_URL installs from another repository, such as a fork or a test's.
 #
+# apt installs the packages the version's .deb depends on and recommends, and git. Those
+# it suggests, GCM's optional programs, it installs too if the person running this says
+# so, asked once for all of them.
+#
 # Everything is done in functions called from the script's last line, so a download cut
 # short runs nothing, and nothing the script runs can read the rest of it as its input,
 # which it is when piped.
@@ -82,15 +86,25 @@ check_ours() {
     fi
 }
 
-# The packages a version's .deb depends on and recommends, read from its Makefile, so
-# that a version needing another one gets it; and git, for the updates.
-version_packages() {
-    awk '
+# The packages a version's .deb names with the options given, read from its Makefile, so
+# that a version needing another one gets it.
+deb_packages() {
+    awk -v option="^($2)\$" '
         /^deb:/ { deb = 1; next }
         deb && $0 != "" && substr($0, 1, 1) != "\t" { exit }
-        deb { for (i = 1; i < NF; i++) if ($i == "-d" || $i == "--deb-recommends") print $(i + 1) }
+        deb { for (i = 1; i < NF; i++) if ($i ~ option) print $(i + 1) }
     ' "$1/Makefile"
+}
+
+# What the .deb depends on and recommends, and git, for the updates.
+version_packages() {
+    deb_packages "$1" '-d|--deb-recommends'
     say git
+}
+
+# What it suggests: GCM's optional programs, each used by one kind of host or one feature.
+optional_packages() {
+    deb_packages "$1" '--deb-suggests'
 }
 
 missing_packages() {
@@ -101,21 +115,61 @@ missing_packages() {
     done
 }
 
+# Asks whether to install GCM's optional programs, on the terminal: piped, the script's
+# input is the script. With no terminal to ask on, the answer is no.
+want_optional() {
+    local answer
+    if ! (: </dev/tty) 2>/dev/null; then
+        say "Left out GCM's optional programs, with no terminal to ask on: $*"
+        return 1
+    fi
+    printf '%s\n  %s\n%s' "GCM can also use these optional programs, which are not installed:" \
+        "$*" "Have apt install them too? [y/N] " >/dev/tty
+    read -r answer </dev/tty || answer=
+    [[ $answer == [Yy] || $answer == [Yy][Ee][Ss] ]] && return 0
+    say "Left out GCM's optional programs."
+    return 1
+}
+
+# Has apt install those of the packages named that are missing, and, if the person running
+# this wants them, those missing of the ones after a --: GCM's optional programs. Those
+# have an apt-get install of their own, so that apt failing on one stops nothing else.
 install_packages() {
-    local missing sudo=()
+    local required=() optional=() missing offered wanted=() sudo=()
+    while (($#)) && [[ $1 != -- ]]; do
+        required+=("$1")
+        shift
+    done
+    (($# == 0)) || shift
+    optional=("$@")
     if ! command -v apt-get >/dev/null || ! command -v dpkg-query >/dev/null; then
-        say "There is no apt here to install what GCM needs. In Debian's names: $*"
+        say "There is no apt here to install what GCM needs. In Debian's names: ${required[*]}"
+        ((${#optional[@]} == 0)) || say "Its optional programs, if you want them: ${optional[*]}"
         return 0
     fi
-    mapfile -t missing < <(missing_packages "$@")
-    ((${#missing[@]})) || return 0
-    say "apt will install what GCM needs: ${missing[*]}"
+    mapfile -t missing < <(missing_packages "${required[@]}")
+    mapfile -t offered < <(missing_packages "${optional[@]}")
+    ((${#missing[@]} + ${#offered[@]})) || return 0
     if ((EUID != 0)); then
-        command -v sudo >/dev/null || die "sudo was not found. As root, run: apt-get install ${missing[*]}"
+        if ! command -v sudo >/dev/null; then
+            ((${#offered[@]} == 0)) ||
+                say "sudo was not found. For GCM's optional programs, as root, run: apt-get install ${offered[*]}"
+            ((${#missing[@]} == 0)) || die "sudo was not found. As root, run: apt-get install ${missing[*]}"
+            return 0
+        fi
         sudo=(sudo)
     fi
+    if ((${#offered[@]})) && want_optional "${offered[@]}"; then
+        wanted=("${offered[@]}")
+    fi
+    ((${#missing[@]} + ${#wanted[@]})) || return 0
+    ((${#missing[@]} == 0)) || say "apt will install what GCM needs: ${missing[*]}"
+    ((${#wanted[@]} == 0)) || say "apt will install GCM's optional programs: ${wanted[*]}"
     "${sudo[@]}" apt-get update
-    "${sudo[@]}" apt-get install -y "${missing[@]}"
+    ((${#missing[@]} == 0)) || "${sudo[@]}" apt-get install -y "${missing[@]}"
+    if ((${#wanted[@]})) && ! "${sudo[@]}" apt-get install -y "${wanted[@]}"; then
+        say "apt could not install GCM's optional programs, so GCM is installed without them."
+    fi
 }
 
 need_git() {
@@ -350,7 +404,7 @@ uninstall() {
 }
 
 main() {
-    local arg spec='' remove='' channel packages
+    local arg spec='' remove='' channel packages optional
     for arg in "$@"; do
         case $arg in
             --uninstall) remove=1 ;;
@@ -385,7 +439,8 @@ main() {
     add_version
     mapfile -t packages < <(version_packages "$VERSIONS/$VERSION_NAME")
     ((${#packages[@]} > 1)) || die "found no packages in $VERSIONS/$VERSION_NAME/Makefile"
-    install_packages "${packages[@]}"
+    mapfile -t optional < <(optional_packages "$VERSIONS/$VERSION_NAME")
+    install_packages "${packages[@]}" -- "${optional[@]}"
     use_version
     write_launcher
     write_desktop_entry

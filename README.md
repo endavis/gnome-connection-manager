@@ -106,7 +106,9 @@ is installed, `curl -fsSL <the same address> | bash` does the same.
 GCM is then in your desktop's menu, and `gnome-connection-manager` starts it in a
 terminal. The script, [install.sh](install.sh), has apt install whichever of the
 [packages GCM needs](#runtime-dependencies) are missing, through `sudo`, which asks for
-your password. Everything else goes in your home:
+your password. First it asks whether to install the missing
+[optional programs](#optional-programs) too, and names them. Everything else goes in your
+home:
 
 - `~/.local/share/gnome-connection-manager`: a clone of this repository, with each version
   installed in a folder of its own.
@@ -171,8 +173,9 @@ sudo apt install ./gnome-connection-manager_*_all.deb
 ### Runtime dependencies
 
 The `.deb` depends on these, and the install line has apt install them, with
-`gir1.2-gtk-vnc-2.0` and `git`. It reads the list from the `Makefile` of the version it
-installs, so a version that needs another package gets it.
+`gir1.2-gtk-vnc-2.0` and `git`. It reads the list, and the optional programs it offers,
+from the `Makefile` of the version it installs, so a version that needs another package
+gets it.
 
 | Package | Purpose |
 |---|---|
@@ -187,8 +190,16 @@ installs, so a version that needs another package gets it.
 ### Optional programs
 
 Each is used by one kind of host or one feature, and GCM says what is missing when it is
-needed. Only `gir1.2-gtk-vnc-2.0` is installed with GCM: the install line names it, and the
-`.deb` recommends it, which apt installs unless it is set to leave recommendations out.
+needed. Only `gir1.2-gtk-vnc-2.0` is installed with GCM without asking: the install line
+names it, and the `.deb` recommends it, which apt installs unless it is set to leave
+recommendations out.
+
+The install line offers `freerdp3-x11`, `xdg-utils`, `sshfs`, `nautilus` and
+`gvfs-backends`. It asks once, for all of them, whether to install those that are missing,
+and names them. Enter alone answers no. It asks on the terminal, so where there is none,
+as over `ssh` without one, it installs none of them and says so. Each run asks again while
+one is missing. It does not offer a VNC viewer, which GCM runs only without gtk-vnc. The
+`.deb` suggests the same packages, which apt names when it installs GCM, and leaves out.
 
 | Package (Ubuntu 24.04) | For |
 |---|---|

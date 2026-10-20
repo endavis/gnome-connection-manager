@@ -489,12 +489,21 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   git exits 128 in a folder that is gone, `Unable to read current working directory`, so
   the script works from `/`, as it may remove the one it was run from. The packages come
   from the version's own `Makefile`, the `deb` recipe's `-d` and `--deb-recommends`, and
-  git. Everything runs from a `main` called on the last line, in braces: a download cut
-  short just after `main` would run it without its arguments. GLib's `get_executable`
-  reads a quoted Exec up to the first space, quote included, measured, so the desktop
-  entry quotes the launcher's path only where it must.
+  git. Its `--deb-suggests` are GCM's optional programs (#302), which `want_optional`
+  offers, asking once for all those missing. It asks on `/dev/tty`, since piped, the
+  script's input is the script, and with no terminal it asks nothing and installs none.
+  On a yes they are installed in an `apt-get install` of their own, after what GCM needs,
+  so that apt failing on one leaves GCM installed. Everything runs from a `main` called
+  on the last line, in braces: a download cut short just after `main` would run it
+  without its arguments. GLib's `get_executable` reads a quoted Exec up to the first
+  space, quote included, measured, so the desktop entry quotes the launcher's path only
+  where it must.
   `tests/test_install.py` pipes it to bash against a repository of the test's own, with
   `sudo`, `apt-get` and `dpkg-query` faked and `awk` as mawk, which a new Ubuntu has.
+  Each scenario runs in a session of its own, with no terminal: measured, run from a
+  developer's terminal without that, the script asked its question there. One that
+  answers it runs on a pty of its own, which `TAKE_TERMINAL` makes its controlling
+  terminal.
 
 - `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/` – agent
   configuration. `.claude/settings.json`
@@ -824,7 +833,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - `install.sh` installs the newest of those tags, so a release reaches every install the
   next time it runs, and the script itself reaches new installs as soon as it merges. A
   package the `.deb` needs goes in the Makefile's `deb` recipe, which the script reads,
-  and in `PACKAGES` in `tests/test_install.py`, which checks what it installs.
+  and in `PACKAGES` in `tests/test_install.py`, which checks what it installs. An
+  optional program goes there as `--deb-suggests`, and in `OPTIONAL`. A run following
+  `release` reads the recipe of the release it installs, so a change there reaches it
+  only with the next release.
 
 ## Coding Conventions & Tips
 - This file deliberately names symbols rather than line numbers. The previous version
