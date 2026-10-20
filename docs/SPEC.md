@@ -247,7 +247,12 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 ### Session Recording
 - Raw stream recording, off by default (`raw-session-log`). The relay writes every byte
   the child produces to `<log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw`, sharing
-  the text log's identity and layout but numbered independently.
+  the text log's identity, layout and number: a session's files take one number, chosen
+  once per tab and kept across a reconnect (#200).
+- Independent of the logging toggles. A host whose logging is off, or a local shell while
+  local logging is off, is recorded with no text log beside the recording. Save
+  Transcript reads only the recording, so recording that followed the toggles would force
+  a text log on every session wanted as a transcript (#308).
 - A companion `.timing` file records `<delay> <bytes>` per write, matching `script -t`.
   The stream alone is not replayable: concatenation discards the write boundaries that
   separate frames, so a full-screen session read back in file-sized blocks collapses to

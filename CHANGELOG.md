@@ -11,6 +11,13 @@ the git log.
 
 ## [Unreleased]
 
+### Added
+- The terminal guide has a section on session logs: what logs a saved host and a local
+  console, where a local console's logs go, and how to start or stop the log of a tab
+  already open. It also says that **Record the raw session** records every session in a
+  terminal tab whatever the logging settings, so unticking a host's **Enable Logging**
+  does not keep its sessions off disk while recording is on.
+
 ## [2.1.0] - 2026-10-20
 
 ### Added

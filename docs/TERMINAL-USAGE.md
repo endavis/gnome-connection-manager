@@ -142,27 +142,9 @@ When you need the full record of a session, use the application's own export —
 `/export` command, a session transcript, or a `--print` style flag — rather than the
 terminal's scrollback.
 
-GCM's own **session logging** (per host, or **Log local console sessions** in Preferences
-for local consoles) records what the terminal receives, so it captures ordinary command
-output but is subject to the same limitation for full-screen applications.
-
-Logs are laid out under **Logs path** in Preferences (default: a `logs` directory beside
-`gcm.conf`), mirroring your host tree:
-
-```
-<log-path>/<group>/<host name>/<user>-<YYYYMMDD>-<NNN>.log
-```
-
-```
-~/.config/gcm/logs/Home Tech/OPNsense/OPNA/endavis/OPNA-TS/root-20260823-001.log
-~/.config/gcm/logs/1. Projects/pyproject-template/session-20260823-001.log
-```
-
-The name comes from the **host entry**, never the tab label, so renaming a tab does not
-change where its session is logged. Hosts with no user set use `session` as the filename.
-The `-NNN` counter distinguishes repeated sessions on the same day. Each log opens with a
-header naming the host and where it connected (`user@host:port`), so a file stays
-identifiable after it is moved or renamed.
+GCM's own [session log](#session-logs) records what the terminal displayed, so it
+captures ordinary command output but is subject to the same limitation for full-screen
+applications.
 
 ## The terminal's menu
 
@@ -206,6 +188,45 @@ Applications that support bracketed paste are told the content is a paste rather
 typing, which stops a shell from executing each line as it arrives. GCM preserves that
 framing.
 
+## Session logs
+
+A session log is a text file of what a console displayed. Whether a session is logged is
+set in one of two places:
+
+- **A saved host**, SSH or any other type whose tab is a terminal, is logged while
+  **Enable Logging** is ticked on the Terminal tab of its host dialog.
+- **A local console** is logged while **Log local console sessions** is ticked in
+  Preferences.
+
+Either applies to sessions opened after the change. To start or stop the log of a tab
+that is already open, use **Log Session** in the Terminal menu, or **Enable logging** in
+the tab's right-click menu or [the terminal's menu](#the-terminals-menu). A log switched
+on part-way through starts there: what the tab showed before is not in it.
+
+Logs are laid out under **Logs path** in Preferences (default: a `logs` directory beside
+`gcm.conf`), mirroring your host tree:
+
+```
+<log-path>/<group>/<host name>/<user>-<YYYYMMDD>-<NNN>.log
+```
+
+```
+~/.config/gcm/logs/Home Tech/OPNsense/OPNA/endavis/OPNA-TS/root-20260823-001.log
+~/.config/gcm/logs/1. Projects/pyproject-template/session-20260823-001.log
+```
+
+The name comes from the **host entry**, never the tab label, so renaming a tab does not
+change where its session is logged. Hosts with no user set use `session` as the filename.
+A local console has no host entry, so its logs go in a folder of their own:
+
+```
+<log-path>/local/session-<YYYYMMDD>-<NNN>.log
+```
+
+The `-NNN` counter distinguishes repeated sessions on the same day. Each log opens with a
+header naming the host and where it connected (`user@host:port`), so a file stays
+identifiable after it is moved or renamed.
+
 ## Recording a session in full
 
 The session log records what the terminal *displayed*, so anything redrawn in place —
@@ -223,12 +244,22 @@ raw-session-log = true
 Edit that with GCM closed. GCM writes `[options]` from memory whenever it saves, so an
 edit made while it runs is written over.
 
-It writes two files alongside the text log, under the same number:
+It records every session in a terminal tab, a saved host's and a local console's alike,
+and it does not follow the [logging settings](#session-logs). A host with
+**Enable Logging** unticked, or a local console while **Log local console sessions** is
+off, is recorded all the same, with no text log beside the recording. So unticking a
+host's **Enable Logging** does not keep its sessions off disk while recording is on.
+
+It writes two files beside the session's log, or where that log would go, under the same
+number:
 
 ```
 <log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.raw      the bytes, exactly as they arrived
 <log-path>/<group>/<name>/<user>-<YYYYMMDD>-<NNN>.timing   one line per write: <delay> <bytes>
 ```
+
+A local console's are in `<log-path>/local/`, named `session-<YYYYMMDD>-<NNN>` as its log
+would be.
 
 A tab keeps its number while it is open, so reconnecting it adds to the same recording,
 the way its text log carries on in the same file. A new tab takes the first number that
