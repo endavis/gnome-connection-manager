@@ -69,8 +69,10 @@ wget -qO- https://raw.githubusercontent.com/endavis/gnome-connection-manager/mai
 
 The script has apt install what GCM needs, through `sudo`, and installs GCM in your home,
 as the README's
-[Installation](../README.md#installation) describes. Then open a new Ubuntu terminal, and
-start GCM:
+[Installation](../README.md#installation) describes. First it asks whether to install
+GCM's [optional programs](../README.md#optional-programs) too, naming those that are
+missing. Nautilus, `gvfs-backends` and sshfs, which this guide installs below, are among
+them, and answering `y` installs them now. Then open a new Ubuntu terminal, and start GCM:
 
 ```bash
 gnome-connection-manager

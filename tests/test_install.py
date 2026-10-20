@@ -7,6 +7,10 @@ in it that read its input would eat the rest of the script. `awk` is mawk where 
 installed, as on a new Ubuntu. A version's package is a fake that reports what it was
 started with, so the launcher is tested without GTK; the real GCM it installs was started
 by hand on Xvfb.
+
+The script asks on the terminal whether to install GCM's optional programs, so it runs in
+a session of its own, with no terminal to ask on, unless a scenario gives it one and
+answers there: run from a developer's terminal, it would ask there.
 """
 
 from __future__ import annotations
@@ -15,8 +19,11 @@ import fcntl
 import hashlib
 import json
 import os
+import pty
+import select
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -39,6 +46,19 @@ PACKAGES = [
     "gir1.2-gtk-vnc-2.0",
     "git",
 ]
+
+# What it suggests, from the Makefile: GCM's optional programs, installed when asked for.
+OPTIONAL = ["freerdp3-x11", "xdg-utils", "sshfs", "nautilus", "gvfs-backends"]
+
+# How the question ends, on the terminal.
+QUESTION_END = b"[y/N] "
+
+# Run in a session of its own, it opens the terminal named first, which so becomes its
+# controlling terminal, the one /dev/tty opens, and runs the rest.
+TAKE_TERMINAL = (
+    "import os, sys; os.close(os.open(sys.argv[1], os.O_RDWR)); "
+    "os.execvp(sys.argv[2], sys.argv[2:])"
+)
 
 # A version's gnome_connection_manager.__main__: it reports what the launcher gave it,
 # after waiting, while GCM_TEST_WAIT names a file that is not there yet.
@@ -86,8 +106,9 @@ echo "sudo $*" >> "$FAKE_LOG"
 exec "$@"
 """
 
-# Installs nothing, except git when asked to and FAKE_GIT_TO names where it goes. It reads
-# all of its input first: piped, the script must not be there to read.
+# Installs nothing, except git when asked to and FAKE_GIT_TO names where it goes, and
+# fails to install what FAKE_APT_FAIL names. It reads all of its input first: piped, the
+# script must not be there to read.
 FAKE_APT_GET = """\
 #!/bin/sh
 cat > /dev/null
@@ -95,6 +116,13 @@ echo "apt-get $*" >> "$FAKE_LOG"
 case " $* " in
     *" install "*" git "*) [ -n "$FAKE_GIT_TO" ] && ln -s /usr/bin/git "$FAKE_GIT_TO/git" ;;
 esac
+if [ -n "$FAKE_APT_FAIL" ]; then
+    case " $* " in
+        *" install "*" $FAKE_APT_FAIL "*)
+            echo "E: Unable to locate package $FAKE_APT_FAIL" >&2
+            exit 100 ;;
+    esac
+fi
 exit 0
 """
 
@@ -166,6 +194,7 @@ class Rig:
             "FAKE_LOG": str(self.log),
             "FAKE_MISSING": "",
             "FAKE_GIT_TO": "",
+            "FAKE_APT_FAIL": "",
             **extra,
         }
 
@@ -180,10 +209,60 @@ class Rig:
             capture_output=True,
             text=True,
             timeout=60,
+            start_new_session=True,
         )
         if ok:
             assert done.returncode == 0, done.stdout + done.stderr
         return done
+
+    def install_on_terminal(
+        self, answer: str | None, *args: str, **env: str
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        """Runs the script as `install` does, but with a terminal of its own to ask on.
+
+        `answer` is typed at the question, and the scenario fails if the question is asked
+        while it is None. Returns the run, and what the terminal showed.
+        """
+        master, slave = pty.openpty()
+        try:
+            process = subprocess.Popen(
+                [sys.executable, "-c", TAKE_TERMINAL, os.ttyname(slave), "bash", "-s", "--", *args],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self.env(**env),
+                cwd=self.root,
+                text=True,
+                start_new_session=True,
+            )
+            assert process.stdin is not None
+            # bash reads all of it before it runs anything: its last line runs the rest.
+            process.stdin.write(SCRIPT.read_text(encoding="utf-8"))
+            process.stdin.close()
+            shown = b""
+            deadline = time.monotonic() + 60
+            while QUESTION_END not in shown and process.poll() is None:
+                assert time.monotonic() < deadline, shown
+                if select.select([master], [], [], 0.1)[0]:
+                    shown += os.read(master, 4096)
+            if QUESTION_END in shown:
+                if answer is None:
+                    process.kill()
+                    pytest.fail(f"asked, with nothing to ask about: {shown!r}")
+                os.write(master, answer.encode() + b"\n")
+            # Its output is a few lines, which the pipes hold until they are read.
+            process.wait(timeout=60)
+            while select.select([master], [], [], 0.1)[0]:
+                shown += os.read(master, 4096)
+        finally:
+            os.close(master)
+            os.close(slave)
+        assert process.stdout is not None and process.stderr is not None
+        done = subprocess.CompletedProcess(
+            process.args, process.returncode, process.stdout.read(), process.stderr.read()
+        )
+        assert done.returncode == 0, done.stdout + done.stderr
+        return done, shown.decode().replace("\r\n", "\n")
 
     def release(self, tag: str, makefile: str | None = None) -> str:
         if makefile is not None:
@@ -562,6 +641,7 @@ def test_without_apt_says_what_is_needed(rig: Rig) -> None:
         f"There is no apt here to install what GCM needs. In Debian's names: {' '.join(PACKAGES)}"
         in done.stdout
     )
+    assert f"Its optional programs, if you want them: {' '.join(OPTIONAL)}" in done.stdout
     assert rig.link("current") == "versions/v1.0.0"
 
 
@@ -577,6 +657,137 @@ def test_without_git_installs_it_first(rig: Rig) -> None:
         "sudo apt-get install -y git",
         "apt-get install -y git",
     ]
+    assert rig.link("current") == "versions/v1.0.0"
+
+
+# -- the optional programs ---------------------------------------------------------------
+
+
+def test_offers_the_optional_programs_the_deb_suggests(rig: Rig) -> None:
+    """Named on the terminal, and installed on a yes after what GCM needs, on their own."""
+    rig.release("v1.0.0")
+
+    done, shown = rig.install_on_terminal("y", FAKE_MISSING=" ".join(["python3-pyaes", *OPTIONAL]))
+
+    assert shown == (
+        "GCM can also use these optional programs, which are not installed:\n"
+        f"  {' '.join(OPTIONAL)}\n"
+        "Have apt install them too? [y/N] y\n"
+    )
+    assert "apt will install what GCM needs: python3-pyaes" in done.stdout
+    assert f"apt will install GCM's optional programs: {' '.join(OPTIONAL)}" in done.stdout
+    assert rig.log.read_text().splitlines() == [
+        "sudo apt-get update",
+        "apt-get update",
+        "sudo apt-get install -y python3-pyaes",
+        "apt-get install -y python3-pyaes",
+        f"sudo apt-get install -y {' '.join(OPTIONAL)}",
+        f"apt-get install -y {' '.join(OPTIONAL)}",
+    ]
+    assert rig.link("current") == "versions/v1.0.0"
+
+
+def test_names_only_those_not_installed(rig: Rig) -> None:
+    rig.release("v1.0.0")
+
+    _, shown = rig.install_on_terminal("y", FAKE_MISSING="sshfs freerdp3-x11")
+
+    assert "\n  freerdp3-x11 sshfs\n" in shown
+    assert rig.log.read_text().splitlines()[-1] == "apt-get install -y freerdp3-x11 sshfs"
+
+
+@pytest.mark.parametrize(
+    ("answer", "installs"),
+    [("y", True), ("YES", True), ("", False), ("n", False), ("yep", False)],
+)
+def test_installs_them_only_on_a_yes(rig: Rig, answer: str, installs: bool) -> None:
+    """Enter alone is a no, as `[y/N]` says."""
+    rig.release("v1.0.0")
+
+    done, _ = rig.install_on_terminal(answer, FAKE_MISSING="sshfs")
+
+    if installs:
+        assert rig.log.read_text().splitlines()[-1] == "apt-get install -y sshfs"
+    else:
+        assert "Left out GCM's optional programs." in done.stdout
+        assert not rig.log.exists()
+    assert rig.link("current") == "versions/v1.0.0"
+
+
+def test_offers_what_a_new_version_suggests(rig: Rig) -> None:
+    """Read from the version installed, as what it needs is."""
+    rig.release("v1.0.0")
+    rig.install()
+    makefile = (rig.upstream / "Makefile").read_text(encoding="utf-8")
+    suggesting_more = makefile.replace(
+        "\t\t--deb-suggests sshfs \\\n",
+        "\t\t--deb-suggests sshfs \\\n\t\t--deb-suggests new-program \\\n",
+    )
+    assert suggesting_more != makefile
+    rig.release("v1.1.0", makefile=suggesting_more)
+
+    _, shown = rig.install_on_terminal("y", FAKE_MISSING="new-program")
+
+    assert "\n  new-program\n" in shown
+    assert rig.log.read_text().splitlines()[-1] == "apt-get install -y new-program"
+
+
+def test_with_no_terminal_installs_none_of_them(rig: Rig) -> None:
+    """As over ssh without one: there is nothing to ask on, and piped, its input is itself."""
+    rig.release("v1.0.0")
+
+    done = rig.install(FAKE_MISSING=" ".join(OPTIONAL))
+
+    assert (
+        f"Left out GCM's optional programs, with no terminal to ask on: {' '.join(OPTIONAL)}"
+        in done.stdout
+    )
+    assert not rig.log.exists()
+    assert rig.link("current") == "versions/v1.0.0"
+
+
+def test_asks_nothing_when_all_of_them_are_installed(rig: Rig) -> None:
+    """Though apt installs what GCM needs."""
+    rig.release("v1.0.0")
+
+    done, shown = rig.install_on_terminal(None, FAKE_MISSING="python3-pyaes")
+
+    assert shown == ""
+    assert "optional" not in done.stdout
+    assert rig.log.read_text().splitlines()[-1] == "apt-get install -y python3-pyaes"
+
+
+def test_apt_failing_on_them_leaves_gcm_installed(rig: Rig) -> None:
+    rig.release("v1.0.0")
+
+    done, _ = rig.install_on_terminal(
+        "y", FAKE_MISSING="python3-pyaes sshfs", FAKE_APT_FAIL="sshfs"
+    )
+
+    assert "apt could not install GCM's optional programs, so GCM is installed without them." in (
+        done.stdout
+    )
+    assert "apt-get install -y python3-pyaes" in rig.log.read_text().splitlines()
+    assert "GCM v1.0.0 is installed." in done.stdout
+    assert rig.link("current") == "versions/v1.0.0"
+
+
+def test_without_sudo_says_how_to_install_them(rig: Rig) -> None:
+    """And asks nothing, as it could not install them."""
+    rig.release("v1.0.0")
+    programs = programs_without(rig.root, "sudo")
+    (rig.fakebin / "sudo").unlink()
+
+    done, shown = rig.install_on_terminal(
+        None, PATH=f"{rig.fakebin}:{programs}", FAKE_MISSING="sshfs"
+    )
+
+    assert shown == ""
+    assert (
+        "sudo was not found. For GCM's optional programs, as root, run: apt-get install sshfs"
+        in done.stdout
+    )
+    assert not rig.log.exists()
     assert rig.link("current") == "versions/v1.0.0"
 
 
