@@ -715,6 +715,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   it plus a `.timing` sidecar, under the same number; the stream alone is not replayable,
   because concatenation discards the write boundaries that separate frames. A tab keeps
   its number, so a reconnect appends to its recording as its text log carries on.
+  `vte_run` records on `raw-session-log` alone, not on the host's `log` or on
+  `log-local`, and that is decided (#308): a recording needs no text log beside it, and
+  Save Transcript reads only the recording. A local console's files go in
+  `<log-path>/local/`, as its host is named `local`.
 - Spawning changes shape when `osc52-clipboard` or `raw-session-log` is on: the command is
   wrapped so it runs under `relay.py`. With both off the spawn path is byte-for-byte what it
   was, which is the property that keeps the default safe. There are tests asserting it.
