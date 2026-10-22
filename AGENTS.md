@@ -885,12 +885,16 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - A release is a `vX.Y.Z` tag on `main`, made through a `release/vX.Y.Z` PR as
   `.github/CONTRIBUTING.md` describes (#291). `cz bump --files-only` writes the version
   into the four files `tests/test_package.py` keeps equal, which `[tool.commitizen]` in
-  `pyproject.toml` names, and the test fails if the two lists part. Never `doit release`:
-  it writes no version, and its `cz changelog --incremental`, tried on a copy, replaced
-  `CHANGELOG.md`'s hand-written `## [Unreleased]` with commit subjects. `--dry-run`
-  showed only the new section, which hid that. `doit release_tag` tags the tip of
-  `main`, so run it straight after the release PR merges. A person runs it:
-  `tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent.
+  `pyproject.toml` names, and the test fails if the two lists part. The same section's
+  `update_changelog_on_bump = false` keeps `CHANGELOG.md` hand-written (#311). Measured,
+  `true` has `cz bump --files-only` write the changelog too, from commit subjects. False
+  is commitizen's default, and the template's `doit release` reads a missing key so
+  since pyproject-template#992, so only `tests/test_package.py` would notice the key go.
+  Never `doit release`: it writes no version, and its `cz changelog --incremental`,
+  tried on a copy, replaced `CHANGELOG.md`'s hand-written `## [Unreleased]` with commit
+  subjects. `--dry-run` showed only the new section, which hid that. `doit release_tag`
+  tags the tip of `main`, so run it straight after the release PR merges. A person runs
+  it: `tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent.
 - `install.sh` installs the newest of those tags, so a release reaches every install the
   next time it runs, and the script itself reaches new installs as soon as it merges. A
   package the `.deb` needs goes in the Makefile's `deb` recipe, which the script reads,
