@@ -24,6 +24,12 @@ the git log.
   typed reached it, nor the commands after login. The tab is now yours once the session
   has started. A question ssh asks first that GCM does not answer, such as a key's
   passphrase, is yours to answer too, where it used to leave the tab the same way.
+- A host with a stored password started connecting 2 s late, and what was typed into the
+  tab in those 2 s became part of the password: an Enter pressed first was sent as an
+  empty password, and text typed first went in front of it, each a failed login. GCM
+  typed the password into the tab for the connection to read, and no longer does: the
+  connection starts at once, and what you type before the login finishes is not part of
+  the password. This applies to SSH, Telnet and RDP hosts.
 
 ## [2.1.0] - 2026-10-20
 

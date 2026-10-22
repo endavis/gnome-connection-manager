@@ -54,7 +54,7 @@ def test_a_command_host_runs_its_line_through_sh():
     command = COMMAND.command(command_host("mosh {user}@{address}"), PROGRAMS)
 
     assert command.argv == ["sh", "-c", "mosh admin@bmc.test"]
-    assert command.password == "", "nothing is typed at a command host's prompts"
+    assert command.environment is None, "only a command that names {password} is given it"
 
 
 @pytest.mark.parametrize(
@@ -211,7 +211,7 @@ class Session:
     def __init__(self):
         self.host = Host("Lab", "rack 4", "", "", "admin", "s3cret")
         self.host.type = "command"
-        self.command = ("sh", ["sh", "-c", "x"], "", {"GCM_PASSWORD": "s3cret"})
+        self.command = ("sh", ["sh", "-c", "x"], {"GCM_PASSWORD": "s3cret"})
         self.marked: list[bool] = []
         tab = type("Tab", (), {"mark_tab_as_active": lambda _tab: self.marked.append(True)})()
         notebook = type("Notebook", (), {"get_tab_label": lambda _nb, _page: tab})()
@@ -251,12 +251,16 @@ def test_the_reconnect_key_in_the_terminal_gives_it_its_environment(app_module, 
     monkeypatch.setattr(app_module, "get_key_name", lambda _event: "CTRL+N")
     monkeypatch.setattr(app_module, "shortcuts", {"CTRL+N": app_module._CONSOLE_RECONNECT})
     monkeypatch.setattr(app_module, "custom_keys", {})
+    scheduled = []
+    monkeypatch.setattr(app_module.GLib, "timeout_add", lambda *call: scheduled.append(call))
     terminal = Session()
 
     handled = object.__new__(app_module.Wmain).on_terminal_keypress(terminal, object())
 
     assert handled is True and terminal.marked == [True]
     assert ran == [{"GCM_PASSWORD": "s3cret"}]
+    # Nothing is typed into the tab, where Reconnect typed a stored password 2 s later (#314).
+    assert scheduled == [], scheduled
 
 
 # -- against real GTK ----------------------------------------------------------

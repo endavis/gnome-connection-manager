@@ -68,19 +68,26 @@ class Programs:
 
 @dataclass(frozen=True)
 class Command:
-    """What addTab spawns: the argv, program first, a password for ssh.expect to type, and
-    variables the program is given in its environment besides those it inherits.
+    """What addTab spawns: the argv, program first, and variables the program is given in
+    its environment besides those it inherits.
 
-    GCM types the password 2 s after the spawn, when it is neither empty nor None.
+    GCM types nothing into the tab for it. ssh.expect is given a stored password in its
+    environment, which it reads before it starts the program (#314).
     """
 
     argv: list
-    password: str | None
     environment: dict[str, str] | None = None
 
     @property
     def program(self) -> str:
         return cast("str", self.argv[0])
+
+
+def expect_environment(password: str) -> dict[str, str]:
+    """ssh.expect's own variables: the stored password it types at the program's prompt,
+    under the name a command host's command reads it by (#248). The script unsets it
+    before it starts the program, which does not inherit it."""
+    return {placeholders.PASSWORD_VARIABLE: password}
 
 
 @dataclass(frozen=True)
@@ -247,8 +254,10 @@ class Ssh(ConnectionType):
             # Into the host itself, as addTab always has.
             host.user = programs.username
         if host.password == "":
+            environment = None
             args = [programs.ssh, "-l", host.user, "-p", host.port]
         else:
+            environment = expect_environment(host.password)
             args = [programs.expect, host.type, "-l", host.user, "-p", host.port]
         if host.keep_alive != "0" and host.keep_alive != "":
             args.append("-o")
@@ -276,7 +285,7 @@ class Ssh(ConnectionType):
         if host.extra_params is not None and host.extra_params != "":
             args += shlex.split(host.extra_params)
         args.append(host.host)
-        return Command(args, host.password)
+        return Command(args, environment)
 
 
 class Telnet(ConnectionType):
@@ -284,17 +293,17 @@ class Telnet(ConnectionType):
 
     def command(self, host, programs: Programs) -> Command:
         if host.user == "" or host.password == "":
-            password = ""
+            environment = None
             args = [programs.telnet]
         else:
-            password = host.password
+            environment = expect_environment(host.password)
             # host.type rather than "telnet": a type GCM does not know opens as Telnet,
             # and has always passed ssh.expect its own name, which the script runs as ssh.
             args = [programs.expect, host.type, "-l", host.user]
         if host.extra_params is not None and host.extra_params != "":
             args += shlex.split(host.extra_params)
         args += [host.host, host.port]
-        return Command(args, password)
+        return Command(args, environment)
 
 
 class Rdp(ConnectionType):
@@ -370,11 +379,14 @@ class Rdp(ConnectionType):
         if windows is not None:
             # Never the password: Windows asks for it itself, and can save it when told to,
             # where a policy allows it.
-            return Command([windows, *mstsc_arguments(host)], None)
+            return Command([windows, *mstsc_arguments(host)])
         client = rdp_client()
         if host.user == "" or host.password == "":
-            return Command([client, *rdp_arguments(host)], "")
-        return Command([programs.expect, host.type, client, *rdp_arguments(host)], host.password)
+            return Command([client, *rdp_arguments(host)])
+        return Command(
+            [programs.expect, host.type, client, *rdp_arguments(host)],
+            expect_environment(host.password),
+        )
 
 
 class Local(ConnectionType):
@@ -440,7 +452,7 @@ class Vnc(ConnectionType):
         # bracketed: TigerVNC's viewer connects to [::1]::5951 and not to ::1::5951.
         name = f"[{host.host}]" if is_ipv6(host.host) else host.host
         args.append(f"{name}::{host.port}")
-        return Command(args, "")
+        return Command(args)
 
 
 class CustomCommand(ConnectionType):
@@ -479,7 +491,7 @@ class CustomCommand(ConnectionType):
         environment = None
         if names_password:
             environment = {placeholders.PASSWORD_VARIABLE: host.password or ""}
-        return Command(["sh", "-c", line], "", environment)
+        return Command(["sh", "-c", line], environment)
 
 
 def is_ipv6(name: str) -> bool:

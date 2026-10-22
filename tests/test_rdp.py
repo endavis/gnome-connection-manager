@@ -390,8 +390,7 @@ if scenario == "a-stored-password-is-typed-at-the-prompt":
     assert v.command == (
         app.SSH_COMMAND,
         [app.SSH_COMMAND, "rdp", "xfreerdp3", *rdp, "/scale-desktop:150"],
-        "not-a-password",
-        None,
+        {"GCM_PASSWORD": "not-a-password"},
     ), v.command
     pump(lambda: "(Y/T/N) " in whole(v), "the certificate question")
     # The question is the user's (#216): a second is ample for an answer to show.
@@ -418,7 +417,6 @@ elif scenario == "without-a-stored-password-freerdp-asks":
     assert v.command == (
         "xfreerdp3",
         ["xfreerdp3", "/v:win.example.test", "/port:3389", "/u:me", "/dynamic-resolution"],
-        "",
         None,
     ), v.command
     for prompt, answer in (("(Y/T/N) ", "T\r"), ("Domain:", "\r"), ("Password:", "not-a-password\r")):
@@ -432,7 +430,7 @@ elif scenario == "a-password-without-a-user-is-left-to-freerdp":
     app.wMain.addTab(nb, host)
     v = app.page_terminal(nb.get_nth_page(nb.get_n_pages() - 1))
     assert v.command == (
-        "xfreerdp3", ["xfreerdp3", "/v:win.example.test", "/port:3389", "/dynamic-resolution"], "", None
+        "xfreerdp3", ["xfreerdp3", "/v:win.example.test", "/port:3389", "/dynamic-resolution"], None
     ), v.command
 elif scenario == "without-freerdp-a-message-and-no-tab":
     app.connections.RDP_CLIENTS = ("gcm-test-no-such-client",)
