@@ -36,6 +36,11 @@ the git log.
   joined the first of them. An SSH host's commands now go once its session has started,
   and what you type before then goes after them, but for what answers the login: a
   question it shows, a password, and keys with Ctrl.
+- With **Record the raw session** or **Let applications write to the clipboard (OSC 52)**
+  on, a change of a tab's size reached the program in it only once it printed something
+  or a key was typed. A full-screen program waiting for input, such as an editor or an
+  agent CLI at its prompt, went on drawing for the old size until then. It now has the
+  new size at once, as it does with both settings off.
 
 ## [2.1.0] - 2026-10-20
 

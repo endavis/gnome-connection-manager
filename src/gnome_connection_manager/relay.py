@@ -157,12 +157,11 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
         except OSError:
             os._exit(127)
 
-    set_window_size(master_fd, window_size(sys.stdout.fileno()))
-
-    resized = [False]
-
+    # The handler passes a resize on itself. The loop waits in select, which a signal does
+    # not end (PEP 475), so a resize left to the loop reached an idle program only when a
+    # byte next went through, in either direction (#319).
     def on_sigwinch(_signum, _frame):
-        resized[0] = True
+        set_window_size(master_fd, window_size(sys.stdout.fileno()))
 
     with_winch = False
     try:
@@ -170,6 +169,8 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
         with_winch = True
     except ValueError:
         pass
+    # After the handler, so that a resize between the two is not lost.
+    set_window_size(master_fd, window_size(sys.stdout.fileno()))
 
     # Our own tty must be raw: the child's pty already does echo and line editing, and
     # doing it twice mangles everything the user types.
@@ -187,9 +188,6 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
     recorder = RawRecorder(raw_log, timing_log)
     try:
         while True:
-            if with_winch and resized[0]:
-                resized[0] = False
-                set_window_size(master_fd, window_size(sys.stdout.fileno()))
             watched = [master_fd, stdin_fd] if stdin_open else [master_fd]
             try:
                 readable, _, _ = select.select(watched, [], [])
@@ -225,6 +223,9 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
                 termios.tcsetattr(stdin_fd, termios.TCSAFLUSH, saved)
         clipboard.close()
         recorder.close()
+        if with_winch:
+            # The handler must not reach the pty's number once it is closed.
+            signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         with contextlib.suppress(OSError):
             os.close(master_fd)
 
