@@ -109,6 +109,7 @@ def bindtextdomain(app_name, locale_dir=None):
 
 from gnome_connection_manager.utils import (  # noqa: E402
     activity,
+    afterlogin,
     configfile,
     configpaths,
     connections,
@@ -392,6 +393,9 @@ VSPLIT = 1
 # How often a tab whose output was seen out of sight is checked for having gone quiet
 # (#208). The timer exists only while such a tab is waiting, never for an idle one.
 QUIET_POLL_MS = 500
+# How often a session whose commands after login wait is checked for having started
+# (#312). The timer exists only until they have gone.
+SESSION_POLL_MS = 50
 
 _COPY = ["copy"]
 _PASTE = ["paste"]
@@ -1142,6 +1146,40 @@ def session_tail(terminal, rows=4):
     return text or ""
 
 
+def login_asking(terminal):
+    """Whether a tab shows a question its login asks, from the text before the cursor on
+    its row (#312)."""
+    return afterlogin.asking(session_tail(terminal, rows=0))
+
+
+# Keys VTE keeps for itself, scrolling the tab, rather than sending to the program: with
+# Shift, and Up and Down with Ctrl and Shift. Not held while commands after login wait.
+SCROLL_KEYS = frozenset(
+    getattr(Gdk, "KEY_" + name)
+    for name in (
+        "Page_Up",
+        "Page_Down",
+        "Home",
+        "End",
+        "KP_Page_Up",
+        "KP_Page_Down",
+        "KP_Home",
+        "KP_End",
+    )
+)
+LINE_SCROLL_KEYS = frozenset((Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_KP_Up, Gdk.KEY_KP_Down))
+
+
+def vte_keeps(event):
+    """Whether VTE scrolls for a key rather than sending it to the program."""
+    shift = Gdk.ModifierType.SHIFT_MASK
+    control = Gdk.ModifierType.CONTROL_MASK
+    if event.keyval in SCROLL_KEYS:
+        return bool(event.state & shift)
+    both = shift | control
+    return event.keyval in LINE_SCROLL_KEYS and (event.state & both) == both
+
+
 def local_command(host, template):
     """`template`, a command `host` runs on this computer, with the host's values filled
     in, each quoted for the shell (#238)."""
@@ -1870,7 +1908,14 @@ def relay_command(args, socket_path=None, raw_path=None):
     return [*command, "--", *args]
 
 
+def note_child_pid(terminal, pid, error, _user_data=None):
+    """Keep the pid of the process a terminal spawned, which a host's commands after
+    login find its session's program from (#312)."""
+    terminal.child_pid = pid if error is None and pid > 0 else None
+
+
 def vte_run(terminal, command, arg=None, environment=None):
+    terminal.child_pid = None
     term_type = (
         terminal.host.term
         if hasattr(terminal, "host") and terminal.host.term
@@ -1943,11 +1988,11 @@ def vte_run(terminal, command, arg=None, environment=None):
             None,
             -1,
             None,
-            lambda _term, _pid, _err, _user_data: None,
+            note_child_pid,
             None,
         )
     else:
-        terminal.spawn_sync(
+        _spawned, pid = terminal.spawn_sync(
             Vte.PtyFlags.DEFAULT,
             os.getenv("HOME"),
             args,
@@ -1957,6 +2002,7 @@ def vte_run(terminal, command, arg=None, environment=None):
             None,
             None,
         )
+        note_child_pid(terminal, pid, None)
     # Restore environment so other spawns with different settings aren't affected
     for var, old_val in saved_env.items():
         if old_val is not None:
@@ -2449,6 +2495,8 @@ class Wmain(GladeComponent):
                 elif cmd == _CONSOLE_WINDOW:
                     self.toggle_console_window(widget.get_parent())
                 elif cmd == _CONSOLE_RECONNECT:
+                    # Reconnect sends no commands after login, so nothing waits for them.
+                    self.stop_commands(widget)
                     if not hasattr(widget, "command"):
                         # widget.fork_command(SHELL)
                         vte_run(widget, SHELL)
@@ -2473,7 +2521,7 @@ class Wmain(GladeComponent):
                 self.send_snippet(cmd, widget)
 
             return True
-        return False
+        return self.hold_key(widget, event)
 
     def install_menubar(self):
         """Render the application's menu model as a real widget.
@@ -3547,6 +3595,7 @@ class Wmain(GladeComponent):
         `status` is the wait status VTE reports with the signal, which Close console
         needs to tell a clean exit from a failed one (#210).
         """
+        self.stop_commands(terminal)
         then = getattr(terminal, "before_then", None)
         if then is not None:
             # The host's command before connecting has ended (#238).
@@ -4001,6 +4050,8 @@ class Wmain(GladeComponent):
         host = terminal.host
         terminal.session_host = host
         terminal.session_started = time.monotonic()
+        # Whatever waited for the last session's commands after login waits no longer.
+        self.stop_commands(terminal)
         if not hasattr(terminal, "command"):
             vte_run(terminal, SHELL)
         else:
@@ -4009,21 +4060,95 @@ class Wmain(GladeComponent):
             while Gtk.events_pending():
                 Gtk.main_iteration()
 
-        # esperar 3 seg antes de enviar comandos
         if commands and host_sends_commands(host):
-            basetime = 700 if len(host.host) == 0 else 3000
-            lines: list = []
-            for line in host.commands.splitlines():
-                if line.startswith("##D=") and line[4:].isdigit():
-                    if len(lines):
-                        GLib.timeout_add(basetime, self.send_data, terminal, "\r".join(lines))
-                        lines = []
-                    basetime += int(line[4:])
-                else:
-                    lines.append(line)
-            if len(lines):
-                GLib.timeout_add(basetime, self.send_data, terminal, "\r".join(lines))
+            groups = afterlogin.command_groups(host.commands)
+            program = connections.for_host(host).session_program
+            if program and groups:
+                self.wait_for_session(terminal, program, groups)
+            else:
+                # A program GCM cannot follow, or a local shell: after a fixed wait.
+                basetime = 700 if len(host.host) == 0 else 3000
+                for delay, text in groups:
+                    GLib.timeout_add(basetime + delay, self.send_data, terminal, text)
         terminal.queue_draw()
+
+    def wait_for_session(self, terminal, program, groups):
+        """Type `groups`, a host's commands after login, once the session `program` runs
+        has started, and hold what is typed into the tab meanwhile for after them (#312)."""
+        terminal.commands_gate = afterlogin.Gate(program, groups, time.monotonic())
+        terminal.commands_timer = GLib.timeout_add(SESSION_POLL_MS, self.check_session, terminal)
+
+    def check_session(self, terminal):
+        """Type the commands after login once they are due, which ends the timer. A
+        session that ends first stops it, as does closing its tab: VTE reports the end
+        as the tab's terminal is destroyed."""
+        gate = terminal.commands_gate
+        if not gate.due(
+            self.session_state(terminal, gate), login_asking(terminal), time.monotonic()
+        ):
+            return True
+        terminal.commands_timer = None
+        self.send_commands(terminal, gate)
+        return False
+
+    def session_state(self, terminal, gate):
+        """The state of the terminal the session's program reads, or None while that
+        program is not found among the tab's processes."""
+        state = afterlogin.terminal_state(gate.pid) if gate.pid else None
+        if state is None:
+            # Not found yet, or gone: ssh is not there until the tab's process starts it.
+            root = getattr(terminal, "child_pid", None)
+            gate.pid = afterlogin.find_program(root, gate.program) if root else None
+            state = afterlogin.terminal_state(gate.pid) if gate.pid else None
+        return state
+
+    def send_commands(self, terminal, gate):
+        """Type the commands after login, each group after its wait, then the keys held
+        while they waited."""
+        gate.sending = True
+
+        def send(index):
+            if getattr(terminal, "commands_gate", None) is not gate:
+                return False  # the session ended meanwhile
+            self.send_data(terminal, gate.commands[index][1])
+            if index + 1 < len(gate.commands):
+                wait = gate.commands[index + 1][0] - gate.commands[index][0]
+                GLib.timeout_add(wait, send, index + 1)
+                return False
+            terminal.commands_gate = None
+            self.replay_keys(terminal, gate.held)
+            return False
+
+        GLib.timeout_add(gate.commands[0][0], send, 0)
+
+    def hold_key(self, terminal, event):
+        """Whether a key typed while the commands after login wait is held for after
+        them, as it is unless it answers the login (#312)."""
+        gate = getattr(terminal, "commands_gate", None)
+        if gate is None or event.keyval in MODIFIER_KEYS or vte_keeps(event):
+            return False
+        control = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        state = self.session_state(terminal, gate)
+        if gate.key(state, login_asking(terminal), control) == afterlogin.PASS:
+            return False
+        gate.held.append(event.copy())
+        return True
+
+    def replay_keys(self, terminal, held):
+        """Type keys held as if pressed now: VTE sends for each what it would have then,
+        measured byte for byte, and to a tab that is not the one in use too. Nothing waits
+        for the session any more, so none is held again."""
+        for event in held:
+            terminal.event(event)
+
+    def stop_commands(self, terminal):
+        """Stop waiting to type the commands after login, if anything waits: the session
+        they were for has ended, or another is starting. The keys held go with them."""
+        terminal.commands_gate = None
+        timer = getattr(terminal, "commands_timer", None)
+        terminal.commands_timer = None
+        if timer is not None:
+            GLib.source_remove(timer)
 
     def run_before_command(self, terminal, then):
         """Run the host's command before connecting in `terminal`, then `then` (#238).
@@ -4697,7 +4822,12 @@ class Wmain(GladeComponent):
         This runs on every screen update, so it only notes the time. The decision is made
         by `check_quiet`, on a timer that exists only while a console is waiting to be
         declared quiet.
+
+        The commands after login wait for the session's output to pause too (#312).
         """
+        gate = getattr(terminal, "commands_gate", None)
+        if gate is not None:
+            gate.output(time.monotonic())
         if conf.QUIET_MARK_SECONDS <= 0:
             return
         watch = getattr(terminal, "quiet_watch", None)

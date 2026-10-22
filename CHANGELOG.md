@@ -30,6 +30,12 @@ the git log.
   typed the password into the tab for the connection to read, and no longer does: the
   connection starts at once, and what you type before the login finishes is not part of
   the password. This applies to SSH, Telnet and RDP hosts.
+- A host's commands after login were typed 3 s after the connection started, whatever
+  the login was doing. A login still asking something then took them for its answer, the
+  host key question or a password, and what was typed into the tab before they went
+  joined the first of them. An SSH host's commands now go once its session has started,
+  and what you type before then goes after them, but for what answers the login: a
+  question it shows, a password, and keys with Ctrl.
 
 ## [2.1.0] - 2026-10-20
 

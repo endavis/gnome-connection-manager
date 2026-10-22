@@ -88,7 +88,7 @@ A cross-platform tabbed terminal connection manager built with Qt 6 and PySide6.
 - Per-host terminal colors (font color, background color)
 - Per-host terminal type override
 - Backspace/delete key behavior selection
-- Automatic commands on connect (multi-line, with delay syntax `##D=<seconds>`),
+- Automatic commands on connect (multi-line, with delay syntax `##D=<milliseconds>`),
   gated by a checkbox that is stored separately from the text: unticking it stops
   them running without discarding them (#151)
 
