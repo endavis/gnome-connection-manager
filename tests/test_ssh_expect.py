@@ -9,7 +9,8 @@ The script runs as a tab runs it, on a pty, with only its ssh or telnet swapped 
 fake that prints what the real one would and exits with its status. FreeRDP's client is
 not named in the script but given to it, so a fake one is given instead (#225). The
 installed ssh exits 255 on an error, measured with a connection it could not make. The
-fakes turn echo off before they ask for a password, as ssh, login and FreeRDP do.
+fakes turn echo off before they ask for a password, as ssh, login and FreeRDP do. The
+script is given the password in its environment, as GCM gives it (#314).
 """
 
 from __future__ import annotations
@@ -175,6 +176,7 @@ def _run(
     raw: bool = False,
     arguments: Sequence[str] | None = None,
     resize: tuple[int, int] | None = None,
+    pause: str | None = None,
 ) -> Run:
     """Run ssh.expect against a fake program: its exit code, and what reached the pty.
 
@@ -183,8 +185,10 @@ def _run(
     put the terminal in raw mode, as interact does: until then a Ctrl+C interrupts the
     script, not the program. `telnet_timeout` replaces the script's 20 s wait for a
     prompt it knows. `arguments` replaces the program's arguments. `resize` changes the
-    terminal's rows and columns while the script waits for the password, from the 24 by
-    80 it starts at, as a new tab's terminal settles its size then.
+    terminal's rows and columns half a second after the start, from the 24 by 80 it
+    starts at, as a new tab's terminal settles its size then. `pause` holds the script
+    for a second before the line that begins with it, so that the change comes before
+    that line runs.
     """
     program, args = PROGRAMS[connection]
     if arguments is not None:
@@ -202,6 +206,9 @@ def _run(
     if telnet_timeout is not None:
         assert text.count("set timeout 20") == 1, "ssh.expect no longer waits 20 s for telnet"
         text = text.replace("set timeout 20", f"set timeout {telnet_timeout}")
+    if pause is not None:
+        assert text.count(pause) == 1, f"ssh.expect no longer has {pause!r} once"
+        text = text.replace(pause, f"after 1000\n{pause}")
     script.write_text(text)
 
     master, slave = os.openpty()
@@ -213,31 +220,30 @@ def _run(
         stdin=slave,
         stdout=slave,
         stderr=slave,
+        env={**os.environ, "GCM_PASSWORD": PASSWORD},
         # The pty as the controlling terminal, as VTE gives a tab: the script's stty
         # refuses to run without one.
         start_new_session=True,
         preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0),
     )
+    os.close(slave)
     start = time.monotonic()
     deadline = start + seconds
+    resize_at = None if resize is None else start + 0.5
     pending = list(answers)
     answered_at: list[float] = []
     after = 0  # where the next answer's text is looked for
     code: int | None = None
-    # Type the password once the script has turned echo off, as GCM waits 2 s for. The
-    # slave's settings: on Linux the master has settings of its own, which never echo.
-    while termios.tcgetattr(slave)[3] & termios.ECHO and time.monotonic() < deadline:
-        time.sleep(0.01)
-    if resize is not None:
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", *resize, 0, 0))
-    os.close(slave)
-    os.write(master, PASSWORD.encode() + b"\n")  # the script reads the password first
     seen = b""
     try:
         while time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], deadline - time.monotonic())
+            if resize is not None and resize_at is not None and time.monotonic() >= resize_at:
+                fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", *resize, 0, 0))
+                resize_at = None
+            until = deadline if resize_at is None else min(deadline, resize_at)
+            ready, _, _ = select.select([master], [], [], max(until - time.monotonic(), 0))
             if not ready:
-                break
+                continue
             try:
                 chunk = os.read(master, 4096)
             except OSError:  # EIO, which arrived before expect had exited
@@ -431,13 +437,16 @@ def test_a_session_that_needs_no_password_is_the_users(tmp_path):
 
 
 def test_a_session_that_needs_no_password_gets_the_tabs_size(tmp_path):
-    """A new tab settles its size while the script waits for the password, measured in
-    GCM: 166 columns, 153, then 159, all before the password at 2 s. The session kept
-    the 166 unless the script passed the size on as it handed over, as it does after
-    typing the password."""
+    """A change to the tab's size before the script has set its trap is not passed on,
+    and the program starts with the size the script started with. It keeps that size
+    unless the script passes the size on as it hands over, as it does after typing the
+    password. Measured in GCM the trap is set within 60 ms, and a new tab's size changed
+    at about 0.2 s and 0.4 s, so this is the rare case."""
     answers = [("remote$ ", b"echo typed\r")]
 
-    code, seen, _ = _run(tmp_path, KEY_ACCEPTED, answers=answers, seconds=10, resize=(40, 120))
+    code, seen, _ = _run(
+        tmp_path, KEY_ACCEPTED, answers=answers, seconds=10, resize=(40, 120), pause="trap {"
+    )
 
     assert code == 0, seen
     assert "size [40 120]" in seen, seen
@@ -468,6 +477,97 @@ def test_a_slow_connection_still_gets_the_password(tmp_path):
 
     assert code == 0, seen
     assert "Welcome (password right)" in seen, seen
+
+
+# -- the password, which GCM gives in the environment (#314) -----------------
+
+# ssh asking for the password after a banner and a second, up to three times as it does
+# by default, then a session that reads a line. It says how many characters each try it
+# refused had, never what, and what the session read.
+PASSWORD_TRIES = r"""
+printf "GCM-TEST banner\r\n"
+sleep 1
+n=0
+while [ $n -lt 3 ]; do
+    n=$((n+1))
+    stty -echo
+    printf "me@example.invalid's password: "
+    read pw
+    stty echo
+    printf "\r\n"
+    if [ "$pw" = not-a-password ]; then
+        printf "accepted on try %s\r\nremote$ " $n
+        read line
+        printf "\r\nthe session read [%s]\r\n" "$line"
+        exit 0
+    fi
+    printf "Permission denied, try %s had %s characters\r\n" $n ${#pw}
+done
+exit 255
+"""
+
+
+@pytest.mark.parametrize(("typed", "read"), [(b"\r", ""), (b"ls", "ls")])
+def test_keys_typed_before_the_prompt_are_not_the_password(tmp_path, typed, read):
+    """GCM typed the password into the tab 2 s after the spawn, and the script took the
+    line there for it: an Enter pressed first was an empty password, and text typed first
+    went in front of it, each a failed login. Now what is typed waits for the session,
+    where the Enter typed at its prompt ends the line, and does not show before then."""
+    answers = [("GCM-TEST banner", typed), ("remote$ ", b"\r")]
+
+    code, seen, _ = _run(tmp_path, PASSWORD_TRIES, answers=answers, seconds=10)
+
+    assert code == 0, seen
+    assert seen.partition("me@example.invalid's password: ")[0] == "GCM-TEST banner\n", seen
+    assert "accepted on try 1" in seen, seen
+    assert f"the session read [{read}]" in seen, seen
+    assert PASSWORD not in seen
+
+
+@pytest.mark.parametrize("connection", ["ssh", "telnet", "rdp"])
+def test_the_program_does_not_inherit_the_password(tmp_path, connection):
+    """The script unsets it before it starts the program, so that neither the program
+    nor anything it runs has it."""
+    fake = 'printf "[%s]\\r\\n" "${GCM_PASSWORD-unset}"\nexit 0\n'
+
+    code, seen, _ = _run(tmp_path, fake, connection)
+
+    assert code == 0, seen
+    assert "[unset]" in seen, seen
+
+
+def test_a_session_after_the_password_gets_the_tabs_size(tmp_path):
+    """As for a session that needs no password: a change before the trap is set reaches
+    the session only through the WINCH the script sends once it has typed the password.
+    The session reads its size once the Enter typed at its prompt reaches it, which
+    interact passes on only after that."""
+    fake = (
+        'stty -echo\nprintf "me@example.invalid\'s password: "\nread pw\nstty echo\n'
+        'printf "\\r\\nremote$ "\nread line\n'
+        'printf "\\r\\nsize [%s]\\r\\n" "$(stty size)"\nexit 0\n'
+    )
+    answers = [("remote$ ", b"\r")]
+
+    code, seen, _ = _run(
+        tmp_path, fake, answers=answers, seconds=10, resize=(40, 120), pause="trap {"
+    )
+
+    assert code == 0, seen
+    assert "size [40 120]" in seen, seen
+
+
+def test_a_change_of_size_before_the_spawn_reaches_the_program(tmp_path):
+    """The script starts the program at once, while a new tab may still be settling its
+    size, so its trap can run before there is a program's terminal. Naming that terminal
+    then is an error, measured, which shows in the tab. The size the trap reads is the
+    one the program starts with."""
+    fake = 'printf "size [%s]\\r\\n" "$(stty size)"\nexit 0\n'
+
+    code, seen, _ = _run(tmp_path, fake, resize=(40, 120), pause="eval spawn")
+
+    assert code == 0, seen
+    assert "size [40 120]" in seen, seen
+    assert "while executing" not in seen, seen
 
 
 def test_telnet_shows_what_comes_before_its_login(tmp_path):

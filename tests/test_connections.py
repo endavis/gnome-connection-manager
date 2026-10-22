@@ -256,7 +256,7 @@ def test_a_vnc_viewer_is_given_its_arguments_then_the_host_and_port(
     command = VNC.command(host("vnc", address, password="pw", extra_params=extra), PROGRAMS)
 
     # Never the stored password: the viewer asks for it, and GCM types nothing.
-    assert (command.argv, command.password) == (argv, "")
+    assert (command.argv, command.environment) == (argv, None)
 
 
 # -- ssh ---------------------------------------------------------------------
@@ -267,15 +267,17 @@ def test_ssh_without_a_password_runs_ssh():
 
     assert command.argv == ["ssh", "-l", "me", "-p", "2222", "example.test"]
     assert command.program == "ssh"
-    assert command.password == ""
+    assert command.environment is None
 
 
 def test_ssh_with_a_password_runs_the_script_which_types_it():
+    """The script is given the password in its environment, and never in its arguments,
+    which every user can read (#314)."""
     command = SSH.command(host(password="pw"), PROGRAMS)
 
     assert command.argv == ["/gcm/ssh.expect", "ssh", "-l", "me", "-p", "2222", "example.test"]
     assert command.program == "/gcm/ssh.expect"
-    assert command.password == "pw"
+    assert command.environment == {"GCM_PASSWORD": "pw"}
 
 
 def test_ssh_gets_each_option_the_host_sets_in_order():
@@ -335,14 +337,14 @@ def test_telnet_without_a_user_and_a_password_runs_telnet(user, password):
     command = TELNET.command(record, PROGRAMS)
 
     assert command.argv == ["telnet", "-e", "^]", "example.test", "2222"]
-    assert command.password == ""
+    assert command.environment is None
 
 
 def test_telnet_with_a_user_and_a_password_runs_the_script():
     command = TELNET.command(host("telnet", password="pw"), PROGRAMS)
 
     assert command.argv == ["/gcm/ssh.expect", "telnet", "-l", "me", "example.test", "2222"]
-    assert command.password == "pw"
+    assert command.environment == {"GCM_PASSWORD": "pw"}
 
 
 def test_a_type_gcm_does_not_know_gives_the_script_its_own_name():
@@ -352,6 +354,7 @@ def test_a_type_gcm_does_not_know_gives_the_script_its_own_name():
     command = connections.for_host(record).command(record, PROGRAMS)
 
     assert command.argv[:2] == ["/gcm/ssh.expect", "spice"]
+    assert command.environment == {"GCM_PASSWORD": "pw"}
 
 
 # -- settings of a type's own ------------------------------------------------
@@ -644,19 +647,20 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     shown, command = open_host("ssh", "")  # the Local button's host is of type ssh
     assert shown == [(app.SHELL, None, None)] and command is None, (shown, command)
 
+    # The stored password goes to the script in its environment (#314).
     shown, command = open_host("ssh", "example.test", password="pw")
     argv = [app.SSH_COMMAND, "ssh", "-l", "me", "-p", "2222", "example.test"]
-    assert shown == [(app.SSH_COMMAND, argv, None)], shown
-    assert command == (app.SSH_COMMAND, argv, "pw", None), command
+    assert shown == [(app.SSH_COMMAND, argv, {"GCM_PASSWORD": "pw"})], shown
+    assert command == (app.SSH_COMMAND, argv, {"GCM_PASSWORD": "pw"}), command
 
     shown, command = open_host("telnet", "example.test")
     argv = ["telnet", "example.test", "2222"]
-    assert shown == [("telnet", argv, None)] and command == ("telnet", argv, "", None), shown
+    assert shown == [("telnet", argv, None)] and command == ("telnet", argv, None), shown
 
     shown, command = open_host("rdp", "example.test")
     # Resizing with the window is on for a host that never set it (#278).
     argv = ["xfreerdp3", "/v:example.test", "/port:2222", "/u:me", "/dynamic-resolution"]
-    assert shown == [("xfreerdp3", argv, None)] and command == ("xfreerdp3", argv, "", None), shown
+    assert shown == [("xfreerdp3", argv, None)] and command == ("xfreerdp3", argv, None), shown
 
     # A web host opens in the browser, and no tab: nothing is spawned or added.
     tabs = w.nbConsole.get_n_pages()
@@ -670,7 +674,7 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     shown, command = open_host("vnc", "example.test", password="pw")
     argv = ["xtigervncviewer", "example.test::2222"]
     assert shown == [("xtigervncviewer", argv, None)], shown
-    assert command == ("xtigervncviewer", argv, "", None), command
+    assert command == ("xtigervncviewer", argv, None), command
 
     # A command host runs its line through sh, with the host's values quoted, and gets
     # its password in its environment, only when the line names it (#248).
@@ -678,15 +682,17 @@ elif scenario == "addtab-opens-each-host-as-its-type-says":
     shown, command = open_host("command", "bmc.test", password="pw", settings={"command.line": line})
     argv = ["sh", "-c", 'IPMI_PASSWORD="$GCM_PASSWORD" ipmitool -H bmc.test -U me -E sol activate']
     assert shown == [("sh", argv, {"GCM_PASSWORD": "pw"})], shown
-    assert command == ("sh", argv, "", {"GCM_PASSWORD": "pw"}), command
+    assert command == ("sh", argv, {"GCM_PASSWORD": "pw"}), command
     # And needs no address to run it.
     line = "kubectl exec -it {name} -- sh"
     shown, command = open_host("command", "", password="pw", settings={"command.line": line})
     argv = ["sh", "-c", "kubectl exec -it command -- sh"]
-    assert shown == [("sh", argv, None)] and command == ("sh", argv, "", None), shown
+    assert shown == [("sh", argv, None)] and command == ("sh", argv, None), shown
 
-    pump(2.5)  # the stored password is typed 2 s after its spawn, and only ssh's
-    assert typed == ["pw"], typed
+    # Nothing typed into a tab, where GCM typed ssh's password 2 s after its spawn, and
+    # a key pressed meanwhile became part of it (#314).
+    pump(2.5)
+    assert typed == [], typed
 elif scenario == "a-types-page-opens-in-a-tab":
     ran = []
     app.vte_run = lambda terminal, command, arg=None, environment=None: ran.append((command, arg))

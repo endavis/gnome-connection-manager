@@ -148,8 +148,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   reaches the command in `Command.environment`, which `vte_run` hands VTE as `envv`:
   measured, VTE adds it to what the child inherits, directly and under the relay, and it
   never enters GCM's own environment, as TERM does. So `terminal.command` is
-  `(program, argv, password, environment)`, which `start_session` and the Reconnect key in
-  `on_terminal_keypress` read. Nothing is typed at a command host's prompts.
+  `(program, argv, environment)`, which `start_session` and the Reconnect key in
+  `on_terminal_keypress` read, and a stored password reaches `data/scripts/ssh.expect`
+  the same way (#314). Nothing is typed at a command host's prompts.
   `tests/test_connections.py` gives a type of its own settings, as
   `tests/test_tab_pages.py` opens a page of its own.
   RDP's settings (#278) are how FreeRDP shows the desktop: Display, Resize with the
@@ -428,7 +429,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `exp_wait` gives 0 for a program killed by a signal too, so the script reports that as
   a shell does, 128 and the signal's number.
   It runs only hosts with a stored password; the rest run `ssh`, `telnet` or FreeRDP
-  directly.
+  directly. `expect_environment` gives it the password as `GCM_PASSWORD`, which it unsets
+  before the spawn, measured, so the program does not inherit it (#314). GCM used to type
+  it into the tab 2 s after the spawn, and the script started nothing until it came: every
+  connection started 2 s late, and a key pressed first became part of the password. Keys
+  typed early now wait for the program, and `stty -echo` keeps them off the screen until
+  they reach it; without it, measured, they showed twice.
   It turns `log_user` on straight after the `spawn`, so the tab shows everything the
   program prints as it arrives, as a host without a stored password would: the banner,
   the host key question, the prompts. `log_user` is 0 until then only
@@ -455,8 +461,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   running, since the password prompt matches first. An echoing question cannot be told
   from connecting. expect's timeout is whole seconds, measured: 0.25 times out at once,
   and output that matches nothing does not restart it. The handover sends the WINCH, as
-  after the password. A new tab settles its size while the script waits for the
-  password, before its trap is set, and measured, ssh kept the first size without it.
+  after the password, for a change of size before the trap is set. Measured in GCM, the
+  trap is set within 60 ms of `addTab`, and a new tab's size changed at about 0.2 s and
+  0.4 s. expect gives the program the size its own terminal had when expect started, or
+  when `stty` last read it, measured, so the trap reads the size before the spawn too,
+  and sets the program's terminal only once there is one: naming `spawn_out(slave,name)`
+  before then is a Tcl error, which shows in the tab.
   Telnet's terminal is not read: its 20 s timeout hands over as before.
   An RDP host (#225) names its program as the script's first argument: `rdp_client` in
   `src/gnome_connection_manager/utils/connections.py` picks `xfreerdp3`, else `xfreerdp`,

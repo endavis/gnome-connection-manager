@@ -107,7 +107,6 @@ def test_mstsc_is_never_given_the_user_the_password_or_the_extra_arguments(monke
     command = connections.RDP.command(host, WINDOWS)
 
     assert command.argv == [MSTSC, "/v:win.example.test:3389", "/f"]
-    assert command.password is None
     assert command.environment is None
 
 
@@ -120,7 +119,7 @@ def test_freerdp_unless_preferences_chose_windows_remote_desktop(monkeypatch):
     command = connections.RDP.command(rdp_host(), FREERDP)
 
     assert command.argv[:3] == ["/gcm/ssh.expect", "rdp", "xfreerdp3"]
-    assert command.password == "not-a-password"
+    assert command.environment == {"GCM_PASSWORD": "not-a-password"}
 
 
 def test_windows_remote_desktop_chosen_but_not_found_leaves_the_host_to_freerdp(monkeypatch):
@@ -330,7 +329,7 @@ elif scenario == "an-rdp-host-opens-in-windows-remote-desktop":
     host.extra_params = "/sound"
     app.wMain.addTab(nb, host)
     v = app.page_terminal(nb.get_nth_page(nb.get_n_pages() - 1))
-    assert v.command == (mstsc, [mstsc, "/v:win.example.test:3389", "/f"], None, None), v.command
+    assert v.command == (mstsc, [mstsc, "/v:win.example.test:3389", "/f"], None), v.command
     pump(lambda: "mstsc: [/v:win.example.test:3389] [/f]" in whole(v), "mstsc's arguments")
     assert "not-a-password" not in whole(v), whole(v)
     assert shown_messages == [], shown_messages

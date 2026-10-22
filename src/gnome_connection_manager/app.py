@@ -2454,13 +2454,9 @@ class Wmain(GladeComponent):
                         vte_run(widget, SHELL)
                     else:
                         # widget.fork_command(widget.command[0], widget.command[1])
-                        vte_run(widget, widget.command[0], widget.command[1], widget.command[3])
+                        vte_run(widget, widget.command[0], widget.command[1], widget.command[2])
                         while Gtk.events_pending():
                             Gtk.main_iteration()
-
-                        # esperar 2 seg antes de enviar el pass para dar tiempo a que se levante expect y prevenir que se muestre el pass
-                        if widget.command[2] is not None and widget.command[2] != "":
-                            GLib.timeout_add(2000, self.send_data, widget, widget.command[2])
                     widget.get_parent().get_parent().get_tab_label(
                         widget.get_parent()
                     ).mark_tab_as_active()
@@ -3989,7 +3985,7 @@ class Wmain(GladeComponent):
                 # Before the command before connecting runs, so that Reconnect has it
                 # even when that command failed and nothing was spawned.
                 spawn = kind.command(host, connection_programs())
-                v.command = (spawn.program, spawn.argv, spawn.password, spawn.environment)
+                v.command = (spawn.program, spawn.argv, spawn.environment)
             self.run_before_command(v, lambda: self.start_session(v))
         except Exception:
             logger.exception("Error connecting to host")
@@ -4008,14 +4004,10 @@ class Wmain(GladeComponent):
         if not hasattr(terminal, "command"):
             vte_run(terminal, SHELL)
         else:
-            program, argv, password, environment = terminal.command
+            program, argv, environment = terminal.command
             vte_run(terminal, program, argv, environment)
             while Gtk.events_pending():
                 Gtk.main_iteration()
-
-            # esperar 2 seg antes de enviar el pass para dar tiempo a que se levante expect y prevenir que se muestre el pass
-            if password is not None and password != "":
-                GLib.timeout_add(2000, self.send_data, terminal, password)
 
         # esperar 3 seg antes de enviar comandos
         if commands and host_sends_commands(host):

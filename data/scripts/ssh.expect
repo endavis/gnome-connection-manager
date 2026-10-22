@@ -1,18 +1,34 @@
 #!/usr/bin/expect
 
 log_user 0
+# Keys typed into the tab wait for the program, whose own terminal shows them once they
+# reach it. Echoed here too, measured, an ls typed early showed twice: in front of the
+# password prompt, and again in the session.
 stty -echo
 
-fconfigure stdin -blocking 1
-gets stdin pass
-fconfigure stdin -blocking 0
+# The stored password, which GCM gives in the environment, and not the program's to
+# inherit. GCM used to type it into the tab 2 s after the spawn, and the script started
+# nothing until it came, so every connection started 2 s late, and anything typed into
+# the tab meanwhile became part of the password (#314).
+set pass ""
+if { [info exists env(GCM_PASSWORD)] } {
+    set pass $env(GCM_PASSWORD)
+    unset env(GCM_PASSWORD)
+}
 
 
 #capturar redimension de tamaño de pantalla y pasarlo al proceso ssh hijo
+# Before the spawn too, as a new tab settles its size then: expect gives the program the
+# size its own terminal had when expect started, or when stty last read it, measured.
+# Until the spawn there is no program's terminal to set, and naming it then is an error.
+# A change before the trap is set is lost until the WINCH sent as a session is handed
+# over.
 trap {
  set rows [stty rows]
  set cols [stty columns]
- stty rows $rows columns $cols < $spawn_out(slave,name)
+ if { [info exists spawn_out(slave,name)] } {
+  stty rows $rows columns $cols < $spawn_out(slave,name)
+ }
 } WINCH
 
 
