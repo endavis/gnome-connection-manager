@@ -446,6 +446,18 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   must not send another, which ssh would read as an empty password. `interact` also
   returns when the program ends, having closed the spawn id, and an `exp_continue` then
   fails with a Tcl traceback in the tab.
+  ssh need not ask for the password at all: it tries keys first, and a server that
+  accepts one gets no password prompt (#313). The block waited for ever then, and the
+  tab took no input. So ssh's timeout is 1 s, and each timeout reads ssh's own terminal,
+  the spawn pty, with `stty -a`. Measured with OpenSSH 9.6, it is canonical with echo
+  while connecting and at the host key question, without echo at a passphrase, and raw
+  once the session has started. Raw hands over, and so does no echo at two looks
+  running, since the password prompt matches first. An echoing question cannot be told
+  from connecting. expect's timeout is whole seconds, measured: 0.25 times out at once,
+  and output that matches nothing does not restart it. The handover sends the WINCH, as
+  after the password. A new tab settles its size while the script waits for the
+  password, before its trap is set, and measured, ssh kept the first size without it.
+  Telnet's terminal is not read: its 20 s timeout hands over as before.
   An RDP host (#225) names its program as the script's first argument: `rdp_client` in
   `src/gnome_connection_manager/utils/connections.py` picks `xfreerdp3`, else `xfreerdp`,
   and `rdp_arguments` builds the rest. Never

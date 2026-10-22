@@ -977,6 +977,21 @@ connection only, and `N` ends the connection. That answer is yours as well, and 
 a stored password only after it. FreeRDP asks again, after a warning, when the certificate
 names another host or differs from the one you trusted.
 
+## When ssh does not ask for the stored password
+
+For a host with a stored password, GCM types the password when ssh asks for it. ssh need
+not ask: it tries your keys first, from `~/.ssh` or an agent, and logs in with one the
+server accepts. The tab is then yours within a second of the session starting, and the
+host's commands after login run.
+
+ssh can also ask something else first, such as the passphrase of a key that no agent
+holds. GCM does not answer that, and the question is yours within two seconds of showing.
+So is the rest of the login: if ssh asks for the password after it, type that too.
+
+A question that shows what you type looks to GCM like ssh still connecting, and GCM goes
+on waiting for the password. For a host that asks one, leave the password out, and ssh
+asks you for everything itself.
+
 ## When GCM will not start
 
 GCM refuses to start on a `gcm.conf` it cannot read in full, and says so:

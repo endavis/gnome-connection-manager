@@ -18,6 +18,7 @@ import fcntl
 import os
 import select
 import shutil
+import struct
 import subprocess
 import termios
 import time
@@ -126,6 +127,31 @@ printf "\r\nconnected (password %s)\r\n" "$([ "$pw" = not-a-password ] && echo r
 exit 0
 """
 
+# ssh logging in with a key the server accepts, so with no password prompt, and its
+# terminal raw once the session has started, as OpenSSH 9.6 puts it, measured (#313).
+# The session reports what it was typed and the size of its terminal. A raw terminal
+# turns no Enter into a new line, so it reads the answer's 11 bytes.
+KEY_ACCEPTED = r"""
+printf "Authenticated with a key\r\n"
+stty raw -echo
+printf "remote$ "
+typed=$(dd bs=1 count=11 2>/dev/null)
+printf "\r\ntyped [%s], size [%s]\r\n" "$typed" "$(stty size)"
+exit 0
+"""
+
+# ssh asking for a key's passphrase, which the script does not answer, with echo off in
+# canonical mode, as OpenSSH 9.6 reads one, measured (#313).
+PASSPHRASE_QUESTION = "Enter passphrase for key '/home/me/.ssh/id_ed25519': "
+PASSPHRASE = rf"""
+stty -echo
+printf "{PASSPHRASE_QUESTION}"
+read phrase
+stty echo
+printf "\r\npassphrase [%s]\r\n" "$phrase"
+exit 0
+"""
+
 
 class Run(NamedTuple):
     code: int | None  # None: still running at the deadline, and killed
@@ -148,6 +174,7 @@ def _run(
     telnet_timeout: int | None = None,
     raw: bool = False,
     arguments: Sequence[str] | None = None,
+    resize: tuple[int, int] | None = None,
 ) -> Run:
     """Run ssh.expect against a fake program: its exit code, and what reached the pty.
 
@@ -155,7 +182,9 @@ def _run(
     of the one before it, as a user would. With `raw`, each also waits for the script to
     put the terminal in raw mode, as interact does: until then a Ctrl+C interrupts the
     script, not the program. `telnet_timeout` replaces the script's 20 s wait for a
-    prompt it knows. `arguments` replaces the program's arguments.
+    prompt it knows. `arguments` replaces the program's arguments. `resize` changes the
+    terminal's rows and columns while the script waits for the password, from the 24 by
+    80 it starts at, as a new tab's terminal settles its size then.
     """
     program, args = PROGRAMS[connection]
     if arguments is not None:
@@ -177,6 +206,8 @@ def _run(
 
     master, slave = os.openpty()
     slave_name = os.ttyname(slave)
+    if resize is not None:
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
     process = subprocess.Popen(
         ["expect", str(script), connection, *args],
         stdin=slave,
@@ -197,6 +228,8 @@ def _run(
     # slave's settings: on Linux the master has settings of its own, which never echo.
     while termios.tcgetattr(slave)[3] & termios.ECHO and time.monotonic() < deadline:
         time.sleep(0.01)
+    if resize is not None:
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", *resize, 0, 0))
     os.close(slave)
     os.write(master, PASSWORD.encode() + b"\n")  # the script reads the password first
     seen = b""
@@ -379,6 +412,62 @@ def test_a_program_killed_by_a_signal_is_not_a_clean_exit(tmp_path):
     code, _, _ = _run(tmp_path, "kill -TERM $$\n")
 
     assert code == 128 + 15
+
+
+# -- ssh that never asks for the password (#313) ----------------------------
+
+
+def test_a_session_that_needs_no_password_is_the_users(tmp_path):
+    """ssh logs in with a key the server accepts and never asks for the password. The
+    script waited for it for ever, and nothing typed reached the session. Now the
+    terminal is the user's once ssh's session has started."""
+    answers = [("remote$ ", b"echo typed\r")]
+
+    code, seen, _ = _run(tmp_path, KEY_ACCEPTED, answers=answers, seconds=10)
+
+    assert code == 0, seen
+    assert "typed [echo typed]" in seen, seen
+    assert PASSWORD not in seen
+
+
+def test_a_session_that_needs_no_password_gets_the_tabs_size(tmp_path):
+    """A new tab settles its size while the script waits for the password, measured in
+    GCM: 166 columns, 153, then 159, all before the password at 2 s. The session kept
+    the 166 unless the script passed the size on as it handed over, as it does after
+    typing the password."""
+    answers = [("remote$ ", b"echo typed\r")]
+
+    code, seen, _ = _run(tmp_path, KEY_ACCEPTED, answers=answers, seconds=10, resize=(40, 120))
+
+    assert code == 0, seen
+    assert "size [40 120]" in seen, seen
+
+
+def test_a_question_the_script_does_not_answer_is_the_users(tmp_path):
+    """ssh asks for a key's passphrase before any password, and the script, waiting for
+    the password, left the question unanswerable. Now what ssh reads with echo off, and
+    is not the password, is the user's to answer."""
+    answers = [(PASSPHRASE_QUESTION, b"my passphrase\r")]
+
+    code, seen, _ = _run(tmp_path, PASSPHRASE, answers=answers, seconds=10)
+
+    assert code == 0, seen
+    assert "passphrase [my passphrase]" in seen, seen
+
+
+def test_a_slow_connection_still_gets_the_password(tmp_path):
+    """While ssh connects, its terminal is canonical with echo, and the script waits on
+    for the password, here for 3 s, rather than hand the terminal over."""
+    fake = (
+        'sleep 3\nstty -echo\nprintf "me@example.invalid\'s password: "\nread pw\nstty echo\n'
+        'printf "\\r\\nWelcome (password %s)\\r\\n" '
+        '"$([ "$pw" = not-a-password ] && echo right || echo wrong)"\nexit 0\n'
+    )
+
+    code, seen, _ = _run(tmp_path, fake, seconds=10)
+
+    assert code == 0, seen
+    assert "Welcome (password right)" in seen, seen
 
 
 def test_telnet_shows_what_comes_before_its_login(tmp_path):
