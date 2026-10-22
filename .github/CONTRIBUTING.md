@@ -420,7 +420,13 @@ distribution — so a PyPI install would not produce a working application.
   names the four, and `tests/test_package.py` fails if they disagree, or if commitizen's
   list and the test's part.
 - **`CHANGELOG.md` is written by hand.** A release turns its `## [Unreleased]` into the
-  release's own section, and never generates one.
+  release's own section, and never generates one. `[tool.commitizen]` says so with
+  `update_changelog_on_bump = false`, which `tests/test_package.py` requires. Set to
+  `true`, it would have step 2's `cz bump --files-only` write the changelog as well,
+  from commit subjects. `false` is commitizen's default, and the template's
+  `doit release` reads a missing key the same way since
+  [pyproject-template#992](https://github.com/endavis/pyproject-template/pull/992), so
+  the key changes nothing today: it records the decision where both read it (#311).
 - **Packaging is a `.deb`**, built by the `Makefile` with `fpm`. See the installation
   section of the README.
 

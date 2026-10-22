@@ -295,6 +295,8 @@ exclude_lines = [
 [tool.commitizen]
 version_provider = "pep621"
 tag_format = "v$version"
+# CHANGELOG.md is written by hand (#311). True would have `cz bump` write it as well.
+update_changelog_on_bump = false
 version_files = [
     "src/gnome_connection_manager/__init__.py:__version__",
     "src/gnome_connection_manager/app.py:^app_version",

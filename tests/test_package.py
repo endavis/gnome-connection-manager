@@ -90,6 +90,20 @@ def test_commitizen_names_every_declared_version_file() -> None:
     assert named | {"pyproject.toml"} == set(_declared_versions())
 
 
+def test_commitizen_is_told_the_changelog_is_written_by_hand() -> None:
+    """CHANGELOG.md is written by hand, and `update_changelog_on_bump = false` says so
+    (#311). Measured with commitizen 4.18.0, `cz bump --files-only` with the key true
+    changed 197 lines of it as well as the version files. False is commitizen's default,
+    and the template's `doit release` reads a missing key as false since
+    pyproject-template#992, so nothing but this would notice the key go."""
+    import tomllib
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    config = tomllib.loads(pyproject.read_text())["tool"]["commitizen"]
+
+    assert config.get("update_changelog_on_bump") is False
+
+
 def test_a_release_bump_reaches_every_declared_version(tmp_path: Path) -> None:
     """Naming the right files is not enough. Measured with commitizen 4.18.0, a
     `version_files` pattern that matches no line, `^app_versio_typo` for app.py, left that
