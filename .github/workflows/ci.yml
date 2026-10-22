@@ -201,18 +201,23 @@ jobs:
 
       - name: Check that apt knows every package the .deb names
         # Alternatives included: a name apt does not know is a typo, or a package gone.
+        # The names are read on their own line, as a failure inside `for`'s list would leave
+        # it empty and the step passing.
         run: |
+          names=$(python3 tools/packages.py --names deb)
           missing=0
-          for package in $(python3 tools/packages.py --names deb); do
+          for package in $names; do
             apt-cache show "$package" >/dev/null 2>&1 || { echo "::error::apt knows no package $package"; missing=1; }
           done
           exit $missing
 
       - name: Validate the desktop entry
+        # It exits 0 for a warning, as for the deprecated Encoding, so what it prints fails
+        # the step too. Under bash -e, an assignment that fails would end the step unprinted.
         run: |
-          report=$(desktop-file-validate gnome-connection-manager.desktop)
-          if [[ -n $report ]]; then
-            echo "::error::desktop-file-validate: $report"
+          report=$(desktop-file-validate gnome-connection-manager.desktop 2>&1) && code=0 || code=$?
+          if [[ $code != 0 || -n $report ]]; then
+            echo "::error::desktop-file-validate exited $code: $report"
             exit 1
           fi
 
