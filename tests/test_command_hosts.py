@@ -175,7 +175,9 @@ def spawned(app_module, monkeypatch, environment, spawn_async=True):
             captured["argv"], captured["envv"] = args[2], args[3]
             captured["own"] = os.environ.get("GCM_PASSWORD")
 
-        spawn_sync = spawn_async
+        def spawn_sync(self, *args, **_kwargs):
+            self.spawn_async(*args)
+            return True, 4321  # as VTE's: whether it spawned, and the child's pid
 
     # As tests/test_osc52.py does: the stub's flags are opaque, and must survive a `|`.
     monkeypatch.setattr(app_module.GLib.SpawnFlags, "DEFAULT", 1)

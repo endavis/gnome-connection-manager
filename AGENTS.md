@@ -107,8 +107,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   order the host dialog offers them, which fills its list from there. Code that used to
   compare `host.type` with a name asks the type instead: `addTab` for the `Command` to
   spawn, and the dialog and `host_sends_commands` for `default_port`, `remote`,
-  `ssh_options` and `sends_commands`, and the server tree's menu for `sftp`, whether a
-  host's files open over SFTP (#267). A new type adds a class here, not a branch in each
+  `ssh_options` and `sends_commands`, the server tree's menu for `sftp`, whether a
+  host's files open over SFTP (#267), and `start_session` for `session_program`, whose
+  session's start the commands after login wait for (#312). A new type adds a class here, not a branch in each
   of those. `named` finds a type by name, and gives Telnet for a name GCM does not know;
   `for_host` is what `addTab` opens a host as, a local shell for a host with no address
   unless its type has `runs_without_address`, since the Local button's host is of type
@@ -400,6 +401,30 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the time is an argument. `Wmain.on_terminal_contents_changed` feeds it, and `check_quiet`
   polls it on a timer that exists only while a tab is waiting, so an idle console costs
   nothing. It, the bell and a session ending all mark through `request_attention`.
+- `src/gnome_connection_manager/utils/afterlogin.py` – when a host's commands after login
+  are typed, and what becomes of what is typed into its tab before then (#312). They
+  were typed 3 s after the spawn. An SSH host's now go once ssh's own terminal is raw,
+  which it is from the session's start, measured with OpenSSH 9.6 no more than 70 ms
+  before the remote prompt, and the tab's output has paused for `QUIET`, or after
+  `SETTLE` however busy. Under ssh.expect or the relay that terminal is one of theirs,
+  so `find_program` finds ssh among the tab's processes, from the pid `note_child_pid`
+  keeps as the terminal's `child_pid`, and `terminal_state` reads its modes through
+  `/proc/<pid>/fd/0`. Which type is followed so is its `session_program`, `Ssh`'s alone:
+  Telnet, a command host and a local shell keep the fixed waits. `Gate.key` decides each
+  key typed meanwhile. Held, as a copy of its event, which `replay_keys` gives the
+  terminal after the commands, and VTE sends what it would have, measured byte for byte,
+  to a tab not in use too. Or passed: while the login asks something, which
+  `login_asking` reads as text before the cursor on its row, while ssh reads a secret,
+  and for a key with Ctrl. `hold_key` runs last in `on_terminal_keypress`, after the
+  shortcuts and `[keys]`, and passes the keys VTE scrolls for, `vte_keeps`, measured to
+  send nothing. A paste, a snippet and the cluster window write to the terminal without
+  a key event, and are not held: measured, a paste during the login went ahead of the
+  commands. `GIVE_UP` sends them anyway for a session that never goes raw, as
+  `ssh -T`'s, measured at 20 s, and `FIND_WAIT` where ssh is never found. A remote
+  prompt in such a session reads as a question, which restarts `GIVE_UP` for as long as
+  it shows. A fake ssh must enter raw mode with `TCSADRAIN`, as ssh does: Python's
+  `tty.setraw` defaults to `TCSAFLUSH`, which discards what was typed and not yet read,
+  the very thing a test of this is about.
 - `src/gnome_connection_manager/utils/updates.py` – whether this repository has released a
   newer GCM (#295). `newer_release` compares the `vX.Y.Z` tags GitHub lists at
   `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original

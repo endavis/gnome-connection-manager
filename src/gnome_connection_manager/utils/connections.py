@@ -151,6 +151,9 @@ class ConnectionType:
     arguments = True  # whether a remote host's extra arguments are, by the program it runs
     ssh_options = False  # keep-alive, X11, agent, compression, key and port forwarding
     sends_commands = True  # whether the host's commands are typed after it connects
+    # The program whose own terminal shows when its session has started, by the name /proc
+    # gives it, so that the commands go then rather than after a fixed wait (#312).
+    session_program: str | None = None
     # False for a type opened outside GCM, with no tab: a web host's page opens in the
     # browser, from its url() rather than a command.
     opens_tab = True
@@ -242,6 +245,7 @@ class Ssh(ConnectionType):
     default_port = "22"
     ssh_options = True
     sftp = True
+    session_program = "ssh"
 
     def dropped(self, status: int, tail: str) -> bool:
         return status == 255 and SSH_LOST.search(tail) is not None

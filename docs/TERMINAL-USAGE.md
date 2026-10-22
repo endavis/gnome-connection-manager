@@ -955,6 +955,48 @@ env -u WAYLAND_DISPLAY copilot
 It then uses X11 through XWayland and the native write succeeds. Do not unset the variable
 globally — other applications need it.
 
+## A host's commands after login
+
+The commands on an SSH host's **Commands** tab go once its session has started: once ssh
+has logged in, and the server has printed nothing for a moment, as after its prompt. GCM
+sees the start in how ssh reads its terminal, which ssh changes as its session begins.
+Until then the commands wait for the login, a host key question, a password and a
+passphrase included. They used to be typed 3 seconds after ssh started, and a login
+still asking something then took them for its answer.
+
+What you type before they go waits for them, and is typed after them, as you typed it.
+It does not show until then. These go at once:
+
+- An answer to a question the login shows: the host key question, a password prompt, or
+  a server's own, such as a passcode. GCM takes the login to be asking while there is
+  text before the cursor on its line, where a question leaves it.
+- A key with Ctrl, such as Ctrl+C to stop connecting.
+- Shift with Page Up, Page Down, Home or End, and Ctrl+Shift with Up or Down, which scroll
+  the tab.
+- A paste, a snippet, a key from the `[keys]` section, and what the cluster window sends.
+
+Once the session has started, all you type waits for the commands, Ctrl+C too. They go
+no more than 2 seconds after it starts.
+
+A line `##D=<milliseconds>` among the commands waits that long before the lines after
+it, and what you type waits for the last of them.
+
+GCM stops waiting 20 seconds after ssh started, or after the login last asked something,
+and types the commands then, with what you typed after them. A session without a
+terminal of its own, as `-T` among the host's **Extra arguments** makes it, never shows
+its start, so its commands go then. One that shows a prompt anyway, as a shell run with
+`-i` does, looks like a login still asking: what you type at the prompt goes at once,
+and the commands wait for as long as it shows, with what you typed before it.
+
+A Telnet host's commands, and a command host's, are still typed 3 seconds after the
+connection starts, or after 0.7 seconds for a host with no address, such as one that
+opens a local shell. GCM cannot see their sessions start, and holds nothing you type into
+them. Where it cannot find ssh among the tab's processes, it types an SSH host's commands
+after 3 seconds too, with what you typed after them.
+
+**Reconnect** does not send them again, and what you typed before it goes with the
+session it replaced.
+
 ## A host's first connection
 
 The first time you connect to an SSH host, ssh shows the fingerprint of the host's key
@@ -968,8 +1010,8 @@ To have new keys trusted without the question, add `-o StrictHostKeyChecking=acc
 to the host's **Extra arguments**. ssh then trusts a host it has not seen before, and still
 refuses one whose key has changed.
 
-A host's commands are typed 3 seconds after it connects. On a first connection they reach
-the question if it is still waiting, and ssh asks again; they are not run that time.
+A host's commands after login wait for your answer, and for the session to start: see
+[A host's commands after login](#a-hosts-commands-after-login).
 
 An RDP host's first connection asks too. FreeRDP shows the server's certificate and asks
 `Do you trust the above certificate? (Y/T/N)`: `Y` trusts it from then on, `T` for this

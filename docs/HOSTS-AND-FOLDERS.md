@@ -141,7 +141,9 @@ an SSH host.
 
 Automatic commands on connect are kept separately from the checkbox that runs them, so
 unticking **Send commands after login** stops them running without discarding what you
-typed.
+typed. An SSH host's go once its session has started, and what you type into the tab
+before then goes after them: see
+[A host's commands after login](TERMINAL-USAGE.md#a-hosts-commands-after-login).
 
 `gcm.conf` keeps them as `commands`, each new line written as `\n`, the only form an
 older GCM reads. Commands with a backslash and an n of their own, such as
@@ -387,8 +389,9 @@ started with, so aliases and functions from your own shell's startup files are n
 there. The session ends when the command exits, and **Close console** decides what
 becomes of the tab. **Reconnect** runs the command again, but GCM never reconnects a
 command host by itself, whatever Preferences says about a dropped session: it cannot tell
-a lost connection from a command that ended. Commands after login are typed into the tab,
-as into any other.
+a lost connection from a command that ended. Commands after login are typed into the tab
+3 seconds after the command starts, or 0.7 seconds for a host without an address, since
+GCM cannot see when a command's session does.
 
 An older GCM opens a command host as Telnet, as it does any type it does not know, or as
 a local shell when it has no address. It keeps the command line when it saves.

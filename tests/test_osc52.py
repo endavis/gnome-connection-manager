@@ -625,6 +625,7 @@ def spawn_an_ssh_session(app_module, monkeypatch, tmp_path, recording=1):
 
         def spawn_sync(self, *args, **_kwargs):
             captured["argv"], captured["flags"] = args[2], args[4]
+            return True, 4321  # as VTE's: whether it spawned, and the child's pid
 
     # The real flags are an IntFlag; the stub's are opaque, so give them values that
     # survive the `|` and can be told apart.
