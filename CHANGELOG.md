@@ -18,6 +18,13 @@ the git log.
   terminal tab whatever the logging settings, so unticking a host's **Enable Logging**
   does not keep its sessions off disk while recording is on.
 
+### Fixed
+- A host with a stored password took no input when ssh logged in without asking for the
+  password, with a key the server accepts: the tab showed the remote prompt, and nothing
+  typed reached it, nor the commands after login. The tab is now yours once the session
+  has started. A question ssh asks first that GCM does not answer, such as a key's
+  passphrase, is yours to answer too, where it used to leave the tab the same way.
+
 ## [2.1.0] - 2026-10-20
 
 ### Added

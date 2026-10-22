@@ -37,9 +37,23 @@ if { $connection == "telnet" } {
     set cmd ""
     set reg "assword:"
 } else {
-    set timeout -1
+    # Not -1, which waited for ever. Each second without a pattern matched, the block
+    # below looks at what ssh is doing, as it may never ask for the password (#313).
+    set timeout 1
     set cmd "/usr/bin/ssh"
     set reg "assword:"
+}
+
+# What ssh's own terminal, the pty it was spawned on, says it is doing: "session" once its
+# session has started, which puts the terminal in raw mode, "secret" while it reads with
+# echo off, and "" while it connects or asks about a host key, which it does in canonical
+# mode with echo. Measured with OpenSSH 9.6 (#313). The pty is gone once ssh has exited.
+proc ssh_terminal {} {
+    global spawn_out
+    if { [catch { exec stty -a < $spawn_out(slave,name) } modes] } { return "" }
+    if { [regexp {(^|\s)-icanon(\s|$)} $modes] } { return "session" }
+    if { [regexp {(^|\s)-echo(\s|$)} $modes] } { return "secret" }
+    return ""
 }
 
 
@@ -63,6 +77,15 @@ log_user 1
 # -nobuffer passes it on with what came before it; without that, interact holds the
 # Enter back, and dropped an answer typed ahead of it. interact also returns when ssh
 # ends, at Ctrl+C for one, having closed the spawn id, so the block must not go on then.
+#
+# ssh need not ask for the password at all. It tries public keys first, and logs in with
+# one the server accepts, and it can ask something the script does not answer, such as a
+# key's passphrase. The block used to wait for the password for ever then, and the tab
+# took no input (#313). So once ssh's session has started, the terminal is the user's, and
+# so it is when ssh has read with echo off at two looks running, a second apart, with no
+# pattern matched between them: the password prompt matches long before the second. A
+# question that echoes is not told from connecting, and still waits. Telnet hands over
+# after its timeout, as it always has.
 # No comments inside the block: there a # line is read as a pattern.
 #
 # FreeRDP's certificate question is handed over the same way. FreeRDP 3 asks for a
@@ -79,6 +102,7 @@ if { $connection == "rdp" } {
           }
        }
 } else {
+    set asking 0
     expect {
           -re "login:|sername:" { send "$user\n"; exp_continue; }
           $reg { send "$pass\n"; exec kill -WINCH [ pid ]; interact; }
@@ -87,7 +111,22 @@ if { $connection == "rdp" } {
               interact -nobuffer -re "\r|\n" { set answered 1; return; }
               if { $answered } { exp_continue; }
           }
-          timeout { interact; }
+          timeout {
+              if { $connection == "telnet" } {
+                  interact
+              } else {
+                  set now [ssh_terminal]
+                  if { $now == "session" } {
+                      exec kill -WINCH [ pid ]
+                      interact
+                  } elseif { $now == "secret" && $asking } {
+                      interact
+                  } else {
+                      set asking [expr { $now == "secret" }]
+                      exp_continue
+                  }
+              }
+          }
        }
 }
 
