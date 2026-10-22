@@ -8,11 +8,15 @@ the positive ones.
 from __future__ import annotations
 
 import base64
+import fcntl
 import inspect
 import json
 import os
+import select
+import struct
 import subprocess
 import sys
+import termios
 import time
 import types
 from pathlib import Path
@@ -691,3 +695,93 @@ def test_the_relay_hands_on_the_argv_the_child_would_have_had():
 
     assert result.returncode == 0, result.stdout + result.stderr[-2000:]
     assert "RELAY-ARGV-OK" in result.stdout
+
+
+# -- resizing (#319) ---------------------------------------------------------
+
+# Reports the size it starts at, and each SIGWINCH with the size it then reads, and
+# otherwise waits: after READY nothing it does passes through the relay.
+_IDLE_PROGRAM = """
+import fcntl, signal, struct, sys, termios, time
+
+def size():
+    rows, cols = struct.unpack("HHHH", fcntl.ioctl(0, termios.TIOCGWINSZ, b"\\0" * 8))[:2]
+    return f"{rows}x{cols}"
+
+signal.signal(signal.SIGWINCH, lambda *_: print("WINCH", size(), flush=True))
+print("READY", size(), flush=True)
+time.sleep(60)
+"""
+
+
+def _relay_an_idle_program(rows, cols):
+    """The relay on a pty of `rows` and `cols`, running `_IDLE_PROGRAM`, and the pty."""
+    master, slave = os.openpty()
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    process = subprocess.Popen(
+        [sys.executable, "-m", "gnome_connection_manager.relay", "--"]
+        + [sys.executable, "-c", _IDLE_PROGRAM],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        # The pty as the relay's controlling terminal, as VTE gives a tab: only then does
+        # a change of its size send the relay SIGWINCH.
+        start_new_session=True,
+        preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0),
+    )
+    os.close(slave)
+    return process, master
+
+
+def _read_until(master, text, seconds):
+    """What the pty shows until `text` is among it, or `seconds` have passed."""
+    seen = b""
+    deadline = time.monotonic() + seconds
+    while text.encode() not in seen:
+        ready, _, _ = select.select([master], [], [], max(deadline - time.monotonic(), 0))
+        if not ready:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:  # EIO: the relay has gone
+            break
+        if not chunk:
+            break
+        seen += chunk
+    return seen.decode(errors="replace")
+
+
+@pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs pty support")
+def test_the_relayed_program_starts_at_the_terminals_size():
+    process, master = _relay_an_idle_program(33, 111)
+    try:
+        seen = _read_until(master, "READY", 30)
+    finally:
+        process.kill()
+        process.wait()
+        os.close(master)
+
+    assert "READY 33x111" in seen, seen
+
+
+@pytest.mark.skipif(not hasattr(os, "openpty"), reason="needs pty support")
+def test_each_resize_reaches_an_idle_program_under_the_relay():
+    """With no key typed and no output. The relay passed a resize on only when a byte
+    next went through it, in either direction, so an idle program never had it (#319).
+    Twice, as a new tab changes its size twice as it settles."""
+    process, master = _relay_an_idle_program(24, 80)
+    try:
+        started = _read_until(master, "READY", 30)
+        reached = []
+        for rows, cols in ((30, 100), (40, 120)):
+            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+            reached.append(_read_until(master, f"WINCH {rows}x{cols}", 5))
+    finally:
+        process.kill()
+        process.wait()
+        os.close(master)
+
+    assert "READY 24x80" in started, started
+    assert "WINCH 30x100" in reached[0], reached
+    assert "WINCH 40x120" in reached[1], reached

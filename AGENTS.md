@@ -26,7 +26,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   or raw recording is enabled, sessions are spawned *under this* rather than directly, so it
   sits in the byte path between the child and VTE. It forwards bytes unmodified, watches for
   OSC 52, and can tee the stream to disk. VTE keeps its C read path and a stall here cannot
-  freeze the interface.
+  freeze the interface. A change of the tab's size reaches it as SIGWINCH, and
+  `on_sigwinch` passes the size on itself. Python retries a `select` a signal
+  interrupted once the handler has run (PEP 475), so a size left for the loop reached an
+  idle program only when a byte next went through, measured (#319).
+  `tests/test_osc52.py` runs the relay on a pty that is its controlling terminal, since
+  only then does a resize signal it.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
 - `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which
