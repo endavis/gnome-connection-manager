@@ -87,12 +87,13 @@ check_ours() {
 }
 
 # The packages a version's .deb names with the options given, read from its Makefile, so
-# that a version needing another one gets it.
+# that a version needing another one gets it. Alternatives are one quoted word there,
+# `'a|b'`, read without the quotes (#273).
 deb_packages() {
-    awk -v option="^($2)\$" '
+    awk -v option="^($2)\$" -v quote="'" '
         /^deb:/ { deb = 1; next }
         deb && $0 != "" && substr($0, 1, 1) != "\t" { exit }
-        deb { for (i = 1; i < NF; i++) if ($i ~ option) print $(i + 1) }
+        deb { for (i = 1; i < NF; i++) if ($i ~ option) { name = $(i + 1); gsub(quote, "", name); print name } }
     ' "$1/Makefile"
 }
 
@@ -107,11 +108,17 @@ optional_packages() {
     deb_packages "$1" '--deb-suggests'
 }
 
+# Those of the packages named that are not installed. Alternatives, `a|b`, are installed
+# while any one of them is, and are named as the first, the one to install.
 missing_packages() {
-    local package status
+    local package alternative alternatives status
     for package in "$@"; do
-        status=$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) || status=
-        [[ $status == *" installed" ]] || say "$package"
+        IFS='|' read -ra alternatives <<<"$package"
+        for alternative in "${alternatives[@]}"; do
+            status=$(dpkg-query -W -f='${Status}' "$alternative" 2>/dev/null) || status=
+            [[ $status == *" installed" ]] && continue 2
+        done
+        say "${package%%|*}"
     done
 }
 
@@ -143,8 +150,8 @@ install_packages() {
     (($# == 0)) || shift
     optional=("$@")
     if ! command -v apt-get >/dev/null || ! command -v dpkg-query >/dev/null; then
-        say "There is no apt here to install what GCM needs. In Debian's names: ${required[*]}"
-        ((${#optional[@]} == 0)) || say "Its optional programs, if you want them: ${optional[*]}"
+        say "There is no apt here to install what GCM needs. In Debian's names: ${required[*]%%|*}"
+        ((${#optional[@]} == 0)) || say "Its optional programs, if you want them: ${optional[*]%%|*}"
         return 0
     fi
     mapfile -t missing < <(missing_packages "${required[@]}")
