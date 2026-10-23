@@ -144,6 +144,16 @@ ignore = [
 "tests/test_codeql_workflow.py" = ["TC"]
 "tests/test_workflow_action_pinning.py" = ["TC"]
 "tests/test_dependabot_*.py" = ["TC"]
+# The template's own tests, taken whole into a folder of their own (#324).
+"tests/template/*" = ["TC"]
+
+[tool.ruff.lint.isort]
+# Sorted as the template sorts them, whose `src` is ruff's default, the root and src/ (#324).
+# There tools/ is the project's own, and tests/agent_roster.py, the helper the tests taken
+# from it import as a module of its own, is not. Naming tests/ in `src` turned both round,
+# so each file taken had its imports out of order here and in order upstream.
+known-first-party = ["tools"]
+known-third-party = ["agent_roster"]
 
 [tool.ruff.format]
 quote-style = "double"

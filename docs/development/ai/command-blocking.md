@@ -146,7 +146,7 @@ tmp/agents/<agent-type>/ and pass it with `git commit -F <file>`.
 
 See [Commit Guidelines — Passing the Message](../../../.github/CONTRIBUTING.md#commit-guidelines)
 for the convention, and
-[ADR-9019](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9019-the-dangerous-command-hook-is-a-guardrail-not-a-security-boundary.md)
+[ADR-9019](../../decisions/9019-the-dangerous-command-hook-is-a-guardrail-not-a-security-boundary.md)
 for why the scanner is not taught to recognise prose instead — the short version is that skipping
 bodies for a list of trusted receivers turns a mistake in that list into a bypass, and the flat
 scan is what covers interpreters nobody has listed.
@@ -268,13 +268,15 @@ target list stays in one place.
 
 Codex will not run a hook it has not been told to trust; trust is persisted per hook (`trusted_hash`
 in the hooks config). **An untrusted hook is skipped silently** — no warning, no log line — which is
-why this hook appeared to work for as long as nobody checked.
+why this hook appeared to work for as long as nobody checked. This is hook trust, scoped to one
+hook's source; it is a different gate from the *project* trust covered next, and bypassing one does
+not bypass the other.
 
 Headless invocations therefore pass `--dangerously-bypass-hook-trust`, the way Antigravity's pass
 `--dangerously-skip-permissions`:
 
 ```bash
-codex -a never --dangerously-bypass-hook-trust exec '<prompt>'
+codex -a never --dangerously-bypass-hook-trust exec '<prompt>' < /dev/null
 ```
 
 The flag makes the safety hook **run**; it does not weaken it. What it bypasses is Codex's check
@@ -285,6 +287,93 @@ script.
 > config runs without a prompt — so a hook added by a malicious pull request would execute. A
 > consumer who would rather not accept that can trust the hook once in an interactive Codex session
 > (the trust persists) and drop the flag from the bridges.
+
+##### Codex requires *project* trust, a separate gate from hook trust
+
+Hook trust (above) governs one hook's source. A separate, earlier gate governs whether Codex loads
+the checkout's `.codex/` configuration — hooks **and** rules — at all: **project trust**, recorded
+per checkout path in `~/.codex/config.toml`'s `[projects."<abs path>"]` table.
+`--dangerously-bypass-hook-trust` does not grant it; the name only covers hook-source review.
+
+Measured with codex-cli 0.163.0, 2026-10-21 (#984), from a scratch `git clone` of this repo with a
+probe rule `.codex/rules/probe-984.rules` = `prefix_rule(pattern=["git", "ls-remote"],
+decision="allow")` — chosen because the maintainer's personal `~/.codex/rules` do not cover `git
+ls-remote`, so they cannot mask the result. Each row ran:
+
+```bash
+codex -a never --dangerously-bypass-hook-trust \
+  [-c 'projects={"<clone path>"={trust_level="<level>"}}'] \
+  exec 'Run exactly: git ls-remote https://github.com/endavis/pyproject-template refs/heads/main ...' \
+  < /dev/null
+```
+
+counting `hook: PreToolUse` lines on stderr:
+
+| Project trust for the clone | `hook: PreToolUse` lines | `git ls-remote` result | `.codex/` loaded? |
+| :--- | :--- | :--- | :--- |
+| No `[projects."<path>"]` entry in `~/.codex/config.toml` | 0 | `fatal: unable to access ...: Could not resolve host: github.com` | **No** |
+| `trust_level = "untrusted"` | 0 | same failure | **No** |
+| `trust_level = "trusted"` | 2 | resolves `refs/heads/main` (e.g. `ec0f479...`) | **Yes** |
+
+So in a checkout Codex has not trusted, a headless `codex exec` loads neither `.codex/rules/gh.rules`
+(the #980 fix) nor the `PreToolUse` dangerous-command hook — regardless of
+`--dangerously-bypass-hook-trust`. The main checkout in this repo loads because its
+`~/.codex/config.toml` already carries
+`[projects."<abs path to this checkout>"] trust_level = "trusted"`.
+
+One syntax note from the same measurement: the dotted override form
+`-c projects."<path>".trust_level="trusted"` had no effect; the inline-table form
+`-c 'projects={"<path>"={trust_level="trusted"}}'` did.
+
+**Trust step, one-time per checkout:** before relying on `.codex/` in a headless `codex exec` run,
+trust the checkout — accept the trust prompt in an interactive `codex` session opened in that
+directory, or add `[projects."<abs path>"] trust_level = "trusted"` to `~/.codex/config.toml` by
+hand. Until then, neither defense layer applies, headless or not. See also [Headless Codex host
+limits](cross-agent-delegation.md#headless-codex-host-limits) for what a trusted-but-headless Codex
+session still cannot do.
+
+##### `gh` has no network inside the sandbox — `.codex/rules/*.rules` is a separate mechanism
+
+`.codex/config.toml`'s `approval_policy` and `[[hooks.PreToolUse]]` control whether a command is
+*asked about* or run through the dangerous-command hook. They do not control whether a command runs
+*inside Codex's sandbox* or outside it — that is a third, separate mechanism: project-level
+`.codex/rules/*.rules` files, each a sequence of Starlark `prefix_rule(pattern=[...],
+decision="allow")` calls matched against the exec'd command's prefix.
+
+Measured with codex-cli 0.163.0 (#980): inside the sandbox, `gh` has no network at all — a DNS write to `:53`,
+and (with `GODEBUG=netdns=cgo`) a TCP write to `:443`, both return "permission denied", even with `-c
+sandbox_workspace_write.network_access=true`. A standalone `gh` command (or `git ls-remote`) that
+matches a `prefix_rule` allow runs *outside* the sandbox instead, with full network access —
+confirmed by a probe rule file that fixed a previously-failing `git ls-remote`. The allow rule
+decides only *where* a command runs; the `PreToolUse` hook still fires first (Codex logs `hook:
+PreToolUse` before each allow-ruled `gh` call), so `gh pr merge --admin` and the other blocked
+patterns are refused exactly as before.
+
+`.codex/rules/gh.rules` allows only the read-only subcommands delegated runs use: `gh pr
+{view,diff,checks,list}` and `gh issue {view,list}`. Everything else — `gh pr comment`, `gh api`
+(which writes with `-X`/`-f`), `gh pr merge` — matches no rule and stays in the sandbox, where it has
+no network, so GitHub writes from a delegated Codex run get no network path. That narrows the
+normal path; it does not guarantee that a delegated run can't write. A rule matches its prefix with
+any arguments after it, and the `PreToolUse` hook is a guardrail, not a security boundary
+([ADR-9019](../../decisions/9019-the-dangerous-command-hook-is-a-guardrail-not-a-security-boundary.md)).
+A guarantee needs a credential boundary, such as a token scoped for delegated runs. Check a change
+to the file with
+`codex execpolicy check --rules .codex/rules/gh.rules gh pr view 1`;
+`tests/template/test_ai_agent_assets.py` does the same for both sides of the line.
+
+Headless invocations also end in `< /dev/null`. `codex exec` reads extra input from stdin when stdin
+is not a terminal ("Reading additional input from stdin..."), and a caller whose stdin is an open
+pipe or socket — a backgrounded shell, an agent's tool runner — leaves it waiting forever.
+
+The allow rule only matches when `gh` is the exec'd prefix. If a command chains `gh` with `;`,
+`&&`, `|`, or any other command, the exec'd prefix is the shell, not `gh`, so the rule does not
+match and the chained call falls into the sandboxed, network-less path instead. `.codex/rules/gh.rules`
+still carries this allow rule for a headless Codex **host**'s own reads (its own `gh issue
+view`/`gh pr view` in `multi-plan`/`multi-review`'s precondition steps) — but as of #985 no prompt
+this repo hands Codex *non-interactively as a delegate* calls `gh` at all: the host pre-fetches the
+GitHub data a delegated prompt needs with `doit delegation_context` first, so there is no `gh` call
+left to chain-guard in a delegated prompt. See [Context-file
+convention](cross-agent-delegation.md#context-file-convention).
 
 #### Antigravity CLI (`agy`)
 
@@ -393,7 +482,7 @@ everyone:
 that is then pasted into an issue, or read by a later summarisation step. It is not a boundary
 against a determined agent, which has many other routes to the same value. That is true of the
 hook as a whole, not only of this section — see
-[ADR-9019](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9019-the-dangerous-command-hook-is-a-guardrail-not-a-security-boundary.md) for the categories, the non-adversarial
+[ADR-9019](../../decisions/9019-the-dangerous-command-hook-is-a-guardrail-not-a-security-boundary.md) for the categories, the non-adversarial
 assumption, and the rules governing what may be added. `$VAR` interpolation is
 deliberately **not** blocked: legitimate uses are common, and blocking it would give false
 assurance while being trivially avoided.
@@ -490,6 +579,8 @@ Force push, delete, and merge operations are only blocked when targeting protect
 | `git branch -D feat/old` | ALLOWED |
 | `git merge branch` (on main) | BLOCKED (creates merge commit) |
 | `git merge --ff-only branch` (on main) | ALLOWED (fast-forward only) |
+| `git merge branch; echo --ff-only` (on main) | BLOCKED (`--ff-only` counts only on the merge itself) |
+| `git log --grep merge` (on main) | ALLOWED (a `git log`, not a merge) |
 | `git merge branch` (on feature) | ALLOWED |
 
 #### Blocked Workflow Commands

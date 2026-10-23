@@ -9,8 +9,9 @@ from typing import Any
 from doit.tools import title_with_actions
 from rich.console import Console
 from rich.panel import Panel
+from rich.text import Text
 
-from .base import UV_CACHE_DIR
+from .base import UV_CACHE_DIR, verbatim
 
 
 def task_cleanup() -> dict[str, Any]:
@@ -43,7 +44,7 @@ def task_cleanup() -> dict[str, Any]:
         # Remove *.egg-info directories
         for item in os.listdir("."):
             if item.endswith(".egg-info") and os.path.isdir(item):
-                console.print(f"  [dim]Removing {item}...[/dim]")
+                console.print(verbatim(f"  Removing {item}...", "dim"))
                 shutil.rmtree(item)
 
         # Clear tmp/ directory but keep the directory and .gitkeep
@@ -74,13 +75,13 @@ def task_cleanup() -> dict[str, Any]:
             for d in dirs_list:
                 if d == "__pycache__":
                     full_path = os.path.join(root, d)
-                    console.print(f"  [dim]Removing {full_path}...[/dim]")
+                    console.print(verbatim(f"  Removing {full_path}...", "dim"))
                     shutil.rmtree(full_path)
 
             for f in files:
                 if f.endswith((".pyc", ".pyo")) or f.startswith(".coverage"):
                     full_path = os.path.join(root, f)
-                    console.print(f"  [dim]Removing {full_path}...[/dim]")
+                    console.print(verbatim(f"  Removing {full_path}...", "dim"))
                     os.remove(full_path)
 
         console.print()
@@ -278,9 +279,9 @@ def task_completions_install() -> dict[str, Any]:
                 with open(bashrc, "a", encoding="utf-8") as f:
                     f.write(bash_source_line)
                 installed.append(("Bash", bashrc))
-                console.print(f"[green]✓ Added to {bashrc}[/green]")
+                console.print(verbatim(f"✓ Added to {bashrc}", "green"))
             else:
-                console.print(f"[dim]Already in {bashrc}[/dim]")
+                console.print(verbatim(f"Already in {bashrc}", "dim"))
 
         # Install zsh completion
         zshrc = os.path.join(home, ".zshrc")
@@ -291,9 +292,9 @@ def task_completions_install() -> dict[str, Any]:
                 with open(zshrc, "a", encoding="utf-8") as f:
                     f.write(zsh_source_line)
                 installed.append(("Zsh", zshrc))
-                console.print(f"[green]✓ Added to {zshrc}[/green]")
+                console.print(verbatim(f"✓ Added to {zshrc}", "green"))
             else:
-                console.print(f"[dim]Already in {zshrc}[/dim]")
+                console.print(verbatim(f"Already in {zshrc}", "dim"))
 
         console.print()
         if installed:
@@ -311,10 +312,14 @@ def task_completions_install() -> dict[str, Any]:
         else:
             console.print(
                 Panel.fit(
-                    "[yellow]No shell config files found or already installed.[/yellow]\n\n"
-                    "[dim]Manually add to your shell config:[/dim]\n"
-                    f'  source "{bash_completion}"  (Bash)\n'
-                    f'  source "{zsh_completion}"   (Zsh)',
+                    Text.assemble(
+                        verbatim("No shell config files found or already installed.", "yellow"),
+                        verbatim("\n\nManually add to your shell config:", "dim"),
+                        verbatim(
+                            f'\n  source "{bash_completion}"  (Bash)\n'
+                            f'  source "{zsh_completion}"   (Zsh)'
+                        ),
+                    ),
                     border_style="yellow",
                     padding=(1, 2),
                 )

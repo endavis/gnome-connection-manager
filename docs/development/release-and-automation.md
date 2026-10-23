@@ -15,8 +15,10 @@ tags:
     A GCM release is a `vX.Y.Z` tag on `main`. Nothing is published to PyPI — a wheel
     cannot supply GTK 3, VTE or PyGObject — and there is no `release.yml`, no
     `testpypi.yml` and no `hatch-vcs`. The version is static, in four files that
-    `tests/test_package.py` keeps equal, and `CHANGELOG.md` is written by hand, so
-    `doit release`, which generates the changelog and writes no version, does not fit.
+    `tests/test_package.py` keeps equal, and `CHANGELOG.md` is written by hand. GCM
+    releases as Contributing describes, not with `doit release`: the version synced in
+    #324 is meant to handle a static version and a hand-written changelog, but it has not
+    been tried here.
 
     The page is kept because the machinery it describes is present in the vendored
     `tools/doit/`, and because other pages link into its sections. Read it as the
@@ -93,7 +95,8 @@ uv run doit release [--prerelease=alpha|beta|rc] [--increment=MAJOR|MINOR|PATCH]
 uv run doit release_tag
 ```
 
-Both commands must be run from `main` with a clean working tree.
+Both commands must be run from `main`. `doit release` also needs a clean
+working tree.
 `--prerelease` and `--increment` can be combined (e.g.
 `doit release --prerelease=alpha --increment=minor` forces a pre-release of
 the chosen bump type — see [issue #475](https://github.com/endavis/pyproject-template/issues/475)).
@@ -149,7 +152,7 @@ uv run doit release --prerelease=rc
 **What it does:**
 
 1. ✅ Verifies you're on the `main` branch
-2. ✅ Validates `--prerelease` (must be empty, `alpha`, `beta`, or `rc`)
+2. ✅ Validates `--prerelease` (must be empty, `alpha`, `beta`, or `rc`), `--issue` (must be empty or a number) and `--increment` (must be empty, `MAJOR`, `MINOR` or `PATCH`, in any case)
 3. ✅ Checks for uncommitted changes
 4. ✅ Pulls latest changes from remote
 5. ✅ **Runs governance validations** (merge commit format, issue links)
@@ -193,8 +196,76 @@ Pass `--prerelease=<type>` to `doit release` to open a pre-release PR:
 Pre-release tags (e.g. `v1.2.0a0`, `v1.2.0b1`, `v1.2.0rc0`, `v1.2.0.dev2`)
 trigger the TestPyPI publish workflow; production tags (e.g. `v1.2.0`) trigger
 TestPyPI followed by PyPI.
-See the [Workflow Triggers](../../.github/CONTRIBUTING.md#workflow-triggers)
+See the [Workflow Triggers](https://github.com/endavis/pyproject-template/blob/main/.github/CONTRIBUTING.md#workflow-triggers)
 table in `CONTRIBUTING.md` for the full mapping.
+
+### Downstream opt-ins: static version and hand-written changelog
+
+`doit release` reads two `[tool.commitizen]` keys to decide what a release PR changes (issue
+#971). The template sets `version_provider = "scm"` and `update_changelog_on_bump = true`, so its
+own release PR changes only a generated `CHANGELOG.md`. A downstream project that versions or
+writes its changelog differently gets a release PR that matches.
+
+| `[tool.commitizen]` | What `doit release` does |
+| :--- | :--- |
+| `version_provider = "scm"` | Leaves version files alone; the tag is the version. |
+| `version_provider` is anything else | Bumps every version file and `uv.lock` (below). |
+| `update_changelog_on_bump = true` | Generates `CHANGELOG.md` from commit subjects. |
+| `update_changelog_on_bump` is `false` **or missing** | Treats `CHANGELOG.md` as hand-written (below). |
+
+A missing `update_changelog_on_bump` counts as hand-written because that is commitizen's own
+default for it. A project that never set the key gets its `## [Unreleased]` section renamed, or a
+clear abort, instead of `cz changelog` overwriting entries it wrote by hand.
+
+**A static version.** With `version_provider` set to something other than `"scm"` (e.g.
+`"pep621"`) and the files that carry the version listed in `version_files`:
+
+```toml
+[tool.commitizen]
+version_provider = "pep621"
+version_files = [
+    "src/mypkg/__init__.py:__version__",
+    "Makefile:VERSION",
+]
+```
+
+`doit release` runs, on the release branch:
+
+```bash
+uv run cz bump --files-only --yes <next_version>
+uv lock
+```
+
+`pyproject.toml`, every path in `version_files`, and `uv.lock` are committed alongside
+`CHANGELOG.md` in a single commit, `chore: release v<next_version>`. `uv.lock` has to move with
+the version because it records the project's own version, and `uv lock --check` (run by the
+`uv-lock-check` pre-commit hook) fails once `pyproject.toml` alone has moved. With
+`update_changelog_on_bump = true`, the bump writes the changelog itself, so `doit release` does
+not run `cz changelog` again — it would exit 16, finding the new version's heading with no tag
+behind it.
+
+**A hand-written changelog.** `doit release` skips `cz changelog --incremental` and renames the
+project's own `## [Unreleased]` heading in `CHANGELOG.md` to `## [<next_version>] - <YYYY-MM-DD>`,
+under a new, empty `## [Unreleased]`. Every entry already under the old heading is kept as written:
+
+```markdown
+## [Unreleased]
+
+## [1.2.0] - 2026-10-21
+
+### Added
+- A hand-written entry
+```
+
+It checks the changelog before creating the release branch, and aborts if `CHANGELOG.md` has no
+`## [Unreleased]` heading or that section has no entries — there is nothing to release under the
+new version in either case. Any later abort discards what the release changed before returning to
+`main`, so a version-file bump is never carried back onto it.
+
+**Linking a release issue.** A release PR is exempt from the Validate Issue Link check by its
+`release/v*` branch, since a static-version release is no longer docs-only. A project that files
+an issue for each release can link it with `doit release --issue=<N>`, which writes
+`Addresses #<N>` into the PR body; `doit pr_merge` then records it in the merge commit.
 
 ### Example Release Cycle
 
@@ -224,6 +295,12 @@ uv run doit release
 uv run doit release_tag
 # --> Tag v0.2.0 pushed; publish workflow runs TestPyPI → PyPI
 ```
+
+Both publish workflows' `build` job runs `doit wheel_check --dist=dist` against the exact wheel
+that gets uploaded — installing it into a throwaway venv, importing it, and running every
+`[project.scripts]` entry with `--help` — so a packaging regression (missing module, broken entry
+point, missing `py.typed`) fails the build step rather than reaching PyPI. See
+[`wheel_check`](doit-tasks-reference.md#wheel_check).
 
 ## GitHub Environments & Trusted Publishing
 
@@ -403,12 +480,13 @@ doit pr_merge --auto-close
 
 ### What It Does
 
-1. **Validates PR title** - Ensures the title follows conventional commit format (`<type>: <subject>`)
-2. **Extracts linked issues** - Parses PR body for `addresses #XX`
-3. **Formats merge commit** - Creates a standardized commit message with PR and issue references
-4. **Squash merges** - Uses squash merge to maintain clean history
-5. **Deletes branch** - Removes the source branch after merge (default behavior)
-6. **Reminds to close issues** - Displays commands to manually close linked issues
+1. **Checks the base branch** - Refuses a PR that does not target the default branch, so nothing merges into another branch
+2. **Validates PR title** - Ensures the title follows conventional commit format (`<type>: <subject>`)
+3. **Extracts linked issues** - Parses PR body for `addresses #XX`
+4. **Formats merge commit** - Creates a standardized commit message with PR and issue references
+5. **Squash merges** - Uses squash merge to maintain clean history
+6. **Deletes branch** - Removes the source branch after merge (default behavior)
+7. **Reminds to close issues** - Displays commands to manually close linked issues
 
 ### Merge Commit Format
 
@@ -501,8 +579,8 @@ uv run doit licenses
 
 **Installing Security Tools:**
 ```bash
-# Security tools are optional to keep dev environment lean
-uv sync --extra security
+# The security tools are the `security` extra, which install_dev installs with the dev tools
+uv run doit install_dev
 ```
 
 ### Quality Tasks
@@ -604,8 +682,8 @@ A **Software Bill of Materials (SBOM)** is a machine-readable inventory of all s
 Generate SBOMs locally using the `doit sbom` task:
 
 ```bash
-# Install security extras (if not already installed)
-uv sync --extra security
+# Install the security extra (if not already installed)
+uv run doit install_dev
 
 # Generate SBOM files
 uv run doit sbom
@@ -890,15 +968,18 @@ uv run doit release_tag                  # Tag main after the release PR is merg
 ### Installation Options
 
 ```bash
-# Standard development setup
-uv sync --dev
+# First development setup: installs the project with the `dev` and `security` extras
+uv sync --all-extras --dev
 
-# Include security tools
-uv sync --dev --extra security
+# Every later sync (runs the same command)
+uv run doit install_dev
 
-# Include all extras
-uv sync --dev --all-extras
+# Run the program only: no development tools
+uv sync
 ```
+
+The development tools, `doit` included, are extras, and `uv sync` uninstalls every extra it is not
+asked for. Keep the plain form for environments that only run the program.
 
 ### Pre-commit
 
@@ -957,11 +1038,11 @@ git rebase -i HEAD~1
 
 ### Security Task Fails: "pip-audit not installed"
 
-**Problem**: Security tools are optional dependencies
+**Problem**: The security tools are the `security` extra, and it is not installed
 
 **Solution**:
 ```bash
-uv sync --extra security
+uv run doit install_dev
 uv run doit audit
 ```
 

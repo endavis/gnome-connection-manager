@@ -23,10 +23,12 @@ MANIFEST
 
 # Virtual environments
 .venv/
+.venv*/
 venv/
 ENV/
 env/
 .uv/
+.uv-cache/
 
 # IDEs
 # .vscode/ is deliberately absent from this list: the template tracks it so contributors
@@ -42,15 +44,20 @@ env/
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
 .hypothesis/
+# mutmut's working copy, made by `doit mutate` at the repository root.
+/mutants/
 
 # Type checking
 .mypy_cache/
 .dmypy.json
 dmypy.json
 .pytype/
+.pyre/
 
 # Ruff
 .ruff_cache/
@@ -69,8 +76,34 @@ gcm.conf
 # doit task state
 .doit.db*
 
+# Packaging
+*.whl
+
+# direnv
+.direnv/
+.envrc.local
+
+# Environment variables
+.env
+.env.*
+
+# Caches, and NFS's placeholders for files still open when deleted
+.cache/
+.nfs*
+
+# Git worktrees made by `doit worktree`. Not temporary: each lives until its PR merges.
+# Anchored to the root, so a directory named `worktrees` elsewhere stays tracked.
+/worktrees/
+# Claude Code's built-in worktree tool (EnterWorktree) creates worktrees here.
+.claude/worktrees/
+
+# The dangerous-command hook's debug log
+tools/hooks/ai/hook-debug.jsonl
+
 # mkdocs build output
 site/
 
 # Per-developer Claude Code settings; a pre-commit hook also refuses these
 .claude/settings.local.json
+# Where `gh` writes its state when HOME is unset.
+.local/

@@ -33,7 +33,7 @@ jobs:
             libxtst6 sshfs openssh-server
 
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: "latest"
 
@@ -50,8 +50,12 @@ jobs:
           uv venv --system-site-packages --python /usr/bin/python3
           uv sync --all-extras --dev
 
+      # --continue runs every task after a failure, so a second failure is not
+      # hidden behind the first. The log feeds the failing-task list below (#952).
       - name: Run doit check
-        run: uv run doit check
+        run: |
+          set -o pipefail
+          uv run doit --continue check 2>&1 | tee "${RUNNER_TEMP}/doit-check.log"
 
       - name: Open or update failure issue
         if: failure()
@@ -61,6 +65,13 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           today="$(date -u +%Y-%m-%d)"
+          # doit prints "TaskFailed - taskid:<name>" for a failing command and
+          # "TaskError - taskid:<name>" for a Python action that raised.
+          failed="$(grep -oE '^(TaskFailed|TaskError) - taskid:[^ ]+' \
+            "${RUNNER_TEMP}/doit-check.log" 2>/dev/null \
+            | sed 's/.*taskid://' | awk '!seen[$0]++' \
+            | sed 's/.*/`&`/' | paste -sd, - | sed 's/,/, /g')" || true
+          failed="${failed:-none identified, see the run log}"
           existing="$(gh issue list --state open --label automated --json number,title \
             --jq '[.[] | select(.title | contains("Daily doit check failed"))][0].number // empty')"
           {
@@ -68,13 +79,14 @@ jobs:
             echo
             echo "- Run: ${RUN_URL}"
             echo "- Seen: ${today} (UTC)"
+            echo "- Failing tasks: ${failed}"
             echo
-            echo "Runs \`uv run doit check\` (format, lint, type, security, audit, spell, tests)."
-            echo "See the run log for the failing step. Close this issue once the check passes again."
+            echo "Runs \`uv run doit --continue check\`, which runs every task \`doit check\` depends on"
+            echo "and reports each one that fails. Close this issue once the check passes again."
           } > "${RUNNER_TEMP}/issue-body.md"
           if [ -n "${existing}" ]; then
             gh issue comment "${existing}" \
-              --body "Still failing as of ${today} (UTC). Run: ${RUN_URL}"
+              --body "Still failing as of ${today} (UTC). Failing tasks: ${failed}. Run: ${RUN_URL}"
           else
             gh issue create --title "🚨 Daily doit check failed on main" \
               --label automated --label needs-triage \

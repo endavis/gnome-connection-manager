@@ -46,6 +46,8 @@ The user may include optional focus text after the trigger.
    - **Architecture:** does it respect layering rules?
    - **Breaking changes:** any signature changes, removed APIs, or behavior changes?
 
+   If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.
+
 4. Format findings as:
    ```markdown
    ## PR Review: #<number> — <title>

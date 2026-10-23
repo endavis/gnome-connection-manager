@@ -24,6 +24,8 @@ case "$COLOR" in
     *)        C_ACCENT="$C_GRAY" ;;  # gray: all same color
 esac
 
+command -v jq >/dev/null 2>&1 || { printf 'statusline: jq not installed (run: doit install_jq)\n'; exit 0; }
+
 input=$(cat)
 
 
@@ -66,7 +68,14 @@ if [[ -n "$cwd" && -d "$cwd" ]]; then
             fetch_head="$cwd/.git/FETCH_HEAD"
             fetch_ago=""
             if [[ -f "$fetch_head" ]]; then
-                fetch_time=$(stat -f %m "$fetch_head" 2>/dev/null || stat -c %Y "$fetch_head" 2>/dev/null)
+                # GNU `stat -f` means "filesystem status": it exits 1 but still prints
+                # filesystem info to stdout, so `stat -f ... || stat -c ...` captures
+                # both. Probe for BSD stat first, then run exactly one form.
+                if stat -f %m "$fetch_head" >/dev/null 2>&1; then
+                    fetch_time=$(stat -f %m "$fetch_head" 2>/dev/null)
+                else
+                    fetch_time=$(stat -c %Y "$fetch_head" 2>/dev/null)
+                fi
                 if [[ -n "$fetch_time" ]]; then
                     now=$(date +%s)
                     diff=$((now - fetch_time))

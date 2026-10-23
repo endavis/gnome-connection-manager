@@ -220,6 +220,36 @@ class TestAnalyzeJob:
             f"expected github/codeql-action/analyze pinned to a commit SHA, got {uses!r}"
         )
 
+    def test_codeql_init_and_analyze_pinned_to_same_sha(self) -> None:
+        """``init`` and ``analyze`` must be pinned to the *same* commit SHA.
+
+        These are two dependencies to dependabot but one unit to CodeQL:
+        ``init`` writes a config file stamped with its own version, and
+        ``analyze`` refuses to load a config written by a different one --
+        ``Loaded a configuration file for version '4.37.8', but running
+        version '4.37.9'``. Ungrouped dependabot bumps split the pair across
+        two PRs, each of which fails and neither of which can unblock the
+        other (PRs #794 and #795, issue #799).
+
+        The upstream prevention is the ``codeql-action`` group in
+        ``.github/dependabot.yml``, guarded by
+        ``tests/test_dependabot_config.py``. This is the assert on the
+        outcome: whatever route a bump takes, the two pins must agree.
+        """
+        steps = _analyze_steps()
+        pins = {}
+        for prefix in ("init", "analyze"):
+            step = next(
+                s for s in steps if s.get("uses", "").startswith(f"github/codeql-action/{prefix}@")
+            )
+            pins[prefix] = step["uses"].split("@", 1)[1]
+
+        assert pins["init"] == pins["analyze"], (
+            "github/codeql-action/init and /analyze must be pinned to the same "
+            f"SHA; got init={pins['init']} analyze={pins['analyze']}. A version "
+            "mismatch fails CodeQL at the analyze step (#799)"
+        )
+
     def test_analyze_init_passes_matrix_language(self) -> None:
         """The init step must receive the matrix language via ``with.languages``."""
         steps = _analyze_steps()

@@ -13,9 +13,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from tools.packages import declared, recipe, variable
-
 from tests import test_install
+from tools.packages import declared, recipe, variable
 
 REPO = Path(__file__).resolve().parents[1]
 MAKEFILE = (REPO / "Makefile").read_text(encoding="utf-8")

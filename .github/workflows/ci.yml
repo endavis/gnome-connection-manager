@@ -74,7 +74,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $SYSTEM_PACKAGES
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: "latest"
 
@@ -106,10 +106,14 @@ jobs:
         # -rs and the skip check are the point. Twelve tests gate themselves on a display
         # being present, so without Xvfb they vanish and the run still reports success.
         # A green tick that silently tested nothing is worse than a red one.
+        # The one test left out is deselected, not skipped: it has Codex itself read the rules
+        # .codex/rules/gh.rules gives a delegated Codex run, and there is no codex CLI here.
+        # `doit check` runs it wherever codex is installed (#324).
         run: |
           set -o pipefail
           mkdir -p tmp
           uv run pytest -n auto -q -rs --cov --cov-report=xml:tmp/coverage.xml \
+            --deselect tests/template/test_ai_agent_assets.py::test_codex_gh_rules_parse_and_match \
             | tee tmp/pytest.log
           if grep -qE "^SKIPPED|[0-9]+ skipped" tmp/pytest.log; then
             echo "::error::Tests were skipped. Everything they need is installed here, so a skip means the environment is wrong, not that the test is inapplicable."
@@ -118,7 +122,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./tmp/coverage.xml
           flags: unittests
@@ -138,7 +142,62 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $SYSTEM_PACKAGES
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Create the environment
+        id: install
+        run: |
+          uv venv --system-site-packages --python /usr/bin/python3
+          uv sync --all-extras --dev
+
+      # Each check runs whether or not the one before it failed, so a PR shows every
+      # failing check at once instead of one per push, as the template's lint job does.
+      - name: Check code formatting
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit format_check
+
+      - name: Run linting
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit lint
+
+      - name: Run type checking
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit type_check
+
+      - name: Detect dead code
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit deadcode
+
+      - name: Run security scan
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit security
+
+      - name: Run spell check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit spell_check
+
+      - name: Run dependency audit
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit audit
+
+  # The site build, as doit check runs it: mkdocs --strict, so a broken link or a page
+  # missing from the nav fails it. mkdocs reads the docs alone and imports no GCM module,
+  # so this job needs no GTK stack.
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: "latest"
 
@@ -151,29 +210,11 @@ jobs:
 
       - name: Create the environment
         run: |
-          uv venv --system-site-packages --python /usr/bin/python3
+          uv venv --python /usr/bin/python3
           uv sync --all-extras --dev
 
-      - name: Check code formatting
-        run: uv run doit format_check
-
-      - name: Run linting
-        run: uv run doit lint
-
-      - name: Run type checking
-        run: uv run doit type_check
-
-      - name: Detect dead code
-        run: uv run doit deadcode
-
-      - name: Run security scan
-        run: uv run doit security
-
-      - name: Run spell check
-        run: uv run doit spell_check
-
-      - name: Run dependency audit
-        run: uv run doit audit
+      - name: Build the documentation
+        run: uv run doit docs_build
 
   # Builds the .deb and the .rpm as a release would, with fpm, and holds what fpm wrote
   # into them to the Makefile's recipes, which tests/test_packages.py holds the README to
@@ -223,7 +264,7 @@ jobs:
 
   ci-complete:
     if: always()
-    needs: [test, lint, package]
+    needs: [test, lint, package, docs]
     runs-on: ubuntu-24.04
     steps:
       - name: Check CI status
@@ -231,6 +272,7 @@ jobs:
           echo "Test result: ${{ needs.test.result }}"
           echo "Lint result: ${{ needs.lint.result }}"
           echo "Package result: ${{ needs.package.result }}"
+          echo "Docs result: ${{ needs.docs.result }}"
           if [[ "${{ needs.test.result }}" != "success" ]]; then
             echo "Test job failed"
             exit 1
@@ -241,6 +283,10 @@ jobs:
           fi
           if [[ "${{ needs.package.result }}" != "success" ]]; then
             echo "Package job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.docs.result }}" != "success" ]]; then
+            echo "Docs job failed"
             exit 1
           fi
           echo "CI completed successfully"

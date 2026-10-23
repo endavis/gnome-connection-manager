@@ -24,13 +24,13 @@ This page is the imperative-form rulebook AI agents must follow when generating 
 - DO expose the application's user-facing command-line interface as a console script declared in `[project.scripts]` in `pyproject.toml`, backed by a module under `src/__PACKAGE_NAME__/`.
 - DO keep `[project] dependencies` minimal. Every entry ships to every end user of the package.
 - DO use `doit <task>` for development workflows (test, lint, type-check, build, release, issue and PR creation).
-- DO add heavy libraries used only by tests or tooling to `[dependency-groups] dev`, not `[project] dependencies`.
+- DO add heavy libraries used only by tests or tooling to `[project.optional-dependencies] dev`, not `[project] dependencies`.
 
 **DO NOT:**
 
 - DO NOT import from `tools/` or `dodo.py` in any module under `src/__PACKAGE_NAME__/`. Runtime code must be installable and runnable without any dev tooling present.
 - DO NOT use `doit` tasks to expose application functionality to end users. `doit` is a dev surface, not a runtime surface.
-- DO NOT add a runtime dependency without asking the user first. See the "Ask First" policy in `.github/CONTRIBUTING.md`.
+- DO NOT add any dependency without asking the user first: a runtime dependency, an entry in the `dev` or `security` extra, or a type stub. See the "Ask First" policy in [CONTRIBUTING.md — Dependencies](../../../.github/CONTRIBUTING.md#dependencies).
 - DO NOT conflate the development CLI (`doit`) with the application's runtime CLI (console script) in code, PR descriptions, or docs.
 
 ## Common failure modes
@@ -53,7 +53,7 @@ Concrete anti-patterns AI agents hit in this template, with the correct framing 
 
 **Wrong:** Test needs `hypothesis`, so agent runs `uv add hypothesis`, which adds it to `[project] dependencies`. Every downstream user of the package now pulls `hypothesis` at install time.
 
-**Right:** Add test-only and tooling-only libraries to `[dependency-groups] dev`. Runtime dependencies ship to every user of the package and must stay minimal. New runtime deps require explicit user approval (do not run `uv add` on your own — that command is blocked for AI agents).
+**Right:** Test-only and tooling-only libraries belong in `[project.optional-dependencies] dev`. Runtime dependencies ship to every user of the package and must stay minimal. Either way, a new dependency needs the user's approval first: propose the package and the table it belongs in, and let the user run `uv add`, which is blocked for AI agents. Writing the entry into `pyproject.toml` by hand is the same change and needs the same approval.
 
 ### 4. Proposing `doit run_app` as the user entry point
 
@@ -75,13 +75,13 @@ Short checklist to run through before writing any new code:
 2. Identify the layer the change belongs in: runtime (`src/__PACKAGE_NAME__/`), dev tooling (`tools/`), or dev entry point (`dodo.py`).
 3. Confirm imports respect the boundary: nothing under `src/__PACKAGE_NAME__/` imports from `tools/` or `dodo.py`.
 4. If the change adds a user-facing command, plan it as a console script under `[project.scripts]`, not a `doit` task.
-5. If the change needs a new runtime dependency, stop and ask the user first.
+5. If the change needs a new dependency of any kind — runtime, a `dev` or `security` extra, or a type stub — stop and ask the user first.
 
 ## See also
 
 - [Tooling Roles and Architectural Boundaries](../tooling-roles.md) — the human-facing rationale for the layering
-- [ADR-9002: Use doit for task automation](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9002-use-doit-for-task-automation.md)
-- [ADR-9005: AI agent command restrictions](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9005-ai-agent-command-restrictions.md)
+- [ADR-9002: Use doit for task automation](../../decisions/9002-use-doit-for-task-automation.md)
+- [ADR-9005: AI agent command restrictions](../../decisions/9005-ai-agent-command-restrictions.md)
 - [AI Enforcement Principles](enforcement-principles.md)
 - [AI Command Blocking](command-blocking.md)
 - [`AGENTS.md`](../../../AGENTS.md) — imperative tool reference and workflow rules

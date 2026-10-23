@@ -9,6 +9,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.text import Text
 
 # Configuration
 DOIT_CONFIG = {
@@ -32,6 +33,27 @@ def success_message() -> None:
         )
     )
     console.print()
+
+
+def verbatim(text: str, style: str = "") -> Text:
+    """Wrap text a task did not write, so the console prints it exactly as given.
+
+    Rich reads a ``str`` passed to ``console.print`` or ``Panel`` as markup, and replaces
+    emoji shortcodes such as ``:memo:``. ``rich.markup.escape()`` only stops a ``[`` from
+    opening a tag. Rich still drops a backslash before a ``[`` that does not open one, and
+    still replaces the shortcodes (#914). A ``Text`` is neither parsed nor replaced.
+
+    Use it for command output, exceptions, commit subjects, PR titles, and paths or flag
+    values from the user.
+
+    Args:
+        text: The text to print.
+        style: A Rich style for the whole text, such as ``"red"`` or ``"bold cyan"``.
+
+    Returns:
+        ``text`` as a ``Text`` with ``style``.
+    """
+    return Text(text, style=style)
 
 
 def optional_root_files(*names: str) -> str:
@@ -60,6 +82,36 @@ def optional_root_files(*names: str) -> str:
     return " " + " ".join(survivors)
 
 
+def optional_root_dirs(*names: str) -> str:
+    """Return a shell-ready, space-prefixed suffix of existing root-level directories.
+
+    Sibling of :func:`optional_root_files` with the same contract, but tests
+    ``Path(name).is_dir()`` instead of ``is_file()``. Builds a string such as
+    ``" examples/"`` (leading space, space-separated, each survivor suffixed
+    with a trailing slash) containing only the names that exist as
+    directories at the current working directory. Missing names are silently
+    skipped; argument order is preserved for the names that survive.
+
+    Designed for safe concatenation onto an existing command string used in a
+    ``doit`` task action, so tasks can reference root-level directories (e.g.
+    ``examples/``) that are present in the template but deleted by the
+    consumer-project cleanup step. Empty input or no surviving names yields
+    ``""``, making concatenation a no-op.
+
+    Args:
+        *names: Candidate directory names at the current working directory,
+            given without a trailing slash (e.g. ``"examples"``).
+
+    Returns:
+        ``""`` when no names survive, otherwise
+        ``" " + " ".join(f"{name}/" for name in survivors)``.
+    """
+    survivors = [name for name in names if Path(name).is_dir()]
+    if not survivors:
+        return ""
+    return " " + " ".join(f"{name}/" for name in survivors)
+
+
 def install_check_or_skip(package: str, hint: str) -> str:
     """Build a shell prefix that gates a doit action on ``package`` being installed.
 
@@ -83,9 +135,9 @@ def install_check_or_skip(package: str, hint: str) -> str:
         package: The package name as known to ``uv pip show`` (e.g.
             ``"bandit"``, ``"commitizen"``, ``"cyclonedx-bom"``).
         hint: Human-readable install instruction printed when the package is
-            absent (e.g. ``"bandit not installed. Run: uv sync --extra
-            security"``). Shell-quoted via ``shlex.quote`` so embedded spaces
-            and special characters are safe.
+            absent (e.g. ``"bandit not installed. Run: doit install_dev"``).
+            Shell-quoted via ``shlex.quote`` so embedded spaces and special
+            characters are safe.
 
     Returns:
         A shell fragment ending with ``"; "`` suitable for prepending to the

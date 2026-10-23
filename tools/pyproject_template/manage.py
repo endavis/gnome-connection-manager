@@ -37,10 +37,31 @@ from settings import (  # noqa: E402
     ProjectSettings,
     SettingsManager,
     TemplateState,
+    get_template_commit,
     get_template_commits_since,
     get_template_latest_commit,
 )
-from utils import Colors, Logger, prompt, validate_package_name  # noqa: E402
+from utils import (  # noqa: E402
+    TEMPLATE_COMMIT_FILE,
+    Colors,
+    Logger,
+    extracted_template_commit,
+    find_extracted_template,
+    prompt,
+    validate_package_name,
+)
+
+
+def _reviewed_template_is_ready() -> bool:
+    """Whether a reviewed template with a recorded commit is waiting to be synced.
+
+    Drives the menu's recommended action. Globs for the extracted archive rather
+    than assuming a fixed name -- the name carries the reviewed commit, so it is
+    different on every run (#805).
+    """
+    template_dir = find_extracted_template()
+    return template_dir is not None and (template_dir / TEMPLATE_COMMIT_FILE).exists()
+
 
 # Import cleanup utilities (optional - may not exist if already cleaned)
 try:
@@ -428,9 +449,13 @@ def action_check_updates(
     """Check for template updates (comparison only, does not modify files).
 
     `template_version` pins which template snapshot the project is compared
-    against. Without it the latest release is resolved from the GitHub API, and
-    if that call fails the comparison silently falls back to `main` -- so a run
-    that looks like "latest release" can be against unreleased code (#779).
+    against -- a tag, branch or SHA, resolved to a commit before anything is
+    downloaded (#779, ADR-9020). Without it the comparison runs against `main`;
+    this template publishes no releases, so there is no release to prefer (#781).
+
+    The commit that was compared is recorded in the extracted directory for
+    `action_mark_synced` to pick up. That handoff is the pair that was broken:
+    each half worked and nothing checked that they met (#805).
     """
     Logger.header("Checking for Template Updates")
 
@@ -442,11 +467,17 @@ def action_check_updates(
         show_excluded=show_excluded,
     )
 
+    # The commit that was actually reviewed. Taken from the extracted archive's
+    # own directory name, so it names what is on disk rather than whatever
+    # `main` points at now -- with `--template-version` those are different
+    # commits, and recording the wrong one defeats a staged upgrade (#805).
+    template_dir = find_extracted_template()
+    reviewed_commit = extracted_template_commit(template_dir) if template_dir else None
+
     # Show commit history link if we have a sync point (after the review section)
-    latest = get_template_latest_commit()
-    if manager.template_state.commit and latest and latest[0] != manager.template_state.commit:
+    if manager.template_state.commit and reviewed_commit != manager.template_state.commit:
         old_commit = manager.template_state.commit
-        new_commit = latest[0]
+        new_commit = reviewed_commit or "main"
         print()
         Logger.info("View template commit history since last sync:")
         print(
@@ -454,13 +485,23 @@ def action_check_updates(
         )
 
     # Save commit info to template directory for later sync
-    if latest and not dry_run:
-        template_dir = Path("tmp/extracted/pyproject-template-main")
-        if template_dir.exists():
-            commit_file = template_dir / ".template_commit"
-            commit_file.write_text(f"{latest[0]}\n{latest[1]}\n", encoding="utf-8")
-            print()
-            Logger.info("After reviewing changes, use option [5] to mark as synced.")
+    if template_dir and reviewed_commit and not dry_run:
+        # Only the date needs the API; the SHA came off the archive itself, so
+        # a failed lookup costs the date and not the sync point. It must still
+        # be non-empty -- `action_mark_synced` reads a strict two-line file and
+        # would reject a blank second line as malformed.
+        info = get_template_commit(reviewed_commit)
+        commit_date = info[1] if info and info[1] else "unknown"
+        commit_file = template_dir / TEMPLATE_COMMIT_FILE
+        commit_file.write_text(f"{reviewed_commit}\n{commit_date}\n", encoding="utf-8")
+        print()
+        Logger.info("After reviewing changes, use option [5] to mark as synced.")
+    elif template_dir and not reviewed_commit and not dry_run:
+        # `resolve_template_ref` fell back to the moving ref (offline or
+        # rate-limited), so there is no commit identity to record.
+        print()
+        Logger.warning("Could not determine which commit was reviewed; skipping sync-point record.")
+        Logger.info("Re-run the check with network access before marking as synced.")
 
     # Note: This only shows differences, it doesn't update files.
     # Template state is NOT updated here - only when user runs "Mark as synced".
@@ -535,17 +576,20 @@ def action_repo_settings(manager: SettingsManager, dry_run: bool) -> int:
 
 
 def action_mark_synced(manager: SettingsManager, dry_run: bool, *, yes: bool = False) -> int:
-    """Mark project as synced to reviewed template commit."""
+    """Mark project as synced to reviewed template commit.
+
+    Writes the sync point to `.config/pyproject_template/settings.toml` and
+    removes the downloaded template. It does not touch git: see #808.
+    """
     import shutil
-    import subprocess  # nosec B404 - subprocess is required for git operations
 
     Logger.header("Mark as Synced to Template")
 
     # Check for downloaded template with commit info
-    template_dir = Path("tmp/extracted/pyproject-template-main")
-    commit_file = template_dir / ".template_commit"
+    template_dir = find_extracted_template()
+    commit_file = (template_dir / TEMPLATE_COMMIT_FILE) if template_dir else None
 
-    if not commit_file.exists():
+    if commit_file is None or not commit_file.exists():
         Logger.error("No reviewed template found.")
         Logger.info("Run option [3] 'Check for template updates' first to review changes.")
         return 1
@@ -585,52 +629,32 @@ def action_mark_synced(manager: SettingsManager, dry_run: bool, *, yes: bool = F
     # Update template state
     manager.update_template_state(new_commit, new_date)
 
-    # Commit the settings file if there are changes
+    # Recording the sync point writes one file. Committing it is the user's,
+    # through the same Issue -> Branch -> PR flow as any other change.
+    #
+    # This used to stage, commit with hook verification disabled, and push --
+    # on whatever branch happened to be checked out, which for a sync starting
+    # from a clean `main` is `main` (#808). That skipped the very hooks this
+    # project relies on, including the one that blocks commits to `main`, and it
+    # did so from a prompt that only offered to "mark as synced".
     settings_file = ".config/pyproject_template/settings.toml"
-    try:
-        subprocess.run(["git", "add", settings_file], check=True)
-
-        # Check if there are staged changes to commit
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            # There are changes to commit
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "--no-verify",
-                    "-m",
-                    f"chore: sync template state to {new_commit}",
-                ],
-                check=True,
-            )
-            subprocess.run(["git", "push"], check=True)
-            Logger.success(f"Marked as synced to {new_commit}")
-        else:
-            # Settings file exists but wasn't committed (maybe already staged)
-            Logger.success(f"Marked as synced to {new_commit}")
-            print()
-            print(f"{Colors.BOLD}{Colors.YELLOW}*** IMPORTANT ***{Colors.NC}")
-            print(f"{Colors.BOLD}Don't forget to commit the settings file:{Colors.NC}")
-            print()
-            print("  # 1. Create an issue")
-            print("  doit issue --type=chore --title='Sync template state'")
-            print()
-            print("  # 2. Create branch, commit, and push")
-            print("  git checkout -b chore/<issue#>-sync-template-state")
-            print(f"  git add {settings_file}")
-            print(f"  git commit -m 'chore: sync template state to {new_commit[:12]}'")
-            print("  git push -u origin HEAD")
-            print()
-            print("  # 3. Create PR and merge")
-            print("  doit pr --title='chore: sync template state'")
-            print()
-    except subprocess.CalledProcessError as e:
-        Logger.error(f"Failed to commit: {e}")
-        return 1
+    Logger.success(f"Marked as synced to {new_commit}")
+    print()
+    print(f"{Colors.BOLD}{Colors.YELLOW}*** IMPORTANT ***{Colors.NC}")
+    print(f"{Colors.BOLD}Don't forget to commit the settings file:{Colors.NC}")
+    print()
+    print("  # 1. Create an issue")
+    print("  doit issue --type=chore --title='Sync template state'")
+    print()
+    print("  # 2. Create branch, commit, and push")
+    print("  git checkout -b chore/<issue#>-sync-template-state")
+    print(f"  git add {settings_file}")
+    print(f"  git commit -m 'chore: sync template state to {new_commit[:12]}'")
+    print("  git push -u origin HEAD")
+    print()
+    print("  # 3. Create PR and merge")
+    print("  doit pr --title='chore: sync template state'")
+    print()
 
     # Clean up template directory
     if template_dir.exists():
@@ -782,9 +806,7 @@ def interactive_menu(manager: SettingsManager, dry_run: bool = False, *, yes: bo
             manager.settings,
             manager.template_state,
             latest_commit,
-            template_downloaded=Path(
-                "tmp/extracted/pyproject-template-main/.template_commit"
-            ).exists(),
+            template_downloaded=_reviewed_template_is_ready(),
         )
 
         # Show menu
@@ -957,9 +979,7 @@ def main(argv: list[str] | None = None) -> int:
             manager.settings,
             manager.template_state,
             latest_commit,
-            template_downloaded=Path(
-                "tmp/extracted/pyproject-template-main/.template_commit"
-            ).exists(),
+            template_downloaded=_reviewed_template_is_ready(),
         )
         if recommended:
             return run_action(recommended, manager, args.dry_run, yes=True)

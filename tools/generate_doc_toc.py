@@ -31,10 +31,18 @@ import yaml
 DOCS_DIR = Path("docs")
 TOC_FILE = DOCS_DIR / "TABLE_OF_CONTENTS.md"
 
-# Files to exclude from the TOC
+# Files to exclude from the TOC, relative to DOCS_DIR. The ADR template is a
+# scaffold, not a record; mkdocs.yml keeps it out of the nav for the same reason.
 EXCLUDE_FILES = {
     "TABLE_OF_CONTENTS.md",
+    "decisions/adr-template.md",
 }
+
+# A YAML frontmatter block at the very start of a document: an opening and a
+# closing line that are each exactly `---`. Group 1 is the YAML between them.
+# `tools/doit/templates.py` holds the same pattern; this script runs on its own,
+# outside the doit package, so it keeps a copy rather than importing one.
+FRONTMATTER_PATTERN = re.compile(r"\A---[ \t]*\n(.*?)^---[ \t]*$\n?", re.DOTALL | re.MULTILINE)
 
 # Pattern to match template markers
 # Matches: <!-- BEGIN:key=value,value2 --> or <!-- BEGIN:all -->
@@ -46,6 +54,18 @@ MARKER_PATTERN = re.compile(
 )
 
 
+class MalformedFrontmatterError(ValueError):
+    """A document opens a frontmatter block that is not closed or does not parse."""
+
+
+def _yaml_problem(error: yaml.YAMLError) -> str:
+    """Return a one-line account of *error*, with the file line it points at when known."""
+    if isinstance(error, yaml.MarkedYAMLError) and error.problem and error.problem_mark:
+        # The YAML starts on the file's second line, after the opening `---`.
+        return f"{error.problem} (line {error.problem_mark.line + 2})"
+    return " ".join(str(error).split())
+
+
 def extract_frontmatter(path: Path) -> dict:
     """Extract YAML frontmatter from markdown file.
 
@@ -54,19 +74,34 @@ def extract_frontmatter(path: Path) -> dict:
 
     Returns:
         Dictionary of frontmatter metadata, empty if none found.
+
+    Raises:
+        MalformedFrontmatterError: The file's first line opens a frontmatter
+            block that is never closed, does not parse, or is not a mapping.
+            Every ADR title holds a colon, which breaks an unquoted scalar.
     """
     content = path.read_text(encoding="utf-8")
 
-    if not content.startswith("---"):
+    if not re.match(r"---[ \t]*\n", content):
         return {}
 
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        raise MalformedFrontmatterError("the frontmatter has no closing --- line")
+
     try:
-        # Find the closing ---
-        end_idx = content.index("---", 3)
-        frontmatter_str = content[3:end_idx]
-        return yaml.safe_load(frontmatter_str) or {}
-    except (ValueError, yaml.YAMLError):
+        meta = yaml.safe_load(match.group(1))
+    except yaml.YAMLError as e:
+        raise MalformedFrontmatterError(_yaml_problem(e)) from e
+
+    if meta is None:
         return {}
+    if not isinstance(meta, dict):
+        kind = type(meta).__name__
+        raise MalformedFrontmatterError(
+            f"the frontmatter is a {kind}, not a mapping of keys to values"
+        )
+    return meta
 
 
 def get_title(path: Path, meta: dict) -> str:
@@ -85,12 +120,9 @@ def get_title(path: Path, meta: dict) -> str:
     content = path.read_text(encoding="utf-8")
 
     # Skip frontmatter if present
-    if content.startswith("---"):
-        try:
-            end_idx = content.index("---", 3)
-            content = content[end_idx + 3 :]
-        except ValueError:
-            pass
+    frontmatter = FRONTMATTER_PATTERN.match(content)
+    if frontmatter:
+        content = content[frontmatter.end() :]
 
     # Find first heading
     match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
@@ -100,22 +132,29 @@ def get_title(path: Path, meta: dict) -> str:
     return path.stem.replace("-", " ").replace("_", " ").title()
 
 
-def collect_docs() -> list[tuple[Path, dict]]:
+def collect_docs() -> tuple[list[tuple[Path, dict]], list[tuple[Path, str]]]:
     """Collect all documentation files with their metadata.
 
     Returns:
-        List of (path, metadata) tuples.
+        List of (path, metadata) tuples, and a list of (path, reason) tuples
+        for the files whose frontmatter is malformed. Those files are in the
+        first list too, with empty metadata.
     """
     docs = []
+    malformed = []
 
     for path in sorted(DOCS_DIR.rglob("*.md")):
-        if path.name in EXCLUDE_FILES:
+        if path.relative_to(DOCS_DIR).as_posix() in EXCLUDE_FILES:
             continue
 
-        meta = extract_frontmatter(path)
+        try:
+            meta = extract_frontmatter(path)
+        except MalformedFrontmatterError as e:
+            malformed.append((path, str(e)))
+            meta = {}
         docs.append((path, meta))
 
-    return docs
+    return docs, malformed
 
 
 def matches_filter(meta: dict, filter_key: str, filter_values: list[str]) -> bool:
@@ -227,13 +266,16 @@ def main() -> int:
     """
     print(f"Scanning {DOCS_DIR} for documentation files...")
 
-    docs = collect_docs()
+    docs, malformed = collect_docs()
     print(f"Found {len(docs)} documentation files")
 
     # Count docs with frontmatter
     with_frontmatter = sum(1 for _, meta in docs if meta)
     print(f"  - {with_frontmatter} with frontmatter")
-    print(f"  - {len(docs) - with_frontmatter} without frontmatter")
+    print(f"  - {len(docs) - with_frontmatter - len(malformed)} without frontmatter")
+    print(f"  - {len(malformed)} with frontmatter that does not parse")
+    for path, reason in malformed:
+        print(f"      {path}: {reason}")
 
     modified = update_toc(docs)
 

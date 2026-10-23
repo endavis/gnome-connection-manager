@@ -673,3 +673,39 @@ def test_redirect_fires_only_on_a_commit_heredoc(
     """Scoped to the shape that has a better path available."""
     command = template.format(flag=_BLOCKED_FLAG)
     assert hook._is_commit_message_heredoc(command) is redirected
+
+
+# ---------------------------------------------------------------------------
+# The merge rule reads each command on its own (#894)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        # Read-only: `git` and `merge` in different commands, or merge as an argument.
+        ("git log --oneline --grep merge -5", 0),
+        ("git diff HEAD~1 -- tools/doit/github.py | grep -n merge", 0),
+        ("git grep -n pr_merge -- tools/doit; echo merge", 0),
+        ("git merge-base HEAD origin/main", 0),
+        # `--ff-only` in another command does not make the merge fast-forward only.
+        ("git merge origin/main; echo --ff-only", 2),
+        ("git merge origin/main && echo --ff-only", 2),
+        ("git merge origin/main;echo --ff-only", 2),
+        # Still a merge wherever it sits on the line.
+        ("git merge origin/main", 2),
+        ("git -C . merge origin/main", 2),
+        ("git status && git merge origin/main", 2),
+        ("git merge --ff-only origin/main", 0),
+        ("git merge --ff-only origin/main; echo merge", 0),
+        ("git merge --ff-only;echo done", 0),
+    ],
+)
+def test_merge_rule_on_main_reads_each_command(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    expected: int,
+) -> None:
+    """Matching `git`, `merge` and `--ff-only` anywhere on the line got both ways wrong (#894)."""
+    assert _run(hook, monkeypatch, command, branch="main") == expected

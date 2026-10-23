@@ -563,20 +563,31 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   answers it runs on a pty of its own, which `TAKE_TERMINAL` makes its controlling
   terminal.
 
-- `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/` – agent
-  configuration. `.claude/settings.json`
-  and `.agents/hooks.json` register the guard rails in `tools/hooks/ai/`, which refuse
-  `gh pr create`/`gh pr merge` in favour of the doit tasks and treat `ready-to-merge` as a
-  label only a person may apply. `.claude/commands/` and `.agents/skills/` hold the slash
-  commands and delegation skills; `.claude/rules/` holds narrow footgun rules that apply on
-  top of this file, and `.github/instructions/` carries the same rules in the form
-  Copilot reads — change one and change the other. All of it is vendored from pyproject-template and replaced on a sync.
+- `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/`,
+  `.github/skills/`, `.github/hooks/` – agent configuration, for Claude, Codex, Copilot and
+  Antigravity. `.claude/settings.json`, `.agents/hooks.json` and
+  `.github/hooks/copilot-hooks.json` register the guard rails in `tools/hooks/ai/`, which
+  refuse `gh pr create`/`gh pr merge` in favour of the doit tasks and treat
+  `ready-to-merge` as a label only a person may apply. A workflow skill is written once,
+  in `.agents/skills/<name>/SKILL.md`, and `doit skills_sync` writes Claude's copy under
+  `.claude/skills/`, which is never edited by hand: `tests/template/test_skills_sync.py`
+  fails when the two part. "Implement issue N" runs the `implement-issue` skill, which
+  replaced the per-agent plan and implement commands (#324). The review and
+  adversarial-review commands, and the bridges that hand them to another agent, are in
+  `.claude/commands/`, `.github/skills/` and `.agents/skills/`. `.claude/rules/` holds
+  narrow footgun rules that apply on top of this file, and `.github/instructions/` and
+  `.agents/skills/` carry the same rules for the other agents:
+  `tests/template/test_rule_files.py` keeps the three identical. All of it is vendored
+  from pyproject-template and replaced on a sync.
 - `docs/development/` – how the vendored tooling works: the doit tasks, CI, repository
   settings, and `docs/development/ai/` on the hooks, delegation and slash commands.
   Written for the template, so it describes machinery this project has but does not
   always use — `docs/development/release-and-automation.md` carries a banner saying so.
 - `docs/decisions/` – Architecture Decision Records, created with `doit adr`. The template
-  numbers its own decisions from 9001; a project's own start at 0001.
+  numbers its own decisions from 9001; a project's own start at 0001. The 9001 to 9025
+  records and the folder's `README.md` are the template's, synced with it (#324), and
+  `tests/test_docs.py` treats them as vendored, as it treats `docs/development/` and
+  `docs/template/`.
 
 ## Documentation
 - `docs/TERMINAL-USAGE.md` – user-facing, everything inside a tab: selection and what a
@@ -633,12 +644,14 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Preferred tooling: the doit tasks — `doit launch`, `doit test`, `doit lint`,
   `doit type_check`, `doit translate`. `doit list` shows them all. Project-specific
   tasks live in `tools/doit/gcm.py`; the rest of `tools/doit/` is vendored from
-  pyproject-template and is replaced wholesale on a sync. One change of GCM's own sits
-  in a vendored file, and a sync must keep it: `task_release_tag` in
-  `tools/doit/release.py` prints the template's publishing steps only where the project
-  has a release workflow, and GCM has none (#306). `tests/test_release_tag.py` fails
-  without it. For anything without a task, use `uv run …` so the repo's environment is
-  honored.
+  pyproject-template and is replaced wholesale on a sync. Where GCM's needs differ,
+  `tools/doit/gcm.py` overrides a vendored task by name, and `dodo.py` installs the
+  override after discovery. `audit` audits `uv.lock`, not an environment that holds every
+  package apt installed. `check` leaves out `wheel_check`, whose clean virtualenv cannot
+  import GTK, measured (#324). `release_tag` used to send GCM's developers to a build and
+  to PyPI pages that do not exist, until #306 changed it here. The template carries that
+  change itself since pyproject-template#993, and `tests/test_release_tag.py` still checks
+  it. For anything without a task, use `uv run …` so the repo's environment is honored.
 
 ## Testing & Verification
 
@@ -905,18 +918,21 @@ Practices below have each caught real bugs in this repo. They are worth the time
   added to a recipe goes in the README's tables, under both names, and
   `tests/test_packages.py` fails until it is.
 - A release is a `vX.Y.Z` tag on `main`, made through a `release/vX.Y.Z` PR as
-  `.github/CONTRIBUTING.md` describes (#291). `cz bump --files-only` writes the version
-  into the four files `tests/test_package.py` keeps equal, which `[tool.commitizen]` in
-  `pyproject.toml` names, and the test fails if the two lists part. The same section's
-  `update_changelog_on_bump = false` keeps `CHANGELOG.md` hand-written (#311). Measured,
-  `true` has `cz bump --files-only` write the changelog too, from commit subjects. False
-  is commitizen's default, and the template's `doit release` reads a missing key so
-  since pyproject-template#992, so only `tests/test_package.py` would notice the key go.
-  Never `doit release`: it writes no version, and its `cz changelog --incremental`,
-  tried on a copy, replaced `CHANGELOG.md`'s hand-written `## [Unreleased]` with commit
-  subjects. `--dry-run` showed only the new section, which hid that. `doit release_tag`
-  tags the tip of `main`, so run it straight after the release PR merges. A person runs
-  it: `tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent.
+  `.github/CONTRIBUTING.md` (Release Process) describes (#291). `cz bump --files-only`
+  writes the version into the four files `tests/test_package.py` keeps equal, which
+  `[tool.commitizen]` in `pyproject.toml` names, and the test fails if the two lists part.
+  The same section's `update_changelog_on_bump = false` keeps `CHANGELOG.md` hand-written
+  (#311). Measured, `true` has `cz bump --files-only` write the changelog too, from commit
+  subjects. False is commitizen's default, and the template's `doit release` reads a
+  missing key so since pyproject-template#992, so only `tests/test_package.py` would
+  notice the key go. Not `doit release`, as yet. Before #324 it wrote no version, and its
+  `cz changelog --incremental`, tried on a copy, replaced `CHANGELOG.md`'s hand-written
+  `## [Unreleased]` with commit subjects. `--dry-run` showed only the new section, which
+  hid that. The version #324 synced is meant to bump a static version with
+  `cz bump --files-only` and to keep a hand-written changelog (pyproject-template#992),
+  which is GCM's case, but it has not been tried here. `doit release_tag` tags the tip of
+  `main`, so run it straight after the release PR merges. A person runs it:
+  `tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent.
 - `install.sh` installs the newest of those tags, so a release reaches every install the
   next time it runs, and the script itself reaches new installs as soon as it merges. A
   package the `.deb` needs goes in the Makefile's `deb` recipe, which the script reads,
@@ -929,6 +945,23 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `a | b`, which is how `dpkg-deb -f` gives it back. A run following
   `release` reads the recipe of the release it installs, so a change there reaches it
   only with the next release.
+
+## Breaking Changes Policy
+
+GCM is an application, not a library: it is not published to PyPI, and its Python names are
+its own to change. What it must not break is what people already have:
+- **`gcm.conf` and `.gcm.key`.** A newer GCM reads every file an older one wrote, and every
+  password stored in it, honoring `conf.VERSION`. Where the format allows, what it writes
+  stays readable by an older GCM, as `commands` beside `commands-json` and
+  `collapsed-folders` beside `collapsed-folder-ids` are.
+- **What an existing configuration does.** A changed default breaks where it changes what
+  a setting or a host already does.
+- **The command line**, `gnome-connection-manager` and `gcm`.
+
+A change that breaks one anyway carries a `BREAKING CHANGE:` footer, as
+`.github/CONTRIBUTING.md` (Breaking Changes) says, a migration note in its PR, and an entry
+in `CHANGELOG.md`, which is written by hand (#311). The `deprecate-api` skill, which retires
+a name in a library's API, has nothing to apply to here.
 
 ## Coding Conventions & Tips
 - This file deliberately names symbols rather than line numbers. The previous version
@@ -980,7 +1013,14 @@ commands once wired (#119).
 - **`feat/`, not `feature/`.** A pre-commit hook rejects a malformed branch name, and
   another rejects a commit citing an issue that is not the branch's own.
 - **`doit pr_merge` squashes**, producing `<type>: <subject> (merges PR #XX, addresses #YY)`.
-  That is why `main` has linear history, which branch protection requires.
+  That is why `main` has linear history, which branch protection requires. Run from the
+  base branch, it then fast-forwards that branch to the merge.
+- **`doit worktree --branch=<branch>`** puts a branch in `worktrees/<branch>`, with a
+  `.venv` of its own (ADR-9022). It builds that with `uv sync`, which leaves out the
+  system's site packages, so `gi` does not import there, measured (#324). Rebuild it in
+  the worktree with `uv venv --clear --system-site-packages --python /usr/bin/python3`
+  and `uv sync --all-extras --dev`. Unset the `GCM_*_DIR` variables there too, as Testing
+  says.
 - **`--body-file` for anything long.** A body passed inline is scanned as command
   arguments, so a message that merely names a blocked pattern is refused. Write it under
   `tmp/agents/` and pass the path. The same applies to commit messages: `git commit -F`.
@@ -993,7 +1033,7 @@ commands once wired (#119).
 - Section headings in an issue body must be `##`; the validator parses on that and reports
   "Missing required sections" for `###`.
 
-See `.github/CONTRIBUTING.md` for the full account.
+See `.github/CONTRIBUTING.md` (Development Workflow) for the full account.
 
 ## Agent Checklist
 1. Understand which component you're touching and read its neighbors before editing.

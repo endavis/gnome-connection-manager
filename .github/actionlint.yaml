@@ -1,0 +1,7 @@
+# actionlint v1.7.12 (pinned in .pre-commit-config.yaml) does not know the
+# ubuntu-26.04 GitHub-hosted runner label and rejects it as unknown.
+# Upstream request: https://github.com/rhysd/actionlint/issues/682
+# Delete this file once the pinned actionlint release knows the label (#929).
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

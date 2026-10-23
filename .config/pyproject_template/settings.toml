@@ -1,13 +1,3 @@
-[project]
-project_name = "gnome-connection-manager"
-package_name = "gnome_connection_manager"
-pypi_name = "gnome-connection-manager"
-description = "Tabbed SSH, telnet and local shell manager with RDP, VNC, web and command hosts"
-author_name = "Renzo Bertuzzi"
-author_email = "kuthulu@gmail.com"
-github_user = "endavis"
-github_repo = "gnome-connection-manager"
-
 [template]
-commit = ""
-commit_date = ""
+commit = "3654e17dc5832925277e86d986d3f87e12e4f393"
+commit_date = "unknown"

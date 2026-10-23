@@ -13,6 +13,15 @@ tags:
 
 This checklist guides an AI agent through synchronizing a downstream project with the latest pyproject-template. It uses the official `manage.py` tooling documented in [Template Manager](manage.md), [Keeping Up to Date](updates.md), and [Tools Reference](tools-reference.md).
 
+> **There is a command for this.** Every supported agent ships `template-sync`, which drives this
+> checklist end to end — `/template-sync` in Claude Code and Copilot CLI, `$template-sync` in Codex,
+> description-activated in Antigravity. It asks you about the calls it cannot settle from the repo
+> and posts its triage as a plan comment on the tracking issue for you to approve **before** it
+> changes anything. See
+> [Slash Commands and Workflows](../development/ai/slash-commands.md#template-sync-ref).
+> This page remains the authoritative procedure; read it when a step is ambiguous or you are
+> driving a sync by hand.
+
 **Prerequisites:**
 
 - Downstream project already uses pyproject-template structure (doit tasks, CI workflows, pre-commit, etc.)
@@ -104,14 +113,17 @@ This will (per [Tools Reference](tools-reference.md)):
 
 1. Fetch the template at `main` — or at a specific tag, branch or commit SHA via `manage.py check --template-version <ref>` (ADR-9020)
 2. Compare all files - categorized as **Modified**, **Missing** (new in template), or **Extra** (project-specific)
-3. Keep the template at `tmp/extracted/pyproject-template-main/` for diff commands
+3. Keep the template at `tmp/extracted/pyproject-template-<commit-sha>/` for diff commands —
+   the archive root is named for the **resolved commit** (ADR-9020), so locate it by glob rather
+   than by a fixed name
 4. Show GitHub compare URL for commit history since last sync
 5. Save commit info to `.template_commit` for later `sync` marking
 
 **Diff commands** (per documentation):
 
 ```bash
-diff <file> tmp/extracted/pyproject-template-main/<file>
+TEMPLATE_DIR=$(ls -d tmp/extracted/pyproject-template-*/ | head -1)
+diff <file> "$TEMPLATE_DIR/<file>"
 ```
 
 Review the output and proceed with Phases 3-8 to selectively apply changes.
@@ -249,6 +261,9 @@ AI coding assistants (Claude Code, Copilot, Codex, Antigravity) use hooks to blo
 
 - [ ] Compare `.claude/settings.json` for Claude Code hook configuration
 - [ ] Compare `.codex/config.toml` for Codex CLI approval policies
+- [ ] Compare `.codex/rules/*.rules` for Codex CLI exec-policy allow rules — a separate mechanism
+      from `.codex/config.toml`'s hooks/approval policy; see
+      [Command Blocking — Codex CLI](../development/ai/command-blocking.md#codex-cli)
 - [ ] **Review pinned model IDs.** `.claude/settings.json` pins
       `CLAUDE_CODE_SUBAGENT_MODEL`, and `tools/hooks/ai/precompact-checkpoint.py`
       passes a model to `claude -p`. Nothing in the update-check machinery looks at
@@ -282,10 +297,16 @@ python tools/pyproject_template/manage.py --yes sync
 
 This:
 
-1. Reads the reviewed commit from `tmp/extracted/pyproject-template-main/.template_commit` (saved during Phase 2)
+1. Reads the reviewed commit from `.template_commit` in the extracted template directory (saved
+   during Phase 2). The commit recorded is the one that was **actually reviewed** — with
+   `--template-version` that is the pinned ref, not the tip of `main` (#805)
 2. Updates `.config/pyproject_template/settings.toml` with the template commit SHA and date
 3. Cleans up the `tmp/extracted/` directory
 4. Future runs of `manage.py check` will compare from this sync point
+
+It does not commit or push. The changed `settings.toml` goes into this sync's own commit in Phase
+11, along with everything else adopted — it is not a separate change and does not need its own PR
+(#808).
 
 ---
 

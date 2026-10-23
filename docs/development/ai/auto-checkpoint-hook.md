@@ -56,7 +56,8 @@ tmp/checkpoints/9999999999-auto-precompact.md
 ```
 
 The `inv_epoch` is computed as `9999999999 - int(time.time())`, matching Step 1 of
-`.claude/commands/checkpoint.md` exactly. On same-second collision (rare), a single letter
+`.claude/skills/checkpoint/SKILL.md` exactly (generated from `.agents/skills/checkpoint/SKILL.md`
+by `doit skills_sync`). On same-second collision (rare), a single letter
 suffix is appended: `…-auto-precompact-a.md`, `…-auto-precompact-b.md`, etc.
 
 Because the convention is shared, manual `/restore` can also load auto-precompact files

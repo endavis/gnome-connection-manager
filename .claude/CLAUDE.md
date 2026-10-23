@@ -63,6 +63,8 @@ When asked to create a commit or PR, Claude MUST:
 4. Commit with `doit commit` when the session is interactive. It wraps commitizen
    and enforces the format. When it is not — a headless or delegated run cannot
    answer its prompts — use `git commit` with a message in the conventional
-   format from step 1. Never `git commit` without that format.
+   format from step 1. Never `git commit` without that format. The
+   `implement-issue` skill always commits with `git commit` in that format, never
+   `doit commit` — it runs unattended and cannot answer commitizen's prompts.
 
 NO EXCEPTIONS. If .github/CONTRIBUTING.md has fallen out of context, READ IT FIRST.

@@ -44,6 +44,8 @@ Evaluate the diff for:
 
 Focus area (optional): $ARGUMENTS
 
+If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.
+
 ### Step 4: Present findings and post review
 
 Format the review as:

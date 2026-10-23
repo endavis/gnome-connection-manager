@@ -113,7 +113,7 @@ installs, and it already does what a hand-rolled `tests.yml` would:
 | :--- | :--- |
 | **Matrix** | derived from `.github/python-versions.json` via `.github/actions/python-versions`, not hardcoded — so a version policy change moves one file |
 | **Platforms** | `ubuntu-latest`, `windows-latest`, `macos-latest` |
-| **Checks** | `doit` tasks (`format_check`, `lint`, `type_check`, `test`), so CI and a local run cannot diverge |
+| **Checks** | the `lint` and `docs` jobs run `doit` tasks, so CI and a local run cannot diverge; the `test` job calls `pytest` directly (see [Pipeline Jobs](#pipeline-jobs)) |
 | **Coverage** | `package_name` **and** `tools/`, gated by `fail_under` in `pyproject.toml` |
 | **Actions** | pinned to commit SHAs with a `# vX.Y.Z` comment (see [Action pinning](#action-pinning-and-workflow-permissions)) |
 
@@ -124,38 +124,17 @@ versions, raw `pytest` instead of `doit`, and mutable action tags this project's
 
 ### Pipeline Jobs
 
-#### Code Quality Job
+`ci.yml` runs these jobs. Read the file for their steps.
 
-```yaml
-code-quality:
-  runs-on: ubuntu-latest
-  steps:
-    # checkout + uv setup, SHA-pinned — see .github/workflows/ci.yml
-    - name: Install dependencies
-      run: uv sync --dev
-    - name: Format check
-      run: uv run doit format_check
-    - name: Lint check
-      run: uv run doit lint
-    - name: Type check
-      run: uv run doit type_check
-      continue-on-error: true
-```
+| Job | What it runs |
+| :--- | :--- |
+| `setup` | Builds the test matrix from `.github/python-versions.json` |
+| `test` | `pytest`, called directly, on each OS and Python version in the matrix. The newest Python on `ubuntu-latest` also measures coverage. |
+| `lint` | `doit format_check`, `doit lint`, `doit type_check`, `doit deadcode`, `doit security`, `doit spell_check`, `doit audit` and `doit wheel_check`, on `ubuntu-latest`. Each runs even when one before it failed, so CI reports every failing check at once. A failure in any of them fails CI. |
+| `docs` | `doit docs_build`, described below |
+| `ci-complete` | Fails if any other job failed; a skipped job passes. It gives the run one result to require ([ADR-9013](../decisions/9013-python-version-support-policy.md)). |
 
-#### Security Scan Job
-
-```yaml
-security:
-  runs-on: ubuntu-latest
-  steps:
-    # checkout + uv setup, SHA-pinned — see .github/workflows/ci.yml
-    - name: Install security tools
-      run: uv sync --extra security
-    - name: Run security audit
-      run: uv run doit audit
-    - name: Run bandit scan
-      run: uv run doit security
-```
+`tests/test_ci_jobs_doc.py` checks this table against `ci.yml`: the same jobs, and the same `doit` tasks in each.
 
 #### Documentation Build Job
 
@@ -419,7 +398,7 @@ uv run pre-commit autoupdate
 | `mypy` | Type checking (strict mode, `src/` only) |
 | `bandit` | Security scanning (skipped if not installed) |
 | `codespell` | Spell checking |
-| `actionlint` | Lint GitHub Actions workflow files |
+| `actionlint` | Lint GitHub Actions workflow files (extra runner labels in `.github/actionlint.yaml`) |
 | `check-branch-name` | Enforce branch naming convention |
 | `generate-doc-toc` | Update documentation TOC when docs change |
 | `no-commit-to-main` | Prevent direct commits to main branch |
@@ -783,7 +762,18 @@ doit mutate
 
 # View text results again without re-running
 uv run mutmut results
+
+# List every mutant with its status, killed ones included
+uv run mutmut results --all true
 ```
+
+`uv run mutmut results`, the last action of `doit mutate`, lists only the mutants the tests did not kill. `--all true` adds the killed ones. Neither prints a mutation score. The weekly CI run works the score out from the full list (see [CI Schedule](#ci-schedule)).
+
+### Which Tests Run
+
+mutmut does not run all of `tests/`. It copies `src/`, `tests/`, `pyproject.toml` and `uv.lock` into `mutants/` (git-ignored) and runs the tests there. A test that imports `tools` or reads any other file in the repository fails in that copy. mutmut passes `-x` to pytest, so the first such failure stops the run before any mutant is checked (#873).
+
+`pytest_add_cli_args_test_selection` in `[tool.mutmut]` therefore lists only the tests that exercise `src/`. When you add a test file that imports the package, add it to that list. `tests/test_mutmut_config.py` fails until you do. It also fails if a listed file imports a module that mutmut does not copy, or no longer exists. The benchmarks in `tests/benchmarks/` are left out on purpose: they time the package and assert nothing, so they cannot kill a mutant.
 
 ### Interpreting Results
 
@@ -798,9 +788,11 @@ The **mutation score** is the percentage of mutants killed out of total mutants 
 
 ### CI Schedule
 
-Mutation testing runs weekly in CI (Sunday midnight UTC) via the `.github/workflows/mutation.yml` workflow. It is informational only and does not block merges or fail the build.
+Mutation testing runs weekly in CI (Sunday midnight UTC) via the `.github/workflows/mutation.yml` workflow. It is informational: it does not block merges, and surviving mutants do not fail it. A run that cannot test the mutants at all does fail, and its **Mutation results** step prints mutmut's log. Until #873 the workflow ignored mutmut's exit code, and it stayed green through months of runs that checked no mutant.
 
-Results are uploaded as the `mutmut-results.txt` artifact with 90-day retention. You can also trigger the workflow manually from the Actions tab using the `workflow_dispatch` event.
+The **Mutation results** step lists the mutants the tests did not kill, counts the mutants of each status and prints the mutation score. The counts and the score also appear in the run's summary, at the top of its page in the Actions tab, so you need not open the log. Until #878 the run showed only the surviving mutants, and gave no killed count or score.
+
+Results are uploaded as the `mutmut-results.txt` artifact with 90-day retention. It lists every mutant with its status, killed ones included. You can also trigger the workflow manually from the Actions tab using the `workflow_dispatch` event.
 
 ## Benchmark Tracking
 
@@ -810,33 +802,33 @@ Benchmark results are tracked historically using [benchmark-action/github-action
 
 ### How It Works
 
-The `benchmark.yml` workflow operates in two modes:
+The `benchmark.yml` workflow runs on three triggers:
 
 | Trigger | Behavior |
 |---------|----------|
-| **Push to `main`** | Runs benchmarks and commits results to the `gh-benchmarks` data branch for long-term tracking |
-| **Pull request** | Runs benchmarks and posts a comparison comment on the PR if the `gh-benchmarks` branch exists (no commit to data branch) |
-| **Manual dispatch** | Runs benchmarks and uploads artifact only |
+| **Push to `main`** | Runs the benchmarks, uploads the `benchmark-results` artifact, and stores the results on the `gh-benchmarks` data branch for long-term tracking |
+| **Pull request** | Runs the benchmarks and uploads the `benchmark-results` artifact. Nothing is stored, and nothing is posted on the PR |
+| **Manual dispatch** | Runs the benchmarks and uploads the artifact only |
 
-Only main branch results are stored to keep the historical data clean and consistent.
+Only pushes to `main` store results. The `store` job holds the workflow's only write permission (`contents: write`) and never runs for a pull request, so code from a PR never gets a write-capable token (#695).
 
 If `tests/benchmarks/` does not exist or contains no `test_*.py` files, the workflow skips all benchmark steps and finishes successfully. This allows downstream projects generated from this template to enable the workflow incrementally without CI failures before any benchmark tests are written.
 
 ### The `gh-benchmarks` Branch
 
-Benchmark data is stored in a dedicated `gh-benchmarks` branch, separate from the main codebase. This branch is auto-created by the benchmark action on the first push to `main` after the workflow is enabled. Until the branch exists, PR benchmark comparisons are skipped gracefully.
+Benchmark data is stored in a dedicated `gh-benchmarks` branch, separate from the main codebase. The `store` job's "Create benchmark data branch" step creates it, as an orphan branch with one empty commit, on the first push to `main` after the workflow is enabled.
 
 - **Data directory:** `dev/bench/` within the branch
 - **Format:** JSON files with benchmark metrics over time
 - **Purpose:** Serves as the data source for trend charts and regression detection
 
-### PR Comments
+### Pull Requests
 
-On every pull request, the benchmark action posts a comment comparing the PR's benchmark results against the latest stored baseline from `main`. This gives reviewers immediate visibility into performance impact.
+A pull request gets no benchmark comment or comparison. Its run uploads the `benchmark-results` artifact, kept for 90 days, which you can download from the workflow run to compare by hand. For a before-and-after number to put in a PR, use the local `doit benchmark_save` and `doit benchmark_compare` loop.
 
 ### Alert Threshold
 
-The alert threshold is set to `110%`, meaning the workflow flags a warning if any benchmark is more than 10% slower than the baseline. To adjust this threshold, edit the `alert-threshold` value in `.github/workflows/benchmark.yml`.
+The alert threshold is set to `110%`: an alert fires when a benchmark is more than 10% slower than the previous stored result. The check runs in the `store` job, so it applies only to pushes to `main`. With `comment-on-alert: true`, the action leaves an alert comment. `fail-on-alert` is not set, and it defaults to `false`, so an alert never fails the workflow. To adjust the threshold, edit the `alert-threshold` value in `.github/workflows/benchmark.yml`.
 
 ### GitHub Pages (Optional)
 
@@ -874,7 +866,6 @@ This step is optional and not required for the core tracking functionality.
 - Add proper type annotations
 - Use `# type: ignore[error-code]` sparingly with explanatory comments
 - Review mypy output for specific issues
-- Consider making mypy non-blocking initially (`continue-on-error: true`)
 
 ### Tests Fail in CI but Pass Locally
 

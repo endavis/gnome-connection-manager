@@ -28,6 +28,7 @@ from utils import (  # noqa: E402
     Logger,
     command_exists,
     get_first_author,
+    get_first_maintainer,
     get_git_config,
     parse_github_url,
     validate_email,
@@ -91,6 +92,10 @@ class ProjectSettings:
     description: str = ""
     author_name: str = ""
     author_email: str = ""
+    # Empty when [project].maintainers is absent, which is the greenfield case:
+    # the author still maintains it. Consumers fall back to the author (#787).
+    maintainer_name: str = ""
+    maintainer_email: str = ""
     github_user: str = ""
     github_repo: str = ""
 
@@ -271,6 +276,15 @@ class SettingsManager:
             if not self.settings.author_email:
                 self.settings.author_email = author_email
 
+            # Get maintainer info. Left empty rather than defaulted to the
+            # author so that "this project names no maintainer" stays
+            # distinguishable from "the maintainer happens to be the author".
+            maintainer_name, maintainer_email = get_first_maintainer(data)
+            if not self.settings.maintainer_name:
+                self.settings.maintainer_name = maintainer_name
+            if not self.settings.maintainer_email:
+                self.settings.maintainer_email = maintainer_email
+
             # Get GitHub user from repository URL
             if not self.settings.github_user:
                 repo_url = project.get("urls", {}).get("Repository", "")
@@ -403,8 +417,11 @@ class SettingsManager:
         self.save()
 
 
-def get_template_latest_commit() -> tuple[str, str] | None:
-    """Fetch the latest commit info from the template repository.
+def get_template_commit(ref: str = "main") -> tuple[str, str] | None:
+    """Fetch commit info for *ref* -- a tag, branch or SHA -- from the template.
+
+    Args:
+        ref: The ref to look up. Defaults to `main`.
 
     Returns:
         Tuple of (commit_sha, commit_date) or None if fetch fails.
@@ -412,7 +429,7 @@ def get_template_latest_commit() -> tuple[str, str] | None:
     import json
     import urllib.request
 
-    api_url = f"https://api.github.com/repos/{TEMPLATE_REPO}/commits/main"
+    api_url = f"https://api.github.com/repos/{TEMPLATE_REPO}/commits/{ref}"
     try:
         req = urllib.request.Request(api_url)
         req.add_header("Accept", "application/vnd.github.v3+json")
@@ -426,8 +443,17 @@ def get_template_latest_commit() -> tuple[str, str] | None:
                 commit_date = dt.strftime("%Y-%m-%d")
             return (commit_sha, commit_date)
     except Exception as e:
-        Logger.warning(f"Could not fetch latest template commit: {e}")
+        Logger.warning(f"Could not fetch template commit for '{ref}': {e}")
         return None
+
+
+def get_template_latest_commit() -> tuple[str, str] | None:
+    """Fetch the latest commit info from the template repository's `main`.
+
+    Returns:
+        Tuple of (commit_sha, commit_date) or None if fetch fails.
+    """
+    return get_template_commit("main")
 
 
 def get_template_commits_since(since_commit: str) -> list[dict[str, str]] | None:

@@ -14,6 +14,8 @@ from typing import Any
 
 from doit.tools import title_with_actions
 
+from . import quality
+
 REPO = Path(__file__).resolve().parents[2]
 LANG_DIR = REPO / "lang"
 CATALOG = "gcm-lang.mo"
@@ -128,3 +130,20 @@ def task_audit() -> dict[str, Any]:
         "title": title_with_actions,
         "verbosity": 2,
     }
+
+
+def task_check() -> dict[str, Any]:
+    """Run all checks, as the vendored task does, without wheel_check.
+
+    Overrides the vendored task, which also runs wheel_check: it installs the built wheel
+    in a clean virtualenv, imports the package and runs each console script with --help.
+    A wheel cannot supply GTK, VTE or PyGObject, so there `gcm --help` exits 1 with "No
+    module named 'gi'", and the wheel carries no py.typed either, measured (#324). The
+    rest of the vendored list is kept as it is, so a check the template adds reaches this
+    one at the next sync.
+
+    dodo.py installs this by name after discovery, as it does task_audit.
+    """
+    task = quality.task_check()
+    task["task_dep"] = [dep for dep in task["task_dep"] if dep != "wheel_check"]
+    return task
