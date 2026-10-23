@@ -20,6 +20,24 @@ class AdrTemplate(NamedTuple):
     editor_template: str
     required_sections: list[str]
     all_sections: list[str]
+    # The template's YAML frontmatter block, delimiters included; empty if it has none.
+    frontmatter: str = ""
+    # The frontmatter's `description`, which an ADR must replace; empty if it has none.
+    placeholder_description: str = ""
+
+
+# Instructions shown above the ADR template in the editor. `doit adr` removes
+# these lines from what the editor saves, so they never reach the ADR.
+ADR_EDITOR_HEADER = """\
+# Lines starting with # are comments and will be ignored.
+# Fill in the sections below, save, and exit.
+# Sections marked <!-- Required --> must have content.
+
+"""
+
+# A YAML frontmatter block at the very start of a document: an opening and a
+# closing line that are each exactly `---`. Group 1 is the YAML between them.
+FRONTMATTER_PATTERN = re.compile(r"\A---[ \t]*\n(.*?)^---[ \t]*$\n?", re.DOTALL | re.MULTILINE)
 
 
 class IssueTemplate(NamedTuple):
@@ -271,8 +289,9 @@ def _get_docs_dir() -> Path:
 def _parse_adr_template(template_path: Path) -> AdrTemplate:
     """Parse an ADR markdown template file.
 
-    Extracts section headers and identifies required sections marked with
-    <!-- Required --> comments.
+    Extracts section headers, identifies required sections marked with
+    <!-- Required --> comments, and keeps the frontmatter block that every ADR
+    starts from.
 
     Args:
         template_path: Path to the ADR template file
@@ -304,19 +323,16 @@ def _parse_adr_template(template_path: Path) -> AdrTemplate:
                     required_sections.append(section_name)
         i += 1
 
-    # Create editor template with instructions
-    editor_header = """\
-# Lines starting with # are comments and will be ignored.
-# Fill in the sections below, save, and exit.
-# Sections marked <!-- Required --> must have content.
-
-"""
-    editor_template = editor_header + content
+    frontmatter = FRONTMATTER_PATTERN.match(content)
+    meta = yaml.safe_load(frontmatter.group(1)) if frontmatter else None
+    description = meta.get("description") if isinstance(meta, dict) else None
 
     return AdrTemplate(
-        editor_template=editor_template,
+        editor_template=ADR_EDITOR_HEADER + content,
         required_sections=required_sections,
         all_sections=all_sections,
+        frontmatter=frontmatter.group(0) if frontmatter else "",
+        placeholder_description=str(description) if description else "",
     )
 
 

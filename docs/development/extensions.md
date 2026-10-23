@@ -13,6 +13,9 @@ tags:
 
 This guide covers optional tools and extensions that you can add to your project based on your specific needs.
 
+Each example installs with `doit install_dev`. A plain `uv sync` would install the new package but
+uninstall the development tools, `doit` included, which live in the `dev` and `security` extras.
+
 ## Testing Extensions
 
 ### pytest-watch - Auto-run tests on file changes
@@ -28,7 +31,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 
 # Usage
 uv run ptw
@@ -47,7 +50,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example test:
@@ -74,7 +77,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example usage:
@@ -101,7 +104,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -130,7 +133,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 
 # Usage
 uv run mutmut run
@@ -151,7 +154,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -256,7 +259,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -286,7 +289,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example structure:
@@ -309,7 +312,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -334,7 +337,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -358,7 +361,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -381,7 +384,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Example:
@@ -407,7 +410,7 @@ dependencies = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 ## Dependency Management
@@ -425,7 +428,7 @@ dev = [
 ]
 
 # Install and use
-uv sync
+doit install_dev
 uv run pipdeptree
 uv run pipdeptree --reverse  # Show what depends on a package
 ```
@@ -782,7 +785,7 @@ dev = [
 ]
 
 # Install and use
-uv sync
+doit install_dev
 uv run vulture src/
 ```
 
@@ -810,7 +813,7 @@ dev = [
 ]
 
 # Install and use
-uv sync
+doit install_dev
 uv run radon cc src/ -a  # Cyclomatic complexity
 uv run radon mi src/     # Maintainability index
 ```
@@ -828,7 +831,7 @@ dev = [
 ]
 
 # Install and use
-uv sync
+doit install_dev
 uv run interrogate src/
 ```
 
@@ -906,7 +909,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Create `tox.ini`:
@@ -950,7 +953,7 @@ dev = [
 ]
 
 # Install
-uv sync
+doit install_dev
 ```
 
 Create `noxfile.py`:

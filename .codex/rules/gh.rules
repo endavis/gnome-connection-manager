@@ -1,0 +1,26 @@
+# #980: delegated/headless Codex runs need `gh` to reach GitHub's network.
+#
+# Measured with codex-cli 0.163.0: inside Codex's sandbox, `gh` has no network at all —
+# a DNS write to :53, and (with GODEBUG=netdns=cgo) a TCP write to :443, both
+# return "permission denied" — even with
+# `-c sandbox_workspace_write.network_access=true`. A command that matches a
+# `prefix_rule` allow runs *outside* the sandbox instead, with full network
+# access. `.codex/rules/*.rules` is loaded at the project level (confirmed by a
+# probe rule file that fixed a previously-failing `git ls-remote`).
+#
+# Only the read-only subcommands delegated runs actually use are allowed. Every
+# other `gh` call — `gh pr comment`, `gh api` (which writes with -X/-f),
+# `gh pr merge` — matches nothing here and stays in the sandbox, so GitHub
+# writes get no network path. That narrows the normal path; it is not a
+# guarantee. A rule matches a prefix with any arguments after it, and the
+# PreToolUse hook that runs before every command is a guardrail, not a
+# security boundary (ADR-9019).
+#
+# A rule only matches when `gh` is the exec'd prefix. Chained with `;`, `&&`,
+# `|`, or any other command, the exec'd prefix is the shell, so nothing here
+# matches and the call falls back into the network-less sandbox. Every prompt
+# handed to Codex non-interactively therefore also tells it to run each `gh`
+# command on its own — see GH_STANDALONE_SENTENCE in
+# docs/development/ai/cross-agent-delegation.md and tests/test_cross_agent_contract.py.
+prefix_rule(pattern=["gh", "pr", ["view", "diff", "checks", "list"]], decision="allow")
+prefix_rule(pattern=["gh", "issue", ["view", "list"]], decision="allow")

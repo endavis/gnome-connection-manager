@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from tools.hooks.check_commit_issue_ref import (
     OVERRIDE_ENV,
     branch_issue,

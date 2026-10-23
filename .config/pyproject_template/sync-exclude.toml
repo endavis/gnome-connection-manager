@@ -1,0 +1,55 @@
+# Files pyproject-template ships that GCM does not take, so that `manage.py check` leaves them
+# out of its drift report. Hand-managed: nothing rewrites this file. Patterns are matched with
+# fnmatch against the template's own paths, so `*` matches `/` too. `manage.py check
+# --show-excluded` lists what they leave out. Decided in #324.
+exclude = [
+    # GCM's own, never the template's: its licence is GPL-3.0, where the template's is MIT, and
+    # its README, changelog and home page are about GCM.
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/index.md",
+
+    # The template's placeholder package, what documents, tests and benchmarks it, the setup
+    # script that configures a new project from the template, and the README it hands one.
+    # Not its __init__.py, which the check compares with GCM's own, to be read at each sync.
+    "src/package_name/cli.py",
+    "src/package_name/core.py",
+    "src/package_name/logging.py",
+    "src/package_name/py.typed",
+    "examples/*",
+    "docs/usage/*",
+    "docs/examples/*",
+    "docs/getting-started/*",
+    "docs/deployment/*",
+    "docs/reference/*",
+    "README.template.md",
+    "bootstrap.py",
+    "tests/benchmarks/*",
+    "tests/test_cli.py",
+    "tests/test_core.py",
+    "tests/test_logging.py",
+    "tests/test_example.py",
+    "tests/template/test_coverage_gate.py",
+    "tests/template/test_properties.py",
+    "tests/test_mutmut_config.py",
+
+    # Releasing to PyPI and TestPyPI, a test matrix, API diffing and benchmarks: GCM releases
+    # by tag alone, as a wheel cannot supply GTK, and tests on the one Ubuntu whose PyGObject
+    # it is built for. Then GitHub's release-notes categories, for releases GCM does not make;
+    # the devcontainer, whose Python image has no GTK; and the shell completions, generated
+    # from the template's own task list, where `doit completions` writes GCM's.
+    ".github/workflows/release.yml",
+    ".github/workflows/testpypi.yml",
+    ".github/workflows/ci-full-matrix.yml",
+    ".github/workflows/breaking-change-detection.yml",
+    ".github/workflows/benchmark.yml",
+    ".github/release.yml",
+    ".devcontainer/*",
+    "completions/*",
+    "tests/test_release_workflow.py",
+    "tests/test_testpypi_workflow.py",
+    "tests/test_ci_full_matrix_workflow.py",
+    "tests/test_benchmark_workflow.py",
+    "tests/test_benchmark_settings.py",
+]

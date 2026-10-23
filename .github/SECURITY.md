@@ -85,8 +85,8 @@ We use automated tools to monitor dependencies:
 Run a security audit of dependencies:
 
 ```bash
-# Install security dependencies
-uv pip install -e ".[security]"
+# Install the security extra with the other development tools
+doit install_dev
 
 # Run security audit
 doit audit

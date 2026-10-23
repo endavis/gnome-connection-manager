@@ -65,7 +65,7 @@ The template is opinionated about a small number of things:
   ships to every user of the package. Add to it sparingly.
 - **Dev tooling is heavy and lives under `tools/`.** Contributors get the
   full suite (doit, ruff, mypy, pytest, mkdocs, mutmut, etc.) via
-  `[dependency-groups] dev`.
+  `[project.optional-dependencies] dev`.
 - **`doit` is a development tool, not a runtime tool.** Tasks under
   `tools/doit/` exist to make contributor workflows reproducible. They are
   not part of the package's public API.
@@ -96,8 +96,8 @@ legitimate runtime use.
 
 ## See also
 
-- [ADR-9002: Use doit for task automation](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9002-use-doit-for-task-automation.md)
-- [ADR-9005: AI agent command restrictions](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9005-ai-agent-command-restrictions.md)
+- [ADR-9002: Use doit for task automation](../decisions/9002-use-doit-for-task-automation.md)
+- [ADR-9005: AI agent command restrictions](../decisions/9005-ai-agent-command-restrictions.md)
 - [Doit Tasks Reference](doit-tasks-reference.md)
 - [`AGENTS.md`](../../AGENTS.md) — imperative tool reference for contributors and AI agents
 - [New Project Setup](../template/new-project.md)

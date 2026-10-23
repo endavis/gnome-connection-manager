@@ -23,6 +23,7 @@ from utils import (  # noqa: E402
     FILES_TO_UPDATE,
     Logger,
     get_first_author,
+    get_first_maintainer,
     get_git_config,
     load_toml_file,
     parse_github_url,
@@ -104,6 +105,7 @@ def load_defaults(pyproject_path: Path) -> dict[str, str]:
     pypi_name = validate_pypi_name(project_name) if project_name else ""
     description = project.get("description") or read_readme_title(Path("README.md"))
     author_name, author_email = get_first_author(data)
+    maintainer_name, maintainer_email = get_first_maintainer(data)
     github_user = guess_github_user(data)
 
     # If current pyproject still has template placeholders, try backup for real values
@@ -137,6 +139,10 @@ def load_defaults(pyproject_path: Path) -> dict[str, str]:
         else:
             author_email = b_author_email or author_email
 
+        b_maintainer_name, b_maintainer_email = get_first_maintainer(backup_data)
+        maintainer_name = maintainer_name or b_maintainer_name
+        maintainer_email = maintainer_email or b_maintainer_email
+
         if not_placeholder(github_user, {"username", ""}):
             pass
         else:
@@ -149,6 +155,11 @@ def load_defaults(pyproject_path: Path) -> dict[str, str]:
         "description": description,
         "author_name": author_name,
         "author_email": author_email,
+        # A project with no [project].maintainers is one where the author still
+        # maintains it. Falling back here keeps every greenfield path identical
+        # to its behaviour before the split (#787).
+        "maintainer_name": maintainer_name or author_name,
+        "maintainer_email": maintainer_email or author_email,
         "github_user": github_user,
     }
 
@@ -273,6 +284,15 @@ def run_configure(
         author_email = require(defaults["author_email"], "author email")
         if not validate_email(author_email):
             raise SystemExit("❌ Invalid email format in pyproject.toml")
+        # `defaults` is caller-supplied, so the maintainer keys are read with a
+        # fallback rather than required: a mapping without them describes a
+        # project that names no maintainer, which is the greenfield case where
+        # the author is the maintainer. `load_defaults` resolves this already;
+        # this keeps every other caller working unchanged.
+        maintainer_name = defaults.get("maintainer_name") or author_name
+        maintainer_email = defaults.get("maintainer_email") or author_email
+        if not validate_email(maintainer_email):
+            raise SystemExit("❌ Invalid maintainer email format in pyproject.toml")
         github_user = require(
             defaults["github_user"],
             "GitHub user (from Repository URL or git remote)",
@@ -297,6 +317,9 @@ def run_configure(
             defaults["description"] or "A short description of your package",
         )
 
+        print("\n  Author: who wrote it. Used for the LICENSE copyright line,")
+        print("  the package metadata and the documentation site.\n")
+
         author_name = prompt("Author name", defaults["author_name"] or "Your Name")
 
         while True:
@@ -305,6 +328,23 @@ def run_configure(
                 defaults["author_email"] or "your.email@example.com",
             )
             if validate_email(author_email):
+                break
+            Logger.warning("Invalid email format. Please try again.")
+
+        print("\n  Maintainer: who answers for it now. Used for the security")
+        print("  contact address. Press Enter to accept the author.\n")
+
+        maintainer_name = prompt(
+            "Maintainer name",
+            defaults.get("maintainer_name") or author_name,
+        )
+
+        while True:
+            maintainer_email = prompt(
+                "Maintainer email",
+                defaults.get("maintainer_email") or author_email,
+            )
+            if validate_email(maintainer_email):
                 break
             Logger.warning("Invalid email format. Please try again.")
 
@@ -317,6 +357,8 @@ def run_configure(
     print(f"PyPI Name:        {pypi_name}")
     print(f"Description:      {description}")
     print(f"Author:           {author_name} <{author_email}>")
+    if (maintainer_name, maintainer_email) != (author_name, author_email):
+        print(f"Maintainer:       {maintainer_name} <{maintainer_email}>")
     print(f"GitHub:           {github_user}")
     # Stated, not asked. Dependabot is part of the template's automation
     # surface -- .github/dependabot.yml plus two workflows, a docs page and
@@ -379,9 +421,14 @@ def run_configure(
         # GitHub template placeholders (for issue templates, etc.)
         "{owner}": github_user,
         "{repo}": package_name,
-        # Contact email placeholders
-        "security@example.com": author_email,
-        "[INSERT CONTACT EMAIL]": author_email,
+        # Contact email placeholders. These are the security-report address in
+        # .github/SECURITY.md, and they belong to whoever answers for the
+        # project now -- not to whoever wrote it. In an adopted or forked
+        # project the two differ, and using the author routed vulnerability
+        # reports to someone with no involvement (#787). Identical to the
+        # author's address unless [project].maintainers says otherwise.
+        "security@example.com": maintainer_email,
+        "[INSERT CONTACT EMAIL]": maintainer_email,
         # Note: "username" is NOT replaced globally to avoid breaking code
         # variables (e.g. in extensions.md)
     }

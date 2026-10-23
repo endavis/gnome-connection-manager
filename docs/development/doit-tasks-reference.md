@@ -38,10 +38,10 @@ doit <task_name>
 | [Security](#security-tasks) | `security`, `audit`, `licenses`, `sbom` | Security scanning and SBOM |
 | [Documentation](#documentation-tasks) | `docs_serve`, `docs_build`, `docs_deploy`, `docs_toc` | Documentation management |
 | [Dependencies](#dependency-tasks) | `install`, `install_dev`, `update_deps` | Package management |
-| [GitHub Workflow](#github-workflow-tasks) | `issue`, `pr`, `pr_merge`, `adr`, `labels_sync`, `env_create`, `env_list`, `publish_setup` | Issue, PR, and environment management |
+| [GitHub Workflow](#github-workflow-tasks) | `issue`, `pr`, `pr_merge`, `adr`, `labels_sync`, `delegation_context`, `env_create`, `env_list`, `publish_setup` | Issue, PR, and environment management |
 | [Release](#release-tasks) | `release`, `release_tag`, `publish` | Version and release management |
 | [Version](#version-tasks) | `bump`, `changelog` | Version bumping and changelog |
-| [Setup](#setup-tasks) | `pre_commit_install`, `completions`, `install_direnv` | Development environment |
+| [Setup](#setup-tasks) | `pre_commit_install`, `completions`, `install_direnv`, `install_jq`, `worktree` | Development environment |
 | [Maintenance](#maintenance-tasks) | `cleanup`, `template_clean` | Project cleanup |
 
 ---
@@ -98,9 +98,9 @@ doit mutate
 
 **What it does:**
 - Introduces small changes (mutations) to source code
-- Runs the test suite against each mutation
-- Reports which mutations were killed (detected) vs survived (missed)
-- Prints a summary with the mutation score
+- Runs the tests that exercise `src/` against each mutation (see [Which Tests Run](ci-cd-testing.md#which-tests-run))
+- Records which mutations were killed (detected) vs survived (missed)
+- Lists the mutations the tests did not kill
 
 **Output:** Results are stored in the `mutants/` cache directory. Re-run `uv run mutmut results` at any time to re-display the text summary.
 
@@ -142,7 +142,8 @@ doit benchmark_save
 
 **What it does:**
 - Runs benchmarks and saves results to `tmp/benchmarks/`
-- Saved baseline can be used for comparison with `benchmark_compare`
+- Each run saves a new numbered baseline (`0001_baseline`, `0002_baseline`, ...); `benchmark_compare`
+  compares against the latest one
 
 **Equivalent command:**
 ```bash
@@ -151,19 +152,20 @@ uv run pytest tests/benchmarks/ --benchmark-enable --benchmark-only --benchmark-
 
 ### `benchmark_compare`
 
-Run benchmarks and compare against a saved baseline.
+Run benchmarks and compare against the latest saved baseline.
 
 ```bash
 doit benchmark_compare
 ```
 
 **What it does:**
-- Runs benchmarks and compares results against the saved baseline
+- Runs benchmarks and compares results against the most recent baseline saved by `benchmark_save`
 - Shows performance regressions or improvements
+- With no saved baseline, pytest-benchmark warns `Can't compare` and the run still passes
 
 **Equivalent command:**
 ```bash
-uv run pytest tests/benchmarks/ --benchmark-enable --benchmark-only --benchmark-compare=0001_baseline --benchmark-storage=tmp/benchmarks -v
+uv run pytest tests/benchmarks/ --benchmark-enable --benchmark-only --benchmark-compare --benchmark-storage=tmp/benchmarks -v
 ```
 
 ---
@@ -184,9 +186,11 @@ doit format
 
 **Equivalent command:**
 ```bash
-uv run ruff format src/ tests/
-uv run ruff check --fix src/ tests/
+uv run ruff format src/ tests/ tools/ bootstrap.py examples/
+uv run ruff check --fix src/ tests/ tools/ bootstrap.py examples/
 ```
+`bootstrap.py` and `examples/` are appended only when present at the repo root — see
+`optional_root_files` / `optional_root_dirs` in `tools/doit/base.py`.
 
 ### `format_check`
 
@@ -202,8 +206,9 @@ doit format_check
 
 **Equivalent command:**
 ```bash
-uv run ruff format --check src/ tests/
+uv run ruff format --check src/ tests/ tools/ bootstrap.py examples/
 ```
+`bootstrap.py` and `examples/` are appended only when present at the repo root.
 
 ### `lint`
 
@@ -219,8 +224,9 @@ doit lint
 
 **Equivalent command:**
 ```bash
-uv run ruff check src/ tests/
+uv run ruff check src/ tests/ tools/ bootstrap.py examples/
 ```
+`bootstrap.py` and `examples/` are appended only when present at the repo root.
 
 ### `type_check`
 
@@ -248,7 +254,7 @@ doit check
 ```
 
 **What it does:**
-- Runs format check, lint, type check, security, spelling, and tests
+- Runs format check, lint, type check, security, spelling, a wheel smoke test, a strict docs build, and tests
 - Stops on first failure
 
 **Task dependencies:**
@@ -257,6 +263,8 @@ doit check
 - `type_check`
 - `security` (if available)
 - `spell_check`
+- `wheel_check`
+- `docs_build`
 - `test`
 
 ### `spell_check`
@@ -399,7 +407,7 @@ doit security
 - Uses configuration from `pyproject.toml` `[tool.bandit]`
 - Excludes tests, tmp, and .venv directories
 
-**Requires:** `[security]` extras installed (`uv sync --extra security`)
+**Requires:** the `security` extra, which `doit install_dev` installs
 
 ### `audit`
 
@@ -413,7 +421,7 @@ doit audit
 - Scans all dependencies for known CVE vulnerabilities
 - Reports any security advisories
 
-**Requires:** `[security]` extras installed (`uv sync --extra security`)
+**Requires:** the `security` extra, which `doit install_dev` installs
 
 ### `licenses`
 
@@ -427,7 +435,7 @@ doit licenses
 - Lists all dependency licenses for compliance review
 - Outputs in markdown table format
 
-**Requires:** `[security]` extras installed (`uv sync --extra security`)
+**Requires:** the `security` extra, which `doit install_dev` installs
 
 ### `sbom`
 
@@ -445,7 +453,7 @@ doit sbom
 - `tmp/sbom.json` -- CycloneDX JSON format
 - `tmp/sbom.xml` -- CycloneDX XML format
 
-**Requires:** `[security]` extras installed (`uv sync --extra security`)
+**Requires:** the `security` extra, which `doit install_dev` installs
 
 **When to use:**
 - For regulatory compliance (e.g., US Executive Order 14028)
@@ -539,6 +547,8 @@ doit install
 **What it does:**
 - Syncs dependencies from lock file
 - Installs package in editable mode
+- Uninstalls the `dev` and `security` extras, `doit` included. Use it where you only run the
+  program; to develop, use `install_dev`.
 
 **Equivalent command:**
 ```bash
@@ -554,14 +564,16 @@ doit install_dev
 ```
 
 **What it does:**
-- Syncs all dependencies including dev extras
-- Installs pre-commit hooks
+- Syncs all dependencies, including the `dev` and `security` extras
+- Installs package in editable mode
 
 **Equivalent command:**
 ```bash
 uv sync --all-extras --dev
-uv run pre-commit install
 ```
+
+On a fresh clone `doit` is not installed yet, so the first sync is the equivalent command. The task
+does not install the pre-commit hooks; run `doit pre_commit_install` for those.
 
 > **Note:** `src/__PACKAGE_NAME__/_version.py` is a build-time artifact written
 > by `hatch-vcs`. It is gitignored and untracked — `hatch-vcs` regenerates
@@ -637,6 +649,9 @@ doit pr --title="fix: bug fix" --body-file=pr.md
 
 # Create draft PR
 doit pr --draft
+
+# Open against the unmerged branch this work builds on
+doit pr --base=feat/42-add-parser
 ```
 
 **Features:**
@@ -649,10 +664,15 @@ doit pr --draft
 - `--body`: PR body content (non-interactive)
 - `--body-file`: File containing PR body (non-interactive)
 - `--draft`: Create as draft PR
+- `--base`: Open the PR against this branch instead of `main`, for work that builds on an unmerged
+  branch. The up-to-date check then compares with `origin/<branch>`. After that branch merges,
+  the PR must be rebased onto `main` and retargeted before `doit pr_merge` accepts it. The steps
+  are in CONTRIBUTING.md, Development Workflow, step 4.
 - `--no-push`: Skip the automatic push of a branch that has no upstream. The
   task pushes by default; with this flag it aborts instead.
 - `--no-update-check`: Skip the check that aborts when the branch is behind
-  `origin/main`. Use only when you know the branch is deliberately behind.
+  `origin/main` (or `origin/<branch>` with `--base`). Use only when you know the branch is
+  deliberately behind.
 
 ### `pr_merge`
 
@@ -671,9 +691,55 @@ doit pr_merge --auto-close
 
 **What it does:**
 1. Finds PR associated with current branch (or uses `--pr`)
-2. Validates PR is approved and checks pass
+2. Stops, before merging or closing anything, if the PR is not open, targets a branch other than
+   the repository's default branch, or has a title that is not in conventional commit format
 3. Merges with conventional commit format: `<type>: <subject> (merges PR #XX, addresses #YY)`
 4. If `--auto-close` is set, closes each linked issue with a `Addressed in PR #XX` comment; otherwise prints the `gh issue close` commands as a reminder.
+5. If a linked worktree has the PR's branch checked out, deletes the branch itself and removes the
+   worktree (see below)
+6. If it was run from the PR's base branch, fast-forwards that branch with
+   `git pull --ff-only origin <base>`. Run from the PR's branch instead,
+   `gh pr merge --delete-branch` switches to the base and pulls it. A pull that cannot fast-forward
+   is reported, not fatal: the PR has already merged
+
+The task does not check approvals or CI itself. GitHub refuses the merge when branch protection
+requires them and they are not met.
+
+**A PR that targets another branch:** GitHub merges a PR into its base branch. A PR opened against
+another feature branch would squash into that branch, and `--auto-close` would close issues whose
+work never reached `main`. The task names the base and stops. Merge the PR it builds on, rebase this
+branch onto `main`, then retarget it with `gh pr edit <number> --base main`.
+
+**Stacked PRs:** PRs in a GitHub native stack are not supported. GitHub merges them only through its
+asynchronous merge API, so `gh pr merge` fails on them. The task recognizes that error and says so.
+Unstack them with `gh stack unstack` (gh-stack extension), then merge them bottom first.
+
+**A PR whose branch is in a worktree:** `gh pr merge --delete-branch` checks out `main` in the
+checkout that has the PR's branch, then deletes the branch. In a linked worktree git refuses that
+checkout while `main` is checked out anywhere else, and from any other checkout git refuses to
+delete the branch. So when a linked worktree has the branch, the task merges without
+`--delete-branch`. Once GitHub reports the PR as merged, it:
+
+- deletes the branch on GitHub, unless the repository already deletes head branches on merge
+- removes the worktree, if it is under `worktrees/`. It is kept, with the files listed, when it has
+  modified or untracked files, which git refuses to remove, or an ignored file that cannot be
+  rebuilt, such as `.envrc.local`, which git would delete without asking. `.venv/`, caches and
+  build output are rebuilt, so they do not count
+- deletes the local branch if it still points at the commit the PR merged. A squash merge needs
+  `git branch -D`, which would otherwise drop a commit that was never pushed
+- removes the directories under `worktrees/` that the worktree leaves empty
+- fast-forwards `main` in the main checkout, when that is where the task runs from
+
+Run it from the main checkout, and pass `--pr`: without it, the task merges the PR for the main
+checkout's own branch.
+
+```bash
+uv run doit pr_merge --pr=123 --auto-close
+```
+
+Run from inside the worktree, the task merges but cannot remove the directory it runs in, so it
+prints the commands that do. A worktree outside `worktrees/`, such as one Claude Code made in
+`.claude/worktrees/`, is left in place with its branch.
 
 **Options:**
 - `--pr`: PR number to merge (defaults to PR for current branch)
@@ -701,6 +767,10 @@ doit adr --title="Use some tool" --template --body-file=adr.md
 - Creates a new ADR in `docs/decisions/`
 - Auto-numbers based on existing ADRs in the chosen series
 - Uses ADR template format
+- Starts the ADR with the template's frontmatter, with the title and date filled in. A body
+  that starts with its own frontmatter keeps it, and `doit adr` sets its title. If the
+  description is still the template's placeholder, it says so; write one sentence that says
+  what was decided, because `docs/TABLE_OF_CONTENTS.md` lists it next to the title
 
 **Series:**
 - Default (project-level, 0XXX): decisions specific to this project. Numbering starts at `0001`.
@@ -714,7 +784,7 @@ Both series share `docs/decisions/`; the numeric prefix distinguishes them. Temp
 - `--body-file`: File containing ADR body (non-interactive)
 - `--template`: Create a template-meta ADR (9XXX series) instead of a project-level ADR
 
-See [ADR Documentation](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/README.md) for more information.
+See [ADR Documentation](../decisions/README.md) for more information.
 
 ---
 
@@ -748,6 +818,47 @@ doit labels_sync --file=.github/labels.custom.yml
 - `--file=<path>`: Path to the labels file (default `.github/labels.yml`).
 
 See [GitHub Repository Settings → Labels](github-repository-settings.md#labels) for the canonical label list and the file schema.
+
+---
+
+### `delegation_context`
+
+Fetch GitHub data a delegated agent needs and write it to files it reads instead of calling `gh`
+itself.
+
+A delegated agent (another CLI invoked non-interactively, as `/multi-*` and the Codex bridge skills
+do) does not have a trusted, un-sandboxed `gh` in every host. The **host** — the CLI the user is
+driving, which does — runs this task before delegating, and the delegated prompt reads the files it
+writes instead of shelling out to `gh` itself.
+
+```bash
+# Issue context: issue.json + comments.json
+doit delegation_context --kind=issue --n=985 --out=tmp/agents/claude/multi-plan-985
+
+# PR context: pr.json + diff.txt
+doit delegation_context --kind=pr --n=42 --out=tmp/agents/claude/multi-review-42
+```
+
+**What it does:**
+- `--kind=issue`: writes `issue.json` (`number`/`title`/`body`/`labels`/`assignees`) and
+  `comments.json` (`{"comments": [...]}}`) from a single `gh issue view --json ...,comments` call.
+- `--kind=pr`: writes `pr.json` (`number`/`title`/`body`/`baseRefName`/`headRefName`) from `gh pr
+  view` and `diff.txt` from `gh pr diff`.
+- A missing or inaccessible issue/PR aborts with a clear error and exit code 1 — never a silent
+  empty file.
+
+**Output location:** by convention, `--out` is `tmp/agents/<host>/<task>-<n>/` (for example
+`tmp/agents/claude/multi-review-123/`), per `AGENTS.md`'s temp-file convention. The orchestrating
+skill that creates the directory deletes it once every delegated agent has returned — this task
+does not clean up after itself.
+
+**Options:**
+- `--kind` (required): `issue` or `pr`.
+- `--n` (required): Issue or PR number.
+- `--out` (required): Output directory, created if missing.
+
+See [Cross-Agent Delegation Matrix](ai/cross-agent-delegation.md) for the skills that call this
+task before delegating, and `docs/decisions/` for the ADR that introduced it.
 
 ---
 
@@ -843,20 +954,26 @@ doit release --prerelease=alpha --increment=minor  # 1.0.0 → 1.1.0a0
 ```
 
 **What it does:**
-1. Verifies you're on `main` with a clean working tree
-2. Validates `--prerelease` (must be empty, `alpha`, `beta`, or `rc`)
-3. Pulls latest changes
-4. Runs governance validations (merge commit format, issue links)
-5. Runs all quality checks (`doit check`)
-6. Asks commitizen for the next version (`cz bump --get-next`)
-7. Creates a `release/vX.Y.Z` branch and updates `CHANGELOG.md`
-8. Commits the changelog, pushes the branch, and opens PR `release: vX.Y.Z`
+1. Verifies you're on `main`
+2. Validates `--prerelease` (must be empty, `alpha`, `beta`, or `rc`), `--issue` (must be empty or a number) and `--increment` (must be empty, `MAJOR`, `MINOR` or `PATCH`, in any case)
+3. Checks for uncommitted changes
+4. Pulls latest changes
+5. Runs governance validations (merge commit format, issue links)
+6. Runs all quality checks (`doit check`)
+7. Asks commitizen for the next version (`cz bump --get-next`)
+8. Creates a `release/vX.Y.Z` branch and updates `CHANGELOG.md`
+9. Commits the changelog, pushes the branch, and opens PR `release: vX.Y.Z`
+
+A project with a static version or a hand-written changelog gets two more
+steps here — see [Release Automation — Downstream opt-ins](release-and-automation.md#downstream-opt-ins-static-version-and-hand-written-changelog).
 
 **Options:**
 - `--increment`: Force `MAJOR`, `MINOR`, or `PATCH` bump (auto-detects if empty).
 - `--prerelease`: `alpha`, `beta`, or `rc`. Empty means a production release.
   Can be combined with `--increment` to force a pre-release of a specific
   bump type (see [issue #475](https://github.com/endavis/pyproject-template/issues/475)).
+- `--issue`: Release issue number. Writes `Addresses #N` into the PR body, so `doit pr_merge`
+  records it in the merge commit.
 
 **Requirements:**
 - Must be on `main` branch
@@ -871,7 +988,8 @@ See [Release Automation](release-and-automation.md) for the full flow.
 
 ### `release_tag`
 
-Tag `main` after the release PR is merged and trigger the publish workflow.
+Tag `main` after the release PR is merged, and — if `.github/workflows/release.yml`
+exists — trigger the publish workflow it defines.
 
 ```bash
 git checkout main
@@ -885,7 +1003,10 @@ doit release_tag
 3. Finds the most recently merged `release: vX.Y.Z` PR
 4. Extracts the version from the PR title (falls back to the branch name)
 5. Creates the git tag `vX.Y.Z` on `main`
-6. Pushes the tag, which triggers the publish workflow
+6. Pushes the tag. If `.github/workflows/release.yml` exists, it triggers the
+   publish workflow and the printed next steps point at GitHub Actions and
+   PyPI/TestPyPI. Otherwise nothing builds or publishes from the tag, and the
+   task says so instead — the tag is the release (#993).
 
 ### `publish`
 
@@ -1042,6 +1163,27 @@ direnv allow
 
 This task uses the reusable install_tools framework — see [install_tools framework](install-tools-framework.md) for adding more tools.
 
+### `install_jq`
+
+Install jq, the JSON processor the Claude and agy statusline scripts depend on.
+
+```bash
+doit install_jq
+```
+
+**What it does:**
+- Installs `jq` into `~/.local/bin` if not already on `PATH`
+- Downloads the Linux or macOS binary directly from the `jqlang/jq` GitHub
+  releases (not via brew, for cross-platform consistency with `install_gh`)
+- A second run prints `[OK] jq already installed` and exits
+
+Without `jq`, both statusline scripts print `statusline: jq not installed (run:
+doit install_jq)` instead of rendering — see
+[Statusline](ai/statusline.md#requirements).
+
+This task uses the reusable install_tools framework with a per-OS `url_template`
+— see [install_tools framework](install-tools-framework.md) for details.
+
 ### `commit`
 
 Interactive commit with commitizen.
@@ -1059,6 +1201,41 @@ doit commit
 ```bash
 uv run cz commit
 ```
+
+### `worktree`
+
+Create a git worktree with its own environment, for working on a branch while the main checkout
+holds other work.
+
+```bash
+doit worktree --branch=feat/42-add-export
+```
+
+**What it does:**
+1. Checks the branch name with `git check-ref-format`
+2. Fetches `origin/main` and creates `worktrees/<branch>` in the main checkout, on a new branch
+   with no upstream, so `doit pr` pushes it
+3. Runs `uv sync --all-extras --dev` inside the worktree with `VIRTUAL_ENV` unset, so the worktree
+   gets its own `.venv` and the main checkout's is left alone
+4. Prints how to work there, and how to merge its PR so that the worktree is removed
+
+**Working in a worktree:**
+- Run everything through `uv run` (for example `uv run doit check`), which uses the worktree's
+  `.venv`. The shell's `VIRTUAL_ENV` and `PATH` still point at the main checkout's environment,
+  so a bare `pytest` or `doit` runs from that environment instead.
+- Never pass `--active` to `uv`. It installs the worktree's copy of the project into the main
+  checkout's `.venv`.
+- direnv users can run `direnv allow` in the worktree to switch the shell to its `.venv`.
+- Merge its PR from the main checkout with `uv run doit pr_merge --pr=<number>`, which removes the
+  worktree and its branch, then fast-forwards `main`. See [`pr_merge`](#pr_merge). To remove a worktree without merging, run
+  `git worktree remove worktrees/<branch>` from the main checkout.
+
+`worktrees/` is gitignored and skipped by the repository-wide test walkers, so `doit check` in the
+main checkout does not scan the worktrees' copies. Worktrees do not go under `tmp/`, which
+[`cleanup`](#cleanup) empties.
+
+**Options:**
+- `--branch`: Name of the branch to create (required). The worktree path is `worktrees/<branch>`.
 
 ---
 
@@ -1128,6 +1305,32 @@ doit build
 ```bash
 uv build
 ```
+
+### `wheel_check`
+
+Install the built wheel into a throwaway venv and smoke-test it, so a packaging regression
+(missing module, broken entry point, missing `py.typed`) fails before it ships. Part of `doit check`.
+
+```bash
+# Build a fresh wheel and check it
+doit wheel_check
+
+# Check the single *.whl already in dist/ instead of rebuilding
+doit wheel_check --dist=dist
+```
+
+**What it does:**
+- Builds a wheel (or reuses the single `*.whl` in `--dist`). It builds from a temporary clone of
+  the working tree, uncommitted changes included, so the version hook rewrites the clone's
+  `_version.py` and not the one in `src/`
+- Confirms `py.typed` is in the wheel
+- Installs it into an isolated venv and imports the package, confirming it was loaded from the
+  venv rather than the source tree
+- Runs every `[project.scripts]` entry with `--help`
+
+**Options:**
+- `--dist`: Directory with an already-built wheel to check (e.g. `dist`), instead of building a
+  fresh one. Fails if the directory has zero or more than one `*.whl`.
 
 ---
 

@@ -175,6 +175,9 @@ uv sync --all-extras --dev
 doit pre_commit_install
 ```
 
+The development tools, `doit` included, live in the `dev` and `security` extras, and a plain
+`uv sync` uninstalls them. Sync again later with `doit install_dev`, which runs the same command.
+
 #### Enable Shell Completions (Optional)
 
 Enable tab completion for `doit` commands:
@@ -203,10 +206,17 @@ uv run doit template_clean --all
 ```
 
 This deletes `tools/pyproject_template/`, `docs/template/` and `bootstrap.py` —
-the template's own management code, which your project does not use. Keeping it
-also leaves your coverage gate measuring several thousand statements of tooling
-whose tests are template-owned and were shed during configuration, which puts a
-fresh project under `fail_under` on its first CI run.
+the template's own management code, which a new project does not use.
+
+Keeping it costs nothing measurable: `pyproject.toml` omits
+`tools/pyproject_template/*` from the coverage gate, `docs/template/` is
+documentation, and `bootstrap.py` is outside the gate's `source`. An earlier
+version of this page claimed the suite would put a fresh project under
+`fail_under`; that was true before the omit landed in #731 and is not true now.
+
+What you lose by keeping it is only tidiness — and what you gain is
+`manage.py repo`, `manage.py check` and the rest of the sync tooling, without
+having to reinstall it.
 
 To reinstall the template-sync suite later:
 

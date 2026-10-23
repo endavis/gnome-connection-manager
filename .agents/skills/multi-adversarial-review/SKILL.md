@@ -1,6 +1,6 @@
 ---
 name: multi-adversarial-review
-description: Run multiple AI agents in parallel for adversarial review of current changes from a Codex session, then synthesize challenges and recommended actions.
+description: Run multiple AI agents in parallel for adversarial review of current changes, then synthesize challenges and recommended actions. Works the same from any host CLI (Claude Code, Codex CLI, Copilot CLI, Antigravity CLI).
 ---
 
 # Multi-Agent Adversarial Review
@@ -13,10 +13,29 @@ Use this skill when the user wants multiple agents to adversarially challenge th
 
 Expected prompt shape:
 
-- `$multi-adversarial-review claude codex`
-- `$multi-adversarial-review pressure-test these changes with claude and codex`
+- `multi-adversarial-review claude codex`
+- "pressure-test these changes with claude and codex"
 
 If the agent list is missing, ask for it before continuing.
+
+**Read-only.** Review and report — do not edit files, commit, or push. Findings go to the user and the PR; any fix is a separate change the user asks for.
+
+## Agent invocations
+
+Step 0 below already removed your own CLI from the agent list. Run your own review directly, in this
+session (Step 2 below). Call every agent that list left through its CLI, exactly as this table gives
+it — copied from [cross-agent-delegation.md — Non-interactive flags per
+CLI](../../../docs/development/ai/cross-agent-delegation.md#non-interactive-flags-per-cli), which
+stays the source of truth:
+
+| Agent | Invocation |
+| :--- | :--- |
+| `claude` | `claude -p '<prompt>'` |
+| `codex` | `codex -a never --dangerously-bypass-hook-trust exec '<prompt>' < /dev/null` |
+| `copilot` | `copilot --allow-all -p '<prompt>'` |
+| `antigravity` | `agy -p '<prompt>' --dangerously-skip-permissions --add-dir "$(git rev-parse --show-toplevel)"` |
+
+A headless Codex host (`codex exec -a never`) can read GitHub through `.codex/rules/gh.rules` but cannot write to it or delegate to another agent CLI — see [Headless Codex host limits](../../../docs/development/ai/cross-agent-delegation.md#headless-codex-host-limits). It cannot run Step 2's delegation to the other listed agents or Step 5's `gh pr comment` headless; Codex hosts this skill interactively instead.
 
 ## Instructions
 
@@ -27,6 +46,8 @@ Allowed agent names: `claude`, `copilot`, `codex`, `antigravity`.
 
 - If no agents are given, ask for the agent list.
 - If any agent name is not in the allowed list, report the unknown name, list allowed names, and stop.
+
+Then remove your own name — the CLI running this skill — from the agent list. Every later step uses only the agents that remain: you never call your own CLI. If no agent remains, tell the user and stop.
 
 ### Step 1: Verify there are changes to review
 
@@ -41,9 +62,9 @@ git log main..HEAD --oneline
 
 Each review MUST be in an isolated context.
 
-#### If `codex` is in the agent list (self):
+#### You (the agent running this skill)
 
-Generate Codex's adversarial review inline:
+Run your adversarial review inline:
 1. Run `git status`, `git diff`, `git log main..HEAD`
 2. Read AGENTS.md and related ADRs in docs/decisions/
 3. Pressure-test design choices, hidden assumptions, tradeoffs, alternatives, failure modes
@@ -55,34 +76,31 @@ Generate Codex's adversarial review inline:
    ### Failure Modes
    ### Alternatives Worth Considering
    ---
-   *Adversarial Review by: Codex* | *Date: <today>*
+   *Adversarial Review by: <your agent name>* | *Date: <today>*
    ```
 
-#### If `claude` is in the agent list:
+#### Every agent remaining after Step 0 removed yours
+
+Invoke it with its row from [Agent invocations](#agent-invocations) above, substituting this prompt
+(filling in `<agent name>`):
+
+> Run an adversarial review of the current uncommitted changes and the current branch vs main.
+> Read-only. Be skeptical: pressure-test design choices, hidden assumptions, tradeoffs, alternatives,
+> failure modes (auth, data loss, races, rollback, reliability). 1) Run `git status`, `git diff`,
+> `git log main..HEAD`. 2) Read AGENTS.md and related ADRs. 3) Ask: right approach? Safer
+> alternative? Edge cases? Hidden coupling? 4) Output ONLY: ## Adversarial Review / ### Direction
+> Critique / ### Hidden Assumptions / ### Failure Modes / ### Alternatives Worth Considering. End
+> with --- and *Adversarial Review by: <agent name>* | *Date: <today>*. Do NOT modify any files.
+
+For example, to delegate to Claude:
 
 ```bash
 claude -p 'Run an adversarial review of the current uncommitted changes and the current branch vs main. Read-only. Be skeptical: pressure-test design choices, hidden assumptions, tradeoffs, alternatives, failure modes (auth, data loss, races, rollback, reliability). 1) Run `git status`, `git diff`, `git log main..HEAD`. 2) Read AGENTS.md and related ADRs. 3) Ask: right approach? Safer alternative? Edge cases? Hidden coupling? 4) Output ONLY: ## Adversarial Review / ### Direction Critique / ### Hidden Assumptions / ### Failure Modes / ### Alternatives Worth Considering. End with --- and *Adversarial Review by: Claude* | *Date: <today>*. Do NOT modify any files.'
 ```
 
-Capture stdout as Claude's adversarial review.
+Capture stdout as that agent's adversarial review.
 
-#### If `copilot` is in the agent list:
-
-```bash
-copilot --allow-all -p 'Run an adversarial review of the current uncommitted changes and the current branch vs main. Read-only. Be skeptical: pressure-test design choices, hidden assumptions, tradeoffs, alternatives, failure modes. 1) Run `git status`, `git diff`, `git log main..HEAD`. 2) Read AGENTS.md and related ADRs. 3) Ask: right approach? Safer alternative? Edge cases? Hidden coupling? 4) Output ONLY: ## Adversarial Review / ### Direction Critique / ### Hidden Assumptions / ### Failure Modes / ### Alternatives Worth Considering. End with --- and *Adversarial Review by: Copilot* | *Date: <today>*. Do NOT modify any files.' 2>/dev/null
-```
-
-Capture stdout as Copilot's adversarial review.
-
-#### If `antigravity` is in the agent list:
-
-```bash
-agy -p 'Run an adversarial review of the current uncommitted changes and the current branch vs main. Read-only. Be skeptical: pressure-test design choices, hidden assumptions, tradeoffs, alternatives, failure modes (auth, data loss, races, rollback, reliability). 1) Run `git status`, `git diff`, `git log main..HEAD`. 2) Read AGENTS.md and related ADRs. 3) Ask: right approach? Safer or simpler alternative? Edge cases missed? Hidden coupling? 4) Output ONLY the review: ## Adversarial Review / ### Direction Critique / ### Hidden Assumptions / ### Failure Modes / ### Alternatives Worth Considering. End with --- and *Adversarial Review by: Antigravity* | *Date: <today>*. Do NOT modify any files.' --dangerously-skip-permissions --add-dir "$(git rev-parse --show-toplevel)" 2>/dev/null
-```
-
-Capture stdout as Antigravity's adversarial review.
-
-If any agent fails or produces empty output, report the error and ask whether to continue or retry.
+If any agent fails or produces empty output, report the error and ask whether to continue or retry. Also treat output containing `DELEGATION-ERROR:` as a failed run: the agent's context file was missing or unreadable, so whatever else it printed rests on no data.
 
 ### Step 3: Synthesize the findings
 
@@ -102,7 +120,7 @@ Format:
 - Prioritized list of what to address before shipping
 
 ---
-*Synthesized Adversarial Review by: Codex (from <agent1> + <agent2> + ... input)* | *Date: <today>*
+*Synthesized Adversarial Review by: <host agent> (from <agent1> + <agent2> + ... input)* | *Date: <today>*
 ```
 
 ### Step 4: User-approval gate
@@ -118,3 +136,9 @@ gh pr comment <PR_NUMBER> --body "<synthesis>"
 ```
 
 If no PR exists, present the synthesis in the conversation only.
+
+## See also
+
+- [Cross-Agent Delegation Matrix](../../../docs/development/ai/cross-agent-delegation.md) — the
+  non-interactive invocation table this skill's [Agent invocations](#agent-invocations) section
+  copies, and the read-only constraint every review file carries.

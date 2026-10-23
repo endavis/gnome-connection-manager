@@ -118,7 +118,7 @@ Claude Code, GitHub Copilot, Codex and Antigravity even though the file format d
 | Claude Code | `.claude/rules/` | `@./rules/*.md` in `.claude/CLAUDE.md` |
 | GitHub Copilot | `.github/instructions/` | Native auto-discovery (no directive needed) |
 
-See [`.claude/rules/README.md`](../../.claude/rules/README.md) and
+See [`docs/development/ai/rule-files.md`](../../docs/development/ai/rule-files.md) and
 [`.agents/skills/README.md`](../../.agents/skills/README.md) for the other CLI variants.
 
 ## What NOT to put in an instruction file
@@ -147,4 +147,4 @@ only the frontmatter and the loading mechanism differ.
 **When you change one, change all three.** A rule that disagrees with itself across agents is worse
 than no rule, because whichever agent is driving decides which version applies.
 `tests/template/test_rule_files.py` enforces that each rule's three bodies stay identical. See
-[`.claude/rules/README.md`](../../.claude/rules/README.md) for the authoring discipline.
+[`docs/development/ai/rule-files.md`](../../docs/development/ai/rule-files.md) for the authoring discipline.

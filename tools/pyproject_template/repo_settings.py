@@ -13,11 +13,6 @@ along with all other workflow files. See issue #431.
 
 These functions are used by both setup_repo.py (initial setup) and
 manage.py (updating existing repositories).
-
-
-Vendored here because `bootstrap.py --sync` does not ship this module, so
-`manage.py repo` -- which imports it -- cannot run in a synced project. Reported
-upstream as endavis/pyproject-template#788; remove this note once it is in SYNC_FILES.
 """
 
 from __future__ import annotations

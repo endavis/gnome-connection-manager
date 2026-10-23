@@ -55,3 +55,18 @@ def task_install_direnv() -> dict[str, Any]:
         version_cmd=["direnv", "--version"],
         post_install_message=_DIRENV_POST_INSTALL_MESSAGE,
     )
+
+
+def task_install_jq() -> dict[str, Any]:
+    """Install jq for the statusline scripts and other JSON processing."""
+    return create_install_task(
+        name="jq",
+        repo="jqlang/jq",
+        asset_patterns={},
+        url_template={
+            "linux": "https://github.com/jqlang/jq/releases/download/{version}/jq-linux-{arch}",
+            "darwin": "https://github.com/jqlang/jq/releases/download/{version}/jq-macos-{arch}",
+        },
+        version_cmd=["jq", "--version"],
+        prefer_brew=False,
+    )

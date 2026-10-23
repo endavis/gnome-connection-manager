@@ -8,7 +8,7 @@ This file covers **installation only**. For what the `LSP` tool actually exposes
 
 - Claude Code 2.0.74 or later (LSP is enabled by default in 2.0.74+; older versions need `ENABLE_LSP_TOOL=1`)
 - Python 3.12+
-- This project installed with dev dependencies (`uv sync`) — pyright comes in via the dev group
+- This project installed with its development tools (`doit install_dev`, or `uv sync --all-extras --dev` on a fresh clone) — pyright comes in via the `dev` extra
 
 ## Install Steps
 
@@ -22,7 +22,7 @@ In Claude Code:
 
 ### 2. Confirm `pyright-langserver` is on PATH
 
-`uv sync` installs pyright into `.venv/bin/`. Verify:
+`doit install_dev` installs pyright into `.venv/bin/`. Verify:
 
 ```bash
 uv run pyright --version
@@ -59,7 +59,7 @@ A working setup returns the file path and line number near-instantly. A broken s
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `No LSP server available` | `pyright-langserver` not on PATH | `uv sync`; or `pip install pyright`; or `npm install -g pyright` |
+| `No LSP server available` | `pyright-langserver` not on PATH | `doit install_dev`; or `pip install pyright`; or `npm install -g pyright` |
 | `Executable not found in $PATH` | Plugin installed but binary missing | Same as above |
 | Plugin not loading at all | Plugin not installed at user scope | `/plugin install pyright-lsp@claude-plugins-official` then restart Claude Code |
 | Noisy or stale "errors" after every edit | Pyright diagnostic side-channel staleness — working as designed | See [`docs/development/ai/lsp-tool.md`](../docs/development/ai/lsp-tool.md) for the two documented opt-ins |

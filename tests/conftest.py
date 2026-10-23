@@ -14,6 +14,12 @@ from pathlib import Path
 
 import pytest
 
+# The tests taken from pyproject-template import their helper as `agent_roster`. That works
+# there because the template's tests/ is not a package, so pytest puts the folder itself on
+# sys.path. GCM's is a package, `from tests import test_install` among others, so the
+# folder goes on the path here, for them (#324).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 # --- private display for the tests that drive real GTK -------------------------------
 #
 # A handful of tests deliberately spawn real Gtk/Vte windows and let them settle for a

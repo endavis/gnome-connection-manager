@@ -138,7 +138,7 @@ each workflow, its trigger, and required permissions.
 | **Merge Gate** | `merge-gate.yml` | PR to `main` (opened, labeled, unlabeled, synchronize, reopened) | `contents: read` |
 | **PR Validation** | `pr-checks.yml` | PR (opened, edited, synchronize) | `contents: read`, `pull-requests: read` |
 | **Breaking Change Detection** | `breaking-change-detection.yml` | PR (opened, synchronize, edited) | `contents: read`, `issues: write`, `pull-requests: write` |
-| **Benchmark** | `benchmark.yml` | Push to `main`, PR to `main`, `workflow_dispatch` | `contents: write`, `pull-requests: write` |
+| **Benchmark** | `benchmark.yml` | Push to `main`, PR to `main`, `workflow_dispatch` | `contents: read` (per job: `contents: write` on `store`) |
 | **Mutation Testing** | `mutation.yml` | Scheduled (Sunday midnight UTC), `workflow_dispatch` | `contents: read` |
 | **Release** | `release.yml` | Tag push (`v*.*.*`), `workflow_dispatch` | `contents: read`, `id-token: write` (per job: `contents: write`) |
 | **TestPyPI** | `testpypi.yml` | Tag push (`v*-*`), `workflow_dispatch` | `contents: read`, `id-token: write` |

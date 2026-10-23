@@ -563,7 +563,7 @@ not from generic advice. The template ships one such rule file
 (`typing-branch-narrowing`) and loads it: `.claude/CLAUDE.md` carries a live
 `@./rules/*.md` glob import.
 
-See [`.claude/rules/README.md`](../../../.claude/rules/README.md) for the pattern, file structure,
+See [`docs/development/ai/rule-files.md`](rule-files.md) for the pattern, file structure,
 and a worked example.
 
 GitHub Copilot has a native equivalent: **`.github/instructions/NAME.instructions.md`** files with

@@ -9,14 +9,14 @@ Capture a resumption prompt for picking up the current work later.
 
 ## When to use
 
-Use this skill when the user wants to pause the current Codex session and leave a paste-ready prompt that any agent (Codex, Claude, or Copilot) can pick up later. This is the **save** side of the checkpoint/restore pair — `$restore` is the load side.
+Use this skill when the user wants to pause the current agent session and leave a paste-ready prompt that any agent (Claude, Codex, Copilot, or Antigravity) can pick up later. This is the **save** side of the checkpoint/restore pair — the `restore` skill is the load side.
 
-Expected prompt shape:
+Expected request shape:
 
-- `$checkpoint checkpoint this work as plan-test`
-- `$checkpoint capture a resumption prompt for the current branch`
+- "checkpoint this work as plan-test"
+- "capture a resumption prompt for the current branch"
 
-The user supplies an optional kebab-case `<slug>` describing the topic. If the slug is missing, infer a 3-5 word descriptive slug from the conversation context.
+The user supplies an optional kebab-case `<slug>` describing the topic, or the text after the skill name. If the slug is missing, infer a 3-5 word descriptive slug from the conversation context.
 
 ## Instructions
 
@@ -34,7 +34,7 @@ INV_EPOCH=$(printf '%010d' $((9999999999 - $(date +%s))))
 
 Run `mkdir -p tmp/checkpoints` before writing. Don't overwrite existing files; if a same-named file exists, append a 1-letter discriminator (`-a`, `-b`, …) to the slug.
 
-> Note: this directory deviates from the `tmp/agents/<agent-type>/` convention in `AGENTS.md`. `tmp/checkpoints/` is intentionally shared (not per-agent) so checkpoints are portable across agents — Codex can write a checkpoint and Claude or Copilot can restore from it.
+> Note: this directory deviates from the `tmp/agents/<agent-type>/` convention in `AGENTS.md`. `tmp/checkpoints/` is intentionally shared (not per-agent) so checkpoints are portable across agents — one agent can write a checkpoint and a different agent (or the same one, in a later session) can restore from it.
 
 ### Step 2: Draft the prompt
 
@@ -51,7 +51,7 @@ Structure:
 - **User direction recorded** — decisions, preferences, or constraints surfaced in the current conversation that future sessions need to honor (e.g., "no cross-provider X", "always prefer Y pattern").
 - **Pre-action reads** — files/docs the future session should read before starting, scoped per option.
 - **Workflow** — short reminder of project conventions (Issue → Branch → PR per `AGENTS.md`, etc.).
-- **Start by:** — concrete first command (e.g., `$codex-plan 714`, or `git checkout main && git pull`).
+- **Start by:** — a concrete first step (e.g., starting the plan workflow for issue 714, or `git checkout main && git pull`).
 
 Add anything else load-bearing — open blockers, runtime gotchas, manual prerequisite steps. Keep tight; this is a paste-block, not a doc.
 
@@ -69,4 +69,4 @@ Report:
 - Files persist; no auto-cleanup. The user can `rm` old prompts manually when they're stale.
 - If invoked multiple times in one session, write a new file each time. The user may want separate resumption-points for separate work threads.
 - The prefix uses 10 digits because epoch will exceed 10 digits in the year 2286; that's fine for foreseeable use. If you ever need to extend, bump to 11+ digits.
-- The companion `$restore` skill loads a captured checkpoint in a future session — point users to it.
+- The companion `restore` skill loads a captured checkpoint in a future session — point users to it.

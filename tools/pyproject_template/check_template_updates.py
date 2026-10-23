@@ -44,6 +44,7 @@ if str(_script_dir) not in sys.path:
 
 # Import shared utilities
 from utils import (  # noqa: E402
+    SHA_RE,
     TEMPLATE_OWNED_TEST_FILES,
     TEMPLATE_REPO,
     TEMPLATE_URL,
@@ -96,9 +97,6 @@ def load_sync_excludes(project_root: Path) -> list[str]:
         return []
 
     return [str(item) for item in excludes if isinstance(item, str)]
-
-
-SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 
 def resolve_template_ref(ref: str) -> str:

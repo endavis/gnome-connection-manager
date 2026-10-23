@@ -10,11 +10,15 @@ Thank you for your interest in contributing to this project! We welcome contribu
 - [How to Contribute](#how-to-contribute)
 - [Coding Standards](#coding-standards)
 - [Testing Guidelines](#testing-guidelines)
+- [Dependencies](#dependencies)
 - [Commit Guidelines](#commit-guidelines)
 - [Pull Request Process](#pull-request-process)
 - [Release Process](#release-process)
 - [Reporting Bugs](#reporting-bugs)
 - [Requesting Features](#requesting-features)
+- [Development Workflow](#development-workflow)
+- [Questions?](#questions)
+- [Thank You!](#thank-you)
 
 ## Code of Conduct
 
@@ -51,11 +55,15 @@ direnv allow
 cp .envrc.local.example .envrc.local
 
 # Install dependencies (creates venv automatically)
-uv sync --all-extras
+uv sync --all-extras --dev
 
 # Install pre-commit hooks
 doit pre_commit_install
 ```
+
+The development tools, `doit` included, live in the `dev` and `security` extras, and a plain
+`uv sync` uninstalls them. Every sync after this first one is `doit install_dev`, which runs the
+same command.
 
 ### Available Commands
 
@@ -128,7 +136,7 @@ def process_items(items: List[str]) -> Dict[str, int]:
 ### Docstrings
 
 Use Google-style docstrings. These are automatically extracted into the
-[API Reference](../docs/reference/api.md) documentation using mkdocstrings.
+[API Reference](https://github.com/endavis/pyproject-template/blob/main/docs/reference/api.md) documentation using mkdocstrings.
 
 ```python
 def example_function(param1: str, param2: int = 10) -> bool:
@@ -230,6 +238,59 @@ def test_feature_with_multiple_inputs(input_value, expected):
     """Test feature with various inputs."""
     assert function_to_test(input_value) == expected
 ```
+
+## Dependencies
+
+### Ask First
+
+Get approval before you add any dependency: a runtime dependency, an entry in the `dev` or
+`security` extra, or a type stub. Propose it first — name the package, what it is for, the table
+it belongs in, and why the standard library or an existing dependency will not do. Contributors
+propose it on the issue. AI agents ask the user and wait.
+
+AI agents cannot run `uv add` at all. The dangerous-command hook,
+[`block-dangerous-commands.py`](../tools/hooks/ai/block-dangerous-commands.py), blocks it in any
+form — with flags, chained after another command, even `uv add --help` — and tells the agent to
+suggest the package and let the user run the command. The script is wired into every supported
+agent's hook configuration; see
+[AI Command Blocking](../docs/development/ai/command-blocking.md#blocked-workflow-commands). The
+hook matches the command, not the intent: writing the entry into `pyproject.toml` by hand is the
+same change and needs the same approval.
+
+### Where a Dependency Goes
+
+| `pyproject.toml` table | Holds | Command |
+| :--- | :--- | :--- |
+| `[project] dependencies` | What code under `src/` imports at runtime. It ships to every user of the package, so keep it minimal. | `uv add <package>` |
+| `[project.optional-dependencies] dev` | Tests, linting, type checking, docs, and `doit` tasks. Type stubs go here, even for a runtime package. | `uv add --optional dev <package>` |
+| `[project.optional-dependencies] security` | The tools behind `doit audit`, `doit security`, `doit licenses` and `doit sbom`. | `uv add --optional security <package>` |
+
+There is no `[dependency-groups]` table. uv's `--dev` flags act on a `dev` dependency *group*,
+not on the `dev` extra above.
+
+Give every entry a `>=` lower bound, as the existing entries have, and commit `pyproject.toml`
+and `uv.lock` together.
+
+### Typing
+
+GCM's mypy sets `ignore_missing_imports` for every module, which the template's does not, so
+importing a package that ships neither inline types nor stubs does not fail: it is typed as `Any`.
+Add its stub package to the `dev` extra where one exists, as `types-pyyaml` is there for `pyyaml`.
+
+### Checks
+
+Both tasks need the `security` extra, which `doit install_dev` installs with the other development
+tools. Then run:
+
+- `doit audit` — `pip-audit` checks the locked dependencies for known vulnerabilities. GCM's
+  task audits `uv.lock`, not the environment, which holds every package apt installed; see
+  `task_audit` in `tools/doit/gcm.py`.
+- `doit licenses` — `pip-licenses` lists every installed package by license. Confirm the new
+  package, and anything it pulls in, is compatible with the project's license.
+
+Without the extra, `doit licenses` prints an install hint and exits 0, a pass that checked
+nothing, and GCM's `doit audit` fails, as it runs `pip-audit` directly. `doit check` runs `audit`
+but not `licenses`.
 
 ## Commit Guidelines
 
@@ -559,6 +620,19 @@ git checkout -b feat/42-add-feature
 
 **Branch naming is enforced by pre-commit hooks.**
 
+**When your checkout holds other work,** create the branch in a worktree instead:
+
+```bash
+doit worktree --branch=feat/42-add-feature
+```
+
+The worktree goes in `worktrees/feat/42-add-feature` (gitignored), with its own `.venv`. Inside it,
+run everything through `uv run` (`uv run doit check`, `uv run doit pr`) and never pass `--active`,
+which installs the worktree into the main checkout's `.venv`. Merge the PR from the main checkout
+with `uv run doit pr_merge --pr=<number>`, which then removes the worktree and its branch and
+fast-forwards `main`. See
+[`doit worktree`](../docs/development/doit-tasks-reference.md#worktree).
+
 #### 3. **Commit:** Use Conventional Commits
 
 **Format:** `<type>: <subject>`
@@ -588,6 +662,32 @@ Features:
 - Auto-detects issue number from branch name (e.g., `feat/42-description` → `Addresses #42`)
 - Pre-fills the PR template with detected issue
 - Validates required fields before creating
+
+**Work that builds on an unmerged branch:** When issue B needs code from issue A's branch before A
+merges, branch B from A and open B's PR against A's branch. The PR then shows only B's changes:
+
+```bash
+git checkout -b feat/43-use-parser feat/42-add-parser
+doit pr --base=feat/42-add-parser --title="feat: use the parser" --body-file=pr.md
+```
+
+`doit pr` then checks that B is up to date with `origin/feat/42-add-parser` instead of
+`origin/main`. While B targets A's branch, `ci.yml` and `merge-gate.yml` do not run on it (both
+filter on `branches: [main]`), and `doit pr_merge` refuses it.
+
+Merge A first. Then replay only B's own commits onto `main`, retarget the PR, and push:
+
+```bash
+lower_tip=$(gh pr view <A's PR number> --json headRefOid --jq .headRefOid)
+git fetch origin
+git rebase --onto origin/main "$lower_tip"
+gh pr edit <B's PR number> --base main
+git push --force-with-lease origin feat/43-use-parser
+```
+
+Do not use a plain `git rebase origin/main` here. A was squash-merged, so B still carries A's
+original commits, and replaying them can conflict. Retarget before pushing: CI starts on the push,
+not on the retarget.
 
 **PR Title:**
 - Must follow conventional commit format: `<type>: <subject>`
@@ -644,9 +744,15 @@ doit pr_merge --delete-branch=false
 
 The task:
 - Fetches PR title, number, and linked issues from GitHub
+- Refuses a PR whose base is not the default branch, before merging or closing anything
 - Validates PR title follows conventional commit format
 - Constructs the merge commit subject automatically
 - Uses squash merge with the formatted subject
+- When a linked worktree has the PR's branch checked out, deletes the branch itself and removes a
+  worktree under `worktrees/`. Run it from the main checkout, with `--pr`. See
+  [`pr_merge`](../docs/development/doit-tasks-reference.md#pr_merge)
+- Fast-forwards the base branch after the merge when it was run from that branch, which is where a
+  worktree's PR is merged from
 
 ### Architecture Decision Records (ADRs)
 

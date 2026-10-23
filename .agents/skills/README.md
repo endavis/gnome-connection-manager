@@ -48,7 +48,7 @@ Each rule-shaped skill lives in its own subdirectory:
 
 Use a short, lowercase, hyphenated name that reflects the domain (e.g., `codegen`, `db-migrations`,
 `api-contracts`). Keep rule-shaped skills in separate directories from the workflow skills that
-already exist here (`codex-plan`, `codex-implement`, etc.).
+already exist here (`codex-review`, `implement-issue`, etc.).
 
 ## File structure
 
@@ -140,7 +140,7 @@ four CLIs even though the file format and load mechanism differ:
 | GitHub Copilot | `.github/instructions/` | Native auto-discovery (no directive needed) |
 | Codex CLI | `.agents/skills/<name>/` | `description:` frontmatter is the skill-gate trigger |
 
-See [`.claude/rules/README.md`](../../.claude/rules/README.md) and
+See [`docs/development/ai/rule-files.md`](../../docs/development/ai/rule-files.md) and
 [`.github/instructions/README.md`](../../.github/instructions/README.md) for the other CLI variants.
 
 ## What NOT to put in a rule-shaped skill
@@ -153,7 +153,7 @@ See [`.claude/rules/README.md`](../../.claude/rules/README.md) and
 - **Anything not tied to an observed failure** — if you cannot cite a PR or issue where the rule was
   violated, the rule-shaped skill is not ready to be written yet.
 - **Workflow logic** — do not mix rule-shaped skills (self-check checklists) with workflow skills
-  (multi-step instructions like `codex-plan`). Keep them in separate subdirectories.
+  (multi-step instructions like `implement-issue`). Keep them in separate subdirectories.
 
 ## Shipped rule: `typing-branch-narrowing`
 
@@ -170,4 +170,4 @@ only the frontmatter and the loading mechanism differ.
 **When you change one, change all three.** A rule that disagrees with itself across agents is worse
 than no rule, because whichever agent is driving decides which version applies.
 `tests/template/test_rule_files.py` enforces that each rule's three bodies stay identical. See
-[`.claude/rules/README.md`](../../.claude/rules/README.md) for the authoring discipline.
+[`docs/development/ai/rule-files.md`](../../docs/development/ai/rule-files.md) for the authoring discipline.

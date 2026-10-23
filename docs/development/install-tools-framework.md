@@ -1,3 +1,12 @@
+---
+title: install_tools Framework
+description: Reusable framework for installing developer tools from GitHub releases or other URLs into ~/.local/bin
+audience:
+  - contributors
+tags:
+  - tooling
+---
+
 # install_tools Framework
 
 A reusable Python framework for installing developer tools from GitHub
@@ -21,6 +30,7 @@ The framework supports three release shapes:
 | Single binary from a GitHub release | direnv | default — pass `asset_patterns` only |
 | Multi-binary archive (tar.gz / zip) from a GitHub release | age, sops | add `extract_binaries=[...]` |
 | Single binary or archive from a non-GitHub URL | terraform, opentofu | add `url_template=...`, optionally with `prefer_brew=False` |
+| Release whose asset naming can't be expressed with one template | jq | pass a per-OS `url_template={"linux": ..., "darwin": ...}` |
 
 ## Public API
 
@@ -147,6 +157,39 @@ The `{version}`, `{os}`, and `{arch}` placeholders are substituted from
 `get_latest_github_release(repo)`, `platform.system().lower()`, and
 `_get_arch()` respectively.
 
+### Per-OS `url_template` (jq)
+
+`url_template` also accepts a dict keyed by `platform.system().lower()`, the
+same convention `asset_patterns`, `extract_binaries`, and `sha256` already
+use. Reach for this when a single `{os}`-substituted template can't express
+the release's asset naming — jq's release tag is `jq-1.8.2` rather than a
+leading `v`, so a hard-coded `v{version}` template would 404, and its macOS
+asset is named `jq-macos-<arch>` while `{os}` expands to `darwin`:
+
+```python
+from tools.doit.install_tools import create_install_task
+
+def task_install_jq():
+    return create_install_task(
+        name="jq",
+        repo="jqlang/jq",
+        asset_patterns={},
+        url_template={
+            "linux": "https://github.com/jqlang/jq/releases/download/{version}/jq-linux-{arch}",
+            "darwin": "https://github.com/jqlang/jq/releases/download/{version}/jq-macos-{arch}",
+        },
+        version_cmd=["jq", "--version"],
+        prefer_brew=False,
+    )
+```
+
+`get_latest_github_release()` only strips a leading `v`, so `jq-1.8.2` passes
+through `{version}` unchanged. A dict `url_template` is resolved by the
+current OS exactly like a plain string one — it still bypasses brew on
+macOS — except that an OS missing from the dict aborts with the same
+`Unsupported OS for {name}` error `asset_patterns` uses, rather than raising
+a `KeyError`.
+
 ## Architecture mapping
 
 `_get_arch()` normalizes `platform.machine()` to the values most release
@@ -236,4 +279,4 @@ non-goal for now — see below.
 
 ## Related ADR
 
-- [ADR-9015: install_tools framework: archive extraction and custom URLs](https://github.com/endavis/pyproject-template/blob/main/docs/decisions/9015-install-tools-framework-archive-extraction-and-custom-urls.md)
+- [ADR-9015: install_tools framework: archive extraction and custom URLs](../decisions/9015-install-tools-framework-archive-extraction-and-custom-urls.md)

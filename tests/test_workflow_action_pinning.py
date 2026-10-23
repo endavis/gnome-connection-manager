@@ -185,10 +185,13 @@ def test_documented_samples_are_sha_pinned() -> None:
     )
 
 
-# test_the_docs_scanner_reads_something removed. It guards against the docs assertions
-# passing on an empty scan, and the scan is empty here: the pages carrying `uses:` samples
-# live in docs/development, which this project has not adopted (#129). Its own docstring
-# says to delete it rather than leave it green and blind. Restore it with those docs.
+def test_the_docs_scanner_reads_something() -> None:
+    """Guard against the assertion above passing on an empty scan."""
+    entries = _documented_uses()
+    assert entries, (
+        "no `uses:` lines found in any docs yaml fence. If the samples were removed "
+        "entirely that is fine — delete this test rather than leaving it green and blind."
+    )
 
 
 def test_exempt_actions_are_exempt_in_docs_too() -> None:

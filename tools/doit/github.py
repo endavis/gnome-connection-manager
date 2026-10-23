@@ -18,12 +18,16 @@ import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 import yaml
 from doit.tools import title_with_actions
 from rich.console import Console
 from rich.panel import Panel
+from rich.text import Text
 
+from tools.doit.base import verbatim
+from tools.doit.git import remove_merged_worktree, worktree_for_branch
 from tools.doit.templates import get_issue_template, get_pr_template, get_required_sections
 
 if TYPE_CHECKING:
@@ -60,6 +64,11 @@ _TRANSIENT_MARKERS: tuple[str, ...] = (
 _PR_TITLE_PATTERN = re.compile(
     r"^(feat|fix|refactor|docs|test|chore|ci|perf|release)(\(.+\))?:\s.+"
 )
+
+# GitHub refuses ``gh pr merge`` on a PR in a native stack with "This pull
+# request is part of a stack and must be merged using the asynchronous merge
+# REST API." ``doit pr_merge`` does not support stacks (#847, #853).
+_STACKED_PR_MARKER = "part of a stack"
 
 
 def _is_transient_gh_error(stderr: str) -> str | None:
@@ -171,8 +180,11 @@ def _run_gh_with_retry(
             jitter = random.uniform(0, delay * 0.1)  # nosec B311
             total = delay + jitter
             console.print(
-                f"[yellow]Retry {attempt}/{retries}: {' '.join(cmd[:3])} "
-                f"(transient: {marker}, sleeping {total:.1f}s)[/yellow]"
+                verbatim(
+                    f"Retry {attempt}/{retries}: {' '.join(cmd[:3])} "
+                    f"(transient: {marker}, sleeping {total:.1f}s)",
+                    "yellow",
+                )
             )
             time.sleep(total)
 
@@ -215,7 +227,7 @@ def _open_editor_with_template(template: str, suffix: str = ".md") -> str | None
 
     try:
         # Open editor
-        console.print(f"[dim]Opening {editor}...[/dim]")
+        console.print(verbatim(f"Opening {editor}...", "dim"))
         result = subprocess.run([editor, temp_path])
 
         if result.returncode != 0:
@@ -342,13 +354,13 @@ def _read_body_file(file_path: str, console: "ConsoleType") -> str | None:
 
     path = Path(file_path)
     if not path.exists():
-        console.print(f"[red]File not found: {file_path}[/red]")
+        console.print(verbatim(f"File not found: {file_path}", "red"))
         return None
 
     try:
         return path.read_text(encoding="utf-8")
     except Exception as e:
-        console.print(f"[red]Error reading file: {e}[/red]")
+        console.print(verbatim(f"Error reading file: {e}", "red"))
         return None
 
 
@@ -378,7 +390,7 @@ def task_issue() -> dict[str, Any]:
         console.print()
         console.print(
             Panel.fit(
-                f"[bold cyan]Creating {type} Issue[/bold cyan]",
+                verbatim(f"Creating {type} Issue", "bold cyan"),
                 border_style="cyan",
             )
         )
@@ -388,10 +400,10 @@ def task_issue() -> dict[str, Any]:
         try:
             issue_template = get_issue_template(type)
         except ValueError as e:
-            console.print(f"[red]{e}[/red]")
+            console.print(verbatim(str(e), "red"))
             sys.exit(1)
         except FileNotFoundError as e:
-            console.print(f"[red]Template error: {e}[/red]")
+            console.print(verbatim(f"Template error: {e}", "red"))
             sys.exit(1)
 
         labels = issue_template.labels
@@ -461,7 +473,7 @@ def task_issue() -> dict[str, Any]:
             )
         except subprocess.CalledProcessError as e:
             console.print("[red]Failed to create issue:[/red]")
-            console.print(f"[red]{e.stderr}[/red]")
+            console.print(verbatim(e.stderr, "red"))
             sys.exit(1)
 
     return {
@@ -499,6 +511,10 @@ def task_pr() -> dict[str, Any]:
     to date with ``origin/main`` and aborts with a remediation message if
     it is behind. Pass ``--no-update-check`` to skip this guard.
 
+    ``--base=<branch>`` opens the PR against another branch, for work that
+    builds on an unmerged one, so its diff shows only its own changes. The
+    up-to-date check then compares with ``origin/<branch>``.
+
     If the current branch has no upstream, the task pushes it to ``origin``
     automatically before calling ``gh pr create``. Pass ``--no-push`` to
     skip the auto-push (the task will then abort if no upstream exists).
@@ -507,6 +523,7 @@ def task_pr() -> dict[str, Any]:
         Interactive:  doit pr
         From file:    doit pr --title="feat: add export" --body-file=pr.md
         Direct:       doit pr --title="feat: add export" --body="## Description\\n..."
+        Dependent:    doit pr --base=feat/41-add-parser
         Skip check:   doit pr --no-update-check
         No auto-push: doit pr --no-push
     """
@@ -518,6 +535,7 @@ def task_pr() -> dict[str, Any]:
         draft: bool = False,
         no_update_check: bool = False,
         no_push: bool = False,
+        base: str | None = None,
     ) -> None:
         console = Console()
         console.print()
@@ -544,7 +562,7 @@ def task_pr() -> dict[str, Any]:
         if no_update_check:
             console.print("[dim]Skipping up-to-date check (--no-update-check).[/dim]")
         else:
-            _check_branch_up_to_date(current_branch, console)
+            _check_branch_up_to_date(current_branch, console, base=base or "main")
 
         _ensure_branch_pushed(current_branch, console, no_push)
 
@@ -570,7 +588,7 @@ def task_pr() -> dict[str, Any]:
             try:
                 template = get_pr_template()
             except FileNotFoundError as e:
-                console.print(f"[red]Template error: {e}[/red]")
+                console.print(verbatim(f"Template error: {e}", "red"))
                 sys.exit(1)
 
             # Pre-fill issue number if detected
@@ -605,6 +623,8 @@ def task_pr() -> dict[str, Any]:
         # Create the PR
         console.print("\n[cyan]Creating PR...[/cyan]")
         cmd = ["gh", "pr", "create", "--title", title, "--body", body_content]
+        if base:
+            cmd.extend(["--base", base])
         if draft:
             cmd.append("--draft")
 
@@ -618,9 +638,16 @@ def task_pr() -> dict[str, Any]:
                     border_style="green",
                 )
             )
+            if base and base != "main":
+                console.print(f"[yellow]This PR targets '{base}', not main.[/yellow]")
+                console.print(
+                    "[yellow]After that branch merges, rebase onto main and retarget "
+                    "(CONTRIBUTING.md, step 4):[/yellow]"
+                )
+                console.print(f"  gh pr edit {pr_url} --base main")
         except subprocess.CalledProcessError as e:
             console.print("[red]Failed to create PR:[/red]")
-            console.print(f"[red]{e.stderr}[/red]")
+            console.print(verbatim(e.stderr, "red"))
             sys.exit(1)
 
     return {
@@ -646,7 +673,7 @@ def task_pr() -> dict[str, Any]:
                 "long": "no-update-check",
                 "type": bool,
                 "default": False,
-                "help": "Skip check that branch is up to date with origin/main",
+                "help": "Skip check that branch is up to date with origin/main (or --base)",
             },
             {
                 "name": "no_push",
@@ -654,6 +681,187 @@ def task_pr() -> dict[str, Any]:
                 "type": bool,
                 "default": False,
                 "help": "Do not auto-push a branch with no upstream (aborts instead)",
+            },
+            {
+                "name": "base",
+                "long": "base",
+                "default": None,
+                "help": "Open the PR against this branch instead of main",
+            },
+        ],
+        "title": title_with_actions,
+    }
+
+
+def _fetch_issue_context(number: str, out_dir: Path, console: "ConsoleType") -> None:
+    """Fetch an issue's metadata and comments and write them as JSON files.
+
+    Writes ``issue.json`` (``number``/``title``/``body``/``labels``/``assignees``) and
+    ``comments.json`` (``{"comments": [...]}}``) under *out_dir*, creating it if needed.
+    Nothing is written until both the fetch succeeds, so a failure never leaves a
+    partial or empty file behind.
+
+    Args:
+        number: Issue number.
+        out_dir: Directory to write ``issue.json``/``comments.json`` into.
+        console: Rich console for output.
+
+    Raises:
+        SystemExit: Via ``sys.exit(1)`` if the issue cannot be fetched.
+    """
+    try:
+        result = _run_gh_with_retry(
+            [
+                "gh",
+                "issue",
+                "view",
+                number,
+                "--json",
+                "number,title,body,labels,assignees,comments",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        console.print(verbatim(f"Failed to fetch issue #{number}: {stderr}", "red"))
+        sys.exit(1)
+
+    data: dict[str, Any] = json.loads(result.stdout)
+    comments = data.pop("comments", [])
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "issue.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    (out_dir / "comments.json").write_text(
+        json.dumps({"comments": comments}, indent=2), encoding="utf-8"
+    )
+    console.print(
+        verbatim(f"Wrote {out_dir / 'issue.json'} and {out_dir / 'comments.json'}", "green")
+    )
+
+
+def _fetch_pr_context(number: str, out_dir: Path, console: "ConsoleType") -> None:
+    """Fetch a PR's metadata and diff and write them to files.
+
+    Writes ``pr.json`` (``number``/``title``/``body``/``baseRefName``/``headRefName``) and
+    ``diff.txt`` (the raw ``gh pr diff`` output) under *out_dir*, creating it if needed.
+    Nothing is written until both fetches succeed, so a failure never leaves a partial or
+    empty file behind.
+
+    Args:
+        number: PR number.
+        out_dir: Directory to write ``pr.json``/``diff.txt`` into.
+        console: Rich console for output.
+
+    Raises:
+        SystemExit: Via ``sys.exit(1)`` if the PR cannot be fetched.
+    """
+    try:
+        pr_result = _run_gh_with_retry(
+            [
+                "gh",
+                "pr",
+                "view",
+                number,
+                "--json",
+                "number,title,body,baseRefName,headRefName",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        console.print(verbatim(f"Failed to fetch PR #{number}: {stderr}", "red"))
+        sys.exit(1)
+
+    try:
+        diff_result = _run_gh_with_retry(
+            ["gh", "pr", "diff", number],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        console.print(verbatim(f"Failed to fetch diff for PR #{number}: {stderr}", "red"))
+        sys.exit(1)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "pr.json").write_text(pr_result.stdout, encoding="utf-8")
+    (out_dir / "diff.txt").write_text(diff_result.stdout, encoding="utf-8")
+    console.print(verbatim(f"Wrote {out_dir / 'pr.json'} and {out_dir / 'diff.txt'}", "green"))
+
+
+def task_delegation_context() -> dict[str, Any]:
+    """Fetch GitHub data a delegated agent needs and write it to files it reads instead of `gh`.
+
+    A delegated agent (another CLI invoked non-interactively) has no trusted, un-sandboxed
+    `gh` of its own in every host (see `.codex/rules/gh.rules`). The **host** — the CLI the
+    user is driving, which does have one — runs this task before delegating, and the
+    delegated prompt reads the files it writes instead of shelling out to `gh` itself.
+
+    Two modes:
+    - ``--kind=issue``: writes ``issue.json`` (number/title/body/labels/assignees) and
+      ``comments.json`` (``{"comments": [...]}}``).
+    - ``--kind=pr``: writes ``pr.json`` (number/title/body/baseRefName/headRefName) and
+      ``diff.txt`` (the PR's diff).
+
+    A missing or inaccessible issue/PR aborts with `sys.exit(1)` and a clear message —
+    never a silent empty file.
+
+    By convention, *out* is ``tmp/agents/<host>/<task>-<n>/`` (for example
+    ``tmp/agents/claude/multi-review-123/``). The orchestrating skill that creates it is
+    responsible for deleting it once every delegated agent has returned.
+
+    Examples:
+        doit delegation_context --kind=issue --n=985 --out=tmp/agents/claude/multi-plan-985
+        doit delegation_context --kind=pr --n=42 --out=tmp/agents/claude/multi-review-42
+    """
+
+    def fetch_context(kind: str = "", n: str = "", out: str = "") -> None:
+        console = Console()
+        console.print()
+        console.print(
+            Panel.fit(
+                verbatim("Fetching Delegation Context", "bold cyan"),
+                border_style="cyan",
+            )
+        )
+        console.print()
+
+        if kind not in ("issue", "pr"):
+            console.print(verbatim("--kind must be 'issue' or 'pr'", "red"))
+            sys.exit(1)
+        if not n:
+            console.print(verbatim("--n (issue or PR number) is required", "red"))
+            sys.exit(1)
+        if not out:
+            console.print(verbatim("--out (output directory) is required", "red"))
+            sys.exit(1)
+
+        out_dir = Path(out)
+        if kind == "issue":
+            _fetch_issue_context(n, out_dir, console)
+        else:
+            _fetch_pr_context(n, out_dir, console)
+
+    return {
+        "actions": [fetch_context],
+        "params": [
+            {
+                "name": "kind",
+                "long": "kind",
+                "default": "",
+                "help": "Context kind: 'issue' or 'pr'",
+            },
+            {"name": "n", "long": "n", "default": "", "help": "Issue or PR number"},
+            {
+                "name": "out",
+                "long": "out",
+                "default": "",
+                "help": "Output directory to write context files into (created if missing)",
             },
         ],
         "title": title_with_actions,
@@ -672,7 +880,13 @@ def _get_pr_info(pr_number: str | None, console: "ConsoleType") -> dict[str, Any
     """
     import json
 
-    cmd = ["gh", "pr", "view", "--json", "number,title,body,state"]
+    cmd = [
+        "gh",
+        "pr",
+        "view",
+        "--json",
+        "number,title,body,state,baseRefName,headRefName,isCrossRepository",
+    ]
     if pr_number:
         cmd.append(pr_number)
 
@@ -684,8 +898,31 @@ def _get_pr_info(pr_number: str | None, console: "ConsoleType") -> dict[str, Any
         if "no pull requests found" in e.stderr.lower():
             console.print("[red]No PR found for current branch.[/red]")
         else:
-            console.print(f"[red]Failed to get PR info: {e.stderr}[/red]")
+            console.print(verbatim(f"Failed to get PR info: {e.stderr}", "red"))
         return None
+
+
+def _get_default_branch(console: "ConsoleType") -> str:
+    """Return the repository's default branch, or ``main`` if GitHub can't say.
+
+    Args:
+        console: Rich console for the fallback warning
+
+    Returns:
+        The default branch name (for example ``main``).
+    """
+    try:
+        result = _run_gh_with_retry(
+            ["gh", "repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        console.print(verbatim(f"Could not read the default branch: {e.stderr}", "yellow"))
+        console.print("[yellow]Assuming 'main'.[/yellow]")
+        return "main"
+    return result.stdout.strip() or "main"
 
 
 def _extract_linked_issues(body: str) -> list[str]:
@@ -763,13 +1000,146 @@ def _close_linked_issues(issues: list[str], pr_number: int, console: Console) ->
             console.print(f"[green]Closed issue #{issue}[/green]")
         except subprocess.CalledProcessError as e:
             stderr = (e.stderr or "").strip()
-            console.print(f"[yellow]Failed to close #{issue}: {stderr}[/yellow]")
+            console.print(verbatim(f"Failed to close #{issue}: {stderr}", "yellow"))
 
 
-def _check_branch_up_to_date(current_branch: str, console: Console) -> None:
-    """Abort PR creation if the current branch is behind ``origin/main``.
+def _worktree_holding(pr_info: dict[str, Any]) -> Path | None:
+    """Return the linked worktree that has the PR's branch checked out, if any (#863).
 
-    Fetches ``origin/main`` and compares it to ``HEAD``. If the branch is
+    A cross-repository PR's branch lives in the fork, so it is not looked up.
+    """
+    branch = pr_info.get("headRefName")
+    if not branch or pr_info.get("isCrossRepository"):
+        return None
+    try:
+        return worktree_for_branch(branch)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
+def _merged_head(pr_number: int, console: Console) -> str | None:
+    """Return the head commit PR *pr_number* merged, or ``None`` if it has not merged.
+
+    Nothing is deleted until GitHub reports the PR as merged.
+    """
+    try:
+        result = _run_gh_with_retry(
+            ["gh", "pr", "view", str(pr_number), "--json", "state,headRefOid"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        console.print(verbatim(f"Could not read the state of PR #{pr_number}: {stderr}", "yellow"))
+        return None
+    data: dict[str, Any] = json.loads(result.stdout)
+    if data.get("state") != "MERGED":
+        console.print(f"[yellow]PR #{pr_number} is {data.get('state')}, not merged yet.[/yellow]")
+        return None
+    head: str = data.get("headRefOid") or ""
+    return head
+
+
+def _delete_remote_branch(branch: str, console: Console) -> None:
+    """Delete *branch* on GitHub, as ``gh pr merge --delete-branch`` would.
+
+    Skipped when the repository deletes head branches on merge itself.
+    """
+    setting = _run_gh_with_retry(
+        ["gh", "repo", "view", "--json", "deleteBranchOnMerge", "--jq", ".deleteBranchOnMerge"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if setting.returncode == 0 and setting.stdout.strip() == "true":
+        return
+    # Quoted, so a "#" or "?" in the name cannot cut the endpoint short and name
+    # a different branch.
+    ref = quote(f"heads/{branch}", safe="/")
+    result = _run_gh_with_retry(
+        ["gh", "api", "--method", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/{ref}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        console.print(f"[green]Deleted branch {branch} on GitHub[/green]")
+    else:
+        stderr = (result.stderr or "").strip()
+        console.print(verbatim(f"Could not delete branch {branch} on GitHub: {stderr}", "yellow"))
+
+
+def _finish_branch_in_worktree(
+    pr_number: int, branch: str, worktree: Path, console: Console
+) -> None:
+    """Delete a merged PR's branch, which a linked worktree has checked out (#863).
+
+    ``gh pr merge`` ran without ``--delete-branch``, so this deletes the branch
+    on GitHub, then removes the worktree and the local branch. It never raises:
+    the PR has merged, so a failure here is reported, not fatal.
+    """
+    console.print()
+    try:
+        merged_head = _merged_head(pr_number, console)
+        if merged_head is None:
+            console.print(
+                verbatim(f"Left {branch} and its worktree {worktree} in place.", "yellow"),
+                soft_wrap=True,
+            )
+            return
+        _delete_remote_branch(branch, console)
+        remove_merged_worktree(worktree, branch, merged_head, console)
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip() or str(e)
+        console.print(verbatim(f"Cleanup after the merge failed: {stderr}", "yellow"))
+    except OSError as e:
+        console.print(verbatim(f"Cleanup after the merge failed: {e}", "yellow"))
+
+
+def _current_branch() -> str | None:
+    """Return the branch this checkout has checked out, or None when HEAD is detached."""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _fast_forward_base(base: str, console: Console) -> None:
+    """Fast-forward this checkout's *base* branch to include the merge (#891).
+
+    ``gh pr merge --delete-branch`` pulls the base only when it switches to it
+    from the PR's branch. A checkout that is already on the base, which is where
+    a worktree's PR is merged from, is otherwise left behind. It never raises:
+    the PR has merged, so a failure here is reported, not fatal.
+    """
+    console.print()
+    try:
+        subprocess.run(
+            ["git", "pull", "--ff-only", "origin", base],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as e:
+        detail = (getattr(e, "stderr", None) or "").strip() or str(e)
+        console.print(f"[yellow]Could not fast-forward {base}. Update it with:[/yellow]")
+        console.print(f"  git pull --ff-only origin {base}")
+        console.print(verbatim(detail, "yellow"))
+        return
+    console.print(f"[green]Fast-forwarded {base} to origin/{base}[/green]")
+
+
+def _check_branch_up_to_date(current_branch: str, console: Console, base: str = "main") -> None:
+    """Abort PR creation if the current branch is behind ``origin/<base>``.
+
+    Fetches ``origin/<base>`` and compares it to ``HEAD``. If the branch is
     behind, prints the count, the missing commits, and the rebase command
     to run, then calls ``sys.exit(1)``. If the fetch itself fails (network
     down, unreachable remote), prints a warning and returns — a flaky
@@ -778,22 +1148,24 @@ def _check_branch_up_to_date(current_branch: str, console: Console) -> None:
     Args:
         current_branch: Name of the feature branch (used in remediation message).
         console: Rich console for output.
+        base: Branch the PR will target: ``main``, or the ``doit pr --base`` value.
     """
+    upstream = f"origin/{base}"
     try:
         subprocess.run(
-            ["git", "fetch", "origin", "main"],
+            ["git", "fetch", "origin", base],
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
-        console.print(f"[yellow]Warning: `git fetch origin main` failed: {stderr}[/yellow]")
+        console.print(verbatim(f"Warning: `git fetch origin {base}` failed: {stderr}", "yellow"))
         console.print("[yellow]Skipping up-to-date check; proceeding.[/yellow]")
         return
 
     count_result = subprocess.run(
-        ["git", "rev-list", "--count", "HEAD..origin/main"],
+        ["git", "rev-list", "--count", f"HEAD..{upstream}"],
         check=True,
         capture_output=True,
         text=True,
@@ -801,26 +1173,24 @@ def _check_branch_up_to_date(current_branch: str, console: Console) -> None:
     behind = int(count_result.stdout.strip() or "0")
 
     if behind == 0:
-        console.print("[green]Branch is up to date with origin/main.[/green]")
+        console.print(f"[green]Branch is up to date with {upstream}.[/green]")
         return
 
     log_result = subprocess.run(
-        ["git", "log", "--oneline", "-n", "10", "HEAD..origin/main"],
+        ["git", "log", "--oneline", "-n", "10", f"HEAD..{upstream}"],
         check=True,
         capture_output=True,
         text=True,
     )
 
     console.print()
-    console.print(f"[red]Branch is {behind} commit(s) behind origin/main.[/red]")
+    console.print(f"[red]Branch is {behind} commit(s) behind {upstream}.[/red]")
     console.print("[dim]Missing commits:[/dim]")
     for line in log_result.stdout.strip().splitlines():
-        console.print(f"  {line}")
+        console.print(verbatim(f"  {line}"))
     console.print()
     console.print("[yellow]Rebase and force-push, then re-run `doit pr`:[/yellow]")
-    console.print(
-        f"  git rebase origin/main && git push --force-with-lease origin {current_branch}"
-    )
+    console.print(f"  git rebase {upstream} && git push --force-with-lease origin {current_branch}")
     console.print()
     console.print("[dim]Use `doit pr --no-update-check` to skip this check.[/dim]")
     sys.exit(1)
@@ -870,7 +1240,7 @@ def _ensure_branch_pushed(current_branch: str, console: Console, no_push: bool) 
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
         console.print(f"[red]Failed to push {current_branch}:[/red]")
-        console.print(f"[red]{stderr}[/red]")
+        console.print(verbatim(stderr, "red"))
         sys.exit(1)
 
     console.print(f"[dim]Pushed {current_branch} to origin.[/dim]")
@@ -884,6 +1254,10 @@ def task_pr_merge() -> dict[str, Any]:
 
     Uses squash merge with a custom subject line to ensure consistent
     commit history that matches the documented format.
+
+    For a PR whose branch is checked out in a worktree under ``worktrees/``,
+    run it from the main checkout: after the merge it removes the worktree and
+    the branch. Run from inside the worktree, it prints how to (#863).
 
     Examples:
         doit pr_merge                    # Merge PR for current branch
@@ -912,12 +1286,34 @@ def task_pr_merge() -> dict[str, Any]:
         pr_body = pr_info.get("body", "") or ""
         pr_state = pr_info.get("state", "")
 
-        console.print(f"[dim]PR #{pr_number}: {pr_title}[/dim]")
+        # The title is text, not markup: Rich drops `[tool.x]` as an unknown tag
+        # and raises MarkupError on `[/x]`, so escape it wherever it is printed (#893).
+        console.print(verbatim(f"PR #{pr_number}: {pr_title}", "dim"))
 
         # Check PR state
         if pr_state.upper() != "OPEN":
             console.print(f"[red]PR is not open (state: {pr_state}).[/red]")
             sys.exit(1)
+
+        # GitHub merges a PR into its base. A PR built on another branch would
+        # squash into that branch, and --auto-close would close issues that never
+        # reached the default branch (#853).
+        base = pr_info.get("baseRefName")
+        if base:
+            default_branch = _get_default_branch(console)
+            if base != default_branch:
+                console.print(
+                    f"[red]PR #{pr_number} targets '{base}', not '{default_branch}'.[/red]"
+                )
+                console.print(
+                    f"[yellow]doit pr_merge merges only into '{default_branch}'.[/yellow]"
+                )
+                console.print(
+                    "[yellow]Merge the PR it builds on, rebase this branch onto "
+                    f"'{default_branch}', then retarget it:[/yellow]"
+                )
+                console.print(f"  gh pr edit {pr_number} --base {default_branch}")
+                sys.exit(1)
 
         # Validate PR title format.
         if not _PR_TITLE_PATTERN.match(pr_title):
@@ -936,7 +1332,7 @@ def task_pr_merge() -> dict[str, Any]:
         # Format merge subject
         merge_subject = _format_merge_subject(pr_title, pr_number, issues)
         console.print("\n[cyan]Merge commit subject:[/cyan]")
-        console.print(f"  [bold]{merge_subject}[/bold]")
+        console.print(verbatim(f"  {merge_subject}", "bold"))
 
         # Build merge command
         cmd = [
@@ -948,8 +1344,19 @@ def task_pr_merge() -> dict[str, Any]:
             "--subject",
             merge_subject,
         ]
-        if delete_branch:
+        # gh's --delete-branch checks out the base branch in the checkout that
+        # holds the PR's branch, then deletes the branch. In a linked worktree git
+        # refuses that checkout while the base is checked out anywhere else, and
+        # from any other checkout it refuses the delete. So a branch in a worktree
+        # is deleted by the task, after the merge (#863).
+        worktree = _worktree_holding(pr_info) if delete_branch else None
+        if delete_branch and worktree is None:
             cmd.append("--delete-branch")
+
+        # gh pulls the base only when --delete-branch switches to it from the PR's
+        # branch, so a checkout that starts on the base is fast-forwarded by the
+        # task after the merge (#891).
+        start_branch = _current_branch() if base else None
 
         # Execute merge
         console.print("\n[cyan]Merging...[/cyan]")
@@ -958,8 +1365,10 @@ def task_pr_merge() -> dict[str, Any]:
             console.print()
             console.print(
                 Panel.fit(
-                    f"[bold green]PR #{pr_number} merged successfully![/bold green]\n\n"
-                    f"Commit: {merge_subject}",
+                    Text.assemble(
+                        verbatim(f"PR #{pr_number} merged successfully!", "bold green"),
+                        verbatim(f"\n\nCommit: {merge_subject}"),
+                    ),
                     border_style="green",
                 )
             )
@@ -982,8 +1391,29 @@ def task_pr_merge() -> dict[str, Any]:
         except subprocess.CalledProcessError as e:
             console.print("[red]Failed to merge PR.[/red]")
             if e.stderr:
-                console.print(f"[red]{e.stderr}[/red]")
+                console.print(verbatim(e.stderr, "red"))
+            if _STACKED_PR_MARKER in (e.stderr or "").lower():
+                console.print(
+                    "[yellow]This PR is part of a GitHub stack, which doit pr_merge does not "
+                    "support.[/yellow]"
+                )
+                console.print(
+                    "[yellow]GitHub merges stacked PRs only through its asynchronous merge "
+                    "API.[/yellow]"
+                )
+                console.print(
+                    "[yellow]Unstack it (gh-stack extension), then merge the PRs bottom "
+                    "first:[/yellow]"
+                )
+                console.print("  gh stack unstack")
             sys.exit(1)
+
+        # Outside the try: the PR has merged, so no failure from here on may be
+        # reported as a failed merge.
+        if worktree is not None:
+            _finish_branch_in_worktree(pr_number, pr_info["headRefName"], worktree, console)
+        if base and start_branch == base:
+            _fast_forward_base(base, console)
 
     return {
         "actions": [merge_pr],
@@ -1029,13 +1459,13 @@ def _load_labels_file(path: Path, console: Console) -> list[dict[str, str]]:
         List of ``{"name": str, "color": str, "description": str}`` dicts.
     """
     if not path.exists():
-        console.print(f"[red]Labels file not found: {path}[/red]")
+        console.print(verbatim(f"Labels file not found: {path}", "red"))
         sys.exit(1)
 
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
-        console.print(f"[red]Failed to parse {path}: {e}[/red]")
+        console.print(verbatim(f"Failed to parse {path}: {e}", "red"))
         sys.exit(1)
 
     if raw is None:
@@ -1049,24 +1479,31 @@ def _load_labels_file(path: Path, console: Console) -> list[dict[str, str]]:
     for index, entry in enumerate(raw):
         if not isinstance(entry, dict):
             console.print(
-                f"[red]Labels file entry #{index} must be a mapping, "
-                f"got {type(entry).__name__}.[/red]"
+                verbatim(
+                    f"Labels file entry #{index} must be a mapping, got {type(entry).__name__}.",
+                    "red",
+                )
             )
             sys.exit(1)
 
         name = entry.get("name")
         if not isinstance(name, str) or not name.strip():
             console.print(
-                f"[red]Labels file entry #{index} is missing a 'name' field "
-                f"(entry: {entry!r}).[/red]"
+                verbatim(
+                    f"Labels file entry #{index} is missing a 'name' field (entry: {entry!r}).",
+                    "red",
+                )
             )
             sys.exit(1)
 
         color_raw = entry.get("color", DEFAULT_LABEL_COLOR)
         if not isinstance(color_raw, str):
             console.print(
-                f"[red]Labels file entry '{name}' has a non-string 'color' "
-                f"(got {type(color_raw).__name__}).[/red]"
+                verbatim(
+                    f"Labels file entry '{name}' has a non-string 'color' "
+                    f"(got {type(color_raw).__name__}).",
+                    "red",
+                )
             )
             sys.exit(1)
 
@@ -1075,8 +1512,11 @@ def _load_labels_file(path: Path, console: Console) -> list[dict[str, str]]:
             description = ""
         if not isinstance(description, str):
             console.print(
-                f"[red]Labels file entry '{name}' has a non-string 'description' "
-                f"(got {type(description).__name__}).[/red]"
+                verbatim(
+                    f"Labels file entry '{name}' has a non-string 'description' "
+                    f"(got {type(description).__name__}).",
+                    "red",
+                )
             )
             sys.exit(1)
 
@@ -1113,13 +1553,13 @@ def _fetch_github_labels(console: Console) -> dict[str, dict[str, str]]:
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
         console.print("[red]Failed to fetch labels from GitHub:[/red]")
-        console.print(f"[red]{stderr}[/red]")
+        console.print(verbatim(stderr, "red"))
         sys.exit(1)
 
     try:
         data = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as e:
-        console.print(f"[red]Could not parse `gh label list` output: {e}[/red]")
+        console.print(verbatim(f"Could not parse `gh label list` output: {e}", "red"))
         sys.exit(1)
 
     if not isinstance(data, list):
@@ -1177,7 +1617,11 @@ def _reconcile_labels(
 
         if existing is None:
             prefix = "would create" if dry_run else "created"
-            console.print(f"[green]+ {prefix}[/green] {name} (color={color})")
+            console.print(
+                Text.assemble(
+                    verbatim(f"+ {prefix}", "green"), verbatim(f" {name} (color={color})")
+                )
+            )
             counters["created"] += 1
             if not dry_run:
                 _run_label_cmd(
@@ -1196,12 +1640,14 @@ def _reconcile_labels(
             continue
 
         if existing["color"] == color and existing["description"] == description:
-            console.print(f"[dim]= no change[/dim] {name}")
+            console.print(Text.assemble(verbatim("= no change", "dim"), verbatim(f" {name}")))
             counters["unchanged"] += 1
             continue
 
         prefix = "would update" if dry_run else "updated"
-        console.print(f"[yellow]~ {prefix}[/yellow] {name} (color={color})")
+        console.print(
+            Text.assemble(verbatim(f"~ {prefix}", "yellow"), verbatim(f" {name} (color={color})"))
+        )
         counters["updated"] += 1
         if not dry_run:
             _run_label_cmd(
@@ -1222,12 +1668,17 @@ def _reconcile_labels(
     for name in extras:
         if prune:
             prefix = "would delete" if dry_run else "deleted"
-            console.print(f"[red]- {prefix}[/red] {name}")
+            console.print(Text.assemble(verbatim(f"- {prefix}", "red"), verbatim(f" {name}")))
             counters["deleted"] += 1
             if not dry_run:
                 _run_label_cmd(["gh", "label", "delete", name, "--yes"], console)
         else:
-            console.print(f"[dim]? skipped[/dim] {name} (not in file; use --prune to delete)")
+            console.print(
+                Text.assemble(
+                    verbatim("? skipped", "dim"),
+                    verbatim(f" {name} (not in file; use --prune to delete)"),
+                )
+            )
             counters["skipped"] += 1
 
     return counters
@@ -1244,8 +1695,8 @@ def _run_label_cmd(cmd: list[str], console: Console) -> None:
         _run_gh_with_retry(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
-        console.print(f"[red]Command failed: {' '.join(cmd)}[/red]")
-        console.print(f"[red]{stderr}[/red]")
+        console.print(verbatim(f"Command failed: {' '.join(cmd)}", "red"))
+        console.print(verbatim(stderr, "red"))
         sys.exit(1)
 
 
@@ -1365,12 +1816,12 @@ def task_env_create() -> dict[str, Any]:
         repo_slug = _gh_repo_slug()
         if _gh_env_exists(repo_slug, name):
             console.print(
-                f"[dim]Environment '{name}' already exists in {repo_slug} — skipped[/dim]"
+                verbatim(f"Environment '{name}' already exists in {repo_slug} — skipped", "dim")
             )
             return
 
         _gh_env_create(repo_slug, name)
-        console.print(f"[green]✓ Created environment '{name}' in {repo_slug}[/green]")
+        console.print(verbatim(f"✓ Created environment '{name}' in {repo_slug}", "green"))
 
     return {
         "actions": [create],
@@ -1407,7 +1858,7 @@ def task_env_list() -> dict[str, Any]:
 
         console.print(f"[bold]Environments in {repo_slug}:[/bold]")
         for name in names:
-            console.print(f"  • {name}")
+            console.print(verbatim(f"  • {name}"))
 
     return {
         "actions": [list_envs],
@@ -1510,10 +1961,10 @@ def task_labels_sync() -> dict[str, Any]:
         try:
             desired = _load_labels_file(Path(file), console)
             if not desired:
-                console.print(f"[yellow]No labels defined in {file}; nothing to sync.[/yellow]")
+                console.print(verbatim(f"No labels defined in {file}; nothing to sync.", "yellow"))
                 return
 
-            console.print(f"[dim]Loaded {len(desired)} label(s) from {file}[/dim]")
+            console.print(verbatim(f"Loaded {len(desired)} label(s) from {file}", "dim"))
             current = _fetch_github_labels(console)
             console.print(f"[dim]Fetched {len(current)} label(s) from GitHub[/dim]")
             console.print()
@@ -1543,7 +1994,7 @@ def task_labels_sync() -> dict[str, Any]:
         except SystemExit:
             raise
         except Exception as e:  # pragma: no cover - defensive catch-all
-            console.print(f"[red]Unexpected error during label sync: {e}[/red]")
+            console.print(verbatim(f"Unexpected error during label sync: {e}", "red"))
             sys.exit(1)
 
     return {

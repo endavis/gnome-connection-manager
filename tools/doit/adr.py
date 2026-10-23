@@ -1,5 +1,6 @@
 """Architecture Decision Records (ADR) doit tasks."""
 
+import json
 import os
 import re
 import subprocess  # nosec B404 - subprocess is required for doit tasks
@@ -13,7 +14,13 @@ from doit.tools import title_with_actions
 from rich.console import Console
 from rich.panel import Panel
 
-from tools.doit.templates import get_adr_required_sections, get_adr_template
+from tools.doit.base import verbatim
+from tools.doit.templates import (
+    ADR_EDITOR_HEADER,
+    FRONTMATTER_PATTERN,
+    get_adr_required_sections,
+    get_adr_template,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console as ConsoleType
@@ -117,7 +124,7 @@ def _open_editor_with_template(template: str, suffix: str = ".md") -> str | None
 
     try:
         # Open editor
-        console.print(f"[dim]Opening {editor}...[/dim]")
+        console.print(verbatim(f"Opening {editor}...", "dim"))
         result = subprocess.run([editor, temp_path])
 
         if result.returncode != 0:
@@ -127,6 +134,11 @@ def _open_editor_with_template(template: str, suffix: str = ".md") -> str | None
         # Read the edited content
         with open(temp_path, encoding="utf-8") as f:
             content = f.read()
+
+        # Remove the editor instructions. Left in, they would sit above the
+        # frontmatter, which only counts as frontmatter at the top (#841).
+        header_lines = set(ADR_EDITOR_HEADER.splitlines()) - {""}
+        content = "\n".join(line for line in content.split("\n") if line not in header_lines)
 
         # Remove HTML comments <!-- ... -->
         edited = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
@@ -154,13 +166,13 @@ def _read_body_file(file_path: str, console: "ConsoleType") -> str | None:
     """
     path = Path(file_path)
     if not path.exists():
-        console.print(f"[red]File not found: {file_path}[/red]")
+        console.print(verbatim(f"File not found: {file_path}", "red"))
         return None
 
     try:
         return path.read_text(encoding="utf-8")
     except Exception as e:
-        console.print(f"[red]Error reading file: {e}[/red]")
+        console.print(verbatim(f"Error reading file: {e}", "red"))
         return None
 
 
@@ -216,6 +228,32 @@ def _is_placeholder_content(content: str) -> bool:
     return any(re.match(pattern, content_lower) for pattern in placeholder_patterns)
 
 
+def _set_frontmatter_title(content: str, heading: str) -> str:
+    """Set the ``title`` in *content*'s frontmatter to *heading*, adding it if missing.
+
+    The title is written double-quoted: every ADR heading holds a colon, which
+    YAML reads as a mapping unless the scalar is quoted, and a JSON string is a
+    valid YAML one whatever quotes or backslashes the title contains.
+
+    Args:
+        content: ADR markdown, with or without a frontmatter block
+        heading: The ADR heading, e.g. ``ADR-0001: Use Redis``
+
+    Returns:
+        *content* with the title set, or unchanged if it has no frontmatter
+    """
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        return content
+
+    line = f"title: {json.dumps(heading, ensure_ascii=False)}"
+    block, found = re.subn(r"^title:.*$", lambda _: line, match.group(0), count=1, flags=re.M)
+    if not found:
+        opening, rest = block.split("\n", 1)
+        block = f"{opening}\n{line}\n{rest}"
+    return block + content[match.end() :]
+
+
 def _prepare_editor_template(title: str, number: int, date: str) -> str:
     """Prepare the editor template with title, number, and date filled in.
 
@@ -228,7 +266,10 @@ def _prepare_editor_template(title: str, number: int, date: str) -> str:
         Template content ready for editing
     """
     adr_template = get_adr_template()
-    template = adr_template.editor_template
+
+    # The frontmatter block is found only at the start, so set its title past the header.
+    content = adr_template.editor_template.removeprefix(ADR_EDITOR_HEADER)
+    template = ADR_EDITOR_HEADER + _set_frontmatter_title(content, f"ADR-{number:04d}: {title}")
 
     # Replace placeholders
     template = template.replace("ADR-NNNN: Title", f"ADR-{number:04d}: {title}")
@@ -325,8 +366,16 @@ def task_adr() -> dict[str, Any]:
                 console.print("[yellow]Aborted.[/yellow]")
                 sys.exit(0)
 
-        # For non-interactive modes, ensure header is correct
+        # For non-interactive modes, ensure frontmatter and header are correct
         if body_file or body:
+            # Keep the body's own frontmatter, or start from the template's
+            match = FRONTMATTER_PATTERN.match(body_content)
+            if match:
+                frontmatter = match.group(0)
+                body_content = body_content[match.end() :].lstrip("\n")
+            else:
+                frontmatter = get_adr_template().frontmatter
+
             # Check if content already has a header
             if not body_content.startswith("# ADR-"):
                 # Prepend the header
@@ -339,6 +388,11 @@ def task_adr() -> dict[str, Any]:
                     body_content,
                 )
 
+            if frontmatter:
+                body_content = _set_frontmatter_title(
+                    f"{frontmatter}\n{body_content}", f"ADR-{number:04d}: {title}"
+                )
+
             # Ensure date is set
             if "YYYY-MM-DD" in body_content:
                 body_content = body_content.replace("YYYY-MM-DD", today)
@@ -348,8 +402,9 @@ def task_adr() -> dict[str, Any]:
             console.print("[red]ADR content validation failed.[/red]")
             sys.exit(1)
 
-        # Write ADR file
-        adr_path.write_text(body_content + "\n", encoding="utf-8")
+        # Write ADR file. Exactly one final newline: a body file usually ends
+        # with one already, and a second fails end-of-file-fixer (#859).
+        adr_path.write_text(body_content.rstrip("\n") + "\n", encoding="utf-8")
 
         console.print()
         console.print(
@@ -358,6 +413,14 @@ def task_adr() -> dict[str, Any]:
                 border_style="green",
             )
         )
+
+        # The table of contents lists the description next to the title (#841)
+        placeholder = get_adr_template().placeholder_description
+        if placeholder and placeholder in body_content:
+            console.print(
+                "[yellow]Replace the placeholder description in the ADR's frontmatter "
+                "with one sentence that says what was decided.[/yellow]"
+            )
 
     return {
         "actions": [create_adr],

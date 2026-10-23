@@ -40,3 +40,15 @@ updates:
       - "automated"
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      # `codeql-action/init` and `codeql-action/analyze` are separate dependencies
+      # to dependabot but a single unit to CodeQL: `init` writes a config file
+      # stamped with its own version and `analyze` refuses to load a config
+      # written by a different one ("Loaded a configuration file for version
+      # '4.37.8', but running version '4.37.9'"). Ungrouped, dependabot opens one
+      # PR per sub-action and both fail, with neither able to unblock the other.
+      # See issue #799. tests/test_codeql_workflow.py asserts the two stay pinned
+      # to the same SHA.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"

@@ -3,8 +3,9 @@
 The task is the template's, vendored in `tools/doit/release.py`. It ended every release with
 three steps: watch GitHub Actions build and publish, then check TestPyPI and PyPI. GCM has no
 release workflow, so no build runs, and it publishes nowhere: both sites answer 404 for its
-name. The steps now print only where the workflow they describe exists. A sync from the
-template must keep that, and these fail if one brings the old ending back.
+name. The steps now print only where the workflow they describe exists. GCM changed that
+in its copy, and the template has carried the change itself since pyproject-template#993,
+in its own words, which #324 took. These fail if a sync brings the old ending back.
 
 The task's action runs here as `doit release_tag` runs it, in a project folder of its own,
 with `git` and `gh` faked.
@@ -16,6 +17,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from tools.doit.release import task_release_tag
 
 # Answers what the task asks of git, and refuses anything else.
@@ -67,7 +69,7 @@ def test_without_a_release_workflow_it_names_no_build_and_no_package(tag_release
     assert "Release v9.9.9 tagged!" in printed
     assert "PyPI" not in printed
     assert "GitHub Actions" not in printed
-    assert "nothing is built or published: the tag is the release." in printed
+    assert "Nothing builds or publishes from this tag — the tag is the release." in printed
 
 
 def test_with_a_release_workflow_it_gives_the_publishing_steps(tag_release):

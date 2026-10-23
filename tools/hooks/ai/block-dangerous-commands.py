@@ -57,7 +57,7 @@ BLOCKED_WORKFLOW_COMMANDS = {
     ),
     ("doit", "release"): (
         "Releases must be run manually by the user, not by AI agents. "
-        "AI can help prepare (update changelog, verify CI) but not execute releases."
+        "AI can help prepare (check commit messages, verify CI) but not execute releases."
     ),
     ("doit", "release_tag"): "Releases must be run manually by the user, not by AI agents.",
 }
@@ -937,30 +937,61 @@ def check_env_persistence_in_file_edit(
     return False, ""
 
 
+# A shell operator shlex leaves glued to a word (``origin/main;echo``) still ends the command.
+_GLUED_OPERATOR = re.compile(r"[;&|]")
+
+
+def _command_args(tokens: list[str], start: int) -> list[str]:
+    """Return the tokens from *start* to the end of that command.
+
+    A command ends at a shell operator. A token with one glued to it keeps only
+    the part before the operator, and ends the command too.
+    """
+    args: list[str] = []
+    for token in tokens[start:]:
+        if token in _SHELL_OPERATORS:
+            break
+        glued = _GLUED_OPERATOR.search(token)
+        if glued:
+            if glued.start():
+                args.append(token[: glued.start()])
+            break
+        args.append(token)
+    return args
+
+
 def check_merge_to_protected(tokens: list[str]) -> tuple[bool, str]:
     """
     Check if command is a merge that would create a merge commit on a protected branch.
 
     Protected branches often require linear history (no merge commits).
-    Blocks `git merge` on protected branches unless --ff-only is specified.
+    Blocks `git merge` on protected branches unless that merge passes --ff-only.
+
+    Each ``git`` token's own subcommand decides whether it is a merge, and
+    ``--ff-only`` counts only up to the end of that command. Matching the words
+    anywhere on the line refused read-only commands such as
+    ``git log --grep merge`` and let ``git merge x; echo --ff-only`` through (#894).
     """
     tokens_lower = [t.lower() for t in tokens]
 
-    # Must be a git merge command
-    if "git" not in tokens_lower or "merge" not in tokens_lower:
-        return False, ""
+    for git_idx in range(len(tokens_lower)):
+        if tokens_lower[git_idx] != "git":
+            continue
+        subcommand_idx = _git_subcommand_index(tokens, git_idx)
+        if subcommand_idx is None or tokens_lower[subcommand_idx] != "merge":
+            continue
+        # Allow a fast-forward-only merge (no merge commit)
+        if "--ff-only" in _command_args(tokens_lower, subcommand_idx + 1):
+            continue
 
-    # Allow if --ff-only is specified (fast-forward only, no merge commit)
-    if "--ff-only" in tokens_lower:
+        # Check if we're on a protected branch
+        current_branch = get_current_branch()
+        if current_branch and current_branch.lower() in PROTECTED_BRANCHES:
+            return True, (
+                f"Merge on protected branch '{current_branch}' would create merge commit. "
+                f"Use --ff-only for fast-forward merge, or merge via PR"
+            )
         return False, ""
-
-    # Check if we're on a protected branch
-    current_branch = get_current_branch()
-    if current_branch and current_branch.lower() in PROTECTED_BRANCHES:
-        return True, (
-            f"Merge on protected branch '{current_branch}' would create merge commit. "
-            f"Use --ff-only for fast-forward merge, or merge via PR"
-        )
 
     return False, ""
 

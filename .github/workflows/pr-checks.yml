@@ -81,6 +81,14 @@ jobs:
               return;
             }
 
+            // `doit release` opens release PRs from release/vX.Y.Z. A static-version release
+            // also changes pyproject.toml, uv.lock and version files, so it is not docs-only;
+            // `doit release --issue=N` links an issue when a project tracks one per release.
+            if (pr.head.ref.startsWith('release/v')) {
+              console.log('✅ Release PR - issue link not required');
+              return;
+            }
+
             if (pr.user.login === 'dependabot[bot]') {
               console.log('✅ Dependabot PR - issue link not required');
               return;

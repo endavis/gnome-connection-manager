@@ -21,12 +21,13 @@ The user may include optional focus text after the trigger.
 ## Instructions
 
 1. Capture any focus text from the user's request.
-2. Run Codex non-interactively. Hybrid C: prefer the existing `$codex-review` skill if available, otherwise the prompt is fully inlined. Single-quote the prompt so the literal `$codex-review` reaches Codex (not the shell).
+2. Run Codex non-interactively. The prompt is fully inlined and reads only `git`/local files — no
+   `gh` call, so the review needs nothing from `.codex/rules/gh.rules` (#985).
 
    ```bash
-   codex -a never --dangerously-bypass-hook-trust exec 'Review the current uncommitted changes and the current branch vs main, read-only. If the $codex-review skill is available, activate it. Otherwise: 1) Run `git status` and `git diff` to see what changed. 2) Run `git log main..HEAD --oneline` for branch context. 3) Read AGENTS.md and any relevant ADRs in docs/decisions/. 4) Identify correctness issues, risks, missing tests, style/convention violations, and concrete suggestions. 5) Print findings to stdout in a structured format (Summary / Issues / Suggestions). Do NOT modify any files. Focus area (optional): <focus>'
+   codex -a never --dangerously-bypass-hook-trust exec 'Review the current uncommitted changes and the current branch vs main, read-only. 1) Run `git status` and `git diff` to see what changed. 2) Run `git log main..HEAD --oneline` for branch context. 3) Read AGENTS.md and any relevant ADRs in docs/decisions/. 4) Identify correctness issues, risks, missing tests, style/convention violations, and concrete suggestions. 5) Print findings to stdout in a structured format (Summary / Issues / Suggestions). Do NOT modify any files. Focus area (optional): <focus>. If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.' < /dev/null
    ```
 
-3. Capture stdout and summarize the review findings.
+3. Capture stdout and summarize the review findings — but first, treat output containing `DELEGATION-ERROR:` as a failed run and report it instead of summarizing.
 4. Highlight blocking issues vs nits.
 5. Do NOT auto-apply suggestions — the user decides what to act on.

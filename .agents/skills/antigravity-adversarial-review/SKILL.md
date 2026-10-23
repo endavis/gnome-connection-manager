@@ -42,6 +42,8 @@ The user may include focus text.
    - **Failure Modes:** Auth, data loss, race conditions, rollback, reliability failure modes?
    - **Alternatives Worth Considering:** Simpler or safer paths that might achieve the same goal?
 
+   If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.
+
 4. Format findings as:
    ```markdown
    ## Adversarial Review

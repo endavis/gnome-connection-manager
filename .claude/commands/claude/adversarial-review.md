@@ -31,6 +31,8 @@ Be skeptical and steerable. Pressure-test:
 
 Focus area (optional): $ARGUMENTS
 
+If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.
+
 ### Step 3: Present findings
 
 Format the adversarial review as:

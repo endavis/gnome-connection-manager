@@ -9,14 +9,14 @@ Load a previously captured checkpoint prompt from `tmp/checkpoints/` and continu
 
 ## When to use
 
-Use this skill when the user wants to pick up a previously captured checkpoint in a fresh Codex session. This is the **load** side of the checkpoint/restore pair — `$checkpoint` is the save side.
+Use this skill when the user wants to pick up a previously captured checkpoint in a fresh agent session. This is the **load** side of the checkpoint/restore pair — the `checkpoint` skill is the save side.
 
-Expected prompt shape:
+Expected request shape:
 
-- `$restore restore the latest checkpoint`
-- `$restore restore work tagged plan-test`
+- "restore the latest checkpoint"
+- "restore work tagged plan-test"
 
-The user supplies an optional kebab-case `<slug>` to filter by. If the slug is missing, pick the most recent checkpoint regardless of slug.
+The user supplies an optional kebab-case `<slug>` to filter by, or the text after the skill name. If the slug is missing, pick the most recent checkpoint regardless of slug.
 
 ## Instructions
 
@@ -44,7 +44,7 @@ ls tmp/checkpoints/*-<slug>*.md 2>/dev/null | head -1
 
 ### Step 2: Handle edge cases
 
-- **Directory empty or missing:** tell the user `tmp/checkpoints/` has no checkpoints; suggest `$checkpoint <slug>` to capture one. Stop.
+- **Directory empty or missing:** tell the user `tmp/checkpoints/` has no checkpoints; suggest the `checkpoint` skill to capture one. Stop.
 - **No match for the slug:** list available checkpoint filenames so the user can pick one. Stop and wait.
 - **Multiple matches:** silently pick the newest, but mention how many were considered and offer to load a different one if asked.
 
@@ -62,5 +62,5 @@ Checkpoints typically capture decisions and preferences from the prior session. 
 ## Notes
 
 - Checkpoints are immutable once written. If the situation has changed since capture (a referenced PR landed, an issue closed, etc.), verify before acting on stale references — `gh issue view <n>`, `git log`, etc.
-- The companion `$checkpoint` skill writes new checkpoints — point users to it if they want to capture something for later in this session.
+- The companion `checkpoint` skill writes new checkpoints — point users to it if they want to capture something for later in this session.
 - The `inv_epoch` prefix is a sort-only artifact; the user reads the slug, not the number. Always show the slug (or full filename) in confirmation messages, not just the prefix.

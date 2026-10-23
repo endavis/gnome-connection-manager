@@ -115,7 +115,7 @@ env:
 ### Configuring the App
 
 Follow the full setup in
-[GitHub Repository Settings → Release Permissions](../../.github/CONTRIBUTING.md#recommended-github-app).
+[GitHub Repository Settings → Release Permissions](https://github.com/endavis/pyproject-template/blob/main/.github/CONTRIBUTING.md#recommended-github-app).
 The auto-merge workflow reuses the same App as the release workflow. When
 creating or updating the App, ensure the repository permissions include:
 
@@ -196,6 +196,46 @@ Action bumps continue to flow through auto-merge under the existing
 `automerge-config.json` rules; tighter handling for actions is tracked
 separately.
 
+## Grouped updates
+
+Some dependencies are separate packages to dependabot but a single unit at
+runtime. Bumping them independently produces PRs that each fail, and — because
+each holds only half the change — none of them can be merged to unblock the
+others. `.github/dependabot.yml` uses
+[`groups`](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#groups--)
+to keep such a set in one PR.
+
+The `github-actions` ecosystem groups the CodeQL action:
+
+```yaml
+groups:
+  codeql-action:
+    patterns:
+      - "github/codeql-action*"
+```
+
+`github/codeql-action/init` writes a config file stamped with its own version,
+and `github/codeql-action/analyze` refuses to load a config written by a
+different one:
+
+```
+Loaded a configuration file for version '4.37.8', but running version '4.37.9'
+```
+
+Ungrouped, the 4.37.9 bump arrived as PRs #794 and #795 — one bumping `init`,
+one bumping `analyze` — and both failed the required `CodeQL` check
+(issue #799). Grouping is the fix; the bump itself then had to be applied by
+hand because neither split PR could pass on its own.
+
+Two tests guard this. `tests/test_dependabot_config.py` asserts the group
+still matches both sub-actions — and that no group matches one without the
+other, which would recreate the split. `tests/test_codeql_workflow.py` asserts
+the two are in fact pinned to the same SHA today.
+
+Grouping does not change auto-merge eligibility: `github/codeql-action` is not
+in `sensitive_dependencies`, and the group's `update-type` is the highest of
+its members, so a grouped patch bump still qualifies.
+
 ## Stale PRs
 
 When `main` advances after a dependabot PR is opened, the PR ends up
@@ -221,7 +261,7 @@ when checks go green.
 > *"Sorry, only users with push access can use that command."*
 
 This also follows the signed-commit rule documented in the
-[Dependabot PRs](../../AGENTS.md#dependabot-prs) section of `AGENTS.md`:
+[Dependabot PRs](https://github.com/endavis/pyproject-template/blob/main/AGENTS.md#dependabot-prs) section of `AGENTS.md`:
 **never** call the GitHub `update-branch` API or rebase locally, because
 both strip dependabot's verified commit signatures.
 
@@ -243,7 +283,7 @@ with `doit pr_merge --pr=<number>`.
 
 ## Related
 
-- `AGENTS.md` section [Dependabot PRs](../../AGENTS.md#dependabot-prs)
+- `AGENTS.md` section [Dependabot PRs](https://github.com/endavis/pyproject-template/blob/main/AGENTS.md#dependabot-prs)
 - `.github/dependabot.yml`
 - `.github/workflows/dependabot-automerge.yml`
 - `.github/workflows/dependabot-blocked-label.yml`

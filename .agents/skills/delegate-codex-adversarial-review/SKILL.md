@@ -21,12 +21,14 @@ The user may include focus text after the trigger.
 ## Instructions
 
 1. Capture any focus text from the user's request.
-2. Run Codex non-interactively. Adversarial review challenges direction, not just code details. Single-quote the prompt so the literal `$codex-adversarial-review` reaches Codex (not the shell).
+2. Run Codex non-interactively. Adversarial review challenges direction, not just code details. The
+   prompt is fully inlined and reads only `git`/local files — no `gh` call, so it needs nothing from
+   `.codex/rules/gh.rules` (#985).
 
    ```bash
-   codex -a never --dangerously-bypass-hook-trust exec 'Run an adversarial review of the current uncommitted changes and the current branch vs main. Read-only. If the $codex-adversarial-review skill is available, activate it. Otherwise be skeptical and steerable: pressure-test design choices, hidden assumptions, tradeoffs, alternative approaches, failure modes (auth, data loss, races, rollback, reliability). 1) Run `git status`, `git diff`, `git log main..HEAD`. 2) Read AGENTS.md and related ADRs. 3) Ask: was this the right approach? Would a different design be safer or simpler? What edge cases are missed? What hidden coupling exists? 4) Print findings to stdout in a structured format (Direction Critique / Hidden Assumptions / Failure Modes / Alternatives Worth Considering). Do NOT modify any files. Focus area (optional): <focus>'
+   codex -a never --dangerously-bypass-hook-trust exec 'Run an adversarial review of the current uncommitted changes and the current branch vs main. Read-only. Be skeptical and steerable: pressure-test design choices, hidden assumptions, tradeoffs, alternative approaches, failure modes (auth, data loss, races, rollback, reliability). 1) Run `git status`, `git diff`, `git log main..HEAD`. 2) Read AGENTS.md and related ADRs. 3) Ask: was this the right approach? Would a different design be safer or simpler? What edge cases are missed? What hidden coupling exists? 4) Print findings to stdout in a structured format (Direction Critique / Hidden Assumptions / Failure Modes / Alternatives Worth Considering). Do NOT modify any files. Focus area (optional): <focus>. If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.' < /dev/null
    ```
 
-3. Capture stdout and summarize the adversarial findings.
+3. Capture stdout and summarize the adversarial findings — but first, treat output containing `DELEGATION-ERROR:` as a failed run and report it instead of summarizing.
 4. This is a *challenge* — the user decides whether to accept, defer, or push back.
 5. Do NOT auto-apply suggestions.

@@ -30,7 +30,7 @@ Even when `AGENTS.md` explicitly states "use `doit pr` instead of `gh pr create`
 **Solution**: Shift from "tell the agent what to do" to "prevent the agent from doing the wrong thing."
 
 That shift is never complete. Rationalizations like "the user probably wants me to proceed" or "it's just documentation, so tests aren't needed" have no command to intercept, so they stay instruction-side. `AGENTS.md` carries the concrete list —
-[Examples: Prohibited vs. Correct Reasoning](../../../AGENTS.md#examples-prohibited-vs-correct-reasoning)
+[Examples: Prohibited vs. Correct Reasoning](https://github.com/endavis/pyproject-template/blob/main/AGENTS.md#examples-prohibited-vs-correct-reasoning)
 — which is this document's complement, not a duplicate of it: this page covers what can be
 enforced, that section covers what cannot.
 
@@ -296,6 +296,6 @@ The following AGENTS.md rules are currently instruction-only and could benefit f
 
 - [AI Command Blocking](command-blocking.md) - Hook implementation details
 - [AGENTS.md](../../../AGENTS.md) - Full AI agent instructions
-- [AGENTS.md — Examples: Prohibited vs. Correct Reasoning](../../../AGENTS.md#examples-prohibited-vs-correct-reasoning)
+- [AGENTS.md — Examples: Prohibited vs. Correct Reasoning](https://github.com/endavis/pyproject-template/blob/main/AGENTS.md#examples-prohibited-vs-correct-reasoning)
   - The instruction-side complement: rationalizations that no hook can intercept
 - [AI Setup Guide](../AI_SETUP.md) - Setting up AI coding assistants
