@@ -175,21 +175,72 @@ jobs:
       - name: Run dependency audit
         run: uv run doit audit
 
+  # Builds the .deb and the .rpm as a release would, with fpm, and holds what fpm wrote
+  # into them to the Makefile's recipes, which tests/test_packages.py holds the README to
+  # (#273). Nothing else builds a package, so a recipe fpm refuses would otherwise reach
+  # whoever next built one by hand.
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install fpm and the tools it builds with
+        # ruby for fpm, rpm for rpmbuild, binutils for ar, gettext for the catalogs, and
+        # desktop-file-utils to validate the entry. fpm 1.18.0 is the version measured.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ruby rpm binutils gettext \
+            python3-pip make desktop-file-utils
+          sudo gem install --no-document fpm -v 1.18.0
+
+      - name: Build the .deb and the .rpm
+        run: make deb rpm
+
+      - name: Check what the packages declare
+        run: python3 tools/packages.py gnome-connection-manager_*_all.deb gnome-connection-manager-*.noarch.rpm
+
+      - name: Check that apt knows every package the .deb names
+        # Alternatives included: a name apt does not know is a typo, or a package gone.
+        # The names are read on their own line, as a failure inside `for`'s list would leave
+        # it empty and the step passing.
+        run: |
+          names=$(python3 tools/packages.py --names deb)
+          missing=0
+          for package in $names; do
+            apt-cache show "$package" >/dev/null 2>&1 || { echo "::error::apt knows no package $package"; missing=1; }
+          done
+          exit $missing
+
+      - name: Validate the desktop entry
+        # It exits 0 for a warning, as for the deprecated Encoding, so what it prints fails
+        # the step too. Under bash -e, an assignment that fails would end the step unprinted.
+        run: |
+          report=$(desktop-file-validate gnome-connection-manager.desktop 2>&1) && code=0 || code=$?
+          if [[ $code != 0 || -n $report ]]; then
+            echo "::error::desktop-file-validate exited $code: $report"
+            exit 1
+          fi
+
   ci-complete:
     if: always()
-    needs: [test, lint]
+    needs: [test, lint, package]
     runs-on: ubuntu-24.04
     steps:
       - name: Check CI status
         run: |
           echo "Test result: ${{ needs.test.result }}"
           echo "Lint result: ${{ needs.lint.result }}"
+          echo "Package result: ${{ needs.package.result }}"
           if [[ "${{ needs.test.result }}" != "success" ]]; then
             echo "Test job failed"
             exit 1
           fi
           if [[ "${{ needs.lint.result }}" != "success" ]]; then
             echo "Lint job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.package.result }}" != "success" ]]; then
+            echo "Package job failed"
             exit 1
           fi
           echo "CI completed successfully"

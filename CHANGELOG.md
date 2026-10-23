@@ -18,7 +18,21 @@ the git log.
   terminal tab whatever the logging settings, so unticking a host's **Enable Logging**
   does not keep its sessions off disk while recording is on.
 
+### Changed
+- The `.rpm` that `make rpm` builds required Python, PyGObject and `expect` alone. It now
+  requires GTK 3, VTE and `python3-pyaes` too, under Fedora's names, recommends
+  `gtk-vnc2`, and suggests GCM's optional programs, as the `.deb` does.
+- The `.deb` suggests FreeRDP 2 as well as FreeRDP 3, as `freerdp3-x11 | freerdp2-x11`,
+  and the install line no longer offers FreeRDP 3 where FreeRDP 2 is installed.
+- The packages, and the menu entry, describe GCM as it is now, with its remote desktops,
+  web consoles and command lines, and the packages name this repository's maintainer.
+
 ### Fixed
+- Installing the `.deb` without `xdg-utils`, which it only suggests, or where
+  `/usr/share/desktop-directories` was missing, left GCM half-configured, as its setup
+  script failed. Where `/usr/local/share/applications` existed, the script also put a
+  second copy of the menu entry there, which removing GCM left behind. Neither package
+  runs a script now.
 - A host with a stored password took no input when ssh logged in without asking for the
   password, with a key the server accepts: the tab showed the remote prompt, and nothing
   typed reached it, nor the commands after login. The tab is now yours once the session

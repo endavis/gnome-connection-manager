@@ -48,7 +48,11 @@ PACKAGES = [
 ]
 
 # What it suggests, from the Makefile: GCM's optional programs, installed when asked for.
+# An alternative is named as its first, the one installed.
 OPTIONAL = ["freerdp3-x11", "xdg-utils", "sshfs", "nautilus", "gvfs-backends"]
+
+# The rest of each alternative, any of which is enough: FreeRDP 2's client, for FreeRDP 3's.
+ALTERNATIVES = ["freerdp2-x11"]
 
 # How the question ends, on the terminal.
 QUESTION_END = b"[y/N] "
@@ -667,7 +671,9 @@ def test_offers_the_optional_programs_the_deb_suggests(rig: Rig) -> None:
     """Named on the terminal, and installed on a yes after what GCM needs, on their own."""
     rig.release("v1.0.0")
 
-    done, shown = rig.install_on_terminal("y", FAKE_MISSING=" ".join(["python3-pyaes", *OPTIONAL]))
+    done, shown = rig.install_on_terminal(
+        "y", FAKE_MISSING=" ".join(["python3-pyaes", *OPTIONAL, *ALTERNATIVES])
+    )
 
     assert shown == (
         "GCM can also use these optional programs, which are not installed:\n"
@@ -690,10 +696,21 @@ def test_offers_the_optional_programs_the_deb_suggests(rig: Rig) -> None:
 def test_names_only_those_not_installed(rig: Rig) -> None:
     rig.release("v1.0.0")
 
-    _, shown = rig.install_on_terminal("y", FAKE_MISSING="sshfs freerdp3-x11")
+    _, shown = rig.install_on_terminal("y", FAKE_MISSING="sshfs freerdp3-x11 freerdp2-x11")
 
     assert "\n  freerdp3-x11 sshfs\n" in shown
     assert rig.log.read_text().splitlines()[-1] == "apt-get install -y freerdp3-x11 sshfs"
+
+
+def test_an_alternative_installed_is_enough(rig: Rig) -> None:
+    """The .deb suggests `freerdp3-x11 | freerdp2-x11`, and GCM runs either one's client,
+    so FreeRDP 2's installed leaves FreeRDP 3's unoffered (#273)."""
+    rig.release("v1.0.0")
+
+    _, shown = rig.install_on_terminal("y", FAKE_MISSING="sshfs freerdp3-x11")
+
+    assert "\n  sshfs\n" in shown
+    assert rig.log.read_text().splitlines()[-1] == "apt-get install -y sshfs"
 
 
 @pytest.mark.parametrize(
@@ -736,7 +753,7 @@ def test_with_no_terminal_installs_none_of_them(rig: Rig) -> None:
     """As over ssh without one: there is nothing to ask on, and piped, its input is itself."""
     rig.release("v1.0.0")
 
-    done = rig.install(FAKE_MISSING=" ".join(OPTIONAL))
+    done = rig.install(FAKE_MISSING=" ".join([*OPTIONAL, *ALTERNATIVES]))
 
     assert (
         f"Left out GCM's optional programs, with no terminal to ask on: {' '.join(OPTIONAL)}"

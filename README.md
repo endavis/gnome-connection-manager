@@ -175,17 +175,17 @@ sudo apt install ./gnome-connection-manager_*_all.deb
 The `.deb` depends on these, and the install line has apt install them, with
 `gir1.2-gtk-vnc-2.0` and `git`. It reads the list, and the optional programs it offers,
 from the `Makefile` of the version it installs, so a version that needs another package
-gets it.
+gets it. The `.rpm` that `make rpm` builds requires the same, under Fedora's names.
 
-| Package | Purpose |
-|---|---|
-| `python3` | Python 3 runtime |
-| `python3-gi` | GTK 3 Python bindings |
-| `python3-gi-cairo` | Cairo integration |
-| `gir1.2-gtk-3.0` | GTK 3 typelib |
-| `gir1.2-vte-2.91` | VTE terminal widget |
-| `python3-pyaes` | AES encryption for stored passwords |
-| `expect` | SSH password injection |
+| Package | Fedora | Purpose |
+|---|---|---|
+| `python3` | `python3` | Python 3 runtime |
+| `python3-gi` | `python3-gobject` | GTK 3 Python bindings |
+| `python3-gi-cairo` | `python3-gobject` | Cairo integration |
+| `gir1.2-gtk-3.0` | `gtk3` | GTK 3 typelib |
+| `gir1.2-vte-2.91` | `vte291` | VTE terminal widget |
+| `python3-pyaes` | `python3-pyaes` | AES encryption for stored passwords |
+| `expect` | `expect` | SSH password injection |
 
 ### Optional programs
 
@@ -194,21 +194,24 @@ needed. Only `gir1.2-gtk-vnc-2.0` is installed with GCM without asking: the inst
 names it, and the `.deb` recommends it, which apt installs unless it is set to leave
 recommendations out.
 
-The install line offers `freerdp3-x11`, `xdg-utils`, `sshfs`, `nautilus` and
-`gvfs-backends`. It asks once, for all of them, whether to install those that are missing,
-and names them. Enter alone answers no. It asks on the terminal, so where there is none,
-as over `ssh` without one, it installs none of them and says so. Each run asks again while
-one is missing. It does not offer a VNC viewer, which GCM runs only without gtk-vnc. The
-`.deb` suggests the same packages, which apt names when it installs GCM, and leaves out.
+The install line offers `freerdp3-x11`, unless `freerdp2-x11` is installed, `xdg-utils`,
+`sshfs`, `nautilus` and `gvfs-backends`. It asks once, for all of them, whether to install
+those that are missing, and names them. Enter alone answers no. It asks on the terminal,
+so where there is none, as over `ssh` without one, it installs none of them and says so.
+Each run asks again while one is missing. It does not offer a VNC viewer, which GCM runs
+only without gtk-vnc. The `.deb` suggests the same packages, FreeRDP as
+`freerdp3-x11 | freerdp2-x11`, which apt names when it installs GCM, and leaves out. The
+`.rpm` recommends `gtk-vnc2` and suggests the rest, under Fedora's names, and names no
+VNC viewer either.
 
-| Package (Ubuntu 24.04) | For |
-|---|---|
-| `freerdp3-x11` or `freerdp2-x11` | RDP hosts, through `xfreerdp3` or `xfreerdp` |
-| `gir1.2-gtk-vnc-2.0` | VNC hosts drawn in their tab |
-| `tigervnc-viewer` or `xtightvncviewer` | VNC hosts without gtk-vnc, through `xtigervncviewer` or `xtightvncviewer` |
-| `xdg-utils` | Web hosts and links, opened in your browser through `xdg-open` |
-| `sshfs` | **Mount with SSHFS** |
-| `nautilus` and `gvfs-backends`, or another file manager that opens `sftp:` addresses | **Open in File Manager**, and **Open Folder** and **Open over SFTP** in the **Mounted** tab |
+| Package (Ubuntu 24.04) | Fedora | For |
+|---|---|---|
+| `freerdp3-x11` or `freerdp2-x11` | `freerdp` | RDP hosts, through `xfreerdp3` or `xfreerdp` |
+| `gir1.2-gtk-vnc-2.0` | `gtk-vnc2` | VNC hosts drawn in their tab |
+| `tigervnc-viewer` or `xtightvncviewer` | `tigervnc` | VNC hosts without gtk-vnc, through `vncviewer`, `xtigervncviewer` or `xtightvncviewer` |
+| `xdg-utils` | `xdg-utils` | Web hosts and links, opened in your browser through `xdg-open` |
+| `sshfs` | `fuse-sshfs` | **Mount with SSHFS** |
+| `nautilus` and `gvfs-backends`, or another file manager that opens `sftp:` addresses | `nautilus` and `gvfs` | **Open in File Manager**, and **Open Folder** and **Open over SFTP** in the **Mounted** tab |
 
 ---
 

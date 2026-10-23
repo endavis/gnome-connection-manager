@@ -1,8 +1,7 @@
 [Desktop Entry]
 Version=1.0
-Encoding=UTF-8
 Name=Gnome Connection Manager
-Comment=A simple ssh connection manager for gnome
+Comment=SSH, telnet, local shells and command lines in tabs, with remote desktops and web consoles
 GenericName=Connection Manager
 Exec=gnome-connection-manager
 Terminal=false

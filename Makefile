@@ -1,7 +1,7 @@
 PKG_NAME=gnome-connection-manager
-PKG_DESCRIPTION="Simple tabbed SSH and telnet connection manager for GTK environments"
+PKG_DESCRIPTION="Tabbed SSH, telnet and local shell manager with RDP, VNC, web and command hosts"
 PKG_VERSION=2.1.0
-PKG_MAINTAINER="Renzo Bertuzzi <kuthalu@gmail.com>"
+PKG_MAINTAINER="Eric Davis <endavis@gmail.com>"
 PKG_ARCH=all
 PKG_ARCH_RPM=noarch
 PKG_DEB=${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}.deb
@@ -78,7 +78,16 @@ install: translate
 	cp data/icon.png $(TMPINSTALLDIR)/usr/share/pixmaps/$(PKG_NAME).png
 
 # Build the .deb package using fpm. install.sh reads its packages from this recipe: it
-# installs the depends (-d) and recommends, and asks whether to install the suggests.
+# installs the depends (-d) and recommends, and asks whether to install the suggests. An
+# alternative is one quoted word, `'a|b'`, as install.sh reads a word at a time: fpm
+# writes it as given, and dpkg and apt read it as `a | b`. tools/packages.py reads the
+# recipe too (#273).
+#
+# No maintainer script: dpkg's desktop-file-utils trigger updates the desktop database for
+# a file in /usr/share/applications. The postinst that ran xdg-desktop-menu left the
+# package half-configured without xdg-utils, which is only suggested here, and without
+# /usr/share/desktop-directories, and put a second, unowned copy of the entry in
+# /usr/local/share/applications where that existed (#273).
 deb: install
 	rm -f $(PKG_DEB)
 	fpm -t deb -p $(PKG_DEB) $(FPM_OPTS) \
@@ -90,25 +99,36 @@ deb: install
 		-d expect \
 		-d python3-pyaes \
 		--deb-recommends gir1.2-gtk-vnc-2.0 \
-		--deb-suggests freerdp3-x11 \
+		--deb-suggests 'freerdp3-x11|freerdp2-x11' \
 		--deb-suggests xdg-utils \
 		--deb-suggests sshfs \
 		--deb-suggests nautilus \
 		--deb-suggests gvfs-backends \
-		--after-install postinst \
 		--deb-priority optional \
 		usr
 	@echo "\033[92mOK: $(PKG_DEB)\033[0m"
 
-# Build the .rpm package using fpm (Fedora/RHEL)
+# Build the .rpm package using fpm (Fedora). Fedora's names for the .deb's packages,
+# checked in Fedora 43's and 44's repositories: python3-gobject holds the cairo
+# integration, freerdp installs FreeRDP 3 as xfreerdp, and gvfs holds the sftp backend.
+# fpm has no option for weak dependencies, so they are spec tags. As for the .deb, no
+# script: desktop-file-utils' file trigger updates the desktop database (#273).
 rpm: install
 	rm -f $(PKG_RPM)
 	fpm -t rpm -p $(PKG_RPM) $(FPM_OPTS) \
 		-a $(PKG_ARCH_RPM) \
 		-d python3 \
 		-d python3-gobject \
+		-d gtk3 \
+		-d vte291 \
 		-d expect \
-		--after-install postinst \
+		-d python3-pyaes \
+		--rpm-tag 'Recommends: gtk-vnc2' \
+		--rpm-tag 'Suggests: freerdp' \
+		--rpm-tag 'Suggests: xdg-utils' \
+		--rpm-tag 'Suggests: fuse-sshfs' \
+		--rpm-tag 'Suggests: nautilus' \
+		--rpm-tag 'Suggests: gvfs' \
 		usr
 	@echo "\033[92mOK: $(PKG_RPM)\033[0m"
 

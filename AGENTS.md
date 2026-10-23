@@ -448,6 +448,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   testable without a display; the emulator driving it is `TranscriptReplayer` in `app.py`.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
+- `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's
+  `deb` and `rpm` recipes, the one list of what GCM needs and can use (#273). Given the
+  two built packages, it holds what fpm wrote into them to the recipes, as CI's `package`
+  job does, and `--names deb` lists every package the `.deb` names, which that job asks
+  apt for. `tests/test_packages.py` holds the README's tables and `tests/test_install.py`'s
+  lists to the same reading.
 - `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget
   names/signals aligned with handler names in `app.py`.
 - `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet`, and FreeRDP for an RDP
@@ -527,7 +533,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
   `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, en, fr, it, ko, pl, pt, ru.
 - `docs/` – see [Documentation](#documentation).
-- `gnome-connection-manager.desktop`, `postinst`, `Makefile`, `dodo.py`, `pyproject.toml`.
+- `gnome-connection-manager.desktop`, `Makefile`, `dodo.py`, `pyproject.toml`.
 - `install.sh` – the one-line installer (#294), served from `main` and piped to bash. It
   clones the repository bare into `~/.local/share/gnome-connection-manager/repo`, adds
   each version as a worktree under `versions/`, and moves the link `current` to the one
@@ -620,8 +626,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   was being imported and report through a modal dialog, so importing it headless hung
   forever (#118). Keep imports side-effect free. VTE
   terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
-- Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip,
-  desktop-file utilities (`xdg-desktop-menu`, invoked in `postinst`).
+- Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip, binutils
+  for the `ar` fpm builds a `.deb` with, and `rpm` for `rpmbuild`. CI's `package` job
+  installs them on ubuntu-24.04, fpm 1.18.0 among them, and `desktop-file-validate` for
+  the desktop entry.
 - Preferred tooling: the doit tasks — `doit launch`, `doit test`, `doit lint`,
   `doit type_check`, `doit translate`. `doit list` shows them all. Project-specific
   tasks live in `tools/doit/gcm.py`; the rest of `tools/doit/` is vendored from
@@ -879,9 +887,23 @@ Practices below have each caught real bugs in this repo. They are worth the time
 ## Packaging & Release Flow
 - `uv run make`, `uv run make deb`, `uv run make rpm` use `fpm`: build translations, stage
   files under `/usr/share/gnome-connection-manager`, and produce artifacts in the repo root.
-- `postinst` registers the desktop entry through `xdg-desktop-menu`; update it if install
-  paths change, along with `gnome-connection-manager.desktop`.
-- `make check` and `make style-strip-trailing-whitespace` enforce newline cleanliness.
+- No package runs a script (#273). The `.deb`'s `postinst` ran `xdg-desktop-menu`, which
+  needs xdg-utils, only suggested, and a menu folder to write to. Measured in Ubuntu
+  24.04: without xdg-utils it exited 127, and without `/usr/share/desktop-directories` 3,
+  each leaving the package half-configured, and where `/usr/local/share/applications`
+  existed it put a copy of the entry there that no package owns. The entry needs none:
+  dpkg's desktop-file-utils trigger, and Fedora's file trigger, update the desktop
+  database for `/usr/share/applications`. `tests/test_packages.py` fails on a script in
+  either recipe.
+- The `rpm` recipe names the `.deb`'s packages by Fedora's names, checked in Fedora 43's
+  and 44's repositories: `python3-gobject` holds the cairo integration, `freerdp` installs
+  FreeRDP 3 as `xfreerdp`, `fuse-sshfs` is sshfs, and `gvfs` holds the sftp backend. fpm
+  has no option for an rpm's weak dependencies, so they are `--rpm-tag 'Recommends: …'`
+  and `'Suggests: …'`, which rpm 4.18.2 reads back, measured. The `.rpm` has been built
+  and read on Ubuntu, never installed on Fedora. Neither package names a VNC viewer, which
+  GCM runs only where gtk-vnc, which both install, is missing (#302, #273). A package
+  added to a recipe goes in the README's tables, under both names, and
+  `tests/test_packages.py` fails until it is.
 - A release is a `vX.Y.Z` tag on `main`, made through a `release/vX.Y.Z` PR as
   `.github/CONTRIBUTING.md` describes (#291). `cz bump --files-only` writes the version
   into the four files `tests/test_package.py` keeps equal, which `[tool.commitizen]` in
@@ -899,7 +921,12 @@ Practices below have each caught real bugs in this repo. They are worth the time
   next time it runs, and the script itself reaches new installs as soon as it merges. A
   package the `.deb` needs goes in the Makefile's `deb` recipe, which the script reads,
   and in `PACKAGES` in `tests/test_install.py`, which checks what it installs. An
-  optional program goes there as `--deb-suggests`, and in `OPTIONAL`. A run following
+  optional program goes there as `--deb-suggests`, and in `OPTIONAL`. Alternatives are
+  one quoted word, `'freerdp3-x11|freerdp2-x11'`, as the script reads the recipe a word
+  at a time: it counts any one installed as enough, else installs the first, and the
+  others go in `ALTERNATIVES`. Measured with fpm 1.18.0, dpkg 1.22.6 and apt 2.8.3, fpm
+  writes one into the control file as given, and dpkg and apt read `a|b` as they read
+  `a | b`, which is how `dpkg-deb -f` gives it back. A run following
   `release` reads the recipe of the release it installs, so a change there reaches it
   only with the next release.
 
