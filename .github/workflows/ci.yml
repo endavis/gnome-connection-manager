@@ -106,10 +106,14 @@ jobs:
         # -rs and the skip check are the point. Twelve tests gate themselves on a display
         # being present, so without Xvfb they vanish and the run still reports success.
         # A green tick that silently tested nothing is worse than a red one.
+        # The one test left out is deselected, not skipped: it has Codex itself read the rules
+        # .codex/rules/gh.rules gives a delegated Codex run, and there is no codex CLI here.
+        # `doit check` runs it wherever codex is installed (#324).
         run: |
           set -o pipefail
           mkdir -p tmp
           uv run pytest -n auto -q -rs --cov --cov-report=xml:tmp/coverage.xml \
+            --deselect tests/template/test_ai_agent_assets.py::test_codex_gh_rules_parse_and_match \
             | tee tmp/pytest.log
           if grep -qE "^SKIPPED|[0-9]+ skipped" tmp/pytest.log; then
             echo "::error::Tests were skipped. Everything they need is installed here, so a skip means the environment is wrong, not that the test is inapplicable."
