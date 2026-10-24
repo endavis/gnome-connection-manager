@@ -694,7 +694,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   mutant, and GTK stays connected to the first run's Xvfb, which ends with that run: its
   clean run exited 1 and printed nothing. So `tests/conftest.py` keeps the real `gi` out
   of mutmut's process, and a selected test that wants it asks with
-  `pytest.importorskip("gi")`, which the same test checks. A test that reads the source
+  `pytest.importorskip("gi")`, which the same test checks. Nor does that process get an
+  Xvfb, or keep a display at all: mutmut ends a mutant that runs too long with SIGXCPU,
+  then SIGKILL, so `pytest_unconfigure` never stopped one, and each such mutant left its
+  Xvfb running (#341). A pytest that a selected test starts has no mutmut in it, and
+  starts an Xvfb of its own. A test that reads the source
   rather than running it sees every mutant at once, and is left out or deselected there.
   The test file is GCM's own: the template's, which a sync offers, checks the template's
   selection.

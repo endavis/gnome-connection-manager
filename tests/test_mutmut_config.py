@@ -24,6 +24,7 @@ import ast
 import fnmatch
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tomllib
@@ -463,19 +464,33 @@ print("exit codes", codes)
 """
 
 
-def _run_pytest_as(process: str, runs: int, tmp_path: Path) -> subprocess.CompletedProcess[str]:
-    """Run the test that draws a window under GCM's conftest, *runs* times in one process."""
+def _run_pytest_as(
+    process: str,
+    runs: int,
+    tmp_path: Path,
+    test: str = DRAWS_A_WINDOW,
+    changes: dict[str, str | None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run *test* under GCM's conftest, *runs* times in one process.
+
+    *changes* sets variables of that process's environment, or removes those given None.
+    """
     if shutil.which("Xvfb") is None:
         pytest.skip("needs Xvfb, which tests/conftest.py starts for each run")
     pytest.importorskip("gi", reason="PyGObject not available")
     shutil.copy(TESTS / "conftest.py", tmp_path / "conftest.py")
-    (tmp_path / "test_draws.py").write_text(DRAWS_A_WINDOW)
+    (tmp_path / "test_draws.py").write_text(test)
     env = {
         key: value
         for key, value in os.environ.items()
         if not key.startswith("PYTEST_")
         and key not in {"GCM_TEST_REAL_DISPLAY", "MUTANT_UNDER_TEST"}
     }
+    for key, value in (changes or {}).items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
     return subprocess.run(
         [sys.executable, "-c", RUNS_PYTEST, process, str(runs)],
         cwd=tmp_path,
@@ -503,6 +518,74 @@ def test_mutmuts_process_survives_a_second_run_of_a_test_that_draws(tmp_path: Pa
 def test_a_pytest_a_test_starts_keeps_the_real_gi(tmp_path: Path) -> None:
     """It inherits MUTANT_UNDER_TEST but makes one run, as tests/test_main.py's does."""
     result = _run_pytest_as("child", 1, tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "exit codes [0]" in result.stdout
+    assert "1 passed" in result.stdout, result.stdout
+
+
+# A test that records the display its run was given, then dies as mutmut ends a mutant
+# that runs too long: SIGXCPU, whose default action takes no cleanup. No core file.
+DIES_AT_ITS_TIMEOUT = """
+import os
+import resource
+import signal
+from pathlib import Path
+
+
+def test_dies_at_its_timeout():
+    Path("display.txt").write_text(
+        os.environ.get("DISPLAY", "") + "\\n" + os.environ.get("WAYLAND_DISPLAY", "")
+    )
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    os.kill(os.getpid(), signal.SIGXCPU)
+"""
+
+
+def _xvfb_serving(display: str) -> int | None:
+    """Return the pid of the Xvfb serving X *display*, such as ``:90``, if one is running."""
+    number = display.rpartition(":")[2].partition(".")[0]
+    try:
+        pid = int(Path(f"/tmp/.X{number}-lock").read_text().strip())
+        comm = Path(f"/proc/{pid}/comm").read_text().strip()
+    except (OSError, ValueError):
+        return None
+    return pid if comm == "Xvfb" else None
+
+
+def test_a_mutant_mutmut_stops_at_its_timeout_leaves_no_xvfb(tmp_path: Path) -> None:
+    """mutmut's process gets no display at all, so none outlives a mutant it kills (#341).
+
+    It ends a mutant that runs too long with SIGXCPU, so pytest_unconfigure never stopped
+    the Xvfb pytest_configure had started, and each such mutant left one running. Its
+    display and the developer's are both named here, and neither may reach the run.
+    """
+    result = _run_pytest_as(
+        "mutmut",
+        1,
+        tmp_path,
+        DIES_AT_ITS_TIMEOUT,
+        {"DISPLAY": "unix:4242", "WAYLAND_DISPLAY": "gcm-test-no-such-wayland"},
+    )
+    display, wayland = (tmp_path / "display.txt").read_text().split("\n")
+    leftover = _xvfb_serving(display) if display else None
+    if leftover:
+        os.kill(leftover, signal.SIGTERM)
+
+    assert result.returncode == -signal.SIGXCPU, result.stdout + result.stderr
+    assert leftover is None, f"the run's Xvfb on {display} outlived it"
+    assert (display, wayland) == ("", "")
+
+
+def test_a_pytest_a_test_starts_gets_an_xvfb_of_its_own(tmp_path: Path) -> None:
+    """mutmut's process has no display to pass on, so the pytest a test starts makes its own.
+
+    The run here is given no display at all, as one started from mutmut's process is,
+    and the window it draws needs one.
+    """
+    result = _run_pytest_as(
+        "child", 1, tmp_path, changes={"DISPLAY": None, "WAYLAND_DISPLAY": None}
+    )
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "exit codes [0]" in result.stdout
