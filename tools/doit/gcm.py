@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess  # nosec B404 - required to run msgfmt and the app
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -119,19 +120,40 @@ def task_audit() -> dict[str, Any]:
     dodo.py installs this by name after discovery, because two modules defining task_audit
     would otherwise be resolved by whatever order rglob happened to return them in.
     """
-    export = (
-        "uv export --frozen --no-emit-project --all-extras "
-        "--format requirements-txt -o tmp/requirements-audit.txt"
-    )
     return {
-        "actions": [
-            "mkdir -p tmp",
-            export,
-            "uv run pip-audit -r tmp/requirements-audit.txt",
-        ],
+        "actions": [_audit_lock],
         "title": title_with_actions,
         "verbosity": 2,
     }
+
+
+EXPORT_COMMAND = [
+    "uv",
+    "export",
+    "--frozen",
+    "--no-emit-project",
+    "--all-extras",
+    "--format",
+    "requirements-txt",
+]
+
+
+def _audit_lock() -> bool:
+    """Export uv.lock to a folder outside the tree, and audit what it pins.
+
+    Not into tmp/, as this did: `doit pr_merge` keeps a worktree holding a file it cannot
+    rebuild, and the export kept every worktree `doit check` had run in (#332). Nor with
+    an action after pip-audit to remove it, since doit runs no action after a failed one,
+    and the export would have stayed exactly when the audit failed.
+    """
+    with tempfile.TemporaryDirectory(prefix="gcm-audit-") as folder:
+        requirements = str(Path(folder) / "requirements-audit.txt")
+        try:
+            run_streamed([*EXPORT_COMMAND, "-o", requirements], cwd=REPO)
+            run_streamed(["uv", "run", "pip-audit", "-r", requirements], cwd=REPO)
+        except subprocess.CalledProcessError:
+            return False
+    return True
 
 
 def task_check() -> dict[str, Any]:
