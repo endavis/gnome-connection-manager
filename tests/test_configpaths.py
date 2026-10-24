@@ -123,6 +123,10 @@ def test_the_pre_xdg_location_is_reported_whichever_is_chosen(home: Path) -> Non
     (home / ".gcm").mkdir()
     assert configpaths.resolve(home, {}).legacy == home / ".gcm"
 
+    (home / ".config" / "gcm").mkdir(parents=True)
+    chosen = configpaths.resolve(home, {})
+    assert (chosen.source, chosen.legacy) == (configpaths.FROM_XDG, home / ".gcm")
+
 
 def test_ensure_creates_the_directory_and_its_parents(home: Path) -> None:
     chosen = configpaths.resolve(home, {})

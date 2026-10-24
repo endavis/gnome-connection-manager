@@ -205,3 +205,65 @@ def test_every_value_in_one_config_shares_a_salt():
         for i in range(5)
     }
     assert len(salts) == 1
+
+
+# -- every length a password has, and every value that holds none (#337) ----------
+
+
+@pytest.mark.parametrize("length", [15, 16, 17, 31, 40])
+def test_a_password_of_any_length_round_trips(length):
+    """A byte short of a block, a block exactly, and into a second and a third.
+
+    The passwords above all fit in one block, padded by more than a byte.
+    """
+    password = "p" * length
+
+    assert crypto.decrypt("pw", crypto.encrypt("pw", password)) == password
+
+
+@pytest.mark.parametrize("last", [0, 17, 255])
+def test_unpadding_leaves_data_whose_last_byte_is_no_padding_length(last):
+    data = b"x" * 20 + bytes([last])
+
+    assert crypto._pkcs7_unpad(data) == data
+
+
+def test_a_value_cut_short_gives_no_password():
+    """Not the part of it still there, which OFB would decrypt as it does the rest."""
+    raw = base64.b64decode(crypto.encrypt("pw", "secret")[len(crypto._KDF_PREFIX) :])
+    cut = crypto._KDF_PREFIX + base64.b64encode(raw[:-4]).decode("ascii")
+
+    assert crypto.decrypt("pw", cut) == ""
+
+
+def test_a_value_too_short_to_hold_a_password_gives_none():
+    """A salt and an IV with nothing after them, or an IV alone before the prefix."""
+    assert crypto.decrypt("pw", crypto._KDF_PREFIX + base64.b64encode(bytes(32)).decode()) == ""
+    assert crypto.decrypt("pw", base64.b64encode(bytes(16)).decode()) == ""
+
+
+@pytest.mark.parametrize("value", [crypto._KDF_PREFIX + "not base64!", "not base64!"])
+def test_a_value_that_is_not_base64_gives_no_password(value):
+    assert crypto.decrypt("pw", value) == ""
+
+
+def test_the_legacy_path_writes_and_reads_no_password_without_a_key():
+    """get_password() gives "" when the key file is unreadable, which xor refuses."""
+    assert crypto.encrypt_old("", "secret") == ""
+    assert crypto.decrypt_old("", "BhYcAhU=") == ""
+
+
+def test_a_password_that_cannot_be_encoded_is_not_written():
+    """Whatever fails, encrypt gives "" rather than raise into a save: here a lone
+    surrogate, which no UTF-8 holds."""
+    assert crypto.encrypt("pw", "\ud800") == ""
+
+
+def test_the_first_value_a_process_encrypts_draws_its_salt(monkeypatch):
+    """As GCM's first save does. Until then the process has none."""
+    monkeypatch.setattr(crypto, "_process_salt", None)
+
+    written = crypto.encrypt("pw", "secret")
+
+    assert crypto.decrypt("pw", written) == "secret"
+    assert len(crypto._process_salt) == crypto._KDF_SALT_BYTES

@@ -7,6 +7,7 @@ stubs all of `gi`.
 
 from __future__ import annotations
 
+import datetime
 import subprocess
 import sys
 import time
@@ -377,3 +378,86 @@ def test_truncate_tab_label_does_not_leave_a_dangling_space():
 def test_the_label_cap_is_tighter_than_the_title_cap():
     """sanitize_tab_title bounds one untrusted title; this bounds the whole label."""
     assert logpaths.TAB_LABEL_MAX < logpaths.TAB_TITLE_MAX
+
+
+# -- the edges of each rule (#337) ---------------------------------------------
+
+
+def test_sanitize_log_name_keeps_letters_at_its_ends():
+    """Only spaces, dots and underscores go from the ends."""
+    assert logpaths.sanitize_log_name("X server X") == "X server X"
+
+
+def test_sanitize_log_name_drops_a_dot_the_length_cap_leaves_at_its_end():
+    """Trailing dots break on Windows, wherever the cut falls."""
+    assert logpaths.sanitize_log_name("a" * 78 + "X.tail") == "a" * 78 + "X"
+
+
+def test_sanitize_tab_title_shows_a_title_of_exactly_the_cap_whole():
+    title = "y" * logpaths.TAB_TITLE_MAX
+
+    assert logpaths.sanitize_tab_title(title) == title
+
+
+def test_sanitize_tab_title_leaves_no_space_before_the_ellipsis():
+    """The cut falls just after the third word here."""
+    title = " ".join(["twelve-chars"] * 5)
+
+    assert logpaths.sanitize_tab_title(title) == "twelve-chars twelve-chars twelve-chars…"
+
+
+def test_next_session_stem_numbers_no_more_than_999_sessions_a_day(tmp_path, monkeypatch):
+    """The name holds three digits, so a thousandth session shares the 999th's files."""
+    monkeypatch.setattr(logpaths.Path, "exists", lambda self: "-1000" not in self.name)
+
+    assert logpaths.next_session_stem(tmp_path / "busy-20260823", ".raw") == (
+        f"{tmp_path / 'busy-20260823'}-999"
+    )
+
+
+def test_next_session_stem_moves_on_when_its_claim_will_not_be_backed_out_of(tmp_path, monkeypatch):
+    """As in the test above, another instance took the number through the .log. This
+    claim is gone already, say, and the next number is still taken."""
+    prefix = tmp_path / "session-20260925"
+    theirs = tmp_path / "session-20260925-001.log"
+    theirs.write_text("another instance's session\n")
+    real_exists = logpaths.Path.exists
+    looked = set()
+
+    def exists(self):
+        if self == theirs and self not in looked:
+            looked.add(self)
+            return False
+        return real_exists(self)
+
+    def gone(self, *args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", str(self))
+
+    monkeypatch.setattr(logpaths.Path, "exists", exists)
+    monkeypatch.setattr(logpaths.Path, "unlink", gone)
+
+    assert logpaths.next_session_stem(prefix, ".raw") == f"{prefix}-002"
+
+
+def test_session_stem_for_dates_the_session_in_eight_digits(tmp_path):
+    """<user>-<YYYYMMDD>-<NNN>, by the day it starts, either side of a midnight."""
+    terminal = types.SimpleNamespace(host=LogHost(name="web-01", user="root"))
+    days = {f"{datetime.date.today():%Y%m%d}"}
+
+    stem = logpaths.session_stem_for(terminal, tmp_path, ".log")
+
+    days.add(f"{datetime.date.today():%Y%m%d}")
+    assert Path(stem).name in {f"root-{day}-001" for day in days}
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        (None, "session"),
+        (types.SimpleNamespace(name="web-01"), "web-01"),
+        (types.SimpleNamespace(name="web-01", host="10.0.0.5"), "web-01 (10.0.0.5)"),
+    ],
+)
+def test_describe_log_session_reads_what_a_host_lacks_as_empty(host, expected):
+    """A terminal with no host, or a host holding only some of its attributes."""
+    assert logpaths.describe_log_session(host) == expected

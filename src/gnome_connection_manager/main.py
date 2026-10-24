@@ -14,8 +14,9 @@ def run(argv: list[str] | None = None) -> int:
     Returns:
         Exit code
     """
-    if argv is None:
-        argv = sys.argv
+    # Read by nothing below: app.main() takes sys.argv itself (#337).
+    if argv is None:  # pragma: no mutate
+        argv = sys.argv  # pragma: no mutate
 
     # Set up paths for resources
     # Check if running from source or installed

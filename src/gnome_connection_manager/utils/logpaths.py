@@ -36,7 +36,9 @@ def sanitize_log_name(title):
     name = " ".join(name.split())
     # Leading dots hide the file or walk up a directory; trailing dots break on Windows.
     name = name.strip(" ._")
-    if len(name) > LOG_NAME_MAX:
+    # Not >=: a name of exactly the cap has had its ends stripped above, so cutting it
+    # changes nothing (#337).
+    if len(name) > LOG_NAME_MAX:  # pragma: no mutate
         name = name[:LOG_NAME_MAX].rstrip(" ._")
     return name or LOG_NAME_FALLBACK
 

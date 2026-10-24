@@ -52,7 +52,7 @@ def encrypt_old(passw: str, string: str) -> str:
     try:
         return base64.b64encode(xor(passw, string)).decode("ascii")
     except (ValueError, TypeError, UnicodeError):
-        logger.exception("Legacy encryption error")
+        logger.exception("Legacy encryption error")  # pragma: no mutate -- log text alone
         return ""
 
 
@@ -61,7 +61,7 @@ def decrypt_old(passw: str, string: str) -> str:
     try:
         plaintext = xor(passw, base64.b64decode(string))
     except (ValueError, TypeError, UnicodeError):
-        logger.exception("Legacy decryption error")
+        logger.exception("Legacy decryption error")  # pragma: no mutate -- log text alone
         return ""
     try:
         return plaintext.decode("utf-8")
@@ -118,7 +118,8 @@ def _password_to_key(secret: str | bytes) -> bytes:
 def _pkcs7_pad(data: bytes) -> bytes:
     pad_len = 16 - (len(data) % 16)
     if pad_len == 0:
-        pad_len = 16
+        # Never reached: 16 - n % 16 is 1 to 16 (#337).
+        pad_len = 16  # pragma: no mutate
     return data + bytes([pad_len] * pad_len)
 
 
@@ -167,7 +168,7 @@ def encrypt(passw: str, string: str) -> str:
             ciphertext.extend(bytes(b ^ s for b, s in zip(block, stream_block, strict=True)))
         return _KDF_PREFIX + base64.b64encode(salt + iv + ciphertext).decode("ascii")
     except Exception:
-        logger.exception("AES encryption error")
+        logger.exception("AES encryption error")  # pragma: no mutate -- log text alone
         return ""
 
 
@@ -182,7 +183,9 @@ def decrypt(passw: str, string: str, legacy: bool = False) -> str:
             return decrypt_old(passw, string)
         if string.startswith(_KDF_PREFIX):
             data = base64.b64decode(string[len(_KDF_PREFIX) :])
-            if len(data) <= _KDF_SALT_BYTES + 16:
+            # A value with no whole block after its salt and IV would decrypt to "" as
+            # well, so the bound only spares a key derivation (#337).
+            if len(data) <= _KDF_SALT_BYTES + 16:  # pragma: no mutate
                 return ""
             salt = data[:_KDF_SALT_BYTES]
             iv = data[_KDF_SALT_BYTES : _KDF_SALT_BYTES + 16]
@@ -193,7 +196,8 @@ def decrypt(passw: str, string: str, legacy: bool = False) -> str:
             # is the whole point of the prefix; it is rewritten in the new form the next
             # time the config is saved.
             data = base64.b64decode(string)
-            if len(data) <= 16:
+            # As above: one with no whole block after its IV would decrypt to "" too.
+            if len(data) <= 16:  # pragma: no mutate
                 return ""
             iv, ciphertext = data[:16], data[16:]
             key = _password_to_key(passw)
@@ -204,5 +208,5 @@ def decrypt(passw: str, string: str, legacy: bool = False) -> str:
             plaintext.extend(bytes(b ^ s for b, s in zip(block, stream_block, strict=True)))
         return _pkcs7_unpad(bytes(plaintext)).decode("utf-8")
     except Exception:
-        logger.exception("AES decryption error")
+        logger.exception("AES decryption error")  # pragma: no mutate -- log text alone
         return ""

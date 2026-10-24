@@ -33,6 +33,8 @@ ASKPASS = REPO / "data" / "scripts" / "gcm-askpass"
         # A user's own @ and : stay the user's, so the address names the right host.
         ("files.example", "ops@corp", "22", "sftp://ops%40corp@files.example/"),
         ("files.example", "a:b c", "22", "sftp://a%3Ab%20c@files.example/"),
+        # And a /, which would begin the path.
+        ("files.example", "corp/eric", "22", "sftp://corp%2Feric@files.example/"),
         ("192.0.2.7", "eric", "2222", "sftp://eric@192.0.2.7:2222/"),
         ("2001:db8::7", "eric", "2222", "sftp://eric@[2001:db8::7]:2222/"),
         ("::1", "eric", "22", "sftp://eric@[::1]/"),
@@ -315,6 +317,23 @@ def test_where_one_of_two_such_hosts_name_puts_a_mount_it_is_that_hosts():
     hosts = [("web-a", "eric@127.0.0.1:"), ("web-b", "eric@127.0.0.1:")]
 
     assert remotefiles.find_mounts(hosts, mounts, ROOT) == [None, ROOT / "web-b"]
+
+
+@pytest.mark.parametrize(
+    ("line", "found"),
+    [
+        # The mount point, then the type and the source after the separator: all it needs.
+        ("228 82 0:78 / /home/eric/mnt/web01 - fuse.sshfs eric@files.example:", True),
+        ("228 82 0:78 /home/eric/mnt/web01 - fuse.sshfs eric@files.example:", False),
+        ("228 82 0:78 / /home/eric/mnt/web01 - fuse.sshfs", False),
+        ("228 82 - fuse.sshfs eric@files.example:", False),
+    ],
+)
+def test_a_mount_table_line_is_read_only_when_it_holds_what_is_needed(line, found):
+    """Each line the kernel writes holds more. One that does not is passed over."""
+    expected = ("fuse.sshfs", "eric@files.example:") if found else None
+
+    assert remotefiles.mount_at(line + "\n", "/home/eric/mnt/web01") == expected
 
 
 def test_a_mount_at_one_hosts_folder_from_another_is_the_others():

@@ -60,7 +60,9 @@ def read_commands(stored, exact):
         try:
             text = json.loads(exact)
         except ValueError:
-            text = None
+            # Not "", which passes the check below only for a blank `commands`, and
+            # configparser strips that to "", which reads as "" either way (#337).
+            text = None  # pragma: no mutate
         if isinstance(text, str) and legacy_commands(text).strip() == stored.strip():
             return text
     return read_legacy_commands(stored)

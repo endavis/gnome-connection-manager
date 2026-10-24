@@ -185,6 +185,7 @@ class ConnectionType:
         return frozenset()
 
     def command(self, host, programs: Programs) -> Command:
+        # pragma: no mutate block -- the message alone, which no caller reads (#337)
         raise NotImplementedError(f"a {self.id or 'local'} host runs no command")
 
     def dropped(self, status: int, tail: str) -> bool:
@@ -203,6 +204,7 @@ class ConnectionType:
         return False
 
     def url(self, host) -> str:
+        # pragma: no mutate block -- the message alone, which no caller reads (#337)
         raise NotImplementedError(f"a {self.id or 'local'} host opens in a tab")
 
     def option(self, key: str) -> str:

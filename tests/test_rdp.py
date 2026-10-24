@@ -171,10 +171,12 @@ SCALE_PROBLEM = "The desktop scale is a percentage from 100 to 500"
         ("199x800", "", SIZE_PROBLEM),
         ("800x199", "", SIZE_PROBLEM),
         ("32767x800", "", SIZE_PROBLEM),
+        ("800x32767", "", SIZE_PROBLEM),
         ("0x0", "", SIZE_PROBLEM),
         ("1920x", "", SIZE_PROBLEM),
         ("big", "", SIZE_PROBLEM),
         # FreeRDP refuses over 100% as it reads its command line; 0% it ignores.
+        ("1%", "", None),
         ("80%", "", None),
         ("80%w", "", None),
         ("100%", "", None),

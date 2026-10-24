@@ -313,6 +313,170 @@ def test_transcript_of_nothing_is_empty_not_a_bare_newline():
     assert Transcript().text() == ""
 
 
+# -- the edges of each decision (#337) ----------------------------------------
+
+
+def test_read_writes_passes_over_entries_that_account_for_no_bytes(tmp_path):
+    """A count of nothing, or one past the end of the recording, cuts nothing. The
+    entries after it, a one-byte write among them, still cut where they say."""
+    raw = tmp_path / "s.raw"
+    raw.write_bytes(b"abcdef")
+    sidecar = tmp_path / "s.timing"
+    sidecar.write_text("0.5 2\n0.1 0\n0.2 1\n0.3 3\n0.4 4\n")
+
+    assert read_writes(str(raw), str(sidecar)) == [(0.5, b"ab"), (0.2, b"c"), (0.3, b"def")]
+
+
+def test_read_writes_skips_a_garbled_line_of_the_sidecar(tmp_path):
+    """One that is no `delay count` pair, in bytes no UTF-8 holds, costs that line alone."""
+    raw = tmp_path / "s.raw"
+    raw.write_bytes(b"abcd")
+    sidecar = tmp_path / "s.timing"
+    sidecar.write_bytes(b"0.1 2\n\xff\xfe\n0.2 2\n")
+
+    assert read_writes(str(raw), str(sidecar)) == [(0.1, b"ab"), (0.2, b"cd")]
+
+
+def test_coalesce_starts_a_frame_at_a_pause_of_exactly_the_gap():
+    """Under the gap is the same frame, and the gap itself is not under it."""
+    assert coalesce([(0.0, b"one"), (0.05, b"two")], gap=0.05) == [b"one", b"two"]
+
+
+def test_scanner_cuts_a_chunk_that_leaves_the_alternate_screen_and_comes_back():
+    """As a shell escape from vim does, with output before each switch."""
+    scanner = AltScreenScanner()
+    scanner.split(b"\x1b[?1049h")
+
+    runs = scanner.split(b"vim screen\x1b[?1049lshell output\x1b[?1049hvim again")
+
+    assert runs == [
+        (b"vim screen", True),
+        (b"\x1b[?1049lshell output", False),
+        (b"\x1b[?1049hvim again", True),
+    ]
+
+
+def test_scanner_passes_over_a_switch_to_its_own_screen_and_sees_the_next():
+    scanner = AltScreenScanner()
+
+    runs = scanner.split(b"a\x1b[?1049lb\x1b[?1049hc")
+
+    assert runs == [(b"a\x1b[?1049lb", False), (b"\x1b[?1049hc", True)]
+
+
+@pytest.mark.parametrize("cut", range(1, 8))
+def test_scanner_sees_a_switch_split_after_any_of_its_bytes(cut):
+    sequence = b"\x1b[?1049h"
+    scanner = AltScreenScanner()
+
+    first = scanner.split(b"before" + sequence[:cut])
+    second = scanner.split(sequence[cut:] + b"after")
+
+    assert first == [(b"before", False)]
+    assert second == [(sequence + b"after", True)]
+
+
+@pytest.mark.parametrize("sequence", [b"\x1b[?1049h", b"\x1b[?1047h"])
+def test_scanner_holds_back_no_switch_that_ends_a_chunk_whole(sequence):
+    """Only a part of one, which the next chunk could finish."""
+    scanner = AltScreenScanner()
+
+    assert scanner.split(b"text" + sequence) == [(b"text", False), (sequence, True)]
+
+
+def test_scanner_close_hands_back_what_it_held_once():
+    scanner = AltScreenScanner()
+    scanner.split(b"x\x1b[?10")
+
+    assert scanner.close() == [(b"\x1b[?10", False)]
+    assert scanner.close() == []
+
+
+def test_scroll_shift_is_no_scroll_for_a_frame_that_changed_only_its_clock():
+    """Though its rows repeat, so that a shift of two matches two of them as well."""
+    before = ["a", "b", "a", "b", "clock 1"]
+    after = ["a", "b", "a", "b", "clock 2"]
+
+    assert scroll_shift(before, after) is None
+
+
+def test_scroll_shift_will_not_take_blank_rows_matching_at_a_shift_as_evidence():
+    """At a shift of one here only blank rows match, and they match at every shift."""
+    assert scroll_shift(["x", "", "", "y"], ["", "", "z", "w"]) is None
+
+
+def test_scroll_shift_takes_the_smaller_of_two_shifts_that_match_as_well():
+    """It emits fewer lines, and over-emitting is what makes a transcript useless."""
+    before = ["a", "b", "c", "a", "b", "c"]
+    after = ["b", "c", "X", "b", "c", "Y"]
+
+    assert scroll_shift(before, after) == (1, 0)
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "found"),
+    [
+        # Two runs of two text rows each: the first.
+        (
+            ["p0", "p1", "p2", "q0", "q1", "q2"],
+            ["p1", "p2", "zz", "q1", "q2", "ww"],
+            (1, 0),
+        ),
+        # As many text rows, and a blank one between them: the longer.
+        (
+            ["p0", "p1", "p2", "q0", "q1", "", "q2", "r"],
+            ["p1", "p2", "zz", "q1", "", "q2", "ww", "vv"],
+            (1, 3),
+        ),
+        # Three text rows against one and three blank rows: the one with more text.
+        (
+            ["p0", "p1", "p2", "p3", "q0", "q1", "", "", "", "r"],
+            ["p1", "p2", "p3", "zz", "q1", "", "", "", "ww", "vv"],
+            (1, 0),
+        ),
+    ],
+)
+def test_scroll_shift_trusts_the_run_with_most_text_then_most_rows_then_the_first(
+    before, after, found
+):
+    assert scroll_shift(before, after) == found
+
+
+def test_screen_replaced_counts_three_lines_on_each_side_as_a_screen():
+    """Two are a redraw (above); three are the fewest that make a page."""
+    assert screen_replaced(["a", "b", "c"], ["d", "e", "f"]) is True
+
+
+def test_screen_replaced_lets_a_quarter_of_the_lines_stay():
+    assert screen_replaced(["a", "b", "c", "kept"], ["d", "e", "f", "kept"]) is True
+
+
+@pytest.mark.parametrize(
+    ("tracker", "scrolled"), [(ScreenTracker(), ["l1"]), (ScreenTracker(3), [])]
+)
+def test_the_trackers_least_band_reaches_the_search_for_a_shift(tracker, scrolled):
+    """Two text rows are band enough by default, and not when it asks for three."""
+    tracker.feed(["l1", "l2", "l3", "status 1"])
+
+    assert tracker.feed(["l2", "l3", "l4", "status 2"]) == scrolled
+
+
+def test_the_tracker_keeps_an_indented_line_as_it_was_drawn():
+    """Its indent, not the blanks a screen row ends with."""
+    tracker = ScreenTracker()
+    tracker.feed(["    indented   ", "l2", "l3", "status 1"])
+
+    assert tracker.feed(["l2", "l3", "l4", "status 2"]) == ["    indented"]
+
+
+def test_a_transcript_keeps_an_indented_line_as_it_was_drawn():
+    out = Transcript()
+
+    out.extend(["    code();   "])
+
+    assert out.lines == ["    code();"]
+
+
 # -- the replayer, and how the application reaches a recording ----------------
 
 

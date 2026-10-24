@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import configparser
 import io
+import threading
 
 import pytest
 
@@ -604,5 +605,72 @@ def test_editing_an_unknown_folder_is_a_folder_error_not_a_key_error():
         lambda: tree.move("nope", ROOT),
         lambda: tree.remove("nope"),
     ):
-        with pytest.raises(FolderError):
+        with pytest.raises(FolderError) as refused:
             edit()
+        assert refused.value.reason == NO_SUCH_FOLDER
+
+
+# -- the edges of each rule (#337) ---------------------------------------------
+
+
+def test_a_new_folder_id_is_eight_hex_characters():
+    folder_id = folders.new_folder_id()
+
+    assert len(folder_id) == folders.FOLDER_ID_BYTES * 2
+    assert all(c in "0123456789abcdef" for c in folder_id)
+
+
+def test_a_folder_and_a_host_at_one_position_put_the_folder_first():
+    """As a hand edit can leave them; the tie goes as name order puts them."""
+    tree = FolderTree()
+    ops, hosts = filed(tree, "ops", "web", positions=(0,))
+    tree.folders[tree.ensure_path("ops/prod")].position = 0
+
+    assert named(tree.contents(hosts)[ops]) == ["prod", "web"]
+
+
+def test_arranged_puts_an_item_before_its_neighbour_unless_told_after():
+    tree = FolderTree()
+    _ops, (a, b, c) = filed(tree, "ops", "a", "b", "c")
+
+    assert named(folders.arranged([a, b, c], c, a)) == ["c", "a", "b"]
+
+
+def test_place_without_a_spot_goes_after_what_an_arranged_folder_holds_unplaced():
+    """At its end, with a place of its own: not among the unplaced, by name."""
+    tree = FolderTree()
+    ops, (c, b, y) = filed(tree, "ops", "c", "b", "y", positions=(0, 1, None))
+    _home, (a,) = filed(tree, "home", "a")
+    order = tree.contents([c, b, y])[ops]
+
+    a.folder = ops
+    folders.place(order, a)
+
+    assert named(tree.contents([a, b, c, y])[ops]) == ["c", "b", "y", "a"]
+
+
+def test_a_tree_that_loops_ends_every_walk_up_it():
+    """One that skipped repair(). Each walk runs on a thread of its own, so that one that
+    never ends fails here rather than hanging the suite."""
+    tree = tree_of(("a", "A", "b"), ("b", "B", "a"))
+    walked = []
+    walk = threading.Thread(
+        target=lambda: walked.append((tree.is_ancestor("elsewhere", "a"), tree.path_for("a"))),
+        daemon=True,
+    )
+
+    walk.start()
+    walk.join(5)
+
+    assert walked == [(False, "B/A")]
+
+
+@pytest.mark.parametrize("group", ["", None])
+def test_bind_files_a_host_without_a_group_at_the_top(group):
+    tree = FolderTree()
+    record = host(group)
+
+    tree.bind([record])
+
+    assert record.group == ""
+    assert tree.folders[record.folder].parent == ROOT

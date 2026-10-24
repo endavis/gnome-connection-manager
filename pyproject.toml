@@ -334,6 +334,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_package.py",
     "tests/test_placeholders.py",
     "tests/test_rdp.py",
+    "tests/test_relay.py",
     "tests/test_remotefiles.py",
     "tests/test_shortcuts.py",
     "tests/test_snippets.py",

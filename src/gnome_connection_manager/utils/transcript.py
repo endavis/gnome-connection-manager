@@ -281,7 +281,8 @@ class ScreenTracker:
     """
 
     def __init__(self, min_band: int = 2) -> None:
-        self._previous: list[str] | None = None
+        # Not "", which reads as no frame too: it has no rows to shift or replace (#337).
+        self._previous: list[str] | None = None  # pragma: no mutate
         self._min_band = min_band
 
     def feed(self, lines: list[str]) -> list[str]:
