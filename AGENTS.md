@@ -1021,7 +1021,14 @@ commands once wired (#119).
   `.venv` of its own (ADR-9022). The template's task builds that with `uv sync`, which
   leaves out the system's site packages, so `gi` did not import there (#327). GCM's
   `task_worktree` then builds it again, as CI builds GCM's, so the suite runs there as it
-  does here. Unset the `GCM_*_DIR` variables there too, as Testing says.
+  does here. Unset the `GCM_*_DIR` variables there too, as Testing says. `doit pr_merge`
+  removes it once merged, but only while everything git ignores there can be rebuilt, as
+  the `.venv` and the caches can: any other file keeps it, under `tmp/` too, a body file
+  in `tmp/agents/` included. So `.gitignore` ignores `tmp/*` but not the tracked
+  `tmp/.gitkeep`, as the template's does, which has git list what is in `tmp/` file by
+  file. Under a bare `tmp/` git listed the folder as one entry, and `doit pr_merge` kept
+  every worktree with anything in it (#332). For the same reason `audit` exports
+  `uv.lock` outside the tree, not into `tmp/`.
 - **`--body-file` for anything long.** A body passed inline is scanned as command
   arguments, so a message that merely names a blocked pattern is refused. Write it under
   `tmp/agents/` and pass the path. The same applies to commit messages: `git commit -F`.

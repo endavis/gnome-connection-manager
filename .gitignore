@@ -66,7 +66,11 @@ dmypy.json
 *.deb
 *.rpm
 /lang/*/LC_MESSAGES/*.mo
-tmp/
+# The template's rule, not a bare `tmp/`: git lists a folder holding a tracked file file by
+# file, so `doit pr_merge` tells a worktree's tmp/.uv_cache from someone's notes there. A
+# bare `tmp/` showed it as one entry, which kept every worktree with anything in it (#332).
+tmp/*
+!tmp/.gitkeep
 
 # User data (don't commit test configs)
 .gcm/
