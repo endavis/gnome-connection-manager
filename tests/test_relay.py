@@ -98,16 +98,23 @@ def resize(fd, rows, cols):
 
 def put_in_place(monkeypatch, stdin, stdout):
     """Give the relay `stdin` and `stdout` for its own, and keep its command out of this
-    process: a relay that ran it in place of itself would end the test run."""
+    process: a relay that ran it in place of itself would end the test run. So too the
+    command's terminal, which would make this process the leader of a session that a
+    hangup ends: measured under mutmut, it died of SIGHUP, which mutmut does not count as
+    a test failing (#339)."""
     monkeypatch.setattr(sys, "stdin", SimpleNamespace(fileno=lambda: stdin))
     monkeypatch.setattr(sys, "stdout", SimpleNamespace(fileno=lambda: stdout))
-    own, execvp = os.getpid(), os.execvp
+    own = os.getpid()
 
-    def execvp_in_a_child(file, args):
-        assert os.getpid() != own, "the relay ran its command in place of itself"
-        execvp(file, args)
+    def in_a_child(call):
+        def called(*args):
+            assert os.getpid() != own, "the relay ran its command in place of itself"
+            return call(*args)
 
-    monkeypatch.setattr(os, "execvp", execvp_in_a_child)
+        return called
+
+    for name in ("execvp", "login_tty"):
+        monkeypatch.setattr(os, name, in_a_child(getattr(os, name)))
     return own
 
 
@@ -155,21 +162,37 @@ def received(server):
     return data
 
 
+@pytest.fixture
+def held_up_after_fork(monkeypatch):
+    """The relay held up once it has started its program, as load holds it up, so that the
+    program runs before anything the relay does next. Both ways of starting a program on a
+    pty of its own are held up: `os.fork`, and `os.forkpty`, which `pty.fork` calls."""
+
+    def held_up(fork):
+        def forked():
+            result = fork()
+            if (result[0] if isinstance(result, tuple) else result) != 0:
+                time.sleep(0.3)
+            return result
+
+        return forked
+
+    for name in ("fork", "forkpty"):
+        monkeypatch.setattr(os, name, held_up(getattr(os, name)))
+
+
 # -- relay() -----------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("held_up_after_fork")
 def test_a_program_is_given_the_terminals_size_and_its_status_comes_back(monkeypatch, fds):
-    """The relay sizes the program's terminal after starting the program, so a program
-    that reads its size at once can find none: measured under load, `stty size` said
-    0 0. This one waits for it."""
+    """On its first read, however late the relay gets to run after starting it. The relay
+    used to size the program's terminal after starting the program, and measured under
+    load, `stty size` then said 0 0 (#339)."""
     master, slave = fds.terminal()
     resize(master, 33, 111)
-    program = (
-        "for _ in 1 2 3 4 5 6 7 8 9 10; do size=$(stty size);"
-        ' [ "$size" != "0 0" ] && break; sleep 0.1; done; echo "$size"; exit 3'
-    )
 
-    status = run_relay(monkeypatch, ["sh", "-c", program], slave, slave)
+    status = run_relay(monkeypatch, ["sh", "-c", "stty size; exit 3"], slave, slave)
 
     assert status == 3
     assert b"33 111" in read_all(master)
@@ -189,9 +212,9 @@ def test_the_terminal_is_given_back_as_it_was(monkeypatch, fds):
 
 
 # Says when it is ready for a resize, then the sizes each SIGWINCH gave it, once one of
-# them is the size the test resizes to. Not printed from the handler: the relay sizes the
-# program's terminal after starting it, and measured under load, that SIGWINCH could come
-# while READY was being printed, and printing again inside it raised.
+# them is the size the test resizes to. Not printed from the handler, which can interrupt
+# a print: when the relay sized the program's terminal after starting it, measured under
+# load, that SIGWINCH came while READY was being printed, and printing again raised.
 WINCH_PROGRAM = """
 import fcntl, signal, struct, termios, time
 
@@ -209,8 +232,11 @@ print("WINCH", *sizes, flush=True)
 """
 
 
+@pytest.mark.usefixtures("held_up_after_fork")
 def test_a_resize_reaches_the_program(monkeypatch, fds):
-    """VTE resizing the relay's terminal, which sends the relay SIGWINCH."""
+    """VTE resizing the relay's terminal, which sends the relay SIGWINCH. That is the one
+    SIGWINCH the program gets: its terminal has its size before it starts, where one sized
+    after sent it another, which it could take before printing READY (#339)."""
     master, slave = fds.terminal()
     resize(master, 24, 80)
     seen = []
@@ -228,7 +254,7 @@ def test_a_resize_reaches_the_program(monkeypatch, fds):
 
     output = b"".join(seen) + read_all(master)
     assert status == 0, output
-    assert re.search(rb"WINCH .*30x100", output), output
+    assert re.search(rb"WINCH 30x100\r?\n", output), output
 
 
 def test_what_is_typed_reaches_the_program_and_its_end_ends_only_input(monkeypatch, fds):
