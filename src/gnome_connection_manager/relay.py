@@ -24,7 +24,6 @@ import errno
 import fcntl
 import json
 import os
-import pty
 import select
 import signal
 import socket
@@ -150,12 +149,10 @@ class ClipboardChannel:
 
 def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
     """Run `command` on its own pty, forwarding bytes to and from this process's tty."""
-    child_pid, master_fd = pty.fork()
-    if child_pid == 0:
-        try:
-            os.execvp(command[0], command)
-        except OSError:
-            os._exit(127)
+    # Made here rather than by pty.fork(), so that it has its size before the program
+    # starts. Sized after, measured under load, a program reading its size at once read
+    # 0 by 0, and one that had a SIGWINCH handler by then was sent a resize (#339).
+    master_fd, slave_fd = os.openpty()
 
     # The handler passes a resize on itself. The loop waits in select, which a signal does
     # not end (PEP 475), so a resize left to the loop reached an idle program only when a
@@ -171,6 +168,18 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
         pass
     # After the handler, so that a resize between the two is not lost.
     set_window_size(master_fd, window_size(sys.stdout.fileno()))
+
+    child_pid = os.fork()
+    if child_pid == 0:
+        # The child keeps the handler until it execs, which ends it, and meanwhile it can
+        # only set the size the relay sets, or find the pty closed.
+        try:
+            os.close(master_fd)
+            os.login_tty(slave_fd)
+            os.execvp(command[0], command)
+        except OSError:
+            os._exit(127)
+    os.close(slave_fd)
 
     # Our own tty must be raw: the child's pty already does echo and line editing, and
     # doing it twice mangles everything the user types.

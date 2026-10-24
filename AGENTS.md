@@ -29,13 +29,18 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   freeze the interface. A change of the tab's size reaches it as SIGWINCH, and
   `on_sigwinch` passes the size on itself. Python retries a `select` a signal
   interrupted once the handler has run (PEP 475), so a size left for the loop reached an
-  idle program only when a byte next went through, measured (#319).
+  idle program only when a byte next went through, measured (#319). `relay` makes the
+  program's pty itself, with `os.openpty`, and sizes it before it forks. `pty.fork` starts
+  the program first, and measured under load, a program that read its size at once then
+  read 0 by 0 (#339).
   `tests/test_osc52.py` runs the relay on a pty that is its controlling terminal, since
   only then does a resize signal it. `tests/test_relay.py` calls `relay()` in pytest's
   own process instead, with a pty or pipes of the test's in place of `sys.stdin` and
   `sys.stdout`, so that mutmut sees its mutants reached (#337). The relay holds the test's
   thread until its program ends, so what a test does meanwhile, a resize among it, runs
   from a timer's SIGALRM, and the resize is a SIGWINCH the test sends itself.
+  `held_up_after_fork` holds the relay up once it has started its program, as load does,
+  so that what a test finds the program first sees does not hang on the scheduler.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
 - `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which
