@@ -445,7 +445,9 @@ def test_draws_a_window():
 """
 
 # pytest run in one process as mutmut runs it: MUTANT_UNDER_TEST set, as mutmut sets it
-# for each run, and mutmut imported, as it is in its own process.
+# for each run, and mutmut imported, as it is in its own process. The run reads no
+# pyproject.toml, so it blocks the system's platformdirs plugin itself, as GCM's addopts
+# do: on CI it stopped the run before collection (#252).
 RUNS_PYTEST = """
 import os
 import sys
@@ -455,8 +457,8 @@ import pytest
 if sys.argv[1] == "mutmut":
     import mutmut  # noqa: F401
 os.environ["MUTANT_UNDER_TEST"] = ""
-codes = [int(pytest.main(["-q", "-rs", "-p", "no:cacheprovider", "test_draws.py"]))
-         for _ in range(int(sys.argv[2]))]
+arguments = ["-q", "-rs", "-p", "no:cacheprovider", "-p", "no:platformdirs", "test_draws.py"]
+codes = [int(pytest.main(arguments)) for _ in range(int(sys.argv[2]))]
 print("exit codes", codes)
 """
 
