@@ -72,8 +72,7 @@ def test_erase_binding_auto_matches_the_real_enum():
     here -- the same discipline that catches a fake offering what the real class does
     not (#30, #41). This test uses real gi, not the conftest stub.
     """
-    import gi
-
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
     gi.require_version("Vte", "2.91")
     from gi.repository import Vte
 

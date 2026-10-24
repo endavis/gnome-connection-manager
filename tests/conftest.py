@@ -103,6 +103,16 @@ def pytest_configure(config):
     # .gcm.key. GitHub's runners set it; so do some desktops. Popping it here reaches the
     # subprocess tests too, which inherit this environment and set only HOME themselves.
     os.environ.pop("XDG_CONFIG_HOME", None)
+    # mutmut makes every pytest run in its own process, setting MUTANT_UNDER_TEST for each:
+    # its stats run, its clean run, then a forked child for each mutant. GTK stays
+    # connected to the display it first opened, and pytest_unconfigure ends that run's
+    # Xvfb: measured, the next run to draw a real window exited 1 with no message, and each
+    # child would inherit the connection. So the real gi is kept out of mutmut's process,
+    # and a test that asks for it with pytest.importorskip skips there (#326). A pytest a
+    # test starts inherits the variable but not mutmut, and keeps the real gi: it makes
+    # one run. The app_module fixture's stub replaces the None while a test uses it.
+    if "MUTANT_UNDER_TEST" in os.environ and "mutmut" in sys.modules:
+        sys.modules["gi"] = None
     if os.environ.get("GCM_TEST_REAL_DISPLAY"):
         return
     # Under xdist this hook runs in the controller and again in every worker. The
