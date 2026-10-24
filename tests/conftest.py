@@ -113,6 +113,17 @@ def pytest_configure(config):
     # one run. The app_module fixture's stub replaces the None while a test uses it.
     if "MUTANT_UNDER_TEST" in os.environ and "mutmut" in sys.modules:
         sys.modules["gi"] = None
+        # Nor does that process get an Xvfb. With the real gi kept out and the real-GTK
+        # scenarios deselected, nothing there draws on one, measured. And mutmut ends a
+        # mutant that runs too long with SIGXCPU, then SIGKILL, so pytest_unconfigure never
+        # ran, and each such mutant left its Xvfb running: a day of local runs left 109, on
+        # all but one of the display numbers _free_display tries (#341). Nor the
+        # developer's display: a selected test that reached it would open a window there
+        # for every mutant. A pytest a test starts has no mutmut in it, and starts an Xvfb
+        # of its own.
+        os.environ.pop("DISPLAY", None)
+        os.environ.pop("WAYLAND_DISPLAY", None)
+        return
     if os.environ.get("GCM_TEST_REAL_DISPLAY"):
         return
     # Under xdist this hook runs in the controller and again in every worker. The
