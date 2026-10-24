@@ -299,6 +299,67 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
+[tool.mutmut]
+source_paths = ["src/"]
+# Not app.py. Its copy in mutants/ holds every mutant of it, and `app_module` imports it
+# afresh for each test that takes it. Measured, the stats run's first 82 tests then took
+# 75 s, and with app.py left alone its first 412 took 4 s. GCM's pure logic, which its
+# tests call directly, is in utils/ (#326).
+do_not_mutate = ["src/gnome_connection_manager/app.py"]
+# What the selected tests read beside the code, measured: the scripts and the glade file
+# under data/, a catalog under lang/, the Makefile's recipes, and the README, which must
+# not spell out the version.
+also_copy = ["data", "lang", "Makefile", "README.md"]
+# Every test file that imports the package or takes `app_module`, bar those
+# tests/test_mutmut_config.py excuses. That test keeps this list complete.
+pytest_add_cli_args_test_selection = [
+    "tests/test_activity.py",
+    "tests/test_afterlogin.py",
+    "tests/test_application.py",
+    "tests/test_command_hosts.py",
+    "tests/test_commands_after_login.py",
+    "tests/test_config.py",
+    "tests/test_configfile.py",
+    "tests/test_configpaths.py",
+    "tests/test_connections.py",
+    "tests/test_console_list.py",
+    "tests/test_crypto.py",
+    "tests/test_encryption.py",
+    "tests/test_folders.py",
+    "tests/test_host_files.py",
+    "tests/test_hosts.py",
+    "tests/test_logpaths.py",
+    "tests/test_main.py",
+    "tests/test_osc52.py",
+    "tests/test_package.py",
+    "tests/test_placeholders.py",
+    "tests/test_rdp.py",
+    "tests/test_remotefiles.py",
+    "tests/test_shortcuts.py",
+    "tests/test_snippets.py",
+    "tests/test_transcript.py",
+    "tests/test_updates.py",
+    "tests/test_urlregex.py",
+    "tests/test_vtehtml.py",
+    "tests/test_wconfig.py",
+    "tests/test_whost.py",
+    "tests/test_window_fit.py",
+    "tests/test_windows_rdp.py",
+    "tests/test_wmain.py",
+]
+# --no-cov: coverage made each run half as long again, measured. The real-GTK scenarios
+# run GCM in a subprocess, which imports the tree's own code rather than mutants/', so
+# they can kill no mutant. The deselected test asserts which module's globals a function
+# reads, and mutmut wraps each function it mutates in a trampoline of its own module.
+pytest_add_cli_args = [
+    "--assert=plain",
+    "--no-cov",
+    "-k",
+    "not against_real_gtk",
+    "--deselect",
+    "tests/test_encryption.py::test_hostutils_reads_crypto_from_its_own_module",
+]
+
 # Releases (#291). `cz bump --files-only --yes <version>` writes the version into
 # pyproject.toml and the three files below, the four tests/test_package.py keeps equal.
 # CHANGELOG.md is written by hand, so no release step generates it.

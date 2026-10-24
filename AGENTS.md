@@ -675,6 +675,22 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `GCM_GLADE_DIR` and `GCM_SCRIPTS_DIR`: `main()` sets them, a shell in a GCM tab inherits
   them, and measured, they gave the worktree's GCM the main checkout's `data/`, so a
   mutant of a script there went unseen and survived.
+- **The weekly mutation run is mutmut over `utils/`, `relay.py` and `main.py`** (#326),
+  as `[tool.mutmut]` in `pyproject.toml` sets it up. Not `app.py`: mutmut's copy of a
+  module holds every mutant of it, and `app_module` imports `app.py` afresh for each
+  test, which measured, made every such test take about a second. It runs each test file
+  that imports the package or takes `app_module`, bar those `tests/test_mutmut_config.py`
+  excuses, and that test fails on one left out. A subprocess started from mutmut's copy
+  imports the package from the tree, not from the copy, measured, so the real-GTK
+  scenarios are left out, and of `relay.py`'s mutants only those a test calls in its own
+  process are checked. mutmut makes all its runs in one process and forks it for each
+  mutant, and GTK stays connected to the first run's Xvfb, which ends with that run: its
+  clean run exited 1 and printed nothing. So `tests/conftest.py` keeps the real `gi` out
+  of mutmut's process, and a selected test that wants it asks with
+  `pytest.importorskip("gi")`, which the same test checks. A test that reads the source
+  rather than running it sees every mutant at once, and is left out or deselected there.
+  The test file is GCM's own: the template's, which a sync offers, checks the template's
+  selection.
 - **Verify what is rendered, not what the model says.** A menubar was once "verified" by
   walking its `Gio.Menu` when it had never been rendered at all (#43). Walk the widget tree.
 - **A test that reads the screen raises its window first.** Every xdist worker's windows
