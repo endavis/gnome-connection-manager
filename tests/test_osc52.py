@@ -146,6 +146,61 @@ def test_default_max_payload_is_bounded():
 # -- GCM side: relay wiring and clipboard application ------------------------
 
 
+# -- the edges of each rule (#337) ---------------------------------------------
+
+
+def test_a_write_of_exactly_the_cap_is_taken():
+    assert Osc52Scanner(max_payload=4).feed(sequence(b"AB")) == [("c", b"AB")]
+
+
+def test_an_unterminated_write_of_exactly_the_cap_is_still_waited_for():
+    scanner = Osc52Scanner(max_payload=6)
+
+    assert scanner.feed(b"\x1b]52;c;QUI=") == []
+    assert scanner.feed(b"\x07") == [("c", b"AB")]
+
+
+def test_a_write_after_an_oversized_unterminated_one_is_still_found():
+    scanner = Osc52Scanner(max_payload=6)
+
+    assert scanner.feed(b"\x1b]52;c;" + b"A" * 10 + b"\x1b]52;c;QUI=") == []
+    assert scanner.feed(b"\x07") == [("c", b"AB")]
+
+
+def test_two_writes_ended_by_st_in_one_chunk_are_both_found():
+    st = b"\x1b\\"
+
+    assert Osc52Scanner().feed(
+        sequence(b"one", terminator=st) + sequence(b"two", terminator=st)
+    ) == [
+        ("c", b"one"),
+        ("c", b"two"),
+    ]
+
+
+@pytest.mark.parametrize("terminator", [b"\x07", b"\x1b\\"])
+@pytest.mark.parametrize(("body", "writes"), [(b"", []), (b"c", []), (b"c;", [("c", b"")])])
+def test_a_short_sequence_does_not_hide_the_write_after_it(terminator, body, writes):
+    """Empty, a selection alone, and an empty write, which empties the clipboard."""
+    chunk = b"\x1b]52;" + body + terminator + sequence(b"AB", terminator=terminator)
+
+    assert Osc52Scanner().feed(chunk) == [*writes, ("c", b"AB")]
+
+
+def test_only_the_first_semicolon_ends_the_selection():
+    """What follows it is the payload, whole, and here that is not base64."""
+    assert Osc52Scanner().feed(b"\x1b]52;c;QUI=;QUI=\x07") == []
+
+
+def test_a_write_naming_two_selections_goes_to_the_first_honoured():
+    assert Osc52Scanner().feed(sequence(b"AB", selection="pc")) == [("p", b"AB")]
+
+
+def test_a_selection_that_is_not_ascii_is_ignored():
+    """A remote host's bytes, which must not raise out of the relay."""
+    assert Osc52Scanner().feed(b"\x1b]52;\xff;QUI=\x07") == []
+
+
 def test_relay_command_wraps_the_original_argv(app_module):
     wrapped = app_module.relay_command(["ssh", "host"], "/run/clip.sock")
 
@@ -452,6 +507,20 @@ def test_recorder_writes_a_timing_line_per_chunk(tmp_path):
     assert len(lines) == 3
     assert [int(line.split()[1]) for line in lines] == [5, 12, 1]
     assert lines[0].split()[0] == "0.000000", "the first chunk has no delay to report"
+
+
+def test_each_timing_line_is_on_disk_as_soon_as_its_chunk_is(tmp_path):
+    """A tab's menu offers Save Transcript while its session still runs, and a timing
+    line still in a buffer would leave its chunk without a boundary (#337)."""
+    from gnome_connection_manager.relay import RawRecorder
+
+    raw, timing = tmp_path / "s.raw", tmp_path / "s.timing"
+    recorder = RawRecorder(str(raw), str(timing))
+    recorder.write(b"live")
+    try:
+        assert timing.read_text().split()[1:] == ["4"]
+    finally:
+        recorder.close()
 
 
 def test_timing_accounts_for_every_byte_of_the_recording(tmp_path):

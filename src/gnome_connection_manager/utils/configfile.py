@@ -97,7 +97,8 @@ def free_name(name: str, taken: set[str]) -> str:
     return candidate
 
 
-def read_config(text: str, source: str = "<gcm.conf>") -> Reading:
+# The default only names a parse error's file, and every caller passes the path (#337).
+def read_config(text: str, source: str = "<gcm.conf>") -> Reading:  # pragma: no mutate
     """Parse gcm.conf's text, keeping repeated host, folder and snippet sections apart.
 
     Raises configparser.Error for anything the lenient parser still refuses.

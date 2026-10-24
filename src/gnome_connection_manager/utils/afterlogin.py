@@ -156,13 +156,15 @@ class Gate:
     def __init__(self, program: str, commands: list[tuple[int, str]], spawned: float):
         self.program = program  # the program's name, as /proc gives it
         self.commands = commands  # as command_groups gives them
-        self.pid: int | None = None
+        # Read only as true or false, here and in app.py, so "" would do as well (#337).
+        self.pid: int | None = None  # pragma: no mutate
         self.held: list = []
         self.sending = False
         self.found = False  # whether the program's terminal has been read
         self.waiting_since = spawned  # the spawn, or the last time the login asked
         self.raw_since: float | None = None  # while the terminal is raw
-        self.last_output: float | None = None
+        # Read only as `self.last_output or 0`, which "" would give too (#337).
+        self.last_output: float | None = None  # pragma: no mutate
 
     def output(self, now: float) -> None:
         """Note a change to the tab's screen at `now`."""

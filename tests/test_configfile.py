@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import configparser
 import os
+import threading
 from textwrap import dedent
 
 import pytest
@@ -84,6 +85,39 @@ def test_a_kept_repeat_takes_a_name_nothing_else_uses():
     reading = configfile.read_config(text)
 
     assert sorted(host["name"] for host in sections(reading).values()) == ["db", "mail", "web"]
+
+
+def test_every_copy_is_counted():
+    host = "[host 1]\nname = web\n"
+
+    verbatim = configfile.read_config(host * 3)
+    differing = configfile.read_config("".join(f"[host 1]\nname = web{n}\n" for n in range(3)))
+
+    assert (verbatim.kept_apart, verbatim.dropped) == (0, 2)
+    assert (differing.kept_apart, differing.dropped) == (2, 0)
+
+
+def test_four_copies_of_a_host_are_each_kept_as_a_host():
+    """Each takes the next free name. The read runs on a thread of its own, so that one
+    that never finds a free name fails here rather than hanging the suite."""
+    text = "".join(f"[host 1]\nname = web{n}\n" for n in range(4))
+    read = []
+    reading = threading.Thread(
+        target=lambda: read.append(configfile.read_config(text)), daemon=True
+    )
+
+    reading.start()
+    reading.join(5)
+
+    assert len(read) == 1
+    assert sorted(
+        dict(read[0].config.items(name))["name"] for name in read[0].config.sections()
+    ) == [
+        "web0",
+        "web1",
+        "web2",
+        "web3",
+    ]
 
 
 def test_a_repeated_folder_is_kept_under_a_fresh_id_and_the_id_reported():
@@ -244,10 +278,10 @@ def test_load_refuses_a_path_it_cannot_open(tmp_path):
     path = tmp_path / "gcm.conf"
     path.mkdir()
 
-    with pytest.raises(configfile.UnreadableError, match="Is a directory") as refused:
+    with pytest.raises(configfile.UnreadableError) as refused:
         configfile.load(path)
 
-    assert str(path) in str(refused.value)
+    assert str(refused.value) == f"{path}: Is a directory"
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads a file whatever its mode")
@@ -356,7 +390,7 @@ def test_read_option_reports_a_value_it_cannot_read(line, kind, default):
         text,
         default,
     )
-    assert unread.reason
+    assert text in unread.reason, "configparser's or int()'s own words, quoting the value"
 
 
 @pytest.mark.parametrize(

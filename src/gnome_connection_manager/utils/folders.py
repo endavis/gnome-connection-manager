@@ -51,7 +51,8 @@ class FolderError(ValueError):
     """An edit that would break the tree. `reason` is one of the constants below."""
 
     def __init__(self, reason: str) -> None:
-        super().__init__(reason)
+        # The message alone: what refused an edit is read from `reason` (#337).
+        super().__init__(reason)  # pragma: no mutate
         self.reason = reason
 
 

@@ -91,6 +91,24 @@ def test_a_refused_key_says_why_in_the_log(caplog):
     assert "never reach the terminal" in caplog.text
 
 
+def test_entries_after_a_blank_name_or_an_empty_sequence_are_still_bound():
+    accepted = shortcuts.parse_custom_keys({"   ": "\\n", "F5": "", "F6": "ls\\n"}, reserved=set())
+
+    assert accepted == {"F6": b"ls\n"}
+
+
+def test_an_entry_without_a_name_binds_nothing():
+    assert shortcuts.parse_custom_keys({None: "\\n"}, reserved=set()) == {}
+
+
+def test_an_undecodable_sequence_says_which_entry_in_the_log(caplog):
+    with caplog.at_level(logging.WARNING, logger="gnome_connection_manager"):
+        shortcuts.parse_custom_keys({"SHIFT+RETURN": "\\xZZ"}, reserved=set())
+
+    assert repr("SHIFT+RETURN") in caplog.text
+    assert repr("\\xZZ") in caplog.text
+
+
 def test_clamp_font_scale_holds_vte_limits():
     """VTE itself lands 0.1 on 0.25 and 99.0 on 4.0; the clamp mirrors that."""
     assert shortcuts.clamp_font_scale(0.01) == shortcuts.FONT_SCALE_MIN

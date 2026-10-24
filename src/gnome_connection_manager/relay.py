@@ -175,7 +175,8 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
     # Our own tty must be raw: the child's pty already does echo and line editing, and
     # doing it twice mangles everything the user types.
     stdin_fd = sys.stdin.fileno()
-    saved = None
+    # Replaced below whichever way the try goes, so "" would do as well (#337).
+    saved = None  # pragma: no mutate
     try:
         saved = termios.tcgetattr(stdin_fd)
         tty.setraw(stdin_fd)
@@ -193,7 +194,8 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
                 readable, _, _ = select.select(watched, [], [])
             except OSError as exc:
                 if exc.errno == errno.EINTR:
-                    continue
+                    # Never reached: Python retries a select a signal interrupts (PEP 475).
+                    continue  # pragma: no mutate
                 break
             if master_fd in readable:
                 try:
@@ -201,7 +203,9 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
                 except OSError:
                     break
                 if not chunk:
-                    break
+                    # Never reached on Linux, which ends a pty's output with EIO, handled
+                    # above, rather than with an empty read: measured (#337).
+                    break  # pragma: no mutate
                 recorder.write(chunk)
                 for selection, data in scanner.feed(chunk):
                     clipboard.send(selection, data)
@@ -226,7 +230,8 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
         if with_winch:
             # The handler must not reach the pty's number once it is closed.
             signal.signal(signal.SIGWINCH, signal.SIG_DFL)
-        with contextlib.suppress(OSError):
+        # Nothing closes the pty before this, so closing it does not fail (#337).
+        with contextlib.suppress(OSError):  # pragma: no mutate
             os.close(master_fd)
 
     _, status = os.waitpid(child_pid, 0)
@@ -241,7 +246,8 @@ def _write_all(fd, data):
             written = os.write(fd, data)
         except OSError as exc:
             if exc.errno == errno.EINTR:
-                continue
+                # Never reached: Python retries a write a signal interrupts (PEP 475).
+                continue  # pragma: no mutate
             return
         data = data[written:]
 

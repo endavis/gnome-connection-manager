@@ -27,7 +27,9 @@ class QuietWatch:
 
     def __init__(self):
         self.busy_since: float | None = None
-        self.last_output: float | None = None
+        # Never read while `busy_since` is None, which it is whenever this holds its
+        # first value, so "" would do as well (#337).
+        self.last_output: float | None = None  # pragma: no mutate
 
     @property
     def waiting(self) -> bool:
@@ -64,4 +66,5 @@ class QuietWatch:
     def reset(self) -> None:
         """Forget the current run: the user has looked, or it has been settled."""
         self.busy_since = None
-        self.last_output = None
+        # As in __init__: never read while `busy_since` is None (#337).
+        self.last_output = None  # pragma: no mutate

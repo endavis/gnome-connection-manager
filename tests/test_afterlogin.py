@@ -14,7 +14,9 @@ import shutil
 import signal
 import subprocess
 import termios
+import threading
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -338,3 +340,135 @@ def test_a_question_in_the_session_is_answered():
     gate.due(SESSION, False, 1.0)
     assert gate.key(CONNECTING, True, False) == PASS
     assert gate.key(CONNECTING, False, False) == HOLD
+
+
+# -- reading /proc as the kernel lays it out, and the edges of the waits (#337) -----------
+
+
+@pytest.fixture
+def listed_as_proc_lists(monkeypatch):
+    """Each folder listed as the real /proc lists itself: its other entries, `self` and
+    `bus` and the rest, before the processes. A folder of the test's own lists in an
+    order of the filesystem's, which put `self` last here and first on CI (#337)."""
+    real = Path.iterdir
+    monkeypatch.setattr(
+        Path,
+        "iterdir",
+        lambda self: iter(sorted(real(self), key=lambda p: (p.name.isdigit(), p.name))),
+    )
+
+
+def test_parents_reads_past_entries_that_are_no_process(tmp_path, listed_as_proc_lists):
+    """Not a number, or a process gone before its stat was read."""
+    proc = fake_proc(tmp_path, {7: ("sh", 1), 9: ("ssh", 7)})
+    (Path(proc) / "5").mkdir()
+    (Path(proc) / "5" / "stat").write_text("5 (gon")
+
+    assert afterlogin.parents(proc) == [(7, 1), (9, 7)]
+
+
+def test_children_reads_every_threads_list_where_the_kernel_keeps_them(
+    tmp_path, listed_as_proc_lists
+):
+    """Each thread lists the children it started, and one whose list cannot be read is
+    passed over. The lists are what is read, not the parent each child names, which
+    disagree here for 12, as they cannot on a real kernel."""
+    proc = fake_proc(tmp_path, {10: ("sh", 1), 11: ("ssh", 10), 12: ("ssh", 99)})
+    task = Path(proc) / "10" / "task"
+    (task / "1" / "children").mkdir(parents=True)
+    (task / "30").mkdir()
+    (task / "30" / "children").write_text("12 ")
+
+    assert sorted(afterlogin.children(10, proc)) == [11, 12]
+
+
+def test_children_and_parents_read_the_real_proc_unless_told_otherwise():
+    process = subprocess.Popen(["sleep", "30"])
+    try:
+        assert process.pid in afterlogin.children(os.getpid())
+        assert (process.pid, os.getpid()) in afterlogin.parents()
+    finally:
+        process.kill()
+        process.wait()
+
+
+def test_find_program_searches_a_process_listed_twice_once_and_goes_on(tmp_path):
+    """Listed under two parents, as a process can be while it is reparented."""
+    proc = fake_proc(tmp_path, {1: ("sh", 0), 2: ("sh", 1), 3: ("sh", 1), 4: ("ssh", 3)})
+    (Path(proc) / "2" / "task" / "2" / "children").write_text("3 ")
+
+    assert afterlogin.find_program(1, "ssh", proc) == 4
+
+
+def test_find_program_ends_its_search_of_a_tree_that_loops(tmp_path):
+    """A pid reused while the tree was read can make one. The search runs on a thread of
+    its own, so that one that never ends fails here rather than hanging the suite."""
+    proc = fake_proc(tmp_path, {1: ("sh", 2), 2: ("sh", 1)})
+    found = []
+    search = threading.Thread(
+        target=lambda: found.append(afterlogin.find_program(1, "ssh", proc)), daemon=True
+    )
+
+    search.start()
+    search.join(5)
+
+    assert found == [None]
+
+
+def test_find_program_passes_over_a_process_gone_before_it_was_read(tmp_path):
+    proc = fake_proc(tmp_path, {1: ("sh", 0), 2: ("sh", 1), 3: ("ssh", 1)})
+    (Path(proc) / "2" / "comm").unlink()
+
+    assert afterlogin.find_program(1, "ssh", proc) == 3
+
+
+@pytest.mark.parametrize("name", ["ssh ", "sshX"])
+def test_find_program_drops_only_the_new_line_the_kernel_ends_a_name_with(tmp_path, name):
+    """Anything else at its end makes it another program."""
+    proc = fake_proc(tmp_path, {1: (name, 0)})
+
+    assert afterlogin.find_program(1, "ssh", proc) is None
+
+
+def test_reading_a_sessions_terminal_never_makes_it_gcms(tmp_path):
+    """A session leader with no terminal of its own, as GCM can be, takes the first it
+    opens without O_NOCTTY as its own, and its hangups with it. The child is forked,
+    not started, so that it runs this process's code: mutation testing changes only that.
+    """
+    assert afterlogin.terminal_state(os.getpid(), str(tmp_path)) is None  # seen running here
+    with warnings.catch_warnings():
+        # Under xdist the process has threads. The child only makes system calls and exits.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        pid = os.fork()
+    if pid == 0:
+        status = 2
+        try:
+            os.setsid()
+            _master, slave = os.openpty()
+            os.dup2(slave, 0)
+            afterlogin.terminal_state(os.getpid())
+            try:
+                os.close(os.open("/dev/tty", os.O_RDONLY))
+                status = 1
+            except OSError:
+                status = 0
+        finally:
+            os._exit(status)
+    _, status = os.waitpid(pid, 0)
+
+    assert os.waitstatus_to_exitcode(status) == 0
+
+
+def test_a_new_gate_holds_its_program_and_commands_and_no_keys():
+    """What app.py reads of it: the program to find, the commands to type, the keys held."""
+    gate = Gate("ssh", COMMANDS, spawned=0.0)
+
+    assert (gate.program, gate.commands, gate.held) == ("ssh", COMMANDS, [])
+
+
+def test_the_commands_go_once_a_silent_session_has_been_raw_for_quiet():
+    """With no output at all, the quiet counts from the moment the terminal went raw."""
+    gate = Gate("ssh", COMMANDS, spawned=0.0)
+
+    assert not gate.due(SESSION, False, 0.0)
+    assert gate.due(SESSION, False, QUIET)

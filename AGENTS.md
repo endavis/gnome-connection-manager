@@ -31,7 +31,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   interrupted once the handler has run (PEP 475), so a size left for the loop reached an
   idle program only when a byte next went through, measured (#319).
   `tests/test_osc52.py` runs the relay on a pty that is its controlling terminal, since
-  only then does a resize signal it.
+  only then does a resize signal it. `tests/test_relay.py` calls `relay()` in pytest's
+  own process instead, with a pty or pipes of the test's in place of `sys.stdin` and
+  `sys.stdout`, so that mutmut sees its mutants reached (#337). The relay holds the test's
+  thread until its program ends, so what a test does meanwhile, a resize among it, runs
+  from a timer's SIGALRM, and the resize is a SIGWINCH the test sends itself.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
 - `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which
@@ -682,8 +686,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
   that imports the package or takes `app_module`, bar those `tests/test_mutmut_config.py`
   excuses, and that test fails on one left out. A subprocess started from mutmut's copy
   imports the package from the tree, not from the copy, measured, so the real-GTK
-  scenarios are left out, and of `relay.py`'s mutants only those a test calls in its own
-  process are checked. mutmut makes all its runs in one process and forks it for each
+  scenarios are left out, and `relay.py`'s mutants are reached by `tests/test_relay.py`,
+  which runs it in pytest's own process. A mutant no input tells apart from the original
+  is marked `# pragma: no mutate`, the reason beside it, where every mutant on its line
+  is one: mutmut 3.7.0 marks whole lines, so one sharing a line with a mutant a test
+  kills is left alive, and #337 records which. mutmut makes all its runs in one process and forks it for each
   mutant, and GTK stays connected to the first run's Xvfb, which ends with that run: its
   clean run exited 1 and printed nothing. So `tests/conftest.py` keeps the real `gi` out
   of mutmut's process, and a selected test that wants it asks with

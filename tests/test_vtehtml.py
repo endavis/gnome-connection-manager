@@ -113,6 +113,20 @@ def test_a_stray_close_tag_does_not_raise():
     assert plain_text(parse_vte_html("<pre>a</b>b</pre>")) == "ab"
 
 
+def test_a_font_tag_without_a_colour_gives_none():
+    assert styles('<pre><font face="monospace">plain</font></pre>') == [("plain", {})]
+
+
+def test_a_span_without_a_style_gives_no_background():
+    assert styles("<pre><span>plain</span></pre>") == [("plain", {})]
+
+
+def test_the_background_is_found_among_other_declarations():
+    runs = styles('<pre><span style="color: red; background-color: #0000C0">bg</span></pre>')
+
+    assert runs == [("bg", {vtehtml.BACKGROUND: "#0000C0"})]
+
+
 # -- viewer integration (needs a real Gtk.TextView) --------------------------
 
 

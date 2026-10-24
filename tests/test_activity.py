@@ -115,3 +115,11 @@ def test_reset_forgets_the_run():
 
     assert watch.waiting is False
     assert watch.settled(last + 60, quiet_seconds=5) is False
+
+
+def test_a_quiet_period_of_one_second_settles():
+    """Preferences offers from 0 to 3600 seconds, and only 0 turns the mark off."""
+    watch = QuietWatch()
+    last = _busy(watch, 0.0, 3.0)
+
+    assert watch.settled(last + 1, quiet_seconds=1) is True

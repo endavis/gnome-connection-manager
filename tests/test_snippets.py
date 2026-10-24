@@ -209,6 +209,60 @@ def test_of_snippets_with_one_key_the_last_keeps_it():
     assert [s.key for s in library] == ["", "F8", ""]
 
 
+# -- the edges of each rule (#337) ---------------------------------------------------
+
+
+def test_a_first_line_of_exactly_the_cap_is_the_name_whole():
+    line = "x" * snippets.NAME_MAX
+
+    assert snippets.name_for(line) == line
+
+
+def test_a_cut_name_leaves_no_space_before_the_ellipsis():
+    """The cut falls just after the third word here."""
+    text = " ".join(["twelve-chars"] * 5)
+
+    assert snippets.name_for(text) == "twelve-chars twelve-chars twelve-chars…"
+
+
+def test_a_record_keeps_its_folder_and_description_through_a_file():
+    config = configparser.RawConfigParser()
+    disk = Snippet("aa11bb22", "disk", "df -h", "F8", "ops/storage", "free space")
+
+    snippets.save(config, [disk])
+
+    assert snippets.load(through_a_file(config)) == [disk]
+
+
+def test_a_value_on_more_than_one_line_is_saved_on_one():
+    """As a hand edit can leave a name: its lines joined by a space, and nothing else of
+    it changed."""
+    config = configparser.RawConfigParser()
+
+    snippets.save(config, [Snippet("aa11bb22", "two  spaces\nand a line", "df -h")])
+
+    assert config.get("snippet aa11bb22", "name") == "two  spaces and a line"
+
+
+def test_records_read_without_ids_are_minted_ones_apart(monkeypatch):
+    """Even when the random number repeats, as it does here."""
+    minted = iter(["aaaa", "aaaa", "bbbb"])
+    monkeypatch.setattr(snippets.secrets, "token_hex", lambda size: next(minted))
+    config = configparser.RawConfigParser()
+    config.read_string("[snippet ]\ntext = one\n\n[snippet  ]\ntext = two\n")
+
+    assert [snippet.id for snippet in snippets.load(config)] == ["aaaa", "bbbb"]
+
+
+def test_custom_commands_are_minted_ids_apart(monkeypatch):
+    minted = iter(["aaaa", "aaaa", "bbbb"])
+    monkeypatch.setattr(snippets.secrets, "token_hex", lambda size: next(minted))
+
+    migrated = snippets.migrate(legacy([("F7", "uptime"), ("F8", "df -h")]), [])
+
+    assert [snippet.id for snippet in migrated] == ["aaaa", "bbbb"]
+
+
 # -- the menus --------------------------------------------------------------------------
 
 

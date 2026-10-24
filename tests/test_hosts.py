@@ -646,3 +646,204 @@ def test_a_carriage_return_in_commands_leaves_the_file_as_it_was(tmp_path, comma
 
     assert b"\r" not in path.read_bytes()
     assert (loaded.name, loaded.commands) == (make_sample_host().name, commands)
+
+
+# -- every attribute, as written, read, defaulted and copied (#337) ------------
+
+
+def make_host_unlike_the_defaults():
+    """A host none of whose attributes holds what a missing one reads as.
+
+    An option written under another name, or never read, then comes back as its default
+    and shows, where make_sample_host's ssh type and unticked compression would not.
+    """
+    host = hosts.Host(
+        "infra/core",
+        "primary",
+        "core router",
+        "router.example.com",
+        "netops",
+        "topsecret",
+        "/home/netops/.ssh/id_rsa",
+        "2200",
+        "L8080:localhost:80,L8443:localhost:443",
+        "telnet",
+        "echo start\nrun-checks",
+        "30",
+        "#111111",
+        "#222222",
+        True,
+        True,
+        True,
+        "5",
+        "-oStrictHostKeyChecking=no",
+        True,
+        7,
+        8,
+        "xterm-256color",
+        True,
+        "",
+        "ab12cd34",
+        3,
+    )
+    host.type_settings = {"telnet.mode": "line"}
+    host.before_command = BEFORE
+    host.after_command = AFTER
+    return host
+
+
+def attributes(host):
+    """Everything a host holds, bar `i`, the count of arguments it was made with."""
+    return {name: value for name, value in vars(host).items() if name != "i"}
+
+
+def section_with_only_what_every_host_has():
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    for option in ("group", "name", "host", "user", "pass"):
+        config.set("host 1", option, "")
+    return config
+
+
+def test_every_attribute_of_a_host_survives_the_ini_round_trip():
+    host = make_host_unlike_the_defaults()
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+
+    assert attributes(loaded) == attributes(host)
+
+
+def test_each_option_missing_from_a_host_reads_as_its_default():
+    """A record an older GCM or a hand edit left short of options."""
+    loaded = hosts.HostUtils.load_host_from_ini(
+        section_with_only_what_every_host_has(), "host 1", pwd="secret"
+    )
+
+    assert attributes(loaded) == {
+        "group": "",
+        "name": "",
+        "description": "",
+        "host": "",
+        "user": "",
+        "password": "",
+        "private_key": "",
+        "port": "22",
+        "tunnel": [""],
+        "type": "ssh",
+        "commands": "",
+        "keep_alive": "",
+        "font_color": "",
+        "back_color": "",
+        "x11": False,
+        "agent": False,
+        "compression": False,
+        "compressionLevel": "",
+        "extra_params": "",
+        "log": False,
+        "backspace_key": hosts.ERASE_BINDING_AUTO,
+        "delete_key": hosts.ERASE_BINDING_AUTO,
+        "term": "",
+        "commands_enabled": False,
+        "id": loaded.id,
+        "folder": "",
+        "position": None,
+        "type_settings": {},
+        "before_command": "",
+        "after_command": "",
+    }
+
+
+def test_hosts_read_without_an_id_are_each_minted_one_of_their_own():
+    config = section_with_only_what_every_host_has()
+
+    first = hosts.HostUtils.load_host_from_ini(config, "host 1", pwd="secret")
+    second = hosts.HostUtils.load_host_from_ini(config, "host 1", pwd="secret")
+
+    assert first.id != second.id
+
+
+def test_a_host_made_from_a_name_alone_takes_each_default():
+    """As addTab makes one for a local console, from the name `local`."""
+    host = hosts.Host("", "local")
+
+    defaults = {
+        "port": 22,
+        "tunnel": [""],
+        "type": "ssh",
+        "keep_alive": 0,
+        "font_color": "",
+        "back_color": "",
+        "x11": False,
+        "agent": False,
+        "compression": False,
+        "compressionLevel": "",
+        "extra_params": "",
+        "log": False,
+        "backspace_key": hosts.ERASE_BINDING_AUTO,
+        "delete_key": hosts.ERASE_BINDING_AUTO,
+        "term": "",
+        "commands_enabled": False,
+        "folder": "",
+        "position": None,
+        "type_settings": {},
+        "before_command": "",
+        "after_command": "",
+    }
+    assert {name: attributes(host)[name] for name in defaults} == defaults
+
+
+def test_hosts_whose_parsing_fails_partway_are_minted_ids_of_their_own():
+    first, second = (
+        hosts.Host("infra", "primary", "", "router.example.com", "netops", "", "", "22", None)
+        for _ in range(2)
+    )
+
+    assert first.id != second.id
+
+
+def test_a_hosts_tunnels_are_one_forwarding_each():
+    assert make_sample_host().tunnel == ["L8080:localhost:80", "L8443:localhost:443"]
+
+
+def test_a_clone_holds_every_attribute_of_the_original_but_its_id_and_place():
+    host = make_host_unlike_the_defaults()
+
+    copy = host.clone()
+
+    assert attributes(copy) == attributes(host) | {"id": copy.id, "position": None}
+
+
+def test_two_clones_of_a_host_are_two_hosts():
+    host = make_sample_host()
+
+    assert host.clone().id != host.clone().id
+
+
+def test_a_hosts_options_stay_in_its_own_section():
+    """Not in [DEFAULT], which every section inherits: another host would read them."""
+    full = make_host_unlike_the_defaults()
+    full.commands = EXACT
+    config = configparser.RawConfigParser()
+    for section, host in (("host 1", full), ("host 2", make_sample_host())):
+        config.add_section(section)
+        hosts.HostUtils.save_host_to_ini(config, section, host, pwd="secret")
+
+    stored = reread(config)
+    loaded = hosts.HostUtils.load_host_from_ini(stored, "host 2", pwd="secret")
+
+    assert stored.defaults() == {}
+    assert (loaded.type_settings, loaded.before_command, loaded.after_command) == ({}, "", "")
+
+
+def test_ensure_unique_ids_mints_again_when_the_new_id_is_taken_too(monkeypatch):
+    first, second = make_sample_host(), make_sample_host()
+    second.id = first.id
+    minted = iter([first.id, "0badc0de"])
+    monkeypatch.setattr(hosts, "new_host_id", lambda: next(minted))
+
+    hosts.HostUtils.ensure_unique_ids([first, second])
+
+    assert second.id == "0badc0de"

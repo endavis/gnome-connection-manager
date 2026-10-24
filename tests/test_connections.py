@@ -327,6 +327,27 @@ def test_an_ssh_host_without_a_user_is_given_the_local_one():
     assert record.user == "localme"  # into the host itself, as addTab always did
 
 
+def test_a_dynamic_forward_keeps_the_address_it_binds_to():
+    """ssh's -D takes [bind_address:]port, which the host writes before its `:*:*`."""
+    command = SSH.command(host(tunnel=["127.0.0.1:10800:*:*"]), PROGRAMS)
+
+    assert command.argv[5:7] == ["-D", "127.0.0.1:10800"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "argv"),
+    [
+        ("ssh", ["ssh", "-l", "me", "-p", "2222", "example.test"]),
+        ("telnet", ["telnet", "example.test", "2222"]),
+    ],
+)
+def test_a_host_whose_extra_arguments_are_none_is_given_none(kind, argv):
+    """As one made in code, rather than read or edited, can have them."""
+    record = host(kind, extra_params=None)
+
+    assert connections.named(kind).command(record, PROGRAMS).argv == argv
+
+
 # -- telnet ------------------------------------------------------------------
 
 
@@ -337,6 +358,20 @@ def test_telnet_without_a_user_and_a_password_runs_telnet(user, password):
     command = TELNET.command(record, PROGRAMS)
 
     assert command.argv == ["telnet", "-e", "^]", "example.test", "2222"]
+    assert command.environment is None
+
+
+@pytest.mark.parametrize(("user", "password"), [("", "pw"), ("me", ""), ("", "")])
+def test_rdp_without_a_user_and_a_password_runs_freerdp_itself(monkeypatch, user, password):
+    """Nothing for ssh.expect to type, so FreeRDP asks for what it needs in the tab."""
+    monkeypatch.setattr(
+        connections.shutil, "which", lambda name: name if name == "xfreerdp3" else None
+    )
+    record = host("rdp", user=user, password=password)
+
+    command = RDP.command(record, PROGRAMS)
+
+    assert command.argv == ["xfreerdp3", *connections.rdp_arguments(record)]
     assert command.environment is None
 
 
