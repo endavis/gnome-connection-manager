@@ -11,6 +11,8 @@ the git log.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-24
+
 ### Added
 - The terminal guide has a section on session logs: what logs a saved host and a local
   console, where a local console's logs go, and how to start or stop the log of a tab

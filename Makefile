@@ -1,6 +1,6 @@
 PKG_NAME=gnome-connection-manager
 PKG_DESCRIPTION="Tabbed SSH, telnet and local shell manager with RDP, VNC, web and command hosts"
-PKG_VERSION=2.1.0
+PKG_VERSION=2.1.1
 PKG_MAINTAINER="Eric Davis <endavis@gmail.com>"
 PKG_ARCH=all
 PKG_ARCH_RPM=noarch
