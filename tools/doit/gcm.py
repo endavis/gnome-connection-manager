@@ -6,6 +6,7 @@ wholesale on a sync. Project-specific tasks live here so a sync never has to mer
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess  # nosec B404 - required to run msgfmt and the app
 import sys
@@ -14,7 +15,8 @@ from typing import Any
 
 from doit.tools import title_with_actions
 
-from . import quality
+from . import git, quality
+from .base import run_streamed
 
 REPO = Path(__file__).resolve().parents[2]
 LANG_DIR = REPO / "lang"
@@ -146,4 +148,52 @@ def task_check() -> dict[str, Any]:
     """
     task = quality.task_check()
     task["task_dep"] = [dep for dep in task["task_dep"] if dep != "wheel_check"]
+    return task
+
+
+# How CI builds GCM's environment: from the system interpreter, whose dist-packages hold
+# PyGObject, with the system's site packages in reach. tests/test_worktree.py holds both
+# commands to ci.yml.
+VENV_COMMAND = ["uv", "venv", "--system-site-packages", "--python", "/usr/bin/python3"]
+SYNC_COMMAND = ["uv", "sync", "--all-extras", "--dev"]
+
+
+def _build_venv_as_ci_does(branch: str) -> None:
+    """Build the .venv of the worktree just made for *branch* again, as CI builds GCM's."""
+    path = git.worktree_for_branch(branch)
+    if path is None:
+        print(f"No worktree has {branch} checked out, so no .venv was built again.")
+        sys.exit(1)
+    # The environment the vendored task gives its own sync, for the reasons it gives.
+    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
+    if "UV_CACHE_DIR" in env:
+        env["UV_CACHE_DIR"] = str(Path(env["UV_CACHE_DIR"]).resolve())
+    try:
+        # Quiet, so that the vendored task's account of how to work there stays in sight.
+        run_streamed([*VENV_COMMAND, "--clear", "--quiet"], env=env, cwd=path)
+        run_streamed([*SYNC_COMMAND, "--quiet"], env=env, cwd=path)
+    except subprocess.CalledProcessError:
+        print("Building its .venv as CI builds GCM's failed. The worktree exists; run in it:")
+        print("  " + " ".join([*VENV_COMMAND, "--clear"]))
+        print("  " + " ".join(SYNC_COMMAND))
+        sys.exit(1)
+    print("Its .venv is built again from /usr/bin/python3, with the system's site packages,")
+    print("where PyGObject is, as CI builds GCM's.")
+
+
+def task_worktree() -> dict[str, Any]:
+    """Create a git worktree with its own environment, built as CI builds GCM's.
+
+    Overrides the vendored task, which builds the worktree's .venv with `uv sync` alone.
+    That leaves out the system's site packages, the only place PyGObject comes from, so
+    `gi` did not import in a worktree, and the suite failed and skipped there (#327). uv's
+    `uv sync` has no option for them, and the .venv cannot be made before `git worktree
+    add` makes its folder, so an action after the vendored one builds it again and syncs
+    it. The vendored task is kept as it is otherwise, so a change the template makes to it
+    reaches this one at the next sync.
+
+    dodo.py installs this by name after discovery, as it does task_audit.
+    """
+    task = git.task_worktree()
+    task["actions"].append(_build_venv_as_ci_does)
     return task

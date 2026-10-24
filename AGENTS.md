@@ -648,10 +648,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `tools/doit/gcm.py` overrides a vendored task by name, and `dodo.py` installs the
   override after discovery. `audit` audits `uv.lock`, not an environment that holds every
   package apt installed. `check` leaves out `wheel_check`, whose clean virtualenv cannot
-  import GTK, measured (#324). `release_tag` used to send GCM's developers to a build and
-  to PyPI pages that do not exist, until #306 changed it here. The template carries that
-  change itself since pyproject-template#993, and `tests/test_release_tag.py` still checks
-  it. For anything without a task, use `uv run …` so the repo's environment is honored.
+  import GTK, measured (#324). `worktree` builds a new worktree's `.venv` a second time,
+  from `/usr/bin/python3` with the system's site packages, as CI builds GCM's (#327).
+  `release_tag` used to send GCM's developers to a build and to PyPI pages that do not
+  exist, until #306 changed it here. The template carries that change itself since
+  pyproject-template#993, and `tests/test_release_tag.py` still checks it. For anything
+  without a task, use `uv run …` so the repo's environment is honored.
 
 ## Testing & Verification
 
@@ -1016,11 +1018,10 @@ commands once wired (#119).
   That is why `main` has linear history, which branch protection requires. Run from the
   base branch, it then fast-forwards that branch to the merge.
 - **`doit worktree --branch=<branch>`** puts a branch in `worktrees/<branch>`, with a
-  `.venv` of its own (ADR-9022). It builds that with `uv sync`, which leaves out the
-  system's site packages, so `gi` does not import there, measured (#324). Rebuild it in
-  the worktree with `uv venv --clear --system-site-packages --python /usr/bin/python3`
-  and `uv sync --all-extras --dev`. Unset the `GCM_*_DIR` variables there too, as Testing
-  says.
+  `.venv` of its own (ADR-9022). The template's task builds that with `uv sync`, which
+  leaves out the system's site packages, so `gi` did not import there (#327). GCM's
+  `task_worktree` then builds it again, as CI builds GCM's, so the suite runs there as it
+  does here. Unset the `GCM_*_DIR` variables there too, as Testing says.
 - **`--body-file` for anything long.** A body passed inline is scanned as command
   arguments, so a message that merely names a blocked pattern is refused. Write it under
   `tmp/agents/` and pass the path. The same applies to commit messages: `git commit -F`.
