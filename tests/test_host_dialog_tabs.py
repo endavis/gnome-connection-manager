@@ -116,7 +116,7 @@ if scenario == "tabs":
 elif scenario == "round-trip":
     # A host of each type as an older GCM saved it, every value set, those of tabs its
     # type is no longer shown included. Port forwards are kept for SSH alone, and the
-    # command after disconnecting for a host with a tab, as before.
+    # command after disconnecting for a host with a tab, as before, and its tab name (#349).
     for kind in connections.CONNECTION_TYPES:
         host = app.Host(
             "Work", kind.id + "-box", "kept as it was",
@@ -129,6 +129,7 @@ elif scenario == "round-trip":
         )
         host.before_command = "true"
         host.after_command = "true" if kind.opens_tab else ""
+        host.tab_name = "tpl {name} ({type})" if kind.opens_tab else ""
         if kind.id == "command":
             host.type_settings = {"command.line": "echo {name}"}
         if kind.id == "rdp":

@@ -64,7 +64,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `read_commands` takes that only while `commands` still says the same, so a hand edit
   wins (#243). The name has no dot, since an option with one is a type's setting.
   Measured with the save GCM had before #243, an older GCM drops it and rewrites
-  `commands` unchanged. A carriage return goes into `commands` as a new line: gcm.conf is
+  `commands` unchanged. A host's own tab name is `tab-name`, written only when set
+  (#349). Measured with v2.1.1, an older GCM reads a file holding it, names the host's
+  tabs by name, and leaves it out when it saves, with the host's other options as they
+  were, bar the password, which every save encrypts afresh. A carriage return goes into `commands` as a new line: gcm.conf is
   read with universal newlines, and one written as it is ended its line, which left the
   file unreadable or set another option, measured. Sending ends a line there anyway,
   since `addTab` splits the commands with `splitlines`.
@@ -442,6 +445,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   builds one for each `name_tabs`. The Local console keeps `local`, through
   `is_local_console`, since its type reads ssh and it has no address. Preferences' OK
   stores the template and then redraws the tree, which renames the open tabs.
+  A host's own tab name, `Host.tab_name` from Tab name on the host dialog's Properties
+  tab, names its tabs in place of the template (#349). `own_name` fills it as the
+  template is filled, and it is used as it is, with no folders in front. The other hosts
+  are compared against what each one's tab shows before any folders, an own name where
+  there is one. So a host whose tab would read as another's own name takes its folders,
+  and two hosts of one name lose theirs once one is named otherwise. An own name that
+  gives nothing counts as none. `tab_namer` reads it from the host `configured_host`
+  finds, so the host dialog's OK renames the host's tabs through `updateTree`. The field
+  is greyed and cleared for a type that opens no tab, as the command after disconnecting
+  is, and OK saves none for one.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
@@ -844,7 +857,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Host attributes include an `id`, a `folder` (the id `group` is derived from), a
   `position` among that folder's children, group/name/description, connection info, tunnels,
   terminal overrides, clipboard/logging flags, colors, command sequences, commands to run on
-  this computer before connecting and after disconnecting, and SSH options.
+  this computer before connecting and after disconnecting, a tab name of its own, and SSH
+  options.
   Keep `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in
   sync. The dialog rebuilds the record rather than mutating it, so an edit carries the id
   across in `Whost.oldId` -- dropping that would make every edit look like a new host --

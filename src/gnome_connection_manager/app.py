@@ -680,9 +680,10 @@ def tab_namer():
     """What names a host's tab as the configuration now stands, for naming many at once.
 
     A tab is named by Preferences' Tab name, with as much of its folder in front as tells
-    it apart from each other host the template names alike (#346, #348). The host in the
-    configuration with the tab's host's id decides it, where there is one. One with none,
-    deleted or never configured, is named against the hosts there are.
+    it apart from each other host the template names alike (#346, #348), or by its host's
+    own tab name, as it is (#349). The host in the configuration with the tab's host's id
+    decides it, its own tab name included, where there is one. One with none, deleted or
+    never configured, is named against the hosts there are.
 
     The Local console is named `local` whatever the template: it is no host, and its
     values stand in for none, so `[{type}] {name}` would have called it `[ssh] local`.
@@ -7196,6 +7197,7 @@ class Whost(GladeComponent):
         self.txtTerm.set_text(host.term)
         self.txtBeforeCommand.set_text(host.before_command)
         self.txtAfterCommand.set_text(host.after_command)
+        self.txtTabName.set_text(host.tab_name)
         self.fill_type_pages(host)
 
     def update_texttags(self, *args):
@@ -7320,6 +7322,7 @@ class Whost(GladeComponent):
         host.type_settings = kind.stored_settings(type_values)
         host.before_command = self.txtBeforeCommand.get_text().strip()
         host.after_command = self.txtAfterCommand.get_text().strip() if kind.opens_tab else ""
+        host.tab_name = self.txtTabName.get_text().strip() if kind.opens_tab else ""
         if not self.isNew and group == self.oldGroup:
             # Only while it stays in the same folder: a position means nothing elsewhere.
             host.position = self.oldPosition
@@ -7433,10 +7436,13 @@ class Whost(GladeComponent):
 
         self.chkCommands.set_sensitive(kind.sends_commands)
         self.txtCommands.set_sensitive(kind.sends_commands and self.chkCommands.get_active())
-        # A host that opens no tab has no session to end, so nothing runs after one.
+        # A host that opens no tab has no session to end, so nothing runs after one, and no
+        # tab to name (#349).
         self.txtAfterCommand.set_sensitive(kind.opens_tab)
+        self.txtTabName.set_sensitive(kind.opens_tab)
         if not kind.opens_tab:
             self.txtAfterCommand.set_text("")
+            self.txtTabName.set_text("")
         self.show_type_page(kind, ignored)
 
     # -- Whost.on_cmbType_changed }

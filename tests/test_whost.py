@@ -122,6 +122,7 @@ def make_whost(
     whost.txtTerm = TextEntry("xterm-256color")
     whost.txtBeforeCommand = TextEntry("")
     whost.txtAfterCommand = TextEntry("")
+    whost.txtTabName = TextEntry("")
     whost.btnFColor = ColorButtonStub(types.SimpleNamespace(red=1, green=1, blue=1))
     whost.btnBColor = ColorButtonStub(types.SimpleNamespace(red=0, green=0, blue=0))
     whost.isNew = True
@@ -266,6 +267,7 @@ HANDLED_FIELDS = (
     "chkCommands",
     "txtCommands",
     "txtAfterCommand",
+    "txtTabName",
 )
 # The tabs a type may not be shown: SSH's options, its port forwarding, and the terminal's
 # settings (#277).
@@ -435,6 +437,7 @@ def make_loadable_whost(app_module, monkeypatch):
         "txtTerm",
         "txtBeforeCommand",
         "txtAfterCommand",
+        "txtTabName",
     ):
         setattr(dialog, name, TextEntry())
     dialog.cmbGroup = types.SimpleNamespace(get_children=lambda: [TextEntry()])
@@ -746,6 +749,65 @@ def test_ok_saves_no_command_after_for_a_host_without_a_tab(monkeypatch, app_mod
 
     assert host.before_command == "nmcli con up office"
     assert host.after_command == ""
+
+
+# -- a host's own tab name (#349) ---------------------------------------------
+
+
+def test_init_loads_the_tab_name(monkeypatch, app_module):
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    host = make_stored_host(app_module, commands="", enabled=False)
+    host.tab_name = "tpl {name}"
+
+    dialog.init("ops", host)
+
+    assert dialog.txtTabName.get_text() == "tpl {name}"
+
+
+def test_ok_saves_the_tab_name_without_the_spaces_around_it(monkeypatch, app_module):
+    whost, _destroy = make_whost(app_module)
+    whost.txtTabName.set_text("  tpl {name}  ")
+
+    assert saved_host(app_module, monkeypatch, whost).tab_name == "tpl {name}"
+
+
+def test_ok_saves_no_tab_name_for_a_host_without_a_tab(monkeypatch, app_module):
+    """Even one written into gcm.conf by hand, which init shows in the greyed field."""
+    whost, _destroy = make_whost(app_module)
+    whost.cmbType = ComboStub("web")
+    whost.txtUser = TextEntry("")
+    whost.txtPass = TextEntry("")
+    whost.txtTabName.set_text("tpl {name}")
+
+    assert saved_host(app_module, monkeypatch, whost).tab_name == ""
+
+
+@pytest.mark.parametrize("ctype", ["local", "ssh", "telnet", "rdp", "vnc", "command", "web"])
+def test_the_tab_name_needs_a_tab(app_module, ctype):
+    """A web host opens no tab, so it has none to name: greyed and cleared, as the command
+    after disconnecting is. Every other type keeps what it holds."""
+    fields, _pages = choose_type(app_module, ctype)
+
+    field = fields["txtTabName"]
+    assert field.sensitive is (ctype != "web")
+    assert field.text == ("" if ctype == "web" else "kept")
+
+
+def test_the_tab_name_is_on_properties_below_the_name():
+    """On the tab every type is shown, a VNC host's too, which has no Terminal tab while
+    gtk-vnc draws it (#277), and beside the name it stands in for."""
+    root = ElementTree.parse(GLADE).getroot()
+    properties = root.find(".//object[@id='nbHost']/child/object")
+    rows: dict[int, list[str]] = {}
+    for child in properties.findall("child"):
+        widget = child.find("object")
+        row = int(child.find("packing/property[@name='top-attach']").text)
+        label = widget.find("property[@name='label']")
+        rows.setdefault(row, []).append(widget.get("id") or label.text)
+
+    [row] = [row for row, cells in rows.items() if "txtTabName" in cells]
+    assert sorted(rows[row]) == ["Tab name", "txtTabName"]
+    assert "txtName" in rows[row - 1]
 
 
 def picked(colour: str) -> types.SimpleNamespace:

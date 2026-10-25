@@ -241,6 +241,7 @@ def test_every_setting_preferences_draws_is_named_in_a_guide(app_module):
     ("guide", "heading"),
     [
         ("HOSTS-AND-FOLDERS.md", "## Commands on this computer"),
+        ("HOSTS-AND-FOLDERS.md", "## A host's own tab name"),
         ("HOSTS-AND-FOLDERS.md", "## Command hosts"),
         ("TERMINAL-USAGE.md", "## Snippets"),
         ("TERMINAL-USAGE.md", "### Naming tabs your own way"),
