@@ -237,6 +237,29 @@ def test_every_setting_preferences_draws_is_named_in_a_guide(app_module):
     assert not documented, f"documented after all, so drop from UNDOCUMENTED_SETTINGS: {documented}"
 
 
+@pytest.mark.parametrize(
+    ("guide", "heading"),
+    [
+        ("HOSTS-AND-FOLDERS.md", "## Commands on this computer"),
+        ("HOSTS-AND-FOLDERS.md", "## Command hosts"),
+        ("TERMINAL-USAGE.md", "## Snippets"),
+        ("TERMINAL-USAGE.md", "### Naming tabs your own way"),
+    ],
+)
+def test_each_list_of_the_placeholders_names_them_all(guide, heading):
+    """Each place a guide lists a host's values lists every one: a placeholder added to
+    PLACEHOLDERS, as {folder} was, reaches each of them (#348)."""
+    from gnome_connection_manager.utils import placeholders
+
+    parts = re.split(r"^(#{2,6} .+)$", DOC.with_name(guide).read_text(), flags=re.M)
+    sections = dict(zip(parts[1::2], parts[2::2], strict=True))
+    missing = [
+        name for name in placeholders.PLACEHOLDERS if f"`{{{name}}}`" not in sections[heading]
+    ]
+
+    assert not missing, f"{guide} {heading} does not list {missing}"
+
+
 def test_each_options_example_says_when_it_applies_and_to_close_gcm_first():
     """A reader changing a setting needs to know whether a session already open sees the
     change. And an example on its own was a trap: GCM writes `[options]` from memory

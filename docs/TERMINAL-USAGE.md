@@ -381,7 +381,8 @@ Opening the viewer does not disturb any selection you already had in the termina
 
 ## Tab titles
 
-Tabs show the host name. When the running program advertises a window title, it is appended:
+Tabs show the host name, or what [**Tab name**](#naming-tabs-your-own-way) makes of the
+host. When the running program advertises a window title, it is appended:
 
 ```
 prod-web-01: npm run build
@@ -409,11 +410,11 @@ never renames one. A tab you have renamed keeps its name.
 
 **Where a host is filed** shows when you hover its tab. Under the tab's label, the tooltip
 gives the host's folders and name, such as `1. Projects/pyproject-template/ansible`. The
-open-console list and the cluster window give it too, below. A host at the top level, and
-the Local console, are named by their path already, so they show none, and nor does a tab
-whose name is its host's whole path, as `A/ansible` beside `B/ansible` is. A tab you have
-renamed shows the host it is on: its name alone for a host at the top level, and `local` for
-the Local console. The tab strip shows none of it.
+open-console list and the cluster window give it too, below. A tab whose name is its host's
+whole path shows none: a host at the top level named by its name, the Local console, and a
+tab such as `A/ansible` beside `B/ansible`. A tab you have renamed shows the host it is on:
+its name alone for a host at the top level, and `local` for the Local console. The tab strip
+shows none of it.
 
 **Labels are cut at 30 characters,** ending in `…`, because a tab is as wide as its text and
 the tabs that no longer fit go behind the arrows at the ends of the tab strip. The cut is
@@ -437,13 +438,47 @@ Edit that with GCM closed.
 
 The title is display only. It never affects where sessions are logged, what a cloned tab
 connects to, or which console a cluster command targets — those all use the tab's identity,
-which is the host's name, with its folder where another host has the name, or your explicit
-rename. Sessions are logged by the host's folder and name alone, whatever its tab is
-called. This matters because a window title is set by whatever runs in the terminal,
-including a remote host over SSH.
+which is the name **Tab name** gives, with its folder where another host's would read the
+same, or your explicit rename. Sessions are logged by the host's folder and name alone,
+whatever its tab is called. This matters because a window title is set by whatever runs in
+the terminal, including a remote host over SSH.
 
 Note that not every program sets a title: of the agent CLIs measured above, only Claude Code
 does, and it advertises a fixed string rather than per-task status.
+
+### Naming tabs your own way
+
+**Tab name**, on the General tab of Preferences, is what a host's tab is called: a template
+of the host's values, `{name}` until you change it. It takes the values a host's commands
+and [snippets](#snippets) take: `{name}`, `{address}`, `{port}`, `{user}`, `{group}`,
+`{folder}` and `{type}`. `{group}` is the whole folder path, such as
+`1. Projects/infrafoundry`, and `{folder}` the folder the host is in alone, `infrafoundry`.
+Hover the field for the list.
+
+Anything else in the template is kept as written. `[{type}] {name}` names a tab
+`[ssh] web`, `{user}@{address}` names it `eric@10.0.0.5`, and `{folder}/{name}` names it
+`infrafoundry/web`. `{folder}` and `{group}` are empty for a host at the top level, so
+`{folder}/{name}` names one there `/web`. Spaces around what the template gives are dropped,
+and a template that gives nothing, or only spaces, names the tab after its host's name.
+
+Two hosts in two folders whose tabs the template names alike get their folders in front, as
+[two hosts of one name](#tab-titles) do: `{type}` alone names them `infrafoundry/ssh` and
+`pyproject-template/ssh`. A template that tells them apart, such as `{group}/{name}`, gets
+nothing added. Two hosts in one folder that it names alike stay alike, since no folder tells
+them apart; hover them for their paths. The Local console keeps `local`, since it is no
+host, and its type would read `ssh`. The cut at 30 characters takes what the template gives,
+as it takes a name.
+
+A change applies straight away, to tabs already open too, along with the window titles, the
+open-console list and the cluster window. A tab you have renamed keeps its name. In
+`gcm.conf`:
+
+```ini
+[options]
+tab-name = [{type}] {folder}/{name}
+```
+
+Edit that with GCM closed. Sessions are still logged by the host's folder and name.
 
 ## Finding a console among many
 
@@ -886,7 +921,8 @@ A snippet can name values of the host of the tab it is sent to, filled in as it 
 | `{address}` | its address |
 | `{port}` | its port |
 | `{user}` | its user |
-| `{group}` | the folder it is in, as a path |
+| `{group}` | the folder it is in, as a path, such as `ops/web` |
+| `{folder}` | the folder it is in alone, such as `web`, and nothing at the top level |
 | `{type}` | its type, such as `ssh` |
 
 They are typed as they are, not quoted for a shell, since what runs in the tab need not

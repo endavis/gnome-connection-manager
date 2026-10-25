@@ -5,6 +5,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 import types
+from pathlib import Path
 
 import pytest
 
@@ -32,6 +33,7 @@ def a_host(**fields):
         ("{port}", "2222"),
         ("{user}", "ops"),
         ("{group}", "prod/web"),
+        ("{folder}", "web"),
         ("{type}", "ssh"),
     ],
 )
@@ -43,7 +45,53 @@ def test_each_placeholder_is_the_hosts_value(placeholder, expected):
 
 def test_every_placeholder_is_tested():
     """The table above names each one, so a placeholder added without a test fails."""
-    assert placeholders.PLACEHOLDERS == ("name", "address", "port", "user", "group", "type")
+    assert placeholders.PLACEHOLDERS == (
+        "name",
+        "address",
+        "port",
+        "user",
+        "group",
+        "folder",
+        "type",
+    )
+
+
+@pytest.mark.parametrize(
+    ("group", "folder"),
+    [
+        ("prod/web", "web"),
+        ("web", "web"),
+        ("1. Projects/infra foundry", "infra foundry"),
+        ("/lab//x/", "x"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_the_folder_is_the_one_the_host_is_in_alone(group, folder):
+    """`{group}` is the whole path, and `{folder}` its last folder, none at the top level
+    (#348). A path is read as the folder tree reads it, empty parts and all."""
+    assert placeholders.host_values(a_host(group=group))["folder"] == folder
+
+
+def test_every_list_of_the_placeholders_names_them_all():
+    """Each hint that lists the placeholders, in the host dialog, Preferences and a command
+    host's settings, lists them all: one added to PLACEHOLDERS, as {folder} was (#348),
+    is not left out of what tells people of them."""
+    root = Path(__file__).resolve().parents[1]
+    sources = [
+        *(root / "src").rglob("*.py"),
+        root / "data" / "ui" / "gnome-connection-manager.glade",
+    ]
+    lists = [
+        line
+        for source in sources
+        for line in source.read_text(encoding="utf-8").splitlines()
+        if "{name}, {address}" in line
+    ]
+
+    assert len(lists) >= 4, lists
+    for line in lists:
+        assert all(f"{{{name}}}" in line for name in placeholders.PLACEHOLDERS), line
 
 
 @pytest.mark.parametrize(
@@ -93,6 +141,21 @@ def test_a_shell_quoted_value_stays_one_argument(tmp_path, name):
     assert not (tmp_path / "pwned").exists()
 
 
+def test_a_shell_quoted_folder_stays_one_argument(tmp_path):
+    """The folder is free text too, and reaches a command on this computer whole."""
+    host = a_host(group="prod/semi; touch pwned")
+    command = placeholders.fill(
+        "printf '%s|' {folder}", placeholders.host_values(host), quote=shlex.quote
+    )
+
+    result = subprocess.run(
+        ["sh", "-c", command], cwd=tmp_path, capture_output=True, text=True, check=True
+    )
+
+    assert result.stdout == "semi; touch pwned|"
+    assert not (tmp_path / "pwned").exists()
+
+
 # Snippets (#240): the same names, unquoted, and a value asked for with {?Label}.
 
 
@@ -102,6 +165,14 @@ def test_a_snippet_takes_the_hosts_values_as_they_are():
 
     assert placeholders.fill_snippet("ssh {user}@{address} # {name}", values, {}) == (
         "ssh ops@10.0.0.5 # two words; more"
+    )
+
+
+def test_a_snippet_takes_the_folder_too():
+    values = placeholders.host_values(a_host(group="prod/two words"))
+
+    assert placeholders.fill_snippet("cd /srv/{folder} # {group}", values, {}) == (
+        "cd /srv/two words # prod/two words"
     )
 
 
@@ -157,6 +228,16 @@ def test_a_command_line_takes_the_hosts_values_quoted():
     )
 
     assert (filled, named) == ("ping <10.0.0.5> -c <2222>", False)
+
+
+def test_a_command_line_takes_the_folder_quoted():
+    filled, named = placeholders.fill_command(
+        "kubectl -n {folder} exec -it {name} -- sh",
+        placeholders.host_values(a_host(group="clusters/two words")),
+        quote=shlex.quote,
+    )
+
+    assert (filled, named) == ("kubectl -n 'two words' exec -it web-01 -- sh", False)
 
 
 def test_its_password_is_a_reference_to_the_variable_and_never_the_value():

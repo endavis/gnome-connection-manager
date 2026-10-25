@@ -1,5 +1,6 @@
 """Tests for utils/tabnames.py: a tab named with its folder where another host has its
-host's name (#346), and its host's whole path where there is room for it (#347)."""
+host's name (#346), its host's whole path where there is room for it (#347), and named by
+Preferences' Tab name, a template of the host's values (#348)."""
 
 from __future__ import annotations
 
@@ -17,16 +18,18 @@ from tests.test_connections import glib_complaints
 from tests.test_console_window import _private_display
 
 
-def at(path):
-    """A host at `path`, its folder path and then its name."""
+def at(path, **values):
+    """A host at `path`, its folder path and then its name, with the other values a
+    template can name (#348)."""
     group, _, name = path.rpartition("/")
-    return types.SimpleNamespace(group=group, name=name)
+    values = {"host": "10.0.0.5", "port": "22", "user": "ops", "type": "ssh", **values}
+    return types.SimpleNamespace(group=group, name=name, **values)
 
 
-def names(*paths):
+def names(*paths, template=tabnames.NAME):
     """The tab name of each host at `paths`, among them all."""
     hosts = [at(path) for path in paths]
-    return [tabnames.tab_name(host, hosts) for host in hosts]
+    return [tabnames.tab_name(host, hosts, template) for host in hosts]
 
 
 def test_a_name_no_other_host_has_is_the_tab_name():
@@ -111,6 +114,100 @@ def test_the_folders_of_a_path(group, folders):
 def test_the_whole_path_of_a_host(path, whole):
     """Its folders and its name (#347), and the name alone at the top level."""
     assert tabnames.whole_path(at(path)) == whole
+
+
+# -- named by a template (#348) ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("template", "name"),
+    [
+        ("{name}", "ansible"),
+        ("{address}", "10.0.0.5"),
+        ("{port}", "22"),
+        ("{user}", "ops"),
+        ("{group}", "1. Projects/infrafoundry"),
+        ("{folder}", "infrafoundry"),
+        ("{type}", "ssh"),
+        ("[{type}] {name}", "[ssh] ansible"),
+        ("{user}@{address}:{port}", "ops@10.0.0.5:22"),
+        ("{name} {password} {?Label} {}", "ansible {password} {?Label} {}"),
+    ],
+)
+def test_each_placeholder_names_a_tab_and_the_rest_is_kept(template, name):
+    assert names("1. Projects/infrafoundry/ansible", template=template) == [name]
+
+
+@pytest.mark.parametrize("template", ["", "   ", "{folder}", " {folder} ", "{user}"])
+def test_a_template_that_gives_nothing_names_the_tab_after_its_host(template):
+    """`{folder}` is empty at the top level, and a host may have no user."""
+    host = at("ansible", user="")
+
+    assert tabnames.tab_name(host, [host], template) == "ansible"
+
+
+def test_spaces_around_what_a_template_gives_are_dropped():
+    """The label pads the name itself, so spaces there only widen the tab."""
+    assert names("lab/ansible", template="  {folder}: {name}  ") == ["lab: ansible"]
+
+
+def test_what_the_template_gives_takes_the_folders_that_tell_it_apart():
+    """#346's prefix, on what the template gives rather than on the hosts' names."""
+    assert names("infrafoundry/ansible", "pyproject-template/terraform", template="{type}") == [
+        "infrafoundry/ssh",
+        "pyproject-template/ssh",
+    ]
+    # Their folders are both x, so the template names them alike.
+    assert names("A/x/ansible", "B/x/ansible", template="{folder}: {name}") == [
+        "A/x/x: ansible",
+        "B/x/x: ansible",
+    ]
+
+
+def test_a_template_that_tells_the_hosts_apart_gets_no_folder():
+    assert names(
+        "infrafoundry/ansible", "pyproject-template/ansible", template="{group}/{name}"
+    ) == ["infrafoundry/ansible", "pyproject-template/ansible"]
+    assert names("A/x/ansible", "B/y/ansible", template="{folder}: {name}") == [
+        "x: ansible",
+        "y: ansible",
+    ]
+
+
+def test_hosts_of_one_folder_that_the_template_names_alike_stay_alike():
+    """No folder of theirs tells them apart; #347's path, beside the name, does."""
+    assert names("lab/web", "lab/db", "ops/web", template="{type}") == [
+        "lab/ssh",
+        "lab/ssh",
+        "ops/ssh",
+    ]
+
+
+def test_the_namer_names_each_host_once_and_each_tab_from_that(monkeypatch):
+    """Naming 50 tabs among 1000 hosts took 58 ms with the template filled again for every
+    tab, measured, and 2 ms with the namer, which fills it once for each host."""
+    hosts = [at(f"lab{i}/web") for i in range(20)]
+    filled = []
+    fill = tabnames.placeholders.fill
+    monkeypatch.setattr(
+        tabnames.placeholders, "fill", lambda *args: filled.append(args[0]) or fill(*args)
+    )
+
+    name = tabnames.namer(iter(hosts), "[{type}] {name}")
+    named = [name(host) for host in hosts[:5]]
+
+    assert named == [f"lab{i}/[ssh] web" for i in range(5)]
+    assert len(filled) == 20 + 5
+
+
+def test_by_default_a_tab_is_named_as_before():
+    """An existing configuration has no template, and names its tabs by name (#346)."""
+    assert tabnames.NAME == "{name}"
+    assert names("1. Projects/infrafoundry/ansible", "lab/ansible", "web") == [
+        "infrafoundry/ansible",
+        "lab/ansible",
+        "web",
+    ]
 
 
 # -- the tabs GCM names (#346) ----------------------------------------------------------
@@ -503,6 +600,127 @@ def test_a_tab_named_with_its_folder_logs_where_its_host_does(tmp_path, app_modu
     infra.user = "eric"
     configure(app_module, monkeypatch, infra, host_at(app_module, "lab/ansible"))
     assert app_module.host_tab_name(infra) == "infrafoundry/ansible"
+    terminal = LoggingTerminal(infra)
+
+    object.__new__(app_module.Wmain).set_terminal_logger(terminal)
+    terminal.log.close()
+
+    assert list(tmp_path.rglob("*.log")) == [
+        tmp_path / "1. Projects" / "infrafoundry" / "ansible" / "eric-20261025-001.log"
+    ]
+
+
+# -- open tabs named by Preferences' Tab name (#348) -------------------------------------
+
+
+def test_the_template_renames_the_open_tabs_but_not_one_renamed_by_hand(app_module, monkeypatch):
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    infra.user, infra.host = "eric", "10.0.0.5"
+    web = host_at(app_module, "lab/web")
+    tabs = [tab_for(app_module, infra), tab_for(app_module, web)]
+    tabs[1].rename("deploys")
+    wmain = window_with(app_module, Notebook(*tabs))
+    configure(app_module, monkeypatch, infra, web)
+    monkeypatch.setattr(app_module.conf, "UPDATE_TITLE", True)
+
+    monkeypatch.setattr(app_module.conf, "TAB_NAME", "{user}@{address} ({folder})")
+    wmain.name_tabs()
+
+    assert [shown(tab) for tab in tabs] == [
+        (
+            "eric@10.0.0.5 (infrafoundry)",
+            "eric@10.0.0.5 (infrafoundry)",
+            "eric@10.0.0.5 (infrafoundry)\n1. Projects/infrafoundry/ansible",
+        ),
+        ("deploys", "deploys", "deploys\nlab/web"),
+    ]
+    assert wmain.titles[-1].endswith(" - eric@10.0.0.5 (infrafoundry)"), wmain.titles
+
+
+def test_a_tab_is_opened_with_the_name_the_template_gives(app_module, monkeypatch):
+    web = host_at(app_module, "lab/web")
+    configure(app_module, monkeypatch, web)
+    monkeypatch.setattr(app_module.conf, "TAB_NAME", "{folder}: {name}")
+
+    assert app_module.host_tab_name(web) == "lab: web"
+
+
+def test_the_local_console_keeps_its_name_whatever_the_template(app_module, monkeypatch):
+    """Its values stand in for none: its type reads ssh, and it has no address. A clone of
+    its tab keeps its id, as the clone paths give it. A host of the configuration named
+    local is a host, and takes the template."""
+    local = app_module.Host("", "local")
+    clone = local.clone()
+    clone.id = local.id
+    configured = app_module.Host("", "local")
+    configured.type = "command"
+    tabs = [tab_for(app_module, each) for each in (local, clone, configured)]
+    wmain = window_with(app_module, Notebook(*tabs))
+    configure(app_module, monkeypatch, configured, host_at(app_module, "lab/local"))
+    monkeypatch.setattr(app_module.conf, "TAB_NAME", "[{type}] {name}")
+
+    wmain.name_tabs()
+
+    assert [shown(tab)[0] for tab in tabs] == ["local", "local", "[command] local"]
+    assert app_module.host_tab_name(local) == "local"
+
+
+def test_a_deleted_hosts_tab_is_named_by_the_template_from_its_own_record(app_module, monkeypatch):
+    """And against the hosts there are, so a host the template names alike puts the folder
+    in front of what the template gives."""
+    gone = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    tab = tab_for(app_module, gone)
+    wmain = window_with(app_module, Notebook(tab))
+    configure(app_module, monkeypatch, host_at(app_module, "lab/ansible"))
+    monkeypatch.setattr(app_module.conf, "TAB_NAME", "[{type}] {name}")
+
+    wmain.name_tabs()
+
+    assert shown(tab)[0] == "infrafoundry/[ssh] ansible"
+
+
+def test_an_empty_template_names_the_tabs_after_their_hosts(app_module, monkeypatch):
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    tab = tab_for(app_module, infra, "something else")
+    wmain = window_with(app_module, Notebook(tab))
+    configure(app_module, monkeypatch, infra, host_at(app_module, "lab/ansible"))
+    monkeypatch.setattr(app_module.conf, "TAB_NAME", "")
+
+    wmain.name_tabs()
+
+    assert shown(tab)[0] == "infrafoundry/ansible"
+
+
+def test_naming_the_tabs_fills_the_template_once_for_each_host(app_module, monkeypatch):
+    """One namer for the whole pass, not one for each tab, which would fill every host's
+    again for each."""
+    hosts = [host_at(app_module, f"lab{i}/web") for i in range(10)]
+    tabs = [tab_for(app_module, host) for host in hosts[:3]]
+    wmain = window_with(app_module, Notebook(*tabs))
+    configure(app_module, monkeypatch, *hosts)
+    filled = []
+    fill = app_module.tabnames.placeholders.fill
+    monkeypatch.setattr(
+        app_module.tabnames.placeholders, "fill", lambda *args: filled.append(1) or fill(*args)
+    )
+
+    wmain.name_tabs()
+
+    assert [shown(tab)[0] for tab in tabs] == ["lab0/web", "lab1/web", "lab2/web"]
+    assert len(filled) == 10 + 3
+
+
+def test_a_tab_named_by_a_template_logs_where_its_host_does(tmp_path, app_module, monkeypatch):
+    """Session logs are named from the host's folder and name, never from the template."""
+    from tests.test_wmain import LoggingTerminal
+
+    monkeypatch.setattr(app_module.conf, "LOG_PATH", str(tmp_path))
+    monkeypatch.setattr(app_module.conf, "TAB_NAME", "[{type}] {user}@{folder}")
+    monkeypatch.setattr(app_module.time, "strftime", lambda fmt: "20261025")
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    infra.user = "eric"
+    configure(app_module, monkeypatch, infra)
+    assert app_module.host_tab_name(infra) == "[ssh] eric@infrafoundry"
     terminal = LoggingTerminal(infra)
 
     object.__new__(app_module.Wmain).set_terminal_logger(terminal)
@@ -928,6 +1146,64 @@ elif scenario == "the-paths-beside-the-names":
     assert labels()[2].get_tooltip_text() == "deploys\n2. Archive/web", labels()[2].get_tooltip_text()
     assert drawn_rows()[2] == "deploys\n2. Archive/web", drawn_rows()
 
+elif scenario == "the-template-names-the-tabs":
+    # As gcm.conf gives them, since OK saves them: a hand-built Host leaves these None.
+    for host in (infra, other, web):
+        host.description = host.password = host.private_key = host.commands = ""
+    w.addTab(w.nbConsole, "local")
+    pump(0.5)
+    labels()[2].rename("deploys")
+    w.on_btnCluster_clicked(None)
+    pump()
+    w.focus_console(w.nbConsole, w.nbConsole.get_nth_page(0))
+    pump()
+
+    def tab_name_entry(prefs):
+        # The entry Preferences drew for the setting.
+        [entry] = [
+            child for child in prefs.tblGeneral.get_children()
+            if getattr(child, "field", None) == "conf.TAB_NAME"
+        ]
+        return entry
+
+    prefs = app.Wconfig()
+    entry = tab_name_entry(prefs)
+    rows = [child.get_text() for child in prefs.tblGeneral.get_children() if isinstance(child, Gtk.Label)]
+    assert app._("Tab name") in rows, rows
+    assert entry.get_text() == "{name}", entry.get_text()
+    assert "{folder}" in entry.get_tooltip_text(), entry.get_tooltip_text()
+    entry.set_text("[{type}] {folder}/{name}")
+    prefs.on_okbutton1_clicked(None)
+    pump()
+    expected = ["[ssh] infrafoundry/ansible", "[ssh] pyproject-template/ansible", "deploys", "local"]
+    assert [tab.get_text().strip() for tab in labels()] == expected, drawn()
+    # The cut at 30 characters takes what the template gives, as it takes a name.
+    assert names() == [*expected[:1], "[ssh] pyproject-template/ansi…", *expected[2:]], names()
+    assert listed() == expected, listed()
+    assert cluster_rows() == expected, cluster_rows()
+    assert w.wMain.get_title() == "GCM - [ssh] infrafoundry/ansible", w.wMain.get_title()
+    saved = Path(app.CONFIG_FILE).read_text()
+    assert "tab-name = [{type}] {folder}/{name}\n" in saved, saved
+
+    # A tab opened now is named so too, and logs where its host does.
+    w.addTab(w.nbConsole, infra)
+    pump(0.5)
+    assert names()[-1] == "[ssh] infrafoundry/ansible", names()
+    day = time.strftime("%Y%m%d")
+    found = sorted(str(p.relative_to(logs)) for p in Path(logs).rglob("*.log"))
+    assert found == [
+        "1. Projects/infrafoundry/ansible/eric-%s-00%d.log" % (day, number) for number in (1, 2)
+    ], found
+
+    # Emptied, the template names each tab after its host, as {name} does.
+    prefs = app.Wconfig()
+    tab_name_entry(prefs).set_text("")
+    prefs.on_okbutton1_clicked(None)
+    pump()
+    assert [tab.get_text().strip() for tab in labels()] == [
+        "infrafoundry/ansible", "pyproject-template/ansible", "deploys", "local", "infrafoundry/ansible"
+    ], drawn()
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -943,6 +1219,28 @@ def test_tabs_named_with_their_folders_against_real_gtk(scenario):
     pytest.importorskip("gi", reason="PyGObject not available")
     result = subprocess.run(
         [sys.executable, "-c", _SCRIPT, scenario],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert "OK" in result.stdout
+    assert not glib_complaints(result.stderr), result.stderr[-3000:]
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_the_tab_name_template_against_real_gtk():
+    """Preferences' Tab name, typed into the real dialog, names the open tabs, the window
+    title and the cluster window's rows at OK, but neither a tab renamed by hand nor the
+    Local console, and is saved; a tab opened afterwards logs where its host does (#348)."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _SCRIPT, "the-template-names-the-tabs"],
         capture_output=True,
         text=True,
         cwd=Path(__file__).resolve().parents[1],

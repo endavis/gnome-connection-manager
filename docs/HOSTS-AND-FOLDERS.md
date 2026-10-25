@@ -115,8 +115,8 @@ the file keeps the name, and GCM renames each later one: *name (2)*, *name (3)* 
 taking a number no host in the folder has. It lists the hosts it renamed, once the window
 is up for `gcm.conf` and straight after an import, and saves the new names with your hosts.
 
-A renamed host goes by its new name from then on: on the tabs it opens, wherever `{name}`
-is filled in for it, and for the folder it mounts at over SSHFS. Its session logs go in a
+A renamed host goes by its new name from then on: wherever `{name}` is filled in for it,
+its tabs' names among them, and for the folder it mounts at over SSHFS. Its session logs go in a
 folder of the new name, and its earlier logs stay where they were.
 
 ## Export and import
@@ -199,7 +199,8 @@ host's own values, each quoted for the shell:
 | `{address}` | its address |
 | `{port}` | its port |
 | `{user}` | its user |
-| `{group}` | the folder it is in, as a path |
+| `{group}` | the folder it is in, as a path, such as `ops/web` |
+| `{folder}` | the folder it is in alone, such as `web`, and nothing at the top level |
 | `{type}` | its connection type |
 
 Leave the quotes out yourself: `ping -c 1 {address}`, not `ping -c 1 "{address}"`, which
@@ -377,7 +378,7 @@ CLI. Write the command on the host dialog's **Command line** tab, which is shown
 the type is chosen. A command host cannot be saved without one.
 
 The line can name the host's values, as the commands on this computer can: `{name}`,
-`{address}`, `{port}`, `{user}`, `{group}` and `{type}`. Each is quoted for the shell, so
+`{address}`, `{port}`, `{user}`, `{group}`, `{folder}` and `{type}`. Each is quoted for the shell, so
 write them bare, not inside quotes of your own. Anything else in braces is left as
 written.
 

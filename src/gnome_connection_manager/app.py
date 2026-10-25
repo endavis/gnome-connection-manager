@@ -676,16 +676,43 @@ def configured_host(host, hosts):
     return next((each for each in hosts if each.id == host.id), host)
 
 
-def host_tab_name(host):
-    """What `host`'s tab is called: its name, with as much of its folder as tells it apart
-    from each other host of that name in the configuration (#346).
+def tab_namer():
+    """What names a host's tab as the configuration now stands, for naming many at once.
 
-    The host in the configuration with `host`'s id decides it, where there is one. One with
-    none, deleted or never configured, as the Local console's, is named against the hosts
-    there are.
+    A tab is named by Preferences' Tab name, with as much of its folder in front as tells
+    it apart from each other host the template names alike (#346, #348). The host in the
+    configuration with the tab's host's id decides it, where there is one. One with none,
+    deleted or never configured, is named against the hosts there are.
+
+    The Local console is named `local` whatever the template: it is no host, and its
+    values stand in for none, so `[{type}] {name}` would have called it `[ssh] local`.
     """
     hosts = [each for filed in groups.values() for each in filed]
-    return tabnames.tab_name(configured_host(host, hosts), hosts)
+    name_of = tabnames.namer(hosts, conf.TAB_NAME)
+
+    def name(host):
+        if is_local_console(host, hosts):
+            return host.name
+        return name_of(configured_host(host, hosts))
+
+    return name
+
+
+def is_local_console(host, hosts):
+    """Whether `host` is the Local console's: the record the Local button makes, and a
+    clone of its tab, named `local`, with no folder and no address, and the id of none of
+    `hosts`, the configuration's. A host there of that name is a host."""
+    return (
+        host.name == "local"
+        and not host.group
+        and not host.host
+        and all(each.id != host.id for each in hosts)
+    )
+
+
+def host_tab_name(host):
+    """What `host`'s tab is called, as tab_namer names it."""
+    return tab_namer()(host)
 
 
 def host_path(host):
@@ -862,6 +889,8 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     VERSION = 0
     UPDATE_TITLE = 0
     TAB_TITLE_FROM_TERMINAL = 1
+    # What a host's tab is called, its values filled in (#348). `{name}` names it as before.
+    TAB_NAME = tabnames.NAME
     EDITOR_COMMAND = ""
     OSC52_ENABLED = 0
     RAW_SESSION_LOG = 0
@@ -907,6 +936,7 @@ CONFIG_OPTIONS = (
     ("TERM", "options", "term", str),
     ("UPDATE_TITLE", "options", "update-title", bool),
     ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
+    ("TAB_NAME", "options", "tab-name", str),
     ("EDITOR_COMMAND", "options", "editor-command", str),
     ("OSC52_ENABLED", "options", "osc52-clipboard", bool),
     ("RAW_SESSION_LOG", "options", "raw-session-log", bool),
@@ -4665,23 +4695,25 @@ class Wmain(GladeComponent):
         self.name_tabs()
 
     def name_tabs(self):
-        """Name each open tab again, as the hosts now are (#346).
+        """Name each open tab again, as the hosts and Preferences' Tab name now are (#346,
+        #348). Preferences' OK redraws the tree, which runs this.
 
         A second host of a tab's host's name puts the folder in front of the tab's name,
         and it goes again once that host is renamed, moved or deleted. A tab follows its
-        own host too, through the host dialog, as host_tab_name says. A tab renamed by hand
+        own host too, through the host dialog, as tab_namer says. A tab renamed by hand
         keeps its name, and takes its host's path, as every tab does (#347). The titles of
         the windows that name a tab, and an open cluster window's list, follow it.
         """
         if not self.count:
             return
+        name = tab_namer()
         for notebook in self.console_notebooks():
             for position in range(notebook.get_n_pages()):
                 tab = notebook.get_tab_label(notebook.get_nth_page(position))
                 # A plain label has no host, as the glade's placeholder pages' do (#41).
                 host = getattr(tab, "host", None)
                 if host is not None:
-                    tab.set_name(host_tab_name(host), host_path(host))
+                    tab.set_name(name(host), host_path(host))
         self.title_windows()
         self.name_cluster_consoles()
 
@@ -4794,6 +4826,7 @@ class Wmain(GladeComponent):
         cp.set("options", "cycle-tabs", conf.CYCLE_TABS)
         cp.set("options", "update-title", conf.UPDATE_TITLE)
         cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
+        cp.set("options", "tab-name", conf.TAB_NAME)
         cp.set("options", "editor-command", conf.EDITOR_COMMAND)
         cp.set("options", "osc52-clipboard", conf.OSC52_ENABLED)
         cp.set("options", "raw-session-log", conf.RAW_SESSION_LOG)
@@ -7650,6 +7683,12 @@ class Wconfig(GladeComponent):
             bool,
         )
         self.addParam(_("Título dinámico"), "conf.UPDATE_TITLE", bool)
+        tab_name = self.addParam(_("Tab name"), "conf.TAB_NAME", str)
+        tab_name.set_tooltip_text(
+            _(
+                "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."
+            )
+        )
         self.addParam(
             _("Mostrar el título del programa en la pestaña"),
             "conf.TAB_TITLE_FROM_TERMINAL",
@@ -7920,7 +7959,7 @@ class Wconfig(GladeComponent):
         form.attach(text_scroller, 1, row, 1, 1)
         hint = Gtk.Label(
             label=_(
-                "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+                "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
             ),
             halign=Gtk.Align.START,
             xalign=0,

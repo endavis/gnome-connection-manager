@@ -1762,7 +1762,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">&lt;span size='smaller'&gt;{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.&lt;/span&gt;</property>
+                    <property name="label" translatable="yes">&lt;span size='smaller'&gt;{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.&lt;/span&gt;</property>
                     <property name="use-markup">True</property>
                     <property name="wrap">True</property>
                     <property name="max-width-chars">60</property>

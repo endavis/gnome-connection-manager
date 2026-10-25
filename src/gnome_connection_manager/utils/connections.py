@@ -479,7 +479,7 @@ class CustomCommand(ConnectionType):
     settings = (Setting("line", N_("Command"), ""),)
     settings_title = N_("Command line")
     settings_hint = N_(
-        "{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+        "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
     )
 
     def invalid(self, values: dict) -> str | None:
