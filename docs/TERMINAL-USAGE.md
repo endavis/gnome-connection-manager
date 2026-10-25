@@ -381,8 +381,9 @@ Opening the viewer does not disturb any selection you already had in the termina
 
 ## Tab titles
 
-Tabs show the host name, or what [**Tab name**](#naming-tabs-your-own-way) makes of the
-host. When the running program advertises a window title, it is appended:
+Tabs show the host name, what [**Tab name**](#naming-tabs-your-own-way) makes of the host,
+or the host's [own tab name](HOSTS-AND-FOLDERS.md#a-hosts-own-tab-name). When the running
+program advertises a window title, it is appended:
 
 ```
 prod-web-01: npm run build
@@ -439,7 +440,7 @@ Edit that with GCM closed.
 The title is display only. It never affects where sessions are logged, what a cloned tab
 connects to, or which console a cluster command targets — those all use the tab's identity,
 which is the name **Tab name** gives, with its folder where another host's would read the
-same, or your explicit rename. Sessions are logged by the host's folder and name alone,
+same, the host's own tab name, or your explicit rename. Sessions are logged by the host's folder and name alone,
 whatever its tab is called. This matters because a window title is set by whatever runs in
 the terminal, including a remote host over SSH.
 
@@ -468,6 +469,10 @@ nothing added. Two hosts in one folder that it names alike stay alike, since no 
 them apart; hover them for their paths. The Local console keeps `local`, since it is no
 host, and its type would read `ssh`. The cut at 30 characters takes what the template gives,
 as it takes a name.
+
+A host can have a tab name of its own, on its dialog's Properties tab, which names its tabs
+in place of this one and gets no folder in front: see
+[A host's own tab name](HOSTS-AND-FOLDERS.md#a-hosts-own-tab-name).
 
 A change applies straight away, to tabs already open too, along with the window titles, the
 open-console list and the cluster window. A tab you have renamed keeps its name. In

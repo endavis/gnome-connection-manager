@@ -5727,6 +5727,20 @@ def test_an_exported_host_keeps_its_id_through_an_import(monkeypatch, tmp_path, 
     assert [h.id for h in imported] == [host.id]
 
 
+def test_an_exported_host_keeps_its_tab_name_through_an_import(monkeypatch, tmp_path, app_module):
+    """A host's own tab name (#349), placeholders as written."""
+    named, plain = make_host(app_module), make_host(app_module)
+    named.tab_name = "tpl {name} ({folder})"
+    plain.name = "switch"
+
+    imported = export_then_import(monkeypatch, tmp_path, app_module, [named, plain])
+
+    assert {h.name: h.tab_name for h in imported} == {
+        named.name: "tpl {name} ({folder})",
+        "switch": "",
+    }
+
+
 def test_importing_a_file_with_a_repeated_id_separates_them(monkeypatch, tmp_path, app_module):
     """An export can be hand-edited or merged; nothing upstream would notice the repeat."""
     first, second = make_host(app_module), make_host(app_module)

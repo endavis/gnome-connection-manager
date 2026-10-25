@@ -170,6 +170,35 @@ what you wrote. An older GCM that saves the file rewrites `commands` and drops
 `commands-json`. Commands saved before GCM wrote both cannot say which they held, and are
 read as GCM has been sending them, a backslash and an n as a new line.
 
+## A host's own tab name
+
+**Tab name**, on the host dialog's Properties tab below **Name**, is what the host's tabs
+are called. Left empty, as it starts, the **Tab name** on the General tab of Preferences
+names them, as it names every host's: see
+[Naming tabs your own way](TERMINAL-USAGE.md#naming-tabs-your-own-way).
+
+It takes the same values as that: `{name}`, `{address}`, `{port}`, `{user}`, `{group}`,
+`{folder}` and `{type}`, so `tpl {name}` names an `ansible` host's tabs `tpl ansible`.
+Hover the field for the list. Spaces around what it gives are dropped, and one that gives
+nothing, such as `{user}` for a host with no user, counts as empty.
+
+It is used as you wrote it, with no folder in front, even where another host's tab would
+read the same. The other host's tab takes its folder instead. Two hosts of one name in two
+folders, whose tabs take their folders, lose them once one has a tab name of its own: beside
+`tpl ansible`, the other host's tab is `ansible` again.
+
+Saving the dialog renames the host's open tabs, and the window titles, the open-console list
+and the cluster window follow. A tab you have renamed keeps its name. Session logs stay where
+they were, named by the host's folder and name. **Duplicate Host**'s copy has the same tab
+name, and export and import carry it.
+
+A web host opens no tab, so its dialog greys the field and clears it.
+
+In `gcm.conf` it is `tab-name = tpl {name}` in the host's own section, written only when set.
+An older GCM, such as 2.1.1, reads the file and names the host's tabs as it always has. When
+it saves, it leaves `tab-name` out, so the host has no tab name of its own the next time this
+GCM starts.
+
 ## Commands on this computer
 
 A host can run a command on your computer before connecting, and another after

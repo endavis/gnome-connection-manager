@@ -119,6 +119,9 @@ class Host:
         # empty for none. Not arguments either, for the same reason.
         self.before_command = ""
         self.after_command = ""
+        # What the host's tabs are called in place of Preferences' Tab name (#349), with
+        # the same placeholders, and empty for that. Not an argument either.
+        self.tab_name = ""
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -213,6 +216,7 @@ class Host:
         copy.type_settings = dict(self.type_settings)
         copy.before_command = self.before_command
         copy.after_command = self.after_command
+        copy.tab_name = self.tab_name
         return copy
 
 
@@ -308,6 +312,7 @@ class HostUtils:
         }
         h.before_command = HostUtils.get_val(cp, section, "before-command", "")
         h.after_command = HostUtils.get_val(cp, section, "after-command", "")
+        h.tab_name = HostUtils.get_val(cp, section, "tab-name", "")
         return h
 
     @staticmethod
@@ -355,6 +360,9 @@ class HostUtils:
             cp.set(section, "before-command", host.before_command)
         if host.after_command:
             cp.set(section, "after-command", host.after_command)
+        # An older GCM reads the file and leaves it out of what it saves, measured (#349).
+        if host.tab_name:
+            cp.set(section, "tab-name", host.tab_name)
 
     @staticmethod
     def ensure_unique_ids(hosts):

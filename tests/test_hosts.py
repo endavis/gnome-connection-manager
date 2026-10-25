@@ -619,6 +619,58 @@ def test_the_local_commands_are_not_a_types_settings():
     assert loaded.type_settings == {}
 
 
+# -- a host's own tab name (#349) ---------------------------------------------
+
+# Placeholders, which are kept as written until a tab is named, and a percent sign.
+TAB_NAME = "tpl {name} · {folder} 100%"
+
+
+def test_a_tab_name_survives_the_ini_round_trip_as_tab_name():
+    """`tab-name` is what the guide and the measured older GCM name."""
+    host = make_sample_host()
+    host.tab_name = TAB_NAME
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    stored = reread(config)
+    loaded = hosts.HostUtils.load_host_from_ini(stored, "host 1", pwd="secret")
+
+    assert stored.get("host 1", "tab-name") == TAB_NAME
+    assert loaded.tab_name == TAB_NAME
+
+
+def test_a_host_without_a_tab_name_writes_no_option_for_it():
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+
+    assert not config.has_option("host 1", "tab-name")
+    assert hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret").tab_name == ""
+
+
+def test_clone_carries_the_tab_name():
+    """Duplicate Host's copy is named by it too."""
+    host = make_sample_host()
+    host.tab_name = TAB_NAME
+
+    assert host.clone().tab_name == TAB_NAME
+
+
+def test_the_tab_name_is_not_a_types_setting():
+    """Every type with a tab has it, so it is no `<type>.<key>`."""
+    host = make_sample_host()
+    host.tab_name = TAB_NAME
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+
+    assert loaded.type_settings == {}
+
+
 # -- a host's commands come back as they were written (#243) ------------------
 
 # A backslash and an n, which `commands` reads back as a new line.
@@ -769,6 +821,7 @@ def make_host_unlike_the_defaults():
     host.type_settings = {"telnet.mode": "line"}
     host.before_command = BEFORE
     host.after_command = AFTER
+    host.tab_name = TAB_NAME
     return host
 
 
@@ -833,6 +886,7 @@ def test_each_option_missing_from_a_host_reads_as_its_default():
         "type_settings": {},
         "before_command": "",
         "after_command": "",
+        "tab_name": "",
     }
 
 
@@ -871,6 +925,7 @@ def test_a_host_made_from_a_name_alone_takes_each_default():
         "type_settings": {},
         "before_command": "",
         "after_command": "",
+        "tab_name": "",
     }
     assert {name: attributes(host)[name] for name in defaults} == defaults
 

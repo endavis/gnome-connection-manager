@@ -21,6 +21,12 @@ the same name, so a template that tells hosts apart, as `{group}/{name}` does, g
 Two hosts in one folder that the template names alike stay alike: no folder of theirs can
 tell them apart, and #347's path, beside the name, still does.
 
+A host can have a tab name of its own, from the host dialog, which names its tabs in place
+of the template (#349). It takes the same values, and is used as it is: chosen, it gets no
+folders in front, even where another host's tab reads the same. That other host's does, as
+its tab would read as the own name. An own name that gives nothing is no own name, and the
+template names the tab.
+
 Pure: the hosts and the template are arguments. The hosts are the configuration's, not the
 open tabs', so that a tab's name does not change as other tabs open and close.
 
@@ -42,22 +48,29 @@ NAME = "{name}"
 
 
 def tab_name(host: Any, hosts: Iterable[Any], template: str = NAME) -> str:
-    """The name of `host`'s tab among `hosts`, each read for its `.group` and the values
-    `template` names, as `namer` reads them."""
+    """The name of `host`'s tab among `hosts`, each read for its `.group`, its `.tab_name`
+    and the values `template` names, as `namer` reads them."""
     return namer(hosts, template)(host)
 
 
 def namer(hosts: Iterable[Any], template: str = NAME) -> Callable[[Any], str]:
     """What names a host's tab among `hosts`, for naming many tabs at once: each of `hosts`
-    is read, and named by `template`, once, here, rather than once for every tab.
+    is read, and named by its own tab name or `template`, once, here, rather than once for
+    every tab.
 
     The host it is given need not be one of `hosts`: a tab outlives its host, and the Local
     console has none in the configuration. Each host gets only as many folders as it needs,
     so the folder of one that needs one is not lengthened for another that needs two.
     """
-    named = [(templated(other, template), folders_of(other.group)) for other in hosts]
+    named = [
+        (own_name(other) or templated(other, template), folders_of(other.group)) for other in hosts
+    ]
 
     def name_of(host: Any) -> str:
+        # Chosen, so used as it is, with no folder in front.
+        own = own_name(host)
+        if own:
+            return own
         name = templated(host, template)
         path = folders_of(host.group)
         others = [folders for each, folders in named if each == name and folders != path]
@@ -74,6 +87,14 @@ def namer(hosts: Iterable[Any], template: str = NAME) -> Callable[[Any], str]:
         return "/".join([*path, name])
 
     return name_of
+
+
+def own_name(host: Any) -> str:
+    """`host`'s own tab name filled with its values, as the template is (#349). "" where it
+    has none, or where that leaves nothing but spaces, and the template names the tab."""
+    if not host.tab_name:
+        return ""
+    return placeholders.fill(host.tab_name, placeholders.host_values(host)).strip()
 
 
 def templated(host: Any, template: str) -> str:

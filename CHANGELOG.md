@@ -28,6 +28,14 @@ the git log.
 - `{folder}`, the folder a host is in without the folders above it, fills in wherever the
   other placeholders do: a host's commands on this computer, a command host's line,
   snippets and **Tab name**. `{group}` is still the whole path.
+- A host can have a tab name of its own: **Tab name**, on the host dialog's Properties
+  tab, below **Name**. It names the host's tabs in place of Preferences' **Tab name**,
+  takes the same placeholders, and is used as written, with no folder in front. Saving the
+  dialog renames the host's open tabs, except a tab renamed by hand. Left empty, as it
+  starts, Preferences' **Tab name** names them as before. It is greyed for a web host,
+  which opens no tab. It is saved as `tab-name` in the host's section of `gcm.conf`. An
+  older GCM reads the file and leaves the option out when it saves. Session logs are named
+  as before.
 
 ### Changed
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the
