@@ -36,6 +36,8 @@ _MARKERS = (
     (b"\x1b[?47l", False),
 )
 _LONGEST = max(len(sequence) for sequence, _ in _MARKERS)
+# Every switch sequence, for the replay to know a run that is one and nothing else (#340).
+SWITCHES = frozenset(sequence for sequence, _ in _MARKERS)
 
 
 # A frame reaches the terminal as a burst of writes, then a pause while the
@@ -161,10 +163,17 @@ class AltScreenScanner:
 
     @staticmethod
     def _partial_marker(data: bytes) -> int:
-        """How many trailing bytes could still turn into a switch sequence."""
-        for length in range(min(_LONGEST - 1, len(data)), 0, -1):
+        """How many trailing bytes could still turn into a switch sequence.
+
+        Only a tail shorter than a switch it starts. One as long is that switch, whole,
+        and belongs to this chunk's runs: a whole `?47` one, as short as a part of
+        `?1049`'s, used to be held back for the next chunk (#340).
+        """
+        for length in range(min(_LONGEST, len(data)), 0, -1):
             tail = data[len(data) - length :]
-            if any(sequence.startswith(tail) for sequence, _ in _MARKERS):
+            if any(
+                sequence.startswith(tail) and length < len(sequence) for sequence, _ in _MARKERS
+            ):
                 return length
         return 0
 

@@ -8296,11 +8296,17 @@ class TranscriptReplayer:
             runs += scanner.split(frame)
         runs += scanner.close()
         # Consecutive primary-screen runs need no sampling between them, so they are
-        # merged into one feed. Alternate-screen frames must stay separate.
+        # merged into one feed. Alternate-screen frames must stay separate, but for a
+        # run that is only the switch into the alternate screen: it goes in with the
+        # frame after it. Sampled alone, the screen shows what it held before, and VTE
+        # does not clear it for `?47h`. Measured, an earlier session's last page was
+        # there, and the tracker took it for a page turned and wrote it out again (#340).
         merged: list[tuple[bytes, bool]] = []
         for data, alternate in runs:
             if merged and not alternate and not merged[-1][1]:
                 merged[-1] = (merged[-1][0] + data, False)
+            elif merged and alternate and merged[-1][1] and merged[-1][0] in transcript.SWITCHES:
+                merged[-1] = (merged[-1][0] + data, True)
             else:
                 merged.append((data, alternate))
         return merged

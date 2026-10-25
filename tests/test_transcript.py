@@ -364,9 +364,16 @@ def test_scanner_passes_over_a_switch_to_its_own_screen_and_sees_the_next():
     assert runs == [(b"a\x1b[?1049lb", False), (b"\x1b[?1049hc", True)]
 
 
-@pytest.mark.parametrize("cut", range(1, 8))
-def test_scanner_sees_a_switch_split_after_any_of_its_bytes(cut):
-    sequence = b"\x1b[?1049h"
+@pytest.mark.parametrize(
+    ("sequence", "cut"),
+    [
+        (sequence, cut)
+        for sequence in (b"\x1b[?1049h", b"\x1b[?47h")
+        for cut in range(1, len(sequence))
+    ],
+)
+def test_scanner_sees_a_switch_split_after_any_of_its_bytes(sequence, cut):
+    """A part of `?47`'s too, which is held though the whole one is not (#340)."""
     scanner = AltScreenScanner()
 
     first = scanner.split(b"before" + sequence[:cut])
@@ -376,12 +383,20 @@ def test_scanner_sees_a_switch_split_after_any_of_its_bytes(cut):
     assert second == [(sequence + b"after", True)]
 
 
-@pytest.mark.parametrize("sequence", [b"\x1b[?1049h", b"\x1b[?1047h"])
+@pytest.mark.parametrize(
+    "sequence",
+    [b"\x1b[?1049h", b"\x1b[?1047h", b"\x1b[?47h", b"\x1b[?1049l", b"\x1b[?1047l", b"\x1b[?47l"],
+)
 def test_scanner_holds_back_no_switch_that_ends_a_chunk_whole(sequence):
-    """Only a part of one, which the next chunk could finish."""
+    """Only a part of one, which the next chunk could finish. A whole `?47` one is as
+    short as a part of `?1049`'s, and it used to be held until the next chunk (#340)."""
+    leaving = sequence.endswith(b"l")
     scanner = AltScreenScanner()
+    if leaving:
+        scanner.split(b"\x1b[?1049h")
 
-    assert scanner.split(b"text" + sequence) == [(b"text", False), (sequence, True)]
+    assert scanner.split(b"text" + sequence) == [(b"text", leaving), (sequence, not leaving)]
+    assert scanner.close() == []
 
 
 def test_scanner_close_hands_back_what_it_held_once():
@@ -505,6 +520,50 @@ def test_the_replayer_keeps_alternate_screen_frames_apart(tmp_path, app_module):
     assert runs[0][0] == b"shell one\r\nshell two\r\n", "primary runs merge into one feed"
     assert runs[1][0].startswith(b"\x1b[?1049h")
     assert runs[4][0].startswith(b"\x1b[?1049l")
+
+
+@pytest.mark.parametrize(
+    ("on", "off"),
+    [
+        (b"\x1b[?1049h", b"\x1b[?1049l"),
+        (b"\x1b[?1047h", b"\x1b[?1047l"),
+        (b"\x1b[?47h", b"\x1b[?47l"),
+    ],
+)
+def test_the_replayer_feeds_a_switch_that_ends_a_frame_with_the_next(tmp_path, app_module, on, off):
+    """Not on its own, to be sampled before anything is drawn.
+
+    The screen then shows what it held before, and VTE does not clear it for `?47h`.
+    Measured, an earlier session's last page was there, and the tracker took it for a
+    page turned and transcribed it again (#340).
+    """
+    writes = [
+        (0.0, b"$ less\r\n" + on),
+        (0.05, b"page 1"),
+        (0.05, b"page 2" + off),
+        (0.05, b"$ "),
+    ]
+    raw, timing = write_recording(tmp_path, writes)
+
+    runs = app_module.TranscriptReplayer._plan(raw, timing)
+
+    assert runs == [
+        (b"$ less\r\n", False),
+        (on + b"page 1", True),
+        (b"page 2", True),
+        (off + b"$ ", False),
+    ]
+
+
+def test_the_replayer_joins_a_lone_switch_only_to_an_alternate_run_after_it(tmp_path, app_module):
+    """A primary run after it stays apart, and so does an alternate run after a primary
+    one that is only a switch: either way, the two are on different screens."""
+    writes = [(0.0, b"\x1b[?47l"), (0.05, b"\x1b[?47h"), (0.05, b"\x1b[?47l$ ")]
+    raw, timing = write_recording(tmp_path, writes)
+
+    runs = app_module.TranscriptReplayer._plan(raw, timing)
+
+    assert runs == [(b"\x1b[?47l", False), (b"\x1b[?47h", True), (b"\x1b[?47l$ ", False)]
 
 
 def test_the_replayer_marker_changes_every_frame(app_module):

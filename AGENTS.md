@@ -455,6 +455,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   burst of writes back into the frame it drew, tracks which screen the stream is on, and
   decides what a new alternate-screen frame actually added. Pure, so the heuristics are
   testable without a display; the emulator driving it is `TranscriptReplayer` in `app.py`.
+  VTE 0.76 does not clear the alternate screen for `?47h`, measured, so a sample taken
+  straight after one shows what an earlier session left there. `AltScreenScanner`
+  reports a switch with the chunk it ends, and `TranscriptReplayer._plan` feeds a run
+  that is only a switch together with the frame after it, so that no such sample is
+  taken (#340).
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's
