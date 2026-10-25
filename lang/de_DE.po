@@ -2036,3 +2036,9 @@ msgstr "GCM {new} ist verfügbar. Verwendete Version: {current}."
 
 msgid "How to install it: {url}"
 msgstr "Installationsanleitung: {url}"
+
+msgid "Some hosts had the name of another host in their folder, so GCM renamed them."
+msgstr ""
+
+msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
+msgstr ""
