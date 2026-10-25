@@ -52,6 +52,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   an imported export brings ids minted elsewhere. `Host` mints one for any record read
   without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
   repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
+  No folder holds two hosts of one name, so that a folder path and a name always tell
+  two hosts apart (#351). The host dialog and a drag refuse one, `copy_name` names
+  Duplicate Host's copy, and `HostUtils.ensure_unique_names` renames a later repeat
+  `<name> (2)` and so on. `loadConfig` and the import run it once the hosts are filed,
+  since `FolderTree.repair` merges two folders of one name with their hosts, and in the
+  file's order, which `groups` does not keep. `report_renamed_hosts` says which.
   A host's commands are written as `commands`, each new line as `\n`, which is what an
   older GCM reads, and which reads a backslash and an n back as a new line. Where that
   would change them they are written exactly as well, under `commands-json`, and

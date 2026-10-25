@@ -350,6 +350,86 @@ def test_ensure_unique_ids_separates_a_three_way_collision():
     assert len({one.id, two.id, three.id}) == 3
 
 
+def test_copy_name_names_a_copy_after_its_original():
+    assert hosts.copy_name("router", {"router"}) == "router (copy)"
+
+
+def test_copy_name_adds_copy_again_while_the_folder_has_the_name():
+    taken = {"router", "router (copy)", "router (copy) (copy)"}
+
+    assert hosts.copy_name("router", taken) == "router (copy) (copy) (copy)"
+
+
+def test_copy_name_reads_every_name_in_the_folder_whatever_their_order():
+    """Deleting the first copy and copying again leaves the folder's names in this order.
+    Compared once each, in order, they gave a copy `router (copy) (copy)`, which the
+    folder had (#351)."""
+    taken = ["router", "router (copy) (copy)", "router (copy)"]
+
+    assert hosts.copy_name("router", taken) == "router (copy) (copy) (copy)"
+
+
+def host_named(group, name):
+    host = make_sample_host()
+    host.group, host.name = group, name
+    return host
+
+
+def test_ensure_unique_names_renames_the_later_host_of_a_name_in_a_folder():
+    first, second = host_named("infra", "ansible"), host_named("infra", "ansible")
+
+    renamed = hosts.HostUtils.ensure_unique_names([first, second])
+
+    assert (first.name, second.name) == ("ansible", "ansible (2)")
+    assert renamed == [(second, "ansible")]
+
+
+def test_ensure_unique_names_numbers_each_later_repeat():
+    """Given a generator, as ensure_unique_ids is: it reads the hosts twice."""
+    three = [host_named("infra", "ansible") for _ in range(3)]
+
+    hosts.HostUtils.ensure_unique_names(host for host in three)
+
+    assert [host.name for host in three] == ["ansible", "ansible (2)", "ansible (3)"]
+
+
+def test_ensure_unique_names_skips_a_number_the_folder_has():
+    """`ansible (2)` belongs to a host given after the repeat, so the repeat takes `(3)`."""
+    given = [
+        host_named("infra", "ansible"),
+        host_named("infra", "ansible"),
+        host_named("infra", "ansible (2)"),
+    ]
+
+    renamed = hosts.HostUtils.ensure_unique_names(given)
+
+    assert [host.name for host in given] == ["ansible", "ansible (3)", "ansible (2)"]
+    assert renamed == [(given[1], "ansible")]
+
+
+def test_ensure_unique_names_leaves_one_name_in_two_folders_alone():
+    given = [host_named("infrafoundry", "ansible"), host_named("pyproject-template", "ansible")]
+
+    assert hosts.HostUtils.ensure_unique_names(given) == []
+    assert [host.name for host in given] == ["ansible", "ansible"]
+
+
+def test_ensure_unique_names_keeps_the_name_of_the_first_given():
+    first, second = host_named("infra", "ansible"), host_named("infra", "ansible")
+
+    hosts.HostUtils.ensure_unique_names([second, first])
+
+    assert (second.name, first.name) == ("ansible", "ansible (2)")
+
+
+def test_ensure_unique_names_is_stable_when_run_again():
+    given = [host_named("infra", "ansible"), host_named("infra", "ansible")]
+    hosts.HostUtils.ensure_unique_names(given)
+
+    assert hosts.HostUtils.ensure_unique_names(given) == []
+    assert [host.name for host in given] == ["ansible", "ansible (2)"]
+
+
 def test_a_folder_survives_the_ini_round_trip():
     host = make_sample_host()
     host.folder = "ab12cd34"

@@ -416,6 +416,32 @@ def test_duplicate_selected_host_clones_entry(monkeypatch, app_module):
     assert calls["tree"] == 1
 
 
+def test_duplicate_host_never_gives_a_name_its_folder_has(monkeypatch, app_module):
+    """The steps #351 measured: copy, copy, delete the first copy, copy, copy. The fourth
+    copy was a second `router (copy) (copy)`."""
+    host = make_host(app_module)
+    wmain, _iter = make_wmain_with_host(app_module, host)
+    monkeypatch.setattr(app_module, "groups", {"ops/prod": [host]})
+    wmain.updateTree = lambda: None
+    wmain.writeConfig = lambda: None
+    wmain.get_group = lambda _iter: "ops/prod"
+    folder = app_module.groups["ops/prod"]
+
+    wmain.duplicate_selected_host()
+    wmain.duplicate_selected_host()
+    # As Delete does it.
+    folder.remove(next(h for h in folder if h.name == "router (copy)"))
+    wmain.duplicate_selected_host()
+    wmain.duplicate_selected_host()
+
+    assert [h.name for h in folder] == [
+        "router",
+        "router (copy) (copy)",
+        "router (copy)",
+        "router (copy) (copy) (copy)",
+    ]
+
+
 def test_copy_selected_address_sets_clipboard(monkeypatch, app_module):
     host = make_host(app_module)
     wmain, iter_ = make_wmain_with_host(app_module, host)
@@ -5655,11 +5681,12 @@ def test_child_exit_is_wired_to_the_flushing_handler(app_module):
     assert wiring.group(1) == wiring.group(2), wiring.group(0)
 
 
-def export_then_import(monkeypatch, tmp_path, app_module, exported_hosts, mangle=None):
+def export_then_import(monkeypatch, tmp_path, app_module, exported_hosts, mangle=None, draw=None):
     """Export `exported_hosts`, optionally edit the file, then import it back.
 
     Returns the hosts that landed in `groups`. Mirrors the round trip in
-    test_importar_servidores_loads_hosts; `mangle` takes and returns the file text.
+    test_importar_servidores_loads_hosts; `mangle` takes and returns the file text, and
+    `draw` stands in for the importer's updateTree, which otherwise does nothing.
     """
     filename = tmp_path / "hosts.ini"
     monkeypatch.setattr(app_module, "encrypt", lambda _pwd, value: value)
@@ -5684,7 +5711,7 @@ def export_then_import(monkeypatch, tmp_path, app_module, exported_hosts, mangle
     importer = object.__new__(app_module.Wmain)
     importer.window = object()
     importer.wMain = object()
-    importer.updateTree = lambda: None
+    importer.updateTree = draw or (lambda: None)
     monkeypatch.setattr(app_module, "groups", {})
     importer.on_importar_servidores1_activate(None)
 
@@ -5777,6 +5804,43 @@ def test_importing_an_export_from_before_adr_0002_builds_the_tree(
     app_module.sync_folders()
 
     assert app_module.folders.path_for(imported[0].folder) == host.group
+
+
+def test_an_import_renames_a_host_that_repeats_a_name_in_its_folder(
+    monkeypatch, tmp_path, app_module
+):
+    """An export merged by hand can hold two hosts of one name in one folder (#351). The
+    second's group reads `ops/ prod` here, which only filing it by its folder id makes
+    `ops/prod`, so the two are compared once updateTree has filed them. The tree is then
+    drawn again, with the new name."""
+    first, second = make_host(app_module), make_host(app_module)
+    first.host, second.host = "10.0.0.1", "10.0.0.2"
+    reported, drawn = [], []
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "report_renamed_hosts",
+        lambda _self, renamed: reported.append([(h.host, old) for h, old in renamed]),
+    )
+
+    def draw():
+        app_module.sync_folders()
+        drawn.append(sorted(h.name for hs in app_module.groups.values() for h in hs))
+
+    def stale_group(text):
+        line = "group = ops/prod"
+        at = text.index(line, text.index(line) + 1)
+        return text[:at] + "group = ops/ prod" + text[at + len(line) :]
+
+    imported = export_then_import(
+        monkeypatch, tmp_path, app_module, [first, second], mangle=stale_group, draw=draw
+    )
+
+    assert sorted((h.host, h.name) for h in imported) == [
+        ("10.0.0.1", "router"),
+        ("10.0.0.2", "router (2)"),
+    ]
+    assert reported == [[("10.0.0.2", "router")]]
+    assert drawn == [["router", "router"], ["router", "router (2)"]]
 
 
 def drawn_tree(app_module, monkeypatch, *specs):

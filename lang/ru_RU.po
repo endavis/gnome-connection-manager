@@ -1953,3 +1953,9 @@ msgstr "Доступен GCM {new}. Используемая версия: {curr
 
 msgid "How to install it: {url}"
 msgstr "Как установить: {url}"
+
+msgid "Some hosts had the name of another host in their folder, so GCM renamed them."
+msgstr ""
+
+msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
+msgstr ""

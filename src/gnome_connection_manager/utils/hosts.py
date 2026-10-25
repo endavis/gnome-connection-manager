@@ -80,6 +80,19 @@ def new_host_id():
     return secrets.token_hex(HOST_ID_BYTES)
 
 
+def copy_name(name, taken):
+    """The name Duplicate Host gives a copy of `name`: `<name> (copy)`, with ` (copy)`
+    added again while the folder, whose names are `taken`, already has it (#351).
+
+    It used to compare the name with each host in the folder once, in order, so after a
+    copy was deleted, a later copy could be given a name the folder had.
+    """
+    copy = f"{name} (copy)"
+    while copy in taken:
+        copy = f"{copy} (copy)"
+    return copy
+
+
 # int(Vte.EraseBinding.AUTO), measured as 0 against VTE 2.91. Held as a plain int so
 # this module needs no gi import; tests/test_hosts.py asserts it still matches the real
 # enum, which is the check that catches the value drifting.
@@ -366,3 +379,34 @@ class HostUtils:
                 reassigned.append(host)
             seen.add(host.id)
         return reassigned
+
+    @staticmethod
+    def ensure_unique_names(hosts):
+        """Rename each host whose folder already holds a host of its name (#351).
+
+        The host dialog and a drag refuse a repeat. But gcm.conf is a text file people edit
+        and merge by hand, an import brings in whatever its file holds, and
+        `FolderTree.repair` merges two folders of one name with their hosts. The first host
+        of a name keeps it, and each later one becomes `<name> (2)`, `<name> (3)` and so on:
+        the lowest number no host in the folder has. A folder is a `group` here, so run this
+        once the hosts are filed (`FolderTree.bind`), and give them in the order whose first
+        should keep its name. Returns each host renamed, with the name it had.
+        """
+        hosts = list(hosts)
+        taken: dict = {}
+        for host in hosts:
+            taken.setdefault(host.group, set()).add(host.name)
+        seen: dict = {}
+        renamed = []
+        for host in hosts:
+            names = seen.setdefault(host.group, set())
+            if host.name in names:
+                old = host.name
+                number = 2
+                while f"{old} ({number})" in taken[host.group]:
+                    number += 1
+                host.name = f"{old} ({number})"
+                taken[host.group].add(host.name)
+                renamed.append((host, old))
+            names.add(host.name)
+        return renamed

@@ -104,6 +104,21 @@ which folder it is filed under, for one — without depending on its name or its
 
 A **duplicate** is a second host, so it gets an id of its own rather than sharing one.
 
+No two hosts in one folder share a name. The host dialog refuses a name the folder already
+has, and so does a drop. **Duplicate Host** names the copy after its original, *name
+(copy)*, and adds another *(copy)* for as long as the folder already has that name.
+
+A `gcm.conf` edited or merged by hand can still hold two hosts of one name in one folder,
+and so can a file you import. So can two folders of one name side by side, which GCM merges
+into one as it reads the file, with the hosts of both. Then the first of those hosts in
+the file keeps the name, and GCM renames each later one: *name (2)*, *name (3)* and so on,
+taking a number no host in the folder has. It lists the hosts it renamed, once the window
+is up for `gcm.conf` and straight after an import, and saves the new names with your hosts.
+
+A renamed host goes by its new name from then on: on the tabs it opens, wherever `{name}`
+is filled in for it, and for the folder it mounts at over SSHFS. Its session logs go in a
+folder of the new name, and its earlier logs stay where they were.
+
 ## Export and import
 
 **Export Hosts** writes every host and the folder tree to a file, asking for a password
@@ -113,7 +128,8 @@ not a merge, and GCM confirms before doing it.
 
 An exported file carries the ids that were minted on the machine it came from. Importing
 it brings them along, and GCM repairs any that collide with each other, so a file merged
-by hand from two exports still imports cleanly.
+by hand from two exports still imports cleanly. A host whose name another host in its
+folder has is renamed, as [What a host carries](#what-a-host-carries) says.
 
 ## The host dialog
 

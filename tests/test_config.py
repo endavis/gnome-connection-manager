@@ -459,6 +459,99 @@ def test_load_config_repairs_a_duplicate_id(tmp_path, app_module, monkeypatch):
     assert "aaaa1111" in {host.id for host in loaded}
 
 
+def by_address(loaded):
+    return sorted((host.host, host.name) for host in loaded)
+
+
+def test_load_config_renames_a_host_that_repeats_a_name_in_its_folder(
+    tmp_path, app_module, monkeypatch
+):
+    """A hand edit or a merge can give a folder two hosts of one name, which nothing GCM
+    showed told apart (#351)."""
+    path = write_minimal_hosts_config(
+        tmp_path,
+        [{"name": "ansible", "host": "10.0.0.1"}, {"name": "ansible", "host": "10.0.0.2"}],
+    )
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert by_address(loaded) == [("10.0.0.1", "ansible"), ("10.0.0.2", "ansible (2)")]
+    assert [(host.host, old) for host, old in app_module.renamed_hosts] == [("10.0.0.2", "ansible")]
+
+
+def test_load_config_renames_a_repeat_that_merged_folders_bring_together(
+    tmp_path, app_module, monkeypatch
+):
+    """repair merges two folders of one name, hosts and all, as the file loads (#351)."""
+    path = write_minimal_hosts_config(
+        tmp_path,
+        [
+            {"name": "ansible", "host": "10.0.0.1", "group": "infrafoundry", "folder": "f1"},
+            {"name": "ansible", "host": "10.0.0.2", "group": "infrafoundry", "folder": "f2"},
+        ],
+    )
+    with path.open("a") as handle:
+        handle.write("\n[folder f1]\nname = infrafoundry\n\n[folder f2]\nname = infrafoundry\n")
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert sorted(app_module.folders.folders) == ["f1"]
+    assert by_address(loaded) == [("10.0.0.1", "ansible"), ("10.0.0.2", "ansible (2)")]
+
+
+def test_load_config_keeps_the_name_of_the_first_host_in_the_file(
+    tmp_path, app_module, monkeypatch
+):
+    """`ops/ x` is the folder `ops/x` once filed, but `groups` is keyed by the group as
+    read, so it lists the `ops/x` hosts first: the third host here before the second."""
+    path = write_minimal_hosts_config(
+        tmp_path,
+        [
+            {"name": "other", "host": "10.0.0.1", "group": "ops/x"},
+            {"name": "ansible", "host": "10.0.0.2", "group": "ops/ x"},
+            {"name": "ansible", "host": "10.0.0.3", "group": "ops/x"},
+        ],
+    )
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert by_address(loaded) == [
+        ("10.0.0.1", "other"),
+        ("10.0.0.2", "ansible"),
+        ("10.0.0.3", "ansible (2)"),
+    ]
+
+
+def test_load_config_renames_nothing_where_no_name_repeats(tmp_path, app_module, monkeypatch):
+    path = write_minimal_hosts_config(tmp_path, [{}, {}])
+    monkeypatch.setattr(app_module, "renamed_hosts", ["from an earlier load"])
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert sorted(host.name for host in loaded) == ["router1", "router2"]
+    assert app_module.renamed_hosts == []
+
+
+def test_a_renamed_host_is_saved_under_its_new_name(tmp_path, app_module, monkeypatch):
+    """The next save writes the new name, so the next load has nothing to rename (#351)."""
+    path = write_minimal_hosts_config(
+        tmp_path,
+        [{"name": "ansible", "host": "10.0.0.1"}, {"name": "ansible", "host": "10.0.0.2"}],
+    )
+    load_hosts(app_module, monkeypatch, path)
+
+    save_config(app_module)
+
+    saved = saved_sections(path)
+    assert sorted(
+        (saved.get(section, "host"), saved.get(section, "name"))
+        for section in saved.sections()
+        if section.startswith("host ")
+    ) == [("10.0.0.1", "ansible"), ("10.0.0.2", "ansible (2)")]
+    load_hosts(app_module, monkeypatch, path)
+    assert app_module.renamed_hosts == []
+
+
 def test_write_config_persists_the_host_id(tmp_path, app_module, monkeypatch):
     config_file = tmp_path / "gcm.conf"
     monkeypatch.setattr(app_module, "CONFIG_FILE", str(config_file))
@@ -1037,3 +1130,44 @@ def test_activation_reports_once(app_module, monkeypatch):
     application.do_activate()
 
     assert scheduled == [application._controller.report_unread_options]
+
+
+def test_the_window_reports_each_host_it_renamed(app_module, monkeypatch):
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+    host = make_host(app_module)
+    host.group, host.name = "1. Projects/infrafoundry", "ansible (2)"
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = object()
+
+    assert wmain.report_renamed_hosts([(host, "ansible")]) is False
+
+    [dialog] = RefusalDialog.shown
+    assert dialog.parent is wmain.wMain
+    assert dialog.message_type == app_module.Gtk.MessageType.WARNING
+    assert "renamed" in dialog.text
+    assert "1. Projects/infrafoundry/ansible  →  ansible (2)" in dialog.detail
+    assert "session logs" in dialog.detail
+
+
+def test_activation_reports_the_renamed_hosts_once(app_module, monkeypatch):
+    scheduled = []
+    monkeypatch.setattr(
+        app_module.GLib, "idle_add", lambda func, *args: scheduled.append((func, args))
+    )
+    monkeypatch.setattr(app_module, "sync_shortcut_accels", lambda: None)
+    monkeypatch.setattr(app_module, "renamed_hosts", [(make_host(app_module), "ansible")])
+    application = app_module.GcmApplication()
+    application._controller = types.SimpleNamespace(
+        get_widget=lambda _name: None,
+        report_unread_options=lambda: False,
+        report_renamed_hosts=lambda _renamed: False,
+    )
+
+    application.do_activate()
+    application.do_activate()
+
+    assert scheduled == [
+        (application._controller.report_unread_options, ()),
+        (application._controller.report_renamed_hosts, (app_module.renamed_hosts,)),
+    ]

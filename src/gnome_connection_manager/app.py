@@ -133,7 +133,7 @@ from gnome_connection_manager.utils.folders import (  # noqa: E402
     place,
 )
 from gnome_connection_manager.utils.folders import ROOT as ROOT_FOLDER  # noqa: E402
-from gnome_connection_manager.utils.hosts import Host, HostUtils  # noqa: E402
+from gnome_connection_manager.utils.hosts import Host, HostUtils, copy_name  # noqa: E402
 from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     describe_log_session,
     sanitize_log_name,
@@ -638,6 +638,9 @@ snippets: list = []
 # default. writeConfig writes their text back rather than the default, until a setting
 # is changed (#173); the window reports them when it opens.
 unread_options: list = []
+# Each host loadConfig renamed for repeating a name in its folder, with the name it had
+# (#351). The window reports them when it opens.
+renamed_hosts: list = []
 
 
 def sync_folders():
@@ -4387,8 +4390,39 @@ class Wmain(GladeComponent):
         dialog.destroy()
         return False
 
+    def report_renamed_hosts(self, renamed):
+        """Say which hosts were renamed for repeating a name in their folder (#351).
+
+        `renamed` is what HostUtils.ensure_unique_names returned, when it renamed any. The
+        rename is there to show the repeat, where two rows and two tabs reading the same
+        hid it, so it is not left to the tree to tell. Run from an idle once the window is
+        up, hence the False.
+        """
+        lines = [
+            "{}  →  {}".format("/".join(part for part in (host.group, old) if part), host.name)
+            for host, old in renamed
+        ]
+        dialog = Gtk.MessageDialog(
+            parent=self.wMain,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("Some hosts had the name of another host in their folder, so GCM renamed them."),
+        )
+        dialog.format_secondary_text(
+            "{}\n\n{}".format(
+                "\n".join(lines),
+                _(
+                    "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
+                ),
+            )
+        )
+        dialog.run()
+        dialog.destroy()
+        return False
+
     def loadConfig(self):
-        global groups, folders, unread_options
+        global groups, folders, unread_options, renamed_hosts
 
         # main() has already refused a file that cannot be read at all (#161). What is
         # left to handle is what a hand merge leaves behind, which reads without loss.
@@ -4443,6 +4477,7 @@ class Wmain(GladeComponent):
 
         # Leer lista de hosts
         groups = {}
+        read = []
         for section in cp.sections():
             if not section.startswith("host "):
                 continue
@@ -4456,6 +4491,7 @@ class Wmain(GladeComponent):
                     groups[host.group] = []
 
                 groups[host.group].append(host)
+                read.append(host)
             except (configparser.Error, ValueError, AttributeError) as e:
                 logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
 
@@ -4474,6 +4510,14 @@ class Wmain(GladeComponent):
         if fixes:
             logger.warning("Repaired %d problem(s) in the folder tree", len(fixes))
         sync_folders()
+        # Once every host is filed, so that the hosts of two folders repair merged are
+        # compared together, and in the file's order, whose first keeps its name: `groups`
+        # is keyed by the group read, which bind can overrule with the folder id (#351).
+        renamed_hosts = HostUtils.ensure_unique_names(read)
+        if renamed_hosts:
+            logger.warning(
+                "Renamed %d host(s) that repeated a name in their folder", len(renamed_hosts)
+            )
 
     def is_node_collapsed(self, model, path, iter, nodes):
         if self.treeModel.get_value(iter, 1) is None and not self.treeServers.row_expanded(path):
@@ -5911,12 +5955,8 @@ class Wmain(GladeComponent):
         if iter_ is None:
             return
         group = self.get_group(iter_)
-        newname = f"{host.name} (copy)"
-        for h in groups.get(group, []):
-            if h.name == newname:
-                newname = f"{newname} (copy)"
         newhost = host.clone()
-        newhost.name = newname
+        newhost.name = copy_name(host.name, {h.name for h in groups.get(group, [])})
         groups.setdefault(group, []).append(newhost)
         place_copy(host, newhost)
         self.updateTree()
@@ -6250,6 +6290,7 @@ class Wmain(GladeComponent):
                     return
 
                 grupos: dict = {}
+                imported = []
                 for section in cp.sections():
                     if not section.startswith("host "):
                         continue
@@ -6261,6 +6302,7 @@ class Wmain(GladeComponent):
                         grupos[host.group] = []
 
                     grupos[host.group].append(host)
+                    imported.append(host)
                 refile_ambiguous_hosts(grupos, reading.ambiguous_folders)
                 imported_folders, fixes = FolderTree.load(cp)
                 if fixes:
@@ -6284,6 +6326,12 @@ class Wmain(GladeComponent):
             folders = imported_folders
 
             self.updateTree()
+            # Once updateTree has filed them, and in the file's order, as loadConfig
+            # renames them (#351).
+            renamed = HostUtils.ensure_unique_names(imported)
+            if renamed:
+                self.updateTree()
+                self.report_renamed_hosts(renamed)
 
     # -- Wmain.on_importar_servidores1_activate }
 
@@ -9549,6 +9597,8 @@ class GcmApplication(Gtk.Application):
             # asked for: addTab runs the main loop, and would run the notice mid-way.
             self._reported_unread = True
             GLib.idle_add(self._controller.report_unread_options)
+            if renamed_hosts:
+                GLib.idle_add(self._controller.report_renamed_hosts, renamed_hosts)
 
     def do_command_line(self, command_line):
         arguments = command_line.get_arguments()[1:]

@@ -11,6 +11,18 @@ the git log.
 
 ## [Unreleased]
 
+### Fixed
+- A folder could end up with two hosts of the same name, and nothing GCM showed told them
+  apart: two rows in the tree and two tabs read the same. **Duplicate Host** could give a
+  copy a name the folder had once an earlier copy was deleted. A `gcm.conf` edited or
+  merged by hand, or a file imported, brought in whatever it held, two folders of one name
+  included, which GCM merges into one. Duplicate Host now gives a copy a name the folder
+  does not have. As GCM reads a file, the first host of a name in a folder keeps it, each
+  later one becomes *name (2)*, *name (3)* and so on, and GCM lists the hosts it renamed.
+  A renamed host's session logs go in a folder of its new name from then on, while its
+  earlier logs stay where they were, and `{name}` and its SSHFS mount folder follow the
+  new name too.
+
 ## [2.1.1] - 2026-10-24
 
 ### Added
