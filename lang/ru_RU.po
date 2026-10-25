@@ -1732,7 +1732,7 @@ msgstr ""
 msgid "Run on this computer after disconnecting:"
 msgstr ""
 
-msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
 msgstr ""
 
 msgid "Could not run"
@@ -1795,7 +1795,7 @@ msgstr ""
 msgid "Backspace leaves it without a key"
 msgstr ""
 
-msgid "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
 msgstr ""
 
 msgid "Send a snippet to each console selected, with its own host's values"
@@ -1807,7 +1807,7 @@ msgstr ""
 msgid "Command line"
 msgstr ""
 
-msgid "{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
 msgstr ""
 
 msgid "A command host needs a command, on its Command line tab."
@@ -1958,4 +1958,10 @@ msgid "Some hosts had the name of another host in their folder, so GCM renamed t
 msgstr ""
 
 msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
+msgstr ""
+
+msgid "Tab name"
+msgstr ""
+
+msgid "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."
 msgstr ""

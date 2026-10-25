@@ -1884,8 +1884,8 @@ msgstr "Run on this computer before connecting:"
 msgid "Run on this computer after disconnecting:"
 msgstr "Run on this computer after disconnecting:"
 
-msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
-msgstr "<span size='smaller'>{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+msgstr "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
 
 msgid "Could not run"
 msgstr "Could not run"
@@ -1947,8 +1947,8 @@ msgstr "Press the key that sends it"
 msgid "Backspace leaves it without a key"
 msgstr "Backspace leaves it without a key"
 
-msgid "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
-msgstr "{name}, {address}, {port}, {user}, {group} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
 
 msgid "Send a snippet to each console selected, with its own host's values"
 msgstr "Send a snippet to each console selected, with its own host's values"
@@ -1959,8 +1959,8 @@ msgstr "Command"
 msgid "Command line"
 msgstr "Command line"
 
-msgid "{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
-msgstr "{name}, {address}, {port}, {user}, {group} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
 
 msgid "A command host needs a command, on its Command line tab."
 msgstr "A command host needs a command, on its Command line tab."
@@ -2111,3 +2111,9 @@ msgstr "Some hosts had the name of another host in their folder, so GCM renamed 
 
 msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
 msgstr "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
+
+msgid "Tab name"
+msgstr "Tab name"
+
+msgid "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."
+msgstr "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."

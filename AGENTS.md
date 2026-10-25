@@ -72,7 +72,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   command written for it, `{name}` and the rest (#238). Pure: the caller supplies the
   quoting, `shlex.quote` for a host's commands on this computer, which run through
   `sh -c`, so that a name holding a `;` stays one argument. Anything else in braces is
-  left as written. A command host's line (#248) goes through `fill_command`, which makes
+  left as written. `{folder}` is the last folder of `{group}`, the whole path, and empty
+  at the top level (#348). A command host's line (#248) goes through `fill_command`, which makes
   `{password}` the reference `"$GCM_PASSWORD"`, `PASSWORD_VARIABLE`, and never the
   password: measured, `/proc/<pid>/cmdline` is mode 444 and `/proc/<pid>/environ` 400.
   Those commands are the host's `before_command` and `after_command`. `addTab` runs the
@@ -431,6 +432,16 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the row is drawn, so the cluster window's store keeps its columns. A row rewritten by
   `name_cluster_consoles` is drawn again even with the same name, as the store emits
   `row-changed` for it, measured.
+  What a tab is named before the folders go in front is Preferences' Tab name,
+  `conf.TAB_NAME`, a template of the host's values that `templated` fills, the host's
+  name where it gives nothing (#348). The folders go in front of what it gives, so the
+  prefix compares template outputs, not names. `namer` fills it once for each host and
+  names any number of tabs from that: naming 50 tabs among 1000 hosts took 58 ms with the
+  template filled again for every tab and 2 ms with the namer, the best of 5 runs,
+  measured. `tab_namer` in `app.py`
+  builds one for each `name_tabs`. The Local console keeps `local`, through
+  `is_local_console`, since its type reads ssh and it has no address. Preferences' OK
+  stores the template and then redraws the tree, which renames the open tabs.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,

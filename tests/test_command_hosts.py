@@ -69,6 +69,16 @@ def test_each_value_reaches_the_command_as_one_argument_as_written(value):
     assert printed == [f"[{value}]"] * 3 + ["[623]", f"[{value}]", "[command]"]
 
 
+def test_the_folder_reaches_the_command_as_one_argument():
+    """`{folder}`, the folder the host is in alone, as a host's commands take it (#348)."""
+    line = "printf '[%s]\\n' {folder} {group}"
+    host = command_host(line, group="clusters/two words; echo hi")
+
+    printed = run(COMMAND.command(host, PROGRAMS)).splitlines()
+
+    assert printed == ["[two words; echo hi]", "[clusters/two words; echo hi]"]
+
+
 def test_the_password_reaches_the_command_in_its_environment():
     host = command_host("printf '[%s]\\n' {password}", password="s3cret 'pass'")
     command = COMMAND.command(host, PROGRAMS)

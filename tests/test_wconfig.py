@@ -224,6 +224,28 @@ def test_wconfig_on_okbutton_updates_conf_shortcuts(monkeypatch, app_module):
     assert destroy_stub.destroyed is True
 
 
+def test_ok_stores_the_tab_name_before_the_tabs_are_named_again(monkeypatch, app_module):
+    """Redrawing the tree names the open tabs (#346), so it must find the template OK has
+    just stored, and the open tabs take it at once (#348)."""
+    monkeypatch.setattr(app_module.Gtk, "CheckButton", CheckButtonStub, raising=False)
+    monkeypatch.setattr(app_module.Gtk, "SpinButton", SpinButtonStub, raising=False)
+    monkeypatch.setattr(app_module.Gtk, "ComboBox", ComboBoxStub, raising=False)
+    monkeypatch.setattr(app_module.Gtk, "Entry", EntryStub, raising=False)
+    wconfig, _destroy_stub = make_wconfig(app_module)
+    wconfig.tblGeneral.append(EntryStub("conf.TAB_NAME", "[{type}] {name}"))
+    wmain_stub = WmainStub(DonateButton())
+    wmain_stub.conf = app_module.conf
+    named = []
+    wmain_stub.updateTree = lambda: named.append(app_module.conf.TAB_NAME)
+    monkeypatch.setattr(app_module, "wMain", wmain_stub, raising=False)
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "snippets", [])
+
+    wconfig.on_okbutton1_clicked(None)
+
+    assert named == ["[{type}] {name}"]
+
+
 # -- preferences are addressed by name, not executed as source ---------------
 
 

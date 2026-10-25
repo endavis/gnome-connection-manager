@@ -270,6 +270,28 @@ def test_load_config_missing_option_still_applies_the_later_ones(tmp_path, app_m
     assert conf.APP_TITLE == "Custom App"
 
 
+def test_the_tab_name_template_is_kept_as_written(tmp_path, app_module, monkeypatch):
+    """Free text, braces and a percent sign included (#348), and a gcm.conf from before it
+    names tabs by name, as they were."""
+    assert _load_with(tmp_path, app_module, monkeypatch, {"term": "xterm"}).TAB_NAME == "{name}"
+
+    template = "[{type}] {folder}/{name} 100%"
+    conf = _load_with(tmp_path, app_module, monkeypatch, {"tab-name": template})
+    assert template == conf.TAB_NAME
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 100)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: []
+    wmain.get_collapsed_folder_ids = lambda: []
+    monkeypatch.setattr(app_module, "snippets", [])
+    wmain.writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(tmp_path / "gcm.conf")
+    assert written.get("options", "tab-name") == template
+
+
 def test_load_config_malformed_value_only_affects_its_own_option(tmp_path, app_module, monkeypatch):
     conf = _load_with(
         tmp_path,

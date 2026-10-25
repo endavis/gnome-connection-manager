@@ -19,6 +19,15 @@ the git log.
   console, smaller and fainter. A host at the top level and the Local console have no
   folder to show, and show none. A tab renamed by hand shows the host it is on. The tab
   strip is unchanged.
+- **Tab name**, on the General tab of Preferences, names every host's tab from a template
+  of the host's values, `{name}` by default, which names tabs as before. `[{type}] {name}`
+  names a tab `[ssh] web`, and `{folder}/{name}` names it `infrafoundry/web`. Hosts the
+  template names alike in two folders still get their folders in front. A change renames
+  open tabs at once, except a tab renamed by hand, and the Local console keeps `local`.
+  It is saved as `tab-name` in `gcm.conf`. Session logs are named as before.
+- `{folder}`, the folder a host is in without the folders above it, fills in wherever the
+  other placeholders do: a host's commands on this computer, a command host's line,
+  snippets and **Tab name**. `{group}` is still the whole path.
 
 ### Changed
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the
