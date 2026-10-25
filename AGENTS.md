@@ -401,6 +401,22 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   claiming the `.log` while another claims the `.raw` (#204). So an empty `.log` is a
   session's own reservation, not an earlier log to append to -- `set_terminal_logger`
   reads its size, not whether it exists.
+- `src/gnome_connection_manager/utils/tabnames.py` – what a host's tab is called (#346).
+  `tab_name` gives a host its name, and where another host has the name, in another
+  folder, as much of its folder path as tells it apart from each, in front, folder first:
+  `infrafoundry/ansible` beside `pyproject-template/ansible`. A host at the top level keeps
+  its name. Pure, and judged among the configuration's hosts, not the open tabs', so a tab
+  is not renamed as others open and close. `host_tab_name` in `app.py` judges it among
+  `groups`, through the host there with the id of the one given: the host dialog builds a
+  new record for a host it edits, and a tab keeps the record it was opened for, as
+  `NotebookTabLabel.host`. A clone of a tab keeps the id for the same reason, where
+  Duplicate Host's copy, a second host, does not. `addTab` and `open_type_page` name a
+  tab so. Every change to the hosts redraws the tree, and `updateTree` ends in
+  `name_tabs`, which names each tab not renamed by hand again through `set_name`. Then
+  `title_windows` titles the windows again, not through `on_tab_focus`, which clears a
+  tab's mark, and `name_cluster_consoles` names an open cluster window's rows, since that
+  window is not modal. `name_tabs` does nothing while `count`, the tabs open, is 0, as it
+  is at class level for a `Wmain` built without `new()`, as tests build one.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
@@ -862,7 +878,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - A console's tab label is a `NotebookTabLabel`, and it holds state its text does not:
   the title the program set, a rename, whether the session has ended, and the marks the
   bell and the cluster window leave. Three texts, and they differ: `get_text()` is the
-  identity (host name or rename) that clone, cluster consoles and `move_page` read,
+  identity (the host's tab name, `host_tab_name`, or a rename) that clone, cluster
+  consoles and `move_page` read,
   `get_display_text()` is the whole composed label, and the widget draws that cut to
   `TAB_LABEL_MAX` (#190). Everything with room for the long form -- the tooltip, the
   open-console list, the rename and close dialogs -- must take one of the first two, never
