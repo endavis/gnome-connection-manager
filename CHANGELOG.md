@@ -11,6 +11,15 @@ the git log.
 
 ## [Unreleased]
 
+### Changed
+- Two hosts of one name in two folders opened two tabs that read the same, and so did the
+  window title, the open-console list and the cluster window. A tab now shows as much of
+  its host's folder as tells the two apart, in front of the name: `infrafoundry/ansible`
+  and `pyproject-template/ansible`. A host whose name no other host has keeps its name
+  alone, as before. Open tabs follow the hosts as they are added, renamed, moved and
+  deleted, and a tab follows its own host to a new name or folder; one renamed by hand
+  keeps its name. Session logs are where they were.
+
 ### Fixed
 - A folder could end up with two hosts of the same name, and nothing GCM showed told them
   apart: two rows in the tree and two tabs read the same. **Duplicate Host** could give a

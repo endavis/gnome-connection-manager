@@ -391,6 +391,22 @@ prod-web-01: ✳ Claude Code
 The host name always stays in front, so tabs remain identifiable — several sessions of the
 same tool would otherwise look identical.
 
+**Two hosts of one name** in two folders open tabs named with as much of each folder path as
+tells them apart, in front of the name. `1. Projects/infrafoundry/ansible` and
+`1. Projects/pyproject-template/ansible` open as `infrafoundry/ansible` and
+`pyproject-template/ansible`, and `A/x/ansible` and `B/x/ansible` as they are written. The
+folder goes first so that the cut at 30 characters, below, takes the program title before
+it takes what tells the tabs apart. A host at the top level has no folder to show, and
+keeps its name, which already tells it apart from `infrafoundry/ansible`. A host whose name
+no other host has is named as before. The window title, the open-console list, the cluster
+window, a notification and the rename and close dialogs all give the tab the same name.
+
+**Open tabs follow the hosts.** Make a second `ansible` host and the first one's tab takes
+its folder; rename, move or delete either, and the folder goes again. A tab also follows
+its own host to a new name or folder, and a cloned tab follows as the original does. It is
+the hosts in the server tree that decide, not the tabs open, so opening and closing tabs
+never renames one. A tab you have renamed keeps its name.
+
 **Labels are cut at 30 characters,** ending in `…`, because a tab is as wide as its text and
 the tabs that no longer fit go behind the arrows at the ends of the tab strip. The cut is
 only what is drawn: hover a tab and the tooltip gives the whole label, the open-console list
@@ -413,8 +429,10 @@ Edit that with GCM closed.
 
 The title is display only. It never affects where sessions are logged, what a cloned tab
 connects to, or which console a cluster command targets — those all use the tab's identity,
-which is the host name or your explicit rename. This matters because a window title is set by
-whatever runs in the terminal, including a remote host over SSH.
+which is the host's name, with its folder where another host has the name, or your explicit
+rename. Sessions are logged by the host's folder and name alone, whatever its tab is
+called. This matters because a window title is set by whatever runs in the terminal,
+including a remote host over SSH.
 
 Note that not every program sets a title: of the agent CLIs measured above, only Claude Code
 does, and it advertises a fixed string rather than per-task status.

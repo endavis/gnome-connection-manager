@@ -117,6 +117,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     logpaths,
     placeholders,
     remotefiles,
+    tabnames,
     transcript,
     updates,
     urlregex,
@@ -663,6 +664,20 @@ def sync_folders():
     for order in contents.values():
         number(order)
     return contents
+
+
+def host_tab_name(host):
+    """What `host`'s tab is called: its name, with as much of its folder as tells it apart
+    from each other host of that name in the configuration (#346).
+
+    The host in the configuration with `host`'s id decides it, where there is one. The host
+    dialog builds a new record for a host it edits, keeping the id, and a tab keeps the
+    record it was opened for, as a clone of that tab does. One with none, deleted or never
+    configured, as the Local console's, is named against the hosts there are.
+    """
+    hosts = [each for filed in groups.values() for each in filed]
+    configured = next((each for each in hosts if each.id == host.id), host)
+    return tabnames.tab_name(configured, hosts)
 
 
 def refile_ambiguous_hosts(groups_by_path, ambiguous_folders):
@@ -2035,6 +2050,13 @@ def page_terminal(page):
     return None
 
 
+def window_title(tab_text):
+    """A window's title: GCM's, then the name of the tab the window shows, if it has one."""
+    if tab_text:
+        return f"{conf.APP_TITLE or app_name} - {tab_text.strip()}"
+    return conf.APP_TITLE or app_name
+
+
 # -- the open-console list, shared by the tab-strip dropdown and the menubar (#84) ------
 
 
@@ -2135,12 +2157,14 @@ def console_item_markup(entry):
 class Wmain(GladeComponent):
     # new() gives each Wmain its own. These are for one built without it, as tests
     # build one: no console window, none in use, and no tab being dragged (#255), and no
-    # host being mounted, and no application whose menus list the mounts (#267).
+    # host being mounted, and no application whose menus list the mounts (#267), and no
+    # console open (#346).
     console_windows: tuple = ()
     window_in_use: object = None
     dragged_tab: object = None
     mounting: frozenset = frozenset()
     application: object = None
+    count: int = 0
 
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
@@ -2482,6 +2506,9 @@ class Wmain(GladeComponent):
                         # Deliberately keeping host.name: overwriting it with the tab
                         # label put presentation into the Host object and into log paths.
                         host.log = hasattr(term, "log_handler_id") and term.log_handler_id != 0
+                        # The same host in a second session, not a second host, so its id
+                        # too: its tab is named as the original's, and follows it (#346).
+                        host.id = term.host.id
                         self.addTab(ntbk, host)
                 elif cmd == _CONSOLE_PREV:
                     self.console_previous(widget.get_parent().get_parent())
@@ -3160,6 +3187,7 @@ class Wmain(GladeComponent):
                 host = term.host.clone()
                 # See the keyboard clone path: the label is not the host's identity.
                 host.log = hasattr(term, "log_handler_id") and term.log_handler_id != 0
+                host.id = term.host.id
                 self.addTab(ntbk, host)
             return True
         elif item == "L" or item == "L2":  # ENABLE/DISABLE LOG
@@ -3897,15 +3925,17 @@ class Wmain(GladeComponent):
             logger.exception("Link pattern failed to compile, matches disabled: %.60s", regex)
             return None
 
-    def add_page(self, notebook, page, title):
+    def add_page(self, notebook, page, title, host=None):
         """Open `page` as a tab of `notebook`, showing it, and return the tab's label.
 
         Whatever the page holds (#223): the tab gets the label with its close button and
         menu, and can be reordered and dragged into another pane. addTab opens a terminal
         through this, and a page of any other kind goes through it too, so that it is a
-        tab like the rest. page_terminal is how the rest of GCM tells them apart.
+        tab like the rest. page_terminal is how the rest of GCM tells them apart. `host`
+        is the host the tab is opened for, which name_tabs names it after (#346).
         """
         tab = NotebookTabLabel(f"  {title}  ", notebook, page, self.popupMenuTab)
+        tab.host = host
         page.show_all()
         notebook.append_page(page, tab_label=tab)
         notebook.set_current_page(notebook.page_num(page))
@@ -3931,7 +3961,7 @@ class Wmain(GladeComponent):
         page.session_host = host
         # Closing the tab, or the window, ends the session with no signal from the page.
         page.connect("destroy", lambda _page: self.session_ended(page))
-        tab = self.add_page(notebook, page, host.name)
+        tab = self.add_page(notebook, page, host_tab_name(host), host)
         self.wMain.set_focus(page.keyboard)
         GLib.timeout_add(200, self.focus_again, page, page.keyboard)
         page.open()
@@ -4018,7 +4048,7 @@ class Wmain(GladeComponent):
             v.set_backspace_binding(host.backspace_key)
             v.set_delete_binding(host.delete_key)
 
-            tab = self.add_page(notebook, scrollPane, host.name)
+            tab = self.add_page(notebook, scrollPane, host_tab_name(host), host)
             v.connect(
                 "child-exited",
                 lambda _terminal, status: self.on_terminal_child_exited(v, tab, status),
@@ -4591,6 +4621,28 @@ class Wmain(GladeComponent):
         self.set_collapsed_nodes()
         conf.COLLAPSED_FOLDERS = None
         self.update_row_color()
+        self.name_tabs()
+
+    def name_tabs(self):
+        """Name each open tab again, as the hosts now are (#346).
+
+        A second host of a tab's host's name puts the folder in front of the tab's name,
+        and it goes again once that host is renamed, moved or deleted. A tab follows its
+        own host too, through the host dialog, as host_tab_name says. A tab renamed by hand
+        keeps its name. The titles of the windows that name a tab, and an open cluster
+        window's list, follow it.
+        """
+        if not self.count:
+            return
+        for notebook in self.console_notebooks():
+            for position in range(notebook.get_n_pages()):
+                tab = notebook.get_tab_label(notebook.get_nth_page(position))
+                # A plain label has no host, as the glade's placeholder pages' do (#41).
+                host = getattr(tab, "host", None)
+                if host is not None:
+                    tab.set_name(host_tab_name(host))
+        self.title_windows()
+        self.name_cluster_consoles()
 
     def add_folder_rows(self, parent_id, parent_row, parent_menu, contents, occupied, found):
         """A folder's children in their order, subfolders drawn with their own. Until
@@ -4942,10 +4994,22 @@ class Wmain(GladeComponent):
                 tab_text = widget.get_tab_label(tab).get_text() if widget.get_tab_label(tab) else ""
             else:
                 tab_text = ""
-            if tab_text:
-                window.set_title(f"{conf.APP_TITLE or app_name} - {tab_text.strip()}")
-            else:
-                window.set_title(conf.APP_TITLE or app_name)
+            window.set_title(window_title(tab_text))
+
+    def title_windows(self):
+        """Title each window that names its tab after the tab it shows, once more (#346).
+
+        As on_tab_focus titles them: a console window always, and the main window with
+        Dynamic title on, after its pane in use. Not through on_tab_focus, which clears the
+        tab's mark too, and the tab's name changing is no sign anyone has looked at it.
+        """
+        windows = [(window, window.notebook) for window in self.console_windows]
+        if conf.UPDATE_TITLE:
+            windows.append((self.wMain, self.main_notebook()))
+        for window, notebook in windows:
+            position = notebook.get_current_page()
+            tab = notebook.get_tab_label(notebook.get_nth_page(position)) if position >= 0 else None
+            window.set_title(window_title(tab.get_text() if tab is not None else ""))
 
     def move_page(self, page, notebook):
         """Move a console to the end of another notebook, taking its tab label along.
@@ -6628,6 +6692,22 @@ class Wmain(GladeComponent):
 
     # -- Wmain.on_btnCluster_clicked }
 
+    def name_cluster_consoles(self):
+        """An open cluster window's consoles, by their tabs' names as they are now (#346).
+
+        The window is not modal, so the hosts can change while it lists the consoles, and
+        it is where a line goes to each console ticked: two that read the same would leave
+        the wrong one to be ticked.
+        """
+        window = getattr(self, "wCluster", None)
+        consoles = getattr(window, "consoles", None)
+        if consoles is None or not window.get_property("visible"):
+            return
+        for row in consoles:
+            tab = self.get_tab_label_for_terminal(row[2])
+            if tab is not None:
+                row[1] = tab.get_text()
+
     # -- Wmain.on_hpMain_button_press_event {
     def on_hpMain_button_press_event(self, widget, event, *args):
         # A double-click on the divider. Not one in the server pane that no widget there
@@ -8107,6 +8187,8 @@ class Wcluster(GladeComponent):
         for x in self.terms:
             self.treeStore.append(None, (False, x[0], x[1]))
         self.treeHosts.set_model(self.treeStore)
+        # Named again by Wmain.name_cluster_consoles, while this is open, as hosts change.
+        self.get_widget("wCluster").consoles = self.treeStore
 
         crt = Gtk.CellRendererToggle()
         crt.set_property("activatable", True)
@@ -8956,6 +9038,10 @@ def opens_terminal(kind):
 class NotebookTabLabel(Gtk.HBox):
     """Notebook tab label with close button."""
 
+    # The host the tab was opened for, which Wmain.name_tabs names it after again as the
+    # hosts change (#346). None for a tab opened for none.
+    host = None
+
     def __init__(self, title, owner_, widget_, popup_):
         Gtk.HBox.__init__(self, homogeneous=False, spacing=0)
 
@@ -9089,6 +9175,14 @@ class NotebookTabLabel(Gtk.HBox):
         """Manual rename. Becomes the identity and pins the label against later titles."""
         self.title = f"  {title}  "
         self.renamed = True
+        self.render_label()
+
+    def set_name(self, name):
+        """The host's tab name, as the hosts now make it (#346). The identity, as a rename
+        is, and a rename outranks it, as it does a program's title."""
+        if self.renamed:
+            return
+        self.title = f"  {name}  "
         self.render_label()
 
     def set_terminal_title(self, title):
