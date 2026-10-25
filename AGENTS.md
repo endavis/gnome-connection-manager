@@ -417,6 +417,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   tab's mark, and `name_cluster_consoles` names an open cluster window's rows, since that
   window is not modal. `name_tabs` does nothing while `count`, the tabs open, is 0, as it
   is at class level for a `Wmain` built without `new()`, as tests build one.
+  `whole_path` is a host's folders and name, which a tab's tooltip, the open-console list
+  and the cluster window show beside its name (#347). `host_path` in `app.py` reads it from
+  the host `configured_host` finds, as `host_tab_name` does, and `set_name` gives it to a
+  tab renamed by hand too. `NotebookTabLabel.get_path` shows it only where it says more
+  than the tab's identity: not for a host at the top level, nor the Local console, nor a
+  #346 name that is the whole path already, and always for a renamed tab, which hides its
+  host. `with_path` puts it on a second line of a list, smaller and fainter by alpha.
+  Measured in a menu built as the open-console list's, a row with it was 43 pixels tall
+  against 27, and 85 against 50 at a font scale of 2.25. On the same line it made the
+  menu twice as wide, and as a tooltip it showed one row's path, half a second after the
+  pointer stopped there. `Wcluster.draw_console` reads it from the row's terminal's tab as
+  the row is drawn, so the cluster window's store keeps its columns. A row rewritten by
+  `name_cluster_consoles` is drawn again even with the same name, as the store emits
+  `row-changed` for it, measured.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
@@ -883,7 +897,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   `get_display_text()` is the whole composed label, and the widget draws that cut to
   `TAB_LABEL_MAX` (#190). Everything with room for the long form -- the tooltip, the
   open-console list, the rename and close dialogs -- must take one of the first two, never
-  `self.label.get_text()`, which is the cut one. `render_label` is the single place that
+  `self.label.get_text()`, which is the cut one. The tooltip and the two lists add the
+  host's whole path under it, `get_path` (#347). `render_label` is the single place that
   composes and cuts, so the constructor goes through it too. Move a console between notebooks with
   `Wmain.move_page`, which takes the label along. Split and Unsplit used to build a new
   one from `get_text()`, and every moved tab lost all of that (#180). Dragging a tab

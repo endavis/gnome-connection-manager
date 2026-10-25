@@ -407,6 +407,14 @@ its own host to a new name or folder, and a cloned tab follows as the original d
 the hosts in the server tree that decide, not the tabs open, so opening and closing tabs
 never renames one. A tab you have renamed keeps its name.
 
+**Where a host is filed** shows when you hover its tab. Under the tab's label, the tooltip
+gives the host's folders and name, such as `1. Projects/pyproject-template/ansible`. The
+open-console list and the cluster window give it too, below. A host at the top level, and
+the Local console, are named by their path already, so they show none, and nor does a tab
+whose name is its host's whole path, as `A/ansible` beside `B/ansible` is. A tab you have
+renamed shows the host it is on: its name alone for a host at the top level, and `local` for
+the Local console. The tab strip shows none of it.
+
 **Labels are cut at 30 characters,** ending in `…`, because a tab is as wide as its text and
 the tabs that no longer fit go behind the arrows at the ends of the tab strip. The cut is
 only what is drawn: hover a tab and the tooltip gives the whole label, the open-console list
@@ -449,14 +457,19 @@ the arrows, so it does not scroll away with the tabs. The same list is in the me
                                               │
    ┌──────────────────────────────────────────┘
    │ ● [ALT+1] web-01
+   │   Production/eu/web-01
    │   [ALT+2] db-02: htop
+   │   Production/eu/db-02
    │   [ALT+3] claude: gcm
    │   [ALT+4] deploy-runner        ← struck through: the session has exited
+   │   CI/deploy-runner
 ```
 
 Each row shows what the tab shows, including any title the program set — which is what tells
-several sessions of the same tool apart. Choosing a row raises that console and gives it the
-keyboard.
+several sessions of the same tool apart. Under it, smaller and fainter, is where its host is
+filed: its folders and name, as the tab's tooltip gives them. A host at the top level, such
+as `claude` above, and the Local console have no second line. Choosing a row raises that
+console and gives it the keyboard.
 
 The list also carries state you would otherwise have to go looking for:
 
@@ -466,6 +479,7 @@ The list also carries state you would otherwise have to go looking for:
 | **Bold** | Rang the bell and you have not looked at it yet |
 | ~~Struck through~~ | The session behind it has exited |
 | `[ALT+1]` … `[ALT+9]` | The key that jumps straight there, as you have it configured |
+| A second line, smaller | The host's folders and name, where they say more than the row |
 
 The keys are read from your `[shortcuts]` config, not hardcoded, so a rebound key shows the
 key you actually use. They address a position *within one pane*, which is why the numbering
@@ -515,7 +529,8 @@ exit** is set, and counts the consoles in every window.
 
 ## Typing into several consoles at once
 
-**Servers → Cluster** (`Ctrl+Shift+U`) opens a window listing your open consoles. Tick the
+**Servers → Cluster** (`Ctrl+Shift+U`) opens a window listing your open consoles, each by its
+tab's name with where its host is filed under it, as the open-console list has them. Tick the
 ones to type into, or use **Select all**, **Clear selection** and **Invert selection**. A
 ticked console's tab is highlighted while the window is open. A tab that holds something
 other than a terminal is not listed.

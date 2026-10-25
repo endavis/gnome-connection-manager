@@ -11,6 +11,15 @@ the git log.
 
 ## [Unreleased]
 
+### Added
+- Where a tab's host is filed now shows wherever there is room for it. Hover a tab, and
+  under its label the tooltip gives the host's folders and name,
+  `1. Projects/pyproject-template/ansible`. The open-console list, behind the ▾ button
+  and under **Terminal → Open Consoles**, and the cluster window give it under each
+  console, smaller and fainter. A host at the top level and the Local console have no
+  folder to show, and show none. A tab renamed by hand shows the host it is on. The tab
+  strip is unchanged.
+
 ### Changed
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the
   window title, the open-console list and the cluster window. A tab now shows as much of

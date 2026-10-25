@@ -16,6 +16,9 @@ so a folder path and a name always tell two hosts apart.
 
 Pure: the hosts are an argument. They are the configuration's, not the open tabs', so
 that a tab's name does not change as other tabs open and close.
+
+Where there is room, beside the tab's name, goes the host's whole place in the folder tree,
+`whole_path` (#347): in the tab's tooltip, the open-console list and the cluster window.
 """
 
 from __future__ import annotations
@@ -48,6 +51,12 @@ def tab_name(host: Any, hosts: Iterable[Any]) -> str:
     # of it, as `y/x` does with `x`, has a longer one, and that tab shows more of it. A host
     # at the top level has no folder to show, and keeps its name.
     return "/".join([*path, name])
+
+
+def whole_path(host: Any) -> str:
+    """`host`'s folders and its name, outermost first: `1. Projects/pyproject-template/ansible`,
+    and the name alone at the top level (#347)."""
+    return "/".join([*folders_of(host.group), host.name])
 
 
 def folders_of(group: str) -> list[str]:

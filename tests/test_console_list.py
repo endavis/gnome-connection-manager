@@ -334,6 +334,61 @@ def test_markup_keeps_a_zero_in_the_name(console_env):
     assert "web-01" in console_env.console_item_markup(entry)
 
 
+class PathTabLabel(FakeTabLabel):
+    """A tab whose host's whole path says more than its name, or "" where it does not."""
+
+    def __init__(self, text, path, **state):
+        super().__init__(text, **state)
+        self.path = path
+
+    def get_path(self):
+        return self.path
+
+
+def test_markup_puts_the_hosts_path_under_the_console(console_env):
+    """Smaller and fainter, on a line of its own (#347)."""
+    tab = PathTabLabel("ansible", "1. Projects/infrafoundry/ansible")
+    entry = console_env.ConsoleEntry(None, None, tab, 0, accel="ALT+1")
+
+    assert entry.path == "1. Projects/infrafoundry/ansible"
+    assert console_env.console_item_markup(entry) == (
+        "<span foreground='blue' size='x-small'>[ALT+1]</span> ansible\n"
+        "<span size='small' alpha='60%'>1. Projects/infrafoundry/ansible</span>"
+    )
+
+
+def test_markup_marks_a_finished_or_flagged_console_but_not_its_path(console_env):
+    """The strike-through and the bold are the session's, as on its tab; the path is the
+    host's."""
+    ended = PathTabLabel("web", "lab/web", active=False)
+    flagged = PathTabLabel("web", "lab/web", attention=True)
+
+    assert console_env.console_item_markup(console_env.ConsoleEntry(None, None, ended, 0)) == (
+        "<span color='darkgray' strikethrough='true'>web</span>\n"
+        "<span size='small' alpha='60%'>lab/web</span>"
+    )
+    assert console_env.console_item_markup(console_env.ConsoleEntry(None, None, flagged, 0)) == (
+        "<b>web</b>\n<span size='small' alpha='60%'>lab/web</span>"
+    )
+
+
+def test_markup_escapes_a_hosts_path(console_env):
+    """A folder's name and a host's may hold anything but a slash."""
+    entry = console_env.ConsoleEntry(None, None, PathTabLabel("web", "R&D/<lab>/web"), 0)
+
+    assert console_env.console_item_markup(entry) == (
+        "web\n<span size='small' alpha='60%'>R&amp;D/&lt;lab&gt;/web</span>"
+    )
+
+
+def test_markup_draws_no_empty_path(console_env):
+    """A host at the top level, or the Local console, whose path is its tab's name."""
+    entry = console_env.ConsoleEntry(None, None, PathTabLabel("router", ""), 0)
+
+    assert entry.path == ""
+    assert console_env.console_item_markup(entry) == "router"
+
+
 # -- pane walking ------------------------------------------------------------
 
 

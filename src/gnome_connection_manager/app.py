@@ -666,18 +666,34 @@ def sync_folders():
     return contents
 
 
+def configured_host(host, hosts):
+    """The host among `hosts` with `host`'s id, else `host` itself (#346).
+
+    The host dialog builds a new record for a host it edits, keeping the id, and a tab
+    keeps the record it was opened for, as a clone of that tab does. So it is the host
+    with the id that says what a tab is called now, and where it is filed.
+    """
+    return next((each for each in hosts if each.id == host.id), host)
+
+
 def host_tab_name(host):
     """What `host`'s tab is called: its name, with as much of its folder as tells it apart
     from each other host of that name in the configuration (#346).
 
-    The host in the configuration with `host`'s id decides it, where there is one. The host
-    dialog builds a new record for a host it edits, keeping the id, and a tab keeps the
-    record it was opened for, as a clone of that tab does. One with none, deleted or never
-    configured, as the Local console's, is named against the hosts there are.
+    The host in the configuration with `host`'s id decides it, where there is one. One with
+    none, deleted or never configured, as the Local console's, is named against the hosts
+    there are.
     """
     hosts = [each for filed in groups.values() for each in filed]
-    configured = next((each for each in hosts if each.id == host.id), host)
-    return tabnames.tab_name(configured, hosts)
+    return tabnames.tab_name(configured_host(host, hosts), hosts)
+
+
+def host_path(host):
+    """`host`'s whole place in the folder tree, its folders and its name, as the host with
+    its id is filed in the configuration (#347). A tab's tooltip, the open-console list
+    and the cluster window show it beside the tab's name."""
+    hosts = [each for filed in groups.values() for each in filed]
+    return tabnames.whole_path(configured_host(host, hosts))
 
 
 def refile_ambiguous_hosts(groups_by_path, ambiguous_folders):
@@ -2087,6 +2103,13 @@ class ConsoleEntry:
         return ""
 
     @property
+    def path(self):
+        """The tab's host's whole path, where it says more than the tab's name (#347)."""
+        if hasattr(self.label, "get_path"):
+            return self.label.get_path()
+        return ""
+
+    @property
     def active(self):
         """False once the session behind the tab has exited."""
         return bool(getattr(self.label, "is_active", True))
@@ -2139,7 +2162,7 @@ def console_item_markup(entry):
 
     Mirrors what the tab strip already says: a finished session is struck through
     the way mark_tab_as_closed renders it, and the key is shown with the small blue
-    prefix the custom-commands menu uses.
+    prefix the custom-commands menu uses. The host's whole path goes under it (#347).
     """
     text = GLib.markup_escape_text(entry.text)
     if not entry.active:
@@ -2151,7 +2174,22 @@ def console_item_markup(entry):
             "<span foreground='blue' size='x-small'>"
             f"[{GLib.markup_escape_text(entry.accel)}]</span> {text}"
         )
-    return text
+    return with_path(text, entry.path)
+
+
+def with_path(markup, path):
+    """`markup` over a host's whole path, smaller and fainter, on a line of its own, as the
+    open-console list and the cluster window show a console (#347). `markup` alone where
+    there is no path.
+
+    A line of its own, measured: as a tooltip, a row's path showed half a second after the
+    pointer stopped on that row, one row at a time, over the rows below, and beside the
+    name it made the menu twice as wide. Fainter by alpha rather than a colour, so that it
+    follows the theme's text, on a row the pointer is over too.
+    """
+    if not path:
+        return markup
+    return f"{markup}\n<span size='small' alpha='60%'>{GLib.markup_escape_text(path)}</span>"
 
 
 class Wmain(GladeComponent):
@@ -3932,10 +3970,13 @@ class Wmain(GladeComponent):
         menu, and can be reordered and dragged into another pane. addTab opens a terminal
         through this, and a page of any other kind goes through it too, so that it is a
         tab like the rest. page_terminal is how the rest of GCM tells them apart. `host`
-        is the host the tab is opened for, which name_tabs names it after (#346).
+        is the host the tab is opened for, which name_tabs names it after (#346), and
+        whose whole path it shows where there is room (#347).
         """
         tab = NotebookTabLabel(f"  {title}  ", notebook, page, self.popupMenuTab)
         tab.host = host
+        if host is not None:
+            tab.set_name(title, host_path(host))
         page.show_all()
         notebook.append_page(page, tab_label=tab)
         notebook.set_current_page(notebook.page_num(page))
@@ -4629,8 +4670,8 @@ class Wmain(GladeComponent):
         A second host of a tab's host's name puts the folder in front of the tab's name,
         and it goes again once that host is renamed, moved or deleted. A tab follows its
         own host too, through the host dialog, as host_tab_name says. A tab renamed by hand
-        keeps its name. The titles of the windows that name a tab, and an open cluster
-        window's list, follow it.
+        keeps its name, and takes its host's path, as every tab does (#347). The titles of
+        the windows that name a tab, and an open cluster window's list, follow it.
         """
         if not self.count:
             return
@@ -4640,7 +4681,7 @@ class Wmain(GladeComponent):
                 # A plain label has no host, as the glade's placeholder pages' do (#41).
                 host = getattr(tab, "host", None)
                 if host is not None:
-                    tab.set_name(host_tab_name(host))
+                    tab.set_name(host_tab_name(host), host_path(host))
         self.title_windows()
         self.name_cluster_consoles()
 
@@ -6697,7 +6738,8 @@ class Wmain(GladeComponent):
 
         The window is not modal, so the hosts can change while it lists the consoles, and
         it is where a line goes to each console ticked: two that read the same would leave
-        the wrong one to be ticked.
+        the wrong one to be ticked. A row written, even with the name it had, is drawn
+        again, measured, and Wcluster.draw_console reads its host's path then (#347).
         """
         window = getattr(self, "wCluster", None)
         consoles = getattr(window, "consoles", None)
@@ -8195,7 +8237,10 @@ class Wcluster(GladeComponent):
         crt.connect("toggled", self.on_active_toggled)
         col = Gtk.TreeViewColumn(_("Activar"), crt, active=0)
         self.treeHosts.append_column(col)
-        self.treeHosts.append_column(Gtk.TreeViewColumn(_("Host"), Gtk.CellRendererText(), text=1))
+        cell = Gtk.CellRendererText()
+        col = Gtk.TreeViewColumn(_("Host"), cell)
+        col.set_cell_data_func(cell, self.draw_console)
+        self.treeHosts.append_column(col)
 
         # Connect key-press-event signal to handle Enter key for sending commands
         txtCommands = self.get_widget("txtCommands1")
@@ -8222,6 +8267,15 @@ class Wcluster(GladeComponent):
         self.btnSnippets.show()
 
     # -- Wcluster.new }
+
+    def draw_console(self, _column, cell, model, iter_, _data=None):
+        """A console's row: its tab's name over its host's whole path, as the open-console
+        list draws it (#347). The path is read from the tab as the row is drawn, and
+        Wmain.name_cluster_consoles has each row drawn again as the hosts change."""
+        name, terminal = model[iter_][1], model[iter_][2]
+        tab = wMain.get_tab_label_for_terminal(terminal)
+        path = tab.get_path() if hasattr(tab, "get_path") else ""
+        cell.set_property("markup", with_path(GLib.markup_escape_text(name.strip()), path))
 
     def send_snippet(self, snippet):
         """Send `snippet` to every console selected, asking over this window (#240)."""
@@ -9041,6 +9095,8 @@ class NotebookTabLabel(Gtk.HBox):
     # The host the tab was opened for, which Wmain.name_tabs names it after again as the
     # hosts change (#346). None for a tab opened for none.
     host = None
+    # That host's whole place in the folder tree, host_path (#347), given with its name.
+    path = ""
 
     def __init__(self, title, owner_, widget_, popup_):
         Gtk.HBox.__init__(self, homogeneous=False, spacing=0)
@@ -9177,13 +9233,26 @@ class NotebookTabLabel(Gtk.HBox):
         self.renamed = True
         self.render_label()
 
-    def set_name(self, name):
-        """The host's tab name, as the hosts now make it (#346). The identity, as a rename
-        is, and a rename outranks it, as it does a program's title."""
-        if self.renamed:
-            return
-        self.title = f"  {name}  "
+    def set_name(self, name, path):
+        """The host's tab name and whole path, as the hosts now make them (#346, #347).
+
+        The name is the identity, as a rename is, and a rename outranks it, as it does a
+        program's title. The path is taken all the same: it is what says which host a
+        renamed tab is on.
+        """
+        self.path = path
+        if not self.renamed:
+            self.title = f"  {name}  "
         self.render_label()
+
+    def get_path(self):
+        """The host's whole path where it says more than the tab's identity, else "" (#347).
+
+        Not for a host at the top level, whose path is the name its tab bears, nor for the
+        Local console's, nor for a name that is the whole path already, as #346 can give.
+        A tab renamed by hand shows its host's, a top-level host's name included.
+        """
+        return "" if self.path == self.title.strip() else self.path
 
     def set_terminal_title(self, title):
         self.terminal_title = sanitize_tab_title(title)
@@ -9206,7 +9275,9 @@ class NotebookTabLabel(Gtk.HBox):
                 "<span color='darkgray' strikethrough='true'>"
                 f"{GLib.markup_escape_text(text)}</span>"
             )
-        self.set_tooltip_text(full)
+        # The host's whole path on a line of its own, where it adds to the label (#347).
+        path = self.get_path()
+        self.set_tooltip_text(f"{full}\n{path}" if path else full)
 
     def prepare_menu(self):
         """Make this tab the tab menu's context, and show the items that apply to it.
