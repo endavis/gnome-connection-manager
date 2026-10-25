@@ -1,9 +1,10 @@
 """Tests for utils/tabnames.py: a tab named with its folder where another host has its
-host's name (#346)."""
+host's name (#346), and its host's whole path where there is room for it (#347)."""
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import types
@@ -13,6 +14,7 @@ import pytest
 
 from gnome_connection_manager.utils import tabnames
 from tests.test_connections import glib_complaints
+from tests.test_console_window import _private_display
 
 
 def at(path):
@@ -98,6 +100,19 @@ def test_the_folders_of_a_path(group, folders):
     assert tabnames.folders_of(group) == folders
 
 
+@pytest.mark.parametrize(
+    ("path", "whole"),
+    [
+        ("router", "router"),
+        ("1. Projects/pyproject-template/ansible", "1. Projects/pyproject-template/ansible"),
+        ("/lab//x/web", "lab/x/web"),
+    ],
+)
+def test_the_whole_path_of_a_host(path, whole):
+    """Its folders and its name (#347), and the name alone at the top level."""
+    assert tabnames.whole_path(at(path)) == whole
+
+
 # -- the tabs GCM names (#346) ----------------------------------------------------------
 
 
@@ -168,11 +183,15 @@ def test_a_tab_takes_its_folder_once_another_host_has_its_name(app_module, monke
 
     configure(app_module, monkeypatch, infra, other)
     wmain.name_tabs()
-    assert shown(tab) == ("infrafoundry/ansible",) * 3
+    assert shown(tab) == (
+        "infrafoundry/ansible",
+        "infrafoundry/ansible",
+        "infrafoundry/ansible\n1. Projects/infrafoundry/ansible",
+    )
 
     configure(app_module, monkeypatch, infra)
     wmain.name_tabs()
-    assert shown(tab) == ("ansible",) * 3
+    assert shown(tab) == ("ansible", "ansible", "ansible\n1. Projects/infrafoundry/ansible")
 
 
 def test_a_tab_follows_another_host_of_its_name_being_renamed_or_moved(app_module, monkeypatch):
@@ -223,7 +242,7 @@ def test_a_tab_renamed_by_hand_keeps_its_name(app_module, monkeypatch):
     configure(app_module, monkeypatch, infra, host_at(app_module, "lab/ansible"))
     wmain.name_tabs()
 
-    assert shown(tab) == ("deploys",) * 3
+    assert shown(tab) == ("deploys", "deploys", "deploys\n1. Projects/infrafoundry/ansible")
 
 
 def test_a_tab_whose_host_is_not_configured_is_named_against_those_that_are(
@@ -375,6 +394,9 @@ def test_a_tab_keeps_the_host_it_was_opened_for(app_module, monkeypatch):
         def get_text(self):
             return self.title
 
+        def set_name(self, name, path):
+            self.named = (name, path)
+
     monkeypatch.setattr(app_module, "NotebookTabLabel", Label)
     host = host_at(app_module, "1. Projects/infrafoundry/ansible")
     wmain = object.__new__(app_module.Wmain)
@@ -392,6 +414,7 @@ def test_a_tab_keeps_the_host_it_was_opened_for(app_module, monkeypatch):
 
     assert tab.host is host
     assert tab.get_text() == "  infrafoundry/ansible  "
+    assert tab.named == ("infrafoundry/ansible", "1. Projects/infrafoundry/ansible")
     assert wmain.add_page(notebook, page, "notes").host is None
 
 
@@ -490,6 +513,161 @@ def test_a_tab_named_with_its_folder_logs_where_its_host_does(tmp_path, app_modu
     ]
 
 
+# -- the host's whole path beside the tab's name (#347) ----------------------------------
+
+
+def test_a_tabs_tooltip_gives_its_hosts_whole_path(app_module, monkeypatch):
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    tab = tab_for(app_module, infra)
+    wmain = window_with(app_module, Notebook(tab))
+    configure(app_module, monkeypatch, infra)
+
+    wmain.name_tabs()
+
+    assert tab.tooltips[-1] == "ansible\n1. Projects/infrafoundry/ansible"
+    assert tab.get_path() == "1. Projects/infrafoundry/ansible"
+
+
+def test_the_path_goes_under_a_programs_title_too(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    tab = tab_for(app_module, infra)
+    configure(app_module, monkeypatch, infra)
+    window_with(app_module, Notebook(tab)).name_tabs()
+
+    tab.set_terminal_title("htop")
+
+    assert tab.tooltips[-1] == "ansible: htop\n1. Projects/infrafoundry/ansible"
+
+
+def test_a_programs_title_is_no_reason_to_show_a_path(app_module, monkeypatch):
+    """The path is weighed against the tab's name, not against its whole label."""
+    monkeypatch.setattr(app_module.conf, "TAB_TITLE_FROM_TERMINAL", 1)
+    router = app_module.Host("", "router")
+    tab = tab_for(app_module, router)
+    configure(app_module, monkeypatch, router)
+    window_with(app_module, Notebook(tab)).name_tabs()
+
+    tab.set_terminal_title("htop")
+
+    assert tab.tooltips[-1] == "router: htop"
+    assert tab.get_path() == ""
+
+
+def test_a_host_at_the_top_level_and_the_local_console_show_no_path(app_module, monkeypatch):
+    """Their path is the name their tabs bear, which said again would say nothing."""
+    router = app_module.Host("", "router")
+    local = app_module.Host("", "local")
+    tabs = [tab_for(app_module, router), tab_for(app_module, local)]
+    configure(app_module, monkeypatch, router)
+
+    window_with(app_module, Notebook(*tabs)).name_tabs()
+
+    assert [tab.tooltips[-1] for tab in tabs] == ["router", "local"]
+    assert [tab.get_path() for tab in tabs] == ["", ""]
+
+
+def test_a_name_that_is_its_whole_path_shows_no_path(app_module, monkeypatch):
+    """As #346 names two hosts of one name, each in a folder at the top level."""
+    first, second = host_at(app_module, "A/ansible"), host_at(app_module, "B/ansible")
+    tabs = [tab_for(app_module, first), tab_for(app_module, second)]
+    configure(app_module, monkeypatch, first, second)
+
+    window_with(app_module, Notebook(*tabs)).name_tabs()
+
+    assert [tab.tooltips[-1] for tab in tabs] == ["A/ansible", "B/ansible"]
+    assert [tab.get_path() for tab in tabs] == ["", ""]
+
+
+def test_a_tab_renamed_by_hand_shows_the_host_it_is_on(app_module, monkeypatch):
+    """The rename hides the host, so its path shows, a name alone at the top level."""
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    router = app_module.Host("", "router")
+    local = app_module.Host("", "local")
+    tabs = [tab_for(app_module, host) for host in (infra, router, local)]
+    for tab, name in zip(tabs, ("deploys", "core", "build"), strict=True):
+        tab.rename(name)
+    configure(app_module, monkeypatch, infra, router)
+
+    window_with(app_module, Notebook(*tabs)).name_tabs()
+
+    assert [tab.tooltips[-1] for tab in tabs] == [
+        "deploys\n1. Projects/infrafoundry/ansible",
+        "core\nrouter",
+        "build\nlocal",
+    ]
+
+
+def test_renaming_a_tab_brings_its_hosts_path_to_the_tooltip(app_module):
+    tab = tab_for(app_module, app_module.Host("", "router"))
+    tab.set_name("router", "router")
+    assert tab.tooltips[-1] == "router"
+
+    tab.rename("core")
+
+    assert tab.tooltips[-1] == "core\nrouter"
+
+
+def test_the_path_follows_the_host(app_module, monkeypatch):
+    """Moved to another folder, a host keeps its tab's name and gives it its new path,
+    renamed by hand or not."""
+    infra = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    tabs = [tab_for(app_module, infra), tab_for(app_module, infra)]
+    tabs[1].rename("deploys")
+    wmain = window_with(app_module, Notebook(*tabs))
+    configure(app_module, monkeypatch, infra)
+    wmain.name_tabs()
+
+    moved = host_at(app_module, "2. Archive/ansible")
+    moved.id = infra.id
+    configure(app_module, monkeypatch, moved)
+    wmain.name_tabs()
+
+    assert [tab.tooltips[-1] for tab in tabs] == [
+        "ansible\n2. Archive/ansible",
+        "deploys\n2. Archive/ansible",
+    ]
+
+
+def test_a_tabs_path_is_that_of_the_host_with_its_id(app_module, monkeypatch):
+    """The host dialog builds a new record for the host it edits, keeping the id. A host
+    with none in the configuration gives its own."""
+    old = host_at(app_module, "1. Projects/infrafoundry/ansible")
+    moved = host_at(app_module, "lab/ansible")
+    moved.id = old.id
+    configure(app_module, monkeypatch, moved)
+
+    assert app_module.host_path(old) == "lab/ansible"
+    assert app_module.host_path(host_at(app_module, "gone/web")) == "gone/web"
+
+
+def test_a_tab_opened_for_no_host_has_no_path(app_module):
+    assert tab_for(app_module, None, "notes").get_path() == ""
+
+
+def test_a_cluster_row_is_drawn_with_its_hosts_path(app_module, monkeypatch):
+    """Under its name, each escaped, and the name alone for a row whose tab has gone."""
+    from tests.test_console_list import escape
+
+    monkeypatch.setattr(app_module.GLib, "markup_escape_text", escape, raising=False)
+    tab = tab_for(app_module, host_at(app_module, "R&D/<lab>/web"))
+    tab.set_name("web", "R&D/<lab>/web")
+    wmain = types.SimpleNamespace(get_tab_label_for_terminal={"one": tab}.get)
+    monkeypatch.setattr(app_module, "wMain", wmain, raising=False)
+    model = {"first": [False, "  web  ", "one"], "second": [True, "  a&b  ", "gone"]}
+    drawn = []
+    cell = types.SimpleNamespace(set_property=lambda name, value: drawn.append((name, value)))
+
+    cluster = object.__new__(app_module.Wcluster)
+    cluster.draw_console(None, cell, model, "first")
+    cluster.draw_console(None, cell, model, "second")
+
+    assert drawn == [
+        ("markup", "web\n<span size='small' alpha='60%'>R&amp;D/&lt;lab&gt;/web</span>"),
+        ("markup", "a&amp;b"),
+    ]
+
+
 # What the stubs above cannot show: real tabs, drawn, and the windows and lists that name
 # them. Each host has no address, so its tab is a local shell. HOME is a scratch folder,
 # so this never reads a real gcm.conf.
@@ -558,7 +736,8 @@ pump(0.5)
 
 if scenario == "two-hosts-of-one-name":
     expected = ["infrafoundry/ansible", "pyproject-template/ansible", "web"]
-    assert drawn() == [(name, name, name) for name in expected], drawn()
+    paths = [f"{host.group}/{host.name}" for host in (infra, other, web)]
+    assert drawn() == [(name, f"{name}\n{path}", name) for name, path in zip(expected, paths)], drawn()
     assert w.wMain.get_title() == "GCM - web", w.wMain.get_title()
     assert listed() == expected, listed()
     w.on_btnCluster_clicked(None)
@@ -614,6 +793,141 @@ elif scenario == "the-names-follow-the-hosts":
     assert window.get_title() == "GCM - ansible-new", window.get_title()
     assert names() == ["deploys", "web", "ansible-new"], names()
 
+elif scenario == "the-paths-beside-the-names":
+    # Real pointer motion, through XTest, on the scenario's own display.
+    import ctypes
+    x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+    xtst = ctypes.cdll.LoadLibrary("libXtst.so.6")
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XFlush.argtypes = [ctypes.c_void_p]
+    xtst.XTestFakeMotionEvent.argtypes = [
+        ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong
+    ]
+    xtst.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+    display = x11.XOpenDisplay(None)
+
+    def point(x, y):
+        xtst.XTestFakeMotionEvent(display, -1, int(x), int(y), 0)
+        x11.XFlush(display)
+
+    def press(down):
+        xtst.XTestFakeButtonEvent(display, 1, down, 0)
+        x11.XFlush(display)
+
+    def centre(widget):
+        allocation = widget.get_allocation()
+        _, x, y = widget.get_window().get_origin()
+        return x + allocation.x + allocation.width // 2, y + allocation.y + allocation.height // 2
+
+    def until(condition, seconds=5):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end and not condition():
+            pump(0.05)
+        return condition()
+
+    def walk(widget):
+        found, pending = [], [widget]
+        while pending:
+            each = pending.pop()
+            found.append(each)
+            if isinstance(each, Gtk.Container):
+                pending.extend(each.get_children())
+        return found
+
+    def tooltip():
+        # The text of the tooltip on the screen, or None.
+        for window in Gtk.Window.list_toplevels():
+            if window.get_visible() and window.__gtype__.name == "GtkTooltipWindow":
+                return [each.get_text() for each in walk(window) if isinstance(each, Gtk.Label)]
+        return None
+
+    def open_menu():
+        for window in Gtk.Window.list_toplevels():
+            menu = window.get_child() if window.get_visible() else None
+            if isinstance(menu, Gtk.Menu) and menu.get_children():
+                return menu
+        return None
+
+    router = app.Host("", "router")
+    configure(infra, other, web, router)
+    w.addTab(w.nbConsole, router)
+    w.addTab(w.nbConsole, "local")
+    pump(0.5)
+    labels()[2].rename("deploys")
+    pump()
+    expected = [
+        "infrafoundry/ansible\n1. Projects/infrafoundry/ansible",
+        "pyproject-template/ansible\n1. Projects/pyproject-template/ansible",
+        "deploys\n1. Projects/infrafoundry/web",
+        "router",
+        "local",
+    ]
+
+    # Each tab's tooltip, as GTK draws it once the pointer rests on the tab.
+    shown = []
+    for tab in labels():
+        point(1900, 1060)
+        assert until(lambda: tooltip() is None), tooltip()
+        x, y = centre(tab.label)
+        point(x, y)
+        pump(0.1)
+        point(x + 3, y)
+        assert until(lambda: tooltip() is not None), "no tooltip over " + tab.get_text()
+        shown.append(tooltip())
+    assert shown == [[text] for text in expected], shown
+    point(1900, 1060)
+    pump()
+
+    # The open-console list, opened as a click on the button at the end of the tab strip
+    # opens it: each row's text as drawn, its lines, and its height.
+    point(*centre(w.nbConsole.get_action_widget(Gtk.PackType.END)))
+    pump(0.1)
+    press(True)
+    pump(0.1)
+    press(False)
+    assert until(lambda: open_menu() is not None), "the open-console list did not open"
+    pump(0.3)
+    rows = [item for item in open_menu().get_children() if isinstance(item, Gtk.CheckMenuItem)]
+    texts = [row.get_child().get_text() for row in rows]
+    assert [text.split("\n")[0].split("] ")[-1] for text in texts] == [
+        text.split("\n")[0] for text in expected
+    ], texts
+    assert [text.split("\n")[1:] for text in texts] == [
+        text.split("\n")[1:] for text in expected
+    ], texts
+    lines = [row.get_child().get_layout().get_line_count() for row in rows]
+    assert lines == [2, 2, 2, 1, 1], lines
+    heights = [row.get_allocated_height() for row in rows]
+    assert min(heights[:3]) > max(heights[3:]), heights
+    open_menu().popdown()
+    pump()
+
+    # The cluster window's list, as each row is drawn, and its rows' heights.
+    w.on_btnCluster_clicked(None)
+    pump(0.5)
+    [tree] = [each for each in walk(w.wCluster) if isinstance(each, Gtk.TreeView)]
+    store, column = tree.get_model(), tree.get_column(1)
+
+    def drawn_rows():
+        texts = []
+        for row in store:
+            column.cell_set_cell_data(store, row.iter, False, False)
+            texts.append(column.get_cells()[0].props.text)
+        return texts
+
+    assert drawn_rows() == expected, drawn_rows()
+    heights = [tree.get_background_area(row.path, column).height for row in store]
+    assert min(heights[:3]) > max(heights[3:]), heights
+
+    # Moved to another folder, web's tab keeps its rename and takes the new path.
+    moved = app.Host("2. Archive", "web")
+    moved.id = web.id
+    configure(infra, other, moved, router)
+    pump()
+    assert labels()[2].get_tooltip_text() == "deploys\n2. Archive/web", labels()[2].get_tooltip_text()
+    assert drawn_rows()[2] == "deploys\n2. Archive/web", drawn_rows()
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -634,6 +948,34 @@ def test_tabs_named_with_their_folders_against_real_gtk(scenario):
         cwd=Path(__file__).resolve().parents[1],
         timeout=120,
     )
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert "OK" in result.stdout
+    assert not glib_complaints(result.stderr), result.stderr[-3000:]
+
+
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
+def test_the_paths_beside_the_names_against_real_gtk():
+    """The tooltip, the open-console list and the cluster window, as drawn (#347). On a
+    display of its own, since the pointer is real: on the one the other tests share,
+    another worker's windows could be under it."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    process, display = _private_display()
+    environment = dict(os.environ, DISPLAY=display, GDK_BACKEND="x11")
+    for name in ("WAYLAND_DISPLAY", "GDK_SCALE", "GDK_DPI_SCALE", "XDG_CONFIG_HOME"):
+        environment.pop(name, None)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _SCRIPT, "the-paths-beside-the-names"],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).resolve().parents[1],
+            env=environment,
+            timeout=120,
+        )
+    finally:
+        process.terminate()
+        process.wait()
 
     assert result.returncode == 0, result.stderr[-3000:]
     assert "OK" in result.stdout
