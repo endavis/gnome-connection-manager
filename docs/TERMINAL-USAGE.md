@@ -313,12 +313,15 @@ It is worth knowing what it can and cannot recover:
   in the transcript once, as its second copy.
 - **Inside a full-screen application it is a best effort.** There is no scrollback on the
   alternate screen, so the only record of what scrolled past is the difference between
-  one frame and the next. Content that scrolled, and pages that were turned, come back;
-  a screen that was replaced by a wholly different one *and* redrawn from blank in
-  between can lose a page. It errs towards missing a line rather than repeating one — a
-  transcript that repeats a status bar every frame is worse than one with a gap.
+  one frame and the next. Content that scrolled, and pages that were turned, come back,
+  with a blank screen between two pages too; a page can still be lost where the next one
+  was caught with only a line or two drawn. It errs towards missing a line rather than
+  repeating one — a transcript that repeats a status bar every frame is worse than one
+  with a gap.
 - **The last screen is included**, because it was never scrolled past. Titles and status
-  bars that were on it appear in the transcript; they were on the screen.
+  bars that were on it appear in the transcript; they were on the screen. So is the last
+  page of an application that blanks the screen before it leaves, as one does under
+  `TERM=xterm-r6` or `rxvt`.
 - **The terminal's current size is used.** A session that was resized part-way through
   replays at today's size, and long lines may wrap differently than they did.
 

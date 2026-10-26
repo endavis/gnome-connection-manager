@@ -392,6 +392,12 @@ class ScreenTracker:
     still on screen has not been transcribed yet, so :meth:`flush` closes the record
     with the final frame -- that is what the session was showing when it ended, and it
     is also the whole answer for an application that never scrolled at all.
+
+    A frame with no text is not a page, and is passed over. Neither side of a blank
+    holds the text `screen_replaced` needs, so compared with it, the page before it was
+    never emitted. A program that blanked its page before leaving the alternate screen,
+    as xterm-r6's rmcup does, lost that page, and a blank between two pages lost the
+    first, measured (#363).
     """
 
     def __init__(self, min_band: int = 2) -> None:
@@ -400,8 +406,14 @@ class ScreenTracker:
         self._min_band = min_band
 
     def feed(self, lines: list[str]) -> list[str]:
-        """Return the lines that scrolled out of view when this frame arrived."""
+        """Return the lines that scrolled out of view when this frame arrived.
+
+        A frame with no text emits nothing, and the next frame is compared with the
+        page before it.
+        """
         lines = _rows(lines)
+        if all(_blank(line) for line in lines):
+            return []
         previous, self._previous = self._previous, lines
         if previous is None or previous == lines:
             return []
@@ -418,7 +430,8 @@ class ScreenTracker:
 
         What is still displayed has not been transcribed yet, so the record is only
         complete once it is added. It is also the entire answer for an application
-        that drew one screen and never scrolled.
+        that drew one screen and never scrolled. A screen left blank gives the last
+        page shown before it, which nothing else has transcribed either.
         """
         lines, self._previous = self._previous or [], None
         return _trim(lines)
