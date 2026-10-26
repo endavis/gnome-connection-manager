@@ -671,6 +671,74 @@ def test_the_tab_name_is_not_a_types_setting():
     assert loaded.type_settings == {}
 
 
+# -- a host's own tab colour (#350) ------------------------------------------
+
+# In upper case, as a hand edit may write it: a colour is kept as written.
+TAB_COLOR = "#E01B24"
+
+
+def test_a_tab_colour_survives_the_ini_round_trip_as_tab_color():
+    """`tab-color` is what the guide and the measured older GCM name."""
+    host = make_sample_host()
+    host.tab_color = TAB_COLOR
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    stored = reread(config)
+    loaded = hosts.HostUtils.load_host_from_ini(stored, "host 1", pwd="secret")
+
+    assert stored.get("host 1", "tab-color") == TAB_COLOR
+    assert loaded.tab_color == TAB_COLOR
+
+
+def test_a_tab_colour_that_cannot_be_read_is_kept_as_written():
+    """It colours no tab, but a save does not lose what a hand edit wrote."""
+    host = make_sample_host()
+    host.tab_color = "crimson"
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    assert hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret").tab_color == (
+        "crimson"
+    )
+
+
+def test_a_host_without_a_tab_colour_writes_no_option_for_it():
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+
+    assert not config.has_option("host 1", "tab-color")
+    assert (
+        hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret").tab_color == ""
+    )
+
+
+def test_clone_carries_the_tab_colour():
+    """Duplicate Host's copy is marked with it too."""
+    host = make_sample_host()
+    host.tab_color = TAB_COLOR
+
+    assert host.clone().tab_color == TAB_COLOR
+
+
+def test_the_tab_colour_is_not_a_types_setting():
+    """Every type with a tab has it, so it is no `<type>.<key>`."""
+    host = make_sample_host()
+    host.tab_color = TAB_COLOR
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+
+    assert loaded.type_settings == {}
+
+
 # -- a host's commands come back as they were written (#243) ------------------
 
 # A backslash and an n, which `commands` reads back as a new line.
@@ -822,6 +890,7 @@ def make_host_unlike_the_defaults():
     host.before_command = BEFORE
     host.after_command = AFTER
     host.tab_name = TAB_NAME
+    host.tab_color = TAB_COLOR
     return host
 
 
@@ -887,6 +956,7 @@ def test_each_option_missing_from_a_host_reads_as_its_default():
         "before_command": "",
         "after_command": "",
         "tab_name": "",
+        "tab_color": "",
     }
 
 
@@ -926,6 +996,7 @@ def test_a_host_made_from_a_name_alone_takes_each_default():
         "before_command": "",
         "after_command": "",
         "tab_name": "",
+        "tab_color": "",
     }
     assert {name: attributes(host)[name] for name in defaults} == defaults
 

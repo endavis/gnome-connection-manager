@@ -17,6 +17,27 @@ notebook > header > tabs > tab box.attention {
     background-color: #F57900;
 }
 
+/* The marks' text is dark whatever the theme's is: measured, a dark theme's light text could
+   not be read on the cluster window's yellow, and hardly on the orange (#350). It is
+   Adwaita's own text colour, which Adwaita's marks already had. */
+notebook > header > tabs > tab box.selected,
+notebook > header > tabs > tab box.attention {
+    color: #2e3436;
+}
+
+/* A tab with a colour, its host's or its folder's, has a stripe of it 4px tall across its
+   top, which utils/tabcolors.py gives the tab. On a tab also marked, the mark starts 2px
+   below the stripe, so that a stripe of the mark's own colour is still seen (#350). */
+notebook > header > tabs > tab box.colored.selected {
+    background-color: transparent;
+    background-image: linear-gradient(to bottom, transparent 6px, #EEEB00 6px);
+}
+
+notebook > header > tabs > tab box.colored.attention {
+    background-color: transparent;
+    background-image: linear-gradient(to bottom, transparent 6px, #F57900 6px);
+}
+
 /* The server pane's tabs, Servers and Mounted, share its width and cut their labels short
    (#269). With the theme's padding and minimum width, measured, the strip could not be
    narrower than 136 pixels, and in a narrower pane, GCM's default is 100, the tree lost

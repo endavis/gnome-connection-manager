@@ -79,13 +79,21 @@ def parse_position(text: str | None) -> int | None:
 
 class Folder:
     def __init__(
-        self, folder_id: str, name: str, parent: str = ROOT, position: int | None = None
+        self,
+        folder_id: str,
+        name: str,
+        parent: str = ROOT,
+        position: int | None = None,
+        tab_color: str = "",
     ) -> None:
         self.id = folder_id
         self.name = name
         self.parent = parent
         # Where it sits among its parent's children, or None for name order; see number().
         self.position = position
+        # The colour of the tabs of every host below it without a nearer one (#350), as
+        # written, and empty for none; see utils/tabcolors.py.
+        self.tab_color = tab_color
 
     def __repr__(self) -> str:
         return f"Folder({self.id!r}, {self.name!r}, parent={self.parent!r})"
@@ -279,6 +287,9 @@ class FolderTree:
             for folder in self.folders.values():
                 if folder.parent == gone.id:
                     folder.parent = keep.id
+            # Its hosts' tabs keep the colour it gave them, where the folder they now share
+            # gives none (#350).
+            keep.tab_color = keep.tab_color or gone.tab_color
             del self.folders[gone.id]
             fixes.append("duplicate sibling")
         return fixes
@@ -379,6 +390,7 @@ class FolderTree:
                 cp.get(section, "name", fallback=""),
                 cp.get(section, "parent", fallback=ROOT),
                 parse_position(cp.get(section, "position", fallback=None)),
+                cp.get(section, "tab-color", fallback=""),
             )
         return tree, tree.repair()
 
@@ -390,3 +402,7 @@ class FolderTree:
             cp.set(section, "parent", folder.parent)
             if folder.position is not None:
                 cp.set(section, "position", str(folder.position))
+            # Only when set, as a host's is: an older GCM reads the record and leaves it out
+            # of what it saves (#350).
+            if folder.tab_color:
+                cp.set(section, "tab-color", folder.tab_color)

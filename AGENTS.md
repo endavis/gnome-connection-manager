@@ -67,7 +67,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `commands` unchanged. A host's own tab name is `tab-name`, written only when set
   (#349). Measured with v2.1.1, an older GCM reads a file holding it, names the host's
   tabs by name, and leaves it out when it saves, with the host's other options as they
-  were, bar the password, which every save encrypts afresh. A carriage return goes into `commands` as a new line: gcm.conf is
+  were, bar the password, which every save encrypts afresh. A host's own tab colour is
+  `tab-color`, written only when set and kept as written (#350): v2.1.1 drops it the same
+  way, measured. A carriage return goes into `commands` as a new line: gcm.conf is
   read with universal newlines, and one written as it is ended its line, which left the
   file unreadable or set another option, measured. Sending ends a line there anyway,
   since `addTab` splits the commands with `splitlines`.
@@ -323,6 +325,10 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   it resolves, and otherwise its `group` is resolved, which is the whole migration.
   `app.py` runs it through `sync_folders`, called from `updateTree` and `writeConfig`, so
   the code that edits `groups` by path needed no change. A folder outlives its last host.
+  A folder's `tab_color` colours the tabs of the hosts below it (#350), `tab-color` in its
+  record only when set, which v2.1.1 reads and drops at its save, measured; `repair`'s
+  merge of two folders of one name keeps the colour of the one merged away where the one
+  kept has none.
   Edits go through `add`, `rename`, `move` and `remove`, which raise `FolderError` rather
   than break a rule; `check_move` asks without moving, since a drag asks on every motion.
   In the tree widget a folder row is one with no host in it (`is_folder_row`), not one
@@ -455,6 +461,27 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   finds, so the host dialog's OK renames the host's tabs through `updateTree`. The field
   is greyed and cleared for a type that opens no tab, as the command after disconnecting
   is, and OK saves none for one.
+- `src/gnome_connection_manager/utils/tabcolors.py` – the colour a host's tabs are marked
+  with (#350): `tab_color` gives the host's own, else that of the nearest folder above it
+  with one, `folder_color`, else none. `color_of` reads only `#rgb` and `#rrggbb`, so a
+  hand edit can put nothing else into the CSS, and a value it cannot read colours nothing
+  and is kept as written. `stripe_css` is the CSS of a stripe `STRIPE` pixels tall across
+  the top of the tab: an inset `box-shadow`, which takes no room. Not the background,
+  which the cluster window's tick and the attention mark colour, and not the bottom, where
+  Adwaita and Yaru mark the tab in use, measured with each and its dark variant, Yaru
+  from Ubuntu's `yaru-theme-gtk` unpacked into a scratch folder: GTK here names Yaru but
+  draws Adwaita, as Yaru is not installed. `NotebookTabLabel.set_color` gives a tab its
+  own `Gtk.CssProvider` the first time it has a colour, so a tab never given one is drawn
+  as before, and the class `colored`, for which `data/style.css` starts a mark `GAP`
+  below the stripe: without the gap, measured, a stripe of the mark's own colour did not
+  show on it. `host_tab_color` in `app.py` reads it through `configured_host`, as
+  `host_tab_name` does, and `add_page` and `name_tabs` give it to the tabs, so the host
+  dialog's OK, a folder's colour and a move reach the open tabs through `updateTree`. A
+  folder's colour comes from `color_selected_folder`, the folder's **Tab Color**, through
+  `choose_tab_color`, GTK's colour chooser with a No Color button, `NO_COLOR`. The host
+  dialog's `chkTabColor` is greyed and unticked for a type that opens no tab, and shows
+  the folder's colour while unticked. `tests/test_tabcolors.py` reads the pixels of real
+  tabs, drawn into an image rather than read from the screen.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
@@ -857,8 +884,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Host attributes include an `id`, a `folder` (the id `group` is derived from), a
   `position` among that folder's children, group/name/description, connection info, tunnels,
   terminal overrides, clipboard/logging flags, colors, command sequences, commands to run on
-  this computer before connecting and after disconnecting, a tab name of its own, and SSH
-  options.
+  this computer before connecting and after disconnecting, a tab name and a tab colour of
+  its own, and SSH options.
   Keep `Host.clone`, `HostUtils.save_host_to_ini`, the `Whost` dialogs, and import/export in
   sync. The dialog rebuilds the record rather than mutating it, so an edit carries the id
   across in `Whost.oldId` -- dropping that would make every edit look like a new host --
@@ -903,7 +930,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
 ## UI, Theming & Localization
 - Modify UI in `data/ui/gnome-connection-manager.glade` and ensure widget IDs still match the
   handler names (e.g. `on_btnConnect_clicked`). `GladeComponent` normalizes names.
-- CSS tweaks go in `data/style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3.
+- CSS tweaks go in `data/style.css` (loaded by `Gtk.CssProvider`). Test on GTK 3. The
+  cluster window's tick and the attention mark give a tab's label a background and dark
+  text, `#2e3436`, Adwaita's own: measured, on Adwaita-dark and Yaru-dark the theme's
+  light text could not be read on the yellow (#350). `color` on the box reaches the label
+  inside it in all four themes, measured.
 - Dragging in the server tree is GtkTreeView's model drag with a target of GCM's own,
   `GCM_TREE_ROW`: GTK highlights the row under the pointer and opens a folder hovered
   over, but never moves a row itself -- `on_treeServers_drag_data_received` refiles the
@@ -915,8 +946,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   selecting the folder. `drop_target` reads the edge of a row as a place beside it and
   the middle as that row's folder.
 - A console's tab label is a `NotebookTabLabel`, and it holds state its text does not:
-  the title the program set, a rename, whether the session has ended, and the marks the
-  bell and the cluster window leave. Three texts, and they differ: `get_text()` is the
+  the title the program set, a rename, whether the session has ended, the marks the
+  bell and the cluster window leave, and its host's colour (#350). Three texts, and they differ: `get_text()` is the
   identity (the host's tab name, `host_tab_name`, or a rename) that clone, cluster
   consoles and `move_page` read,
   `get_display_text()` is the whole composed label, and the widget draws that cut to

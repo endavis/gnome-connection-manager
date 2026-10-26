@@ -12,6 +12,8 @@ from xml.etree import ElementTree
 
 import pytest
 
+from gnome_connection_manager.utils.folders import FolderTree
+
 
 class TextEntry:
     def __init__(self, text: str = ""):
@@ -80,9 +82,16 @@ class TreeModelStub(list):
 class ColorButtonStub:
     def __init__(self, rgba):
         self._rgba = rgba
+        self.sensitive = None
 
     def get_rgba(self):
         return self._rgba
+
+    def set_rgba(self, rgba):
+        self._rgba = rgba
+
+    def set_sensitive(self, value):
+        self.sensitive = value
 
 
 class DestroyStub:
@@ -123,6 +132,8 @@ def make_whost(
     whost.txtBeforeCommand = TextEntry("")
     whost.txtAfterCommand = TextEntry("")
     whost.txtTabName = TextEntry("")
+    whost.chkTabColor = CheckStub(False)
+    whost.btnTabColor = ColorButtonStub(types.SimpleNamespace(red=1, green=0, blue=0))
     whost.btnFColor = ColorButtonStub(types.SimpleNamespace(red=1, green=1, blue=1))
     whost.btnBColor = ColorButtonStub(types.SimpleNamespace(red=0, green=0, blue=0))
     whost.isNew = True
@@ -268,6 +279,8 @@ HANDLED_FIELDS = (
     "txtCommands",
     "txtAfterCommand",
     "txtTabName",
+    "chkTabColor",
+    "btnTabColor",
 )
 # The tabs a type may not be shown: SSH's options, its port forwarding, and the terminal's
 # settings (#277).
@@ -284,12 +297,14 @@ class Page:
         self.visible = visible
 
 
-def choose_type(app_module, ctype):
-    """The dialog's controls and tabs once `ctype` is chosen, with no type's own page."""
+def choose_type(app_module, ctype, ticked=()):
+    """The dialog's controls and tabs once `ctype` is chosen, with no type's own page, and
+    the boxes named in `ticked` ticked before it is."""
     dialog = app_module.Whost.__new__(app_module.Whost)
     dialog.type_pages = {}
     fields = {name: Field() for name in HANDLED_FIELDS}
     for name, field in fields.items():
+        field.active = name in ticked
         setattr(dialog, name, field)
     pages = {name: Page() for name in TYPE_TABS}
     dialog.get_widget = lambda name: pages[name] if name in pages else fields[name]
@@ -457,6 +472,8 @@ def make_loadable_whost(app_module, monkeypatch):
         getattr(dialog, name).set_rgba = lambda _v: None
     dialog.cmbBackspace = types.SimpleNamespace(set_active=lambda _v: None)
     dialog.cmbDelete = types.SimpleNamespace(set_active=lambda _v: None)
+    dialog.chkTabColor = CheckStub()
+    dialog.btnTabColor = ColorButtonStub(None)
     dialog.get_widget = lambda _name: CheckStub()
     dialog.update_texttags = lambda *_args: None
     monkeypatch.setattr(app_module, "parse_color_rgba", lambda _color: None)
@@ -808,6 +825,124 @@ def test_the_tab_name_is_on_properties_below_the_name():
     [row] = [row for row, cells in rows.items() if "txtTabName" in cells]
     assert sorted(rows[row]) == ["Tab name", "txtTabName"]
     assert "txtName" in rows[row - 1]
+
+
+# -- a host's own tab colour (#350) ------------------------------------------
+
+
+def shown_colour(app_module, monkeypatch, host, tree=None):
+    """What init shows of `host`'s tab colour: whether the box is ticked, and the colour
+    the button holds, None where init left it, with `tree` the folders it reads."""
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    monkeypatch.setattr(app_module, "parse_color_rgba", lambda colour: colour)
+    monkeypatch.setattr(app_module, "folders", tree or FolderTree())
+    dialog.init("ops", host)
+    return dialog.chkTabColor.get_active(), dialog.btnTabColor.get_rgba()
+
+
+def test_init_ticks_the_tab_colour_of_a_host_with_its_own(monkeypatch, app_module):
+    host = make_stored_host(app_module, commands="", enabled=False)
+    host.tab_color = "#E01B24"
+
+    assert shown_colour(app_module, monkeypatch, host) == (True, "#e01b24")
+
+
+def test_init_shows_the_folders_colour_unticked(monkeypatch, app_module):
+    """What the host's tabs take while the box is unticked, and where ticking it starts."""
+    tree = FolderTree()
+    folder_id = tree.ensure_path("ops")
+    tree.folders[folder_id].tab_color = "#3584e4"
+    host = make_stored_host(app_module, commands="", enabled=False)
+    host.folder = folder_id
+
+    assert shown_colour(app_module, monkeypatch, host, tree) == (False, "#3584e4")
+
+
+@pytest.mark.parametrize("stored", ["", "crimson"])
+def test_init_leaves_the_button_alone_with_no_colour_to_show(monkeypatch, app_module, stored):
+    """A colour a hand edit left that cannot be read is no colour: the box is unticked."""
+    host = make_stored_host(app_module, commands="", enabled=False)
+    host.tab_color = stored
+
+    assert shown_colour(app_module, monkeypatch, host) == (False, None)
+
+
+def test_ok_saves_the_tab_colour_while_ticked(monkeypatch, app_module):
+    whost, _destroy = make_whost(app_module)
+    whost.chkTabColor = CheckStub(True)
+    whost.btnTabColor = ColorButtonStub(picked("#e01b24"))
+
+    assert saved_host(app_module, monkeypatch, whost).tab_color == "#e01b24"
+
+
+def test_ok_saves_no_tab_colour_unticked(monkeypatch, app_module):
+    """The tabs take the folder's then: none is saved, not the colour the button holds."""
+    whost, _destroy = make_whost(app_module)
+    whost.btnTabColor = ColorButtonStub(picked("#e01b24"))
+
+    assert saved_host(app_module, monkeypatch, whost).tab_color == ""
+
+
+def test_ok_saves_no_tab_colour_for_a_host_without_a_tab(monkeypatch, app_module):
+    """Even one written into gcm.conf by hand, which init shows in the greyed box."""
+    whost, _destroy = make_whost(app_module)
+    whost.cmbType = ComboStub("web")
+    whost.txtUser = TextEntry("")
+    whost.txtPass = TextEntry("")
+    whost.chkTabColor = CheckStub(True)
+
+    assert saved_host(app_module, monkeypatch, whost).tab_color == ""
+
+
+@pytest.mark.parametrize("ctype", ["local", "ssh", "telnet", "rdp", "vnc", "command", "web"])
+@pytest.mark.parametrize("ticked", [False, True])
+def test_the_tab_colour_needs_a_tab(app_module, ctype, ticked):
+    """A web host opens no tab, so it has none to colour: greyed and unticked, as its tab
+    name is cleared. Every other type keeps the box as it was, and the colour can be
+    chosen while it is ticked."""
+    fields, _pages = choose_type(app_module, ctype, ticked=("chkTabColor",) if ticked else ())
+
+    has_tab = ctype != "web"
+    assert fields["chkTabColor"].sensitive is has_tab
+    assert fields["chkTabColor"].active is (ticked and has_tab)
+    assert fields["btnTabColor"].sensitive is (ticked and has_tab)
+
+
+@pytest.mark.parametrize(
+    ("active", "sensitive", "chosen"),
+    [(True, True, True), (False, True, False), (True, False, False)],
+)
+def test_ticking_the_box_lets_the_colour_be_chosen(app_module, active, sensitive, chosen):
+    """But not in a box greyed for a type without a tab, which init may tick for a colour
+    a hand edit gave a web host."""
+    dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.btnTabColor = ColorButtonStub(None)
+    box = types.SimpleNamespace(get_active=lambda: active, get_sensitive=lambda: sensitive)
+
+    dialog.on_chkTabColor_toggled(box)
+
+    assert dialog.btnTabColor.sensitive is chosen
+
+
+def test_the_tab_colour_is_on_properties_below_the_tab_name():
+    """On the tab every type is shown, beside the tab name it marks the same tabs as. As
+    a new SSH host's dialog starts, unticked, with the button greyed (#277)."""
+    root = ElementTree.parse(GLADE).getroot()
+    properties = root.find(".//object[@id='nbHost']/child/object")
+    rows: dict[int, list[str]] = {}
+    for child in properties.findall("child"):
+        widget = child.find("object")
+        row = int(child.find("packing/property[@name='top-attach']").text)
+        label = widget.find("property[@name='label']")
+        rows.setdefault(row, []).append(widget.get("id") or label.text)
+
+    [row] = [row for row, cells in rows.items() if "chkTabColor" in cells]
+    assert sorted(rows[row]) == ["btnTabColor", "chkTabColor"]
+    assert "txtTabName" in rows[row - 1]
+    box = root.find(".//object[@id='chkTabColor']")
+    button = root.find(".//object[@id='btnTabColor']")
+    assert box.find("property[@name='active']") is None
+    assert button.find("property[@name='sensitive']").text == "False"
 
 
 def picked(colour: str) -> types.SimpleNamespace:

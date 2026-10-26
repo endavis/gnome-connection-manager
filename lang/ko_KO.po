@@ -2117,3 +2117,18 @@ msgstr ""
 
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr ""
+
+msgid "Tab color"
+msgstr ""
+
+msgid "A stripe of this color across the top of the host's tabs. Unticked, the tabs take the color of the nearest folder above the host that has one, which a folder's menu gives it with Tab Color."
+msgstr ""
+
+msgid "Select the tab color"
+msgstr ""
+
+msgid "Tab Color"
+msgstr ""
+
+msgid "No Color"
+msgstr ""

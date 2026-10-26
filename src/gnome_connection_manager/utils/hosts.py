@@ -122,6 +122,9 @@ class Host:
         # What the host's tabs are called in place of Preferences' Tab name (#349), with
         # the same placeholders, and empty for that. Not an argument either.
         self.tab_name = ""
+        # The colour of the host's tabs in place of its folder's (#350), as written, and
+        # empty for that; see utils/tabcolors.py. Not an argument either.
+        self.tab_color = ""
         try:
             self.i = 0
             self.group = self.get_arg(args, None)
@@ -217,6 +220,7 @@ class Host:
         copy.before_command = self.before_command
         copy.after_command = self.after_command
         copy.tab_name = self.tab_name
+        copy.tab_color = self.tab_color
         return copy
 
 
@@ -313,6 +317,7 @@ class HostUtils:
         h.before_command = HostUtils.get_val(cp, section, "before-command", "")
         h.after_command = HostUtils.get_val(cp, section, "after-command", "")
         h.tab_name = HostUtils.get_val(cp, section, "tab-name", "")
+        h.tab_color = HostUtils.get_val(cp, section, "tab-color", "")
         return h
 
     @staticmethod
@@ -363,6 +368,9 @@ class HostUtils:
         # An older GCM reads the file and leaves it out of what it saves, measured (#349).
         if host.tab_name:
             cp.set(section, "tab-name", host.tab_name)
+        # The same for this (#350).
+        if host.tab_color:
+            cp.set(section, "tab-color", host.tab_color)
 
     @staticmethod
     def ensure_unique_ids(hosts):
