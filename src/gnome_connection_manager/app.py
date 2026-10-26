@@ -8644,6 +8644,7 @@ class TranscriptReplayer:
         self._tracker = None
         self._alternate = False
         self._harvested = 0
+        self._erased = []
         self._index = 0
         self._cancelled = False
         self._window = None
@@ -8680,7 +8681,13 @@ class TranscriptReplayer:
                 merged[-1] = (merged[-1][0] + data, True)
             else:
                 merged.append((data, alternate))
-        return merged
+        # A primary run is cut before each erase of the scrollback, which `_step` reads
+        # before it goes in (#362).
+        return [
+            (piece, alternate)
+            for data, alternate in merged
+            for piece in ([data] if alternate else transcript.split_at_erases(data))
+        ]
 
     @property
     def total(self):
@@ -8757,8 +8764,33 @@ class TranscriptReplayer:
         from 0 again. An end read from it fell short, by as many rows as were dropped.
         """
         _column, row = self._terminal.get_cursor_position()
+        return self._read(row + self._rows if final else row)
+
+    def _harvest_erased(self, reset):
+        """What an erase of the scrollback is about to drop, read before it goes in (#362).
+
+        ED 3 drops the rows above the screen, and `clear` sends it once the cursor is
+        home, so everything above the cursor is read. VTE 0.76 gives the screen's top
+        in no numbering the cursor's row can be compared with, so an ED 3 on its own
+        reads the screen's rows above the cursor too, which it leaves, as they are then.
+        RIS, which `reset` sends, drops the screen too, so a screen below the cursor is
+        read. Either counts as read only through its last row with text. Gemini CLI
+        clears with `\\e[2J\\e[3J\\e[H`, so at its ED 3 the cursor is not home yet, and
+        the empty rows above it are where the screen it prints next goes.
+        """
+        _column, row = self._terminal.get_cursor_position()
+        end = row + self._rows if reset else row
+        while end > self._harvested and not self._row_text(end - 1):
+            end -= 1
+        return self._read(end)
+
+    def _row_text(self, row):
+        text, _ = self._terminal.get_text_range_format(Vte.Format.TEXT, row, 0, row, self._columns)
+        return text.strip()
+
+    def _read(self, end):
+        """The rows from the last harvest up to `end`, which then count as read."""
         start = self._harvested
-        end = row + self._rows if final else row
         if end <= start:
             return []
         text, _ = self._terminal.get_text_range_format(
@@ -8766,6 +8798,20 @@ class TranscriptReplayer:
         )
         self._harvested = end
         return [line.rstrip() for line in text.split("\n")[: end - start]]
+
+    def _keep(self, lines, erased=False):
+        """Add `lines` to the transcript, after what the last erase took.
+
+        What an erase took waits for the lines that follow it, which leave out the part
+        of it they print again, so that a program that clears only to print its screen
+        again is in the transcript once (#362). Lines an erase took wait in their turn.
+        """
+        self._transcript.extend(transcript.unreprinted(self._erased, lines))
+        if erased:
+            self._erased = lines
+        else:
+            self._erased = []
+            self._transcript.extend(lines)
 
     def _sample(self):
         if self._alternate and self._tracker is not None:
@@ -8782,22 +8828,25 @@ class TranscriptReplayer:
             self._transcript.extend(self._tracker.flush())
             self._tracker = None
         else:
-            self._transcript.extend(self._harvest())
+            self._keep(self._harvest())
         self._alternate = alternate
         if alternate:
             self._tracker = transcript.ScreenTracker()
 
     def _step(self):
         if self._cancelled or self._index >= len(self._runs):
-            self._transcript.extend(
-                self._tracker.flush() if self._alternate else self._harvest(final=True)
-            )
+            if self._alternate:
+                self._transcript.extend(self._tracker.flush())
+            else:
+                self._keep(self._harvest(final=True))
             self._finish()
             return False
         data, alternate = self._runs[self._index]
         self._index += 1
         if alternate != self._alternate:
             self._switch(alternate)
+        elif not alternate and data.startswith(transcript.ERASES):
+            self._keep(self._harvest_erased(data.startswith(transcript.RESET)), erased=True)
         if self._on_progress is not None:
             self._on_progress(self._index, len(self._runs))
         self._terminal.feed(data)

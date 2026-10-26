@@ -27,6 +27,8 @@ from gnome_connection_manager.utils.transcript import (
     read_writes,
     screen_replaced,
     scroll_shift,
+    split_at_erases,
+    unreprinted,
 )
 from tests.test_connections import glib_complaints
 
@@ -497,6 +499,142 @@ def test_a_transcript_keeps_an_indented_line_as_it_was_drawn():
     assert out.lines == ["    code();"]
 
 
+# -- what clear and reset erase (#362) ------------------------------------------
+
+
+def test_an_erase_of_the_scrollback_starts_a_piece_of_its_own():
+    """ED 3, as `clear` sends it after going home and clearing the screen, and RIS, as
+    `reset` sends it."""
+    assert split_at_erases(b"one\r\n\x1b[H\x1b[2J\x1b[3Jtwo\r\n\x1bcthree") == [
+        b"one\r\n\x1b[H\x1b[2J",
+        b"\x1b[3Jtwo\r\n",
+        b"\x1bcthree",
+    ]
+
+
+def test_splitting_at_erases_leaves_no_piece_empty():
+    assert split_at_erases(b"\x1b[3J\x1b[3Jx") == [b"\x1b[3J", b"\x1b[3Jx"]
+    assert split_at_erases(b"") == []
+
+
+def test_splitting_at_erases_passes_over_sequences_only_like_one():
+    """A cursor position, ED 2, an ED with another number, and the `\\e[c` that asks
+    the terminal what it is."""
+    data = b"\x1b[3;1H\x1b[2J\x1b[13J\x1b[c"
+
+    assert split_at_erases(data) == [data]
+
+
+def wordy(first, last, per_line=5):
+    """The words w000 and on, from `first` to before `last`, as lines of `per_line`."""
+    words = [f"w{n:03d}" for n in range(first, last)]
+    return [" ".join(words[at : at + per_line]) for at in range(0, len(words), per_line)]
+
+
+def boxed(lines, width):
+    """`lines` in a box `width` wide between its sides."""
+    return [
+        "╭" + "─" * width + "╮",
+        *(f"│ {line:<{width - 2}} │" for line in lines),
+        "╰" + "─" * width + "╯",
+    ]
+
+
+def test_what_an_erase_took_is_kept_when_nothing_follows():
+    assert unreprinted(wordy(0, 30), []) == wordy(0, 30)
+
+
+def test_a_redraw_begins_with_twenty_words_of_what_was_erased():
+    """Fewer could be any short output printed again."""
+    erased = wordy(0, 30)
+
+    assert unreprinted(erased, wordy(0, 19)) == erased
+    assert unreprinted(erased, wordy(0, 20)) == wordy(20, 30)
+
+
+def test_output_that_begins_with_something_else_is_no_redraw():
+    """Even when its first word is one that was erased."""
+    erased = wordy(0, 30)
+
+    assert unreprinted(erased, ["w000 and then new output", *erased]) == erased
+
+
+def test_a_word_is_printed_again_only_in_a_run_of_five():
+    """Four words in a row could come from any sentence."""
+    erased = [*wordy(0, 20), "a b c d e"]
+
+    assert unreprinted(erased, [*wordy(0, 20), "x a b c d"]) == ["a b c d e"]
+    assert unreprinted(erased, [*wordy(0, 20), "x a b c d e"]) == []
+
+
+def test_a_redraw_at_another_width_is_the_same_words():
+    """Wrapped elsewhere, in a box of another size: measured, Gemini CLI clears and
+    prints its screen again when its terminal is resized."""
+    assert unreprinted(boxed(wordy(0, 30, 6), 40), boxed(wordy(0, 30, 4), 30)) == []
+
+
+def test_what_was_printed_before_a_redraw_is_kept():
+    """The redraw here is the last twenty words erased."""
+    erased = ["$ cd project", "$ tool", *wordy(0, 20)]
+
+    assert unreprinted(erased, wordy(0, 20)) == ["$ cd project", "$ tool"]
+
+
+def test_what_came_before_a_redraw_is_kept_even_where_the_redraw_prints_it():
+    erased = ["$ echo a b c d e", "a b c d e", *wordy(0, 20)]
+
+    assert unreprinted(erased, [*wordy(0, 20), "a b c d e"]) == erased[:2]
+
+
+def test_the_line_a_redraw_begins_in_is_kept_with_the_border_below_it():
+    """Kept for what is on it before the redraw begins, and the border with it."""
+    erased = ["x w000 w001 w002 w003 w004", "────", *wordy(5, 30)]
+
+    assert unreprinted(erased, wordy(0, 30)) == erased[:2]
+
+
+def test_what_a_redraw_leaves_out_is_kept():
+    """Measured, a later redraw of Gemini CLI's trust dialog hid three of its lines."""
+    erased = [*wordy(0, 20), *wordy(100, 115)]
+    shown = [*wordy(0, 20), *wordy(100, 105), *wordy(110, 115)]
+
+    assert unreprinted(erased, shown) == wordy(105, 110)
+
+
+def test_a_redraw_is_found_however_many_copies_each_side_holds():
+    """Measured, Gemini CLI printed its screen twice after some of its clears, once at
+    each width, and its dialog once, below the second. Matched in one stretch from where
+    it begins, a redraw stopped where the copies parted, and the rest stayed."""
+    screen, dialog = wordy(0, 25), wordy(100, 115)
+
+    assert unreprinted([*screen, *dialog], [*screen, *screen, *dialog]) == []
+    assert unreprinted([*screen, *screen, *dialog], [*screen, *dialog]) == []
+
+
+def test_lines_without_words_go_with_the_screen_they_are_drawn_around():
+    """A logo drawn in blocks above it, and a border below it."""
+    logo = ["▝▜▄ ▗█▀", ""]
+    erased = ["$ tool", *logo, *wordy(0, 30), "╰──╯"]
+
+    assert unreprinted(erased, [*logo, *wordy(0, 30)]) == ["$ tool"]
+
+
+def test_a_box_that_is_kept_keeps_its_borders():
+    """Its top border follows a line that goes, and stays with the box."""
+    box = boxed(["kept words"], 20)
+
+    assert unreprinted([*wordy(0, 20), "", *box], wordy(0, 20)) == ["", *box]
+
+
+def test_what_came_between_output_and_the_same_output_again_is_kept():
+    """Output printed again after `clear` cannot be told from a redraw, and its first
+    copy goes. What came between the two copies does not."""
+    notes = wordy(0, 20)
+    erased = ["$ cat notes", *notes, "$ make", "make: nothing to do", "$ clear"]
+
+    assert unreprinted(erased, ["$ cat notes", *notes, "$"]) == erased[-3:]
+
+
 # -- the replayer, and how the application reaches a recording ----------------
 
 
@@ -571,6 +709,27 @@ def test_the_replayer_joins_a_lone_switch_only_to_an_alternate_run_after_it(tmp_
     assert runs == [(b"\x1b[?47l", False), (b"\x1b[?47h", True), (b"\x1b[?47l$ ", False)]
 
 
+def test_the_replayer_cuts_a_primary_run_before_each_erase(tmp_path, app_module):
+    """So that what each drops is read before it goes in (#362). Not an alternate-screen
+    frame: that screen has no scrollback to drop."""
+    writes = [
+        (0.0, b"one\r\n" + CLEAR + b"two\r\n"),
+        (0.05, b"\x1b[?1049hx\x1b[3Jy"),
+        (0.05, b"\x1b[?1049l\x1bcz"),
+    ]
+    raw, timing = write_recording(tmp_path, writes)
+
+    runs = app_module.TranscriptReplayer._plan(raw, timing)
+
+    assert runs == [
+        (b"one\r\n\x1b[H\x1b[2J", False),
+        (b"\x1b[3Jtwo\r\n", False),
+        (b"\x1b[?1049hx\x1b[3Jy", True),
+        (b"\x1b[?1049l", False),
+        (b"\x1bcz", False),
+    ]
+
+
 def test_the_replayer_marker_changes_every_frame(app_module):
     """VTE reports a title *change*; repeating one leaves the replay waiting for ever."""
     sentinel = app_module.TranscriptReplayer._SENTINEL
@@ -629,7 +788,7 @@ REPLAYED = {
     "a pager on a screen not yet full": (SESSION, ["$ one", *PAGED, "$ two", "$ three"]),
     "a pager after clear": (
         [printed(numbered("line", 10)), CLEAR, *SESSION],
-        ["$ one", *PAGED, "$ two", "$ three"],
+        [*numbered("line", 10), "", "$ one", *PAGED, "$ two", "$ three"],
     ),
     # A clear without ED 3 keeps the scrollback, and leaves the cursor at the top.
     "a pager after a clear that keeps the scrollback": (
@@ -651,13 +810,121 @@ REPLAYED = {
     ),
     "clear after more than follows it": (
         [printed(numbered("line", 100)), CLEAR, printed(["$ x", *numbered("late", 5)])],
-        ["$ x", *numbered("late", 5)],
+        [*numbered("line", 100), "", "$ x", *numbered("late", 5)],
     ),
     "reset after more than follows it": (
         [printed(numbered("line", 30)), b"\x1bc", printed(["$ x", *numbered("late", 3)])],
-        ["$ x", *numbered("late", 3)],
+        [*numbered("line", 30), "", "$ x", *numbered("late", 3)],
     ),
 }
+
+# The order Gemini CLI clears in: at its ED 3 the cursor is not home yet.
+INK_CLEAR = b"\x1b[2J\x1b[3J\x1b[H"
+SCREEN = [
+    "== tool v1.0 ==",
+    "Tips for getting started:",
+    "1. Ask a question about the code",
+    "2. Be specific for the best results",
+    "3. Type /help for more information",
+]
+# The same words, wrapped as a program 36 and 24 columns wide would.
+WIDE = [
+    "== tool v1.0 == Tips for getting",
+    "started: 1. Ask a question about",
+    "the code 2. Be specific for the",
+    "best results 3. Type /help for",
+    "more information",
+]
+NARROW = [
+    "== tool v1.0 == Tips",
+    "for getting started:",
+    "1. Ask a question",
+    "about the code 2. Be",
+    "specific for the best",
+    "results 3. Type /help",
+    "for more information",
+]
+NOTES = [
+    "notes: the first line of them",
+    "and the second line of them",
+    "then the third line of them",
+    "the last line",
+]
+
+ERASED = {
+    "clear": (
+        [printed(numbered("line", 10)), CLEAR, b"$ after\r\n"],
+        [*numbered("line", 10), "", "$ after"],
+    ),
+    "reset": (
+        [printed(numbered("line", 10)), b"\x1bc", b"$ after\r\n"],
+        [*numbered("line", 10), "", "$ after"],
+    ),
+    "reset with the cursor at the top": (
+        [b"$ one\r\n", b"\x1b[8H-- status --\x1b[H", b"\x1bc", b"$ after\r\n"],
+        ["$ one", "", "-- status --", "$ after"],
+    ),
+    # ED 3 leaves the screen, so what is below the cursor is read as it is later.
+    "ED 3 above a status line": (
+        [b"$ one\r\n", b"\x1b[8H-- status --\x1b[H", b"\x1b[3J", b"\x1b[8H\x1b[2K-- later --"],
+        ["$ one", "", "-- later --"],
+    ),
+    "a pager, then clear": (
+        [*SESSION, CLEAR, b"$ after\r\n"],
+        ["$ one", *PAGED, "$ two", "$ three", "$ after"],
+    ),
+    "clear twice": (
+        [printed(numbered("line", 3)), CLEAR, printed(numbered("mid", 3)), CLEAR, b"$ after\r\n"],
+        [*numbered("line", 3), *numbered("mid", 3), "", "$ after"],
+    ),
+    "a clear in Gemini CLI's order": (
+        [printed(numbered("line", 10)), INK_CLEAR + b"$ after\r\n"],
+        [*numbered("line", 10), "", "$ after"],
+    ),
+    "clear on the alternate screen": (
+        [b"$ one\r\n", b"\x1b[?1049h\x1b[H\x1b[2J\x1b[3Jpager 1\r\npager 2", LEAVE + b"$ two\r\n"],
+        ["$ one", "pager 1", "pager 2", "$ two"],
+    ),
+    "a screen printed again": ([printed(SCREEN), INK_CLEAR + printed(SCREEN)], SCREEN),
+    "a screen printed again at another width": (
+        [printed(boxed(WIDE, 36)), INK_CLEAR + printed(boxed(NARROW, 24))],
+        boxed(NARROW, 24),
+    ),
+    "lines before a screen printed again": (
+        [b"$ cd project\r\n$ tool\r\n", printed(SCREEN), INK_CLEAR + printed(SCREEN)],
+        ["$ cd project", "$ tool", *SCREEN],
+    ),
+    "output printed again after clear": (
+        [
+            printed(["$ cat notes", *NOTES, "$ clear"]),
+            CLEAR,
+            printed(["$ cat notes", *NOTES]) + b"$ ",
+        ],
+        ["$ clear", "$ cat notes", *NOTES, "$"],
+    ),
+}
+
+
+def replayed(tmp_path, scenarios):
+    """Each scenario's writes replayed through the replayer in a real terminal."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    recordings = []
+    for index, (name, (writes, _)) in enumerate(scenarios.items()):
+        folder = tmp_path / str(index)
+        folder.mkdir()
+        recordings.append([name, *write_recording(folder, [(0.05, chunk) for chunk in writes])])
+    result = subprocess.run(
+        [sys.executable, "-c", _REPLAY_SCRIPT, json.dumps(recordings)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "HOME": str(tmp_path)},
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert not glib_complaints(result.stderr), result.stderr[-3000:]
+    return json.loads(result.stdout.splitlines()[-1])
 
 
 @pytest.mark.skipif(
@@ -674,25 +941,26 @@ def test_the_replayer_keeps_every_line_the_primary_screen_showed(tmp_path):
     from it fell short: a session that ran `clear` lost the lines after it, as many as it
     had dropped. Measured against real VTE 0.76.
     """
-    pytest.importorskip("gi", reason="PyGObject not available")
-    recordings = []
-    for index, (name, (writes, _)) in enumerate(REPLAYED.items()):
-        folder = tmp_path / str(index)
-        folder.mkdir()
-        recordings.append([name, *write_recording(folder, [(0.05, chunk) for chunk in writes])])
-    result = subprocess.run(
-        [sys.executable, "-c", _REPLAY_SCRIPT, json.dumps(recordings)],
-        capture_output=True,
-        text=True,
-        cwd=Path(__file__).resolve().parents[1],
-        env={**os.environ, "HOME": str(tmp_path)},
-        timeout=120,
-    )
+    transcripts = replayed(tmp_path, REPLAYED)
 
-    assert result.returncode == 0, result.stderr[-3000:]
-    transcripts = json.loads(result.stdout.splitlines()[-1])
     assert transcripts == {name: lines for name, (_, lines) in REPLAYED.items()}
-    assert not glib_complaints(result.stderr), result.stderr[-3000:]
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_the_replayer_keeps_what_clear_and_reset_erase(tmp_path):
+    """Read before each erase goes in, and left out only where what follows is a redraw
+    of it (#362).
+
+    ED 3, which `clear` sends, drops the scrollback even when it is unlimited, and RIS,
+    which `reset` sends, drops the screen too. Both reached the replay's terminal
+    unread, and what they dropped was missing from the transcript.
+    """
+    transcripts = replayed(tmp_path, ERASED)
+
+    assert transcripts == {name: lines for name, (_, lines) in ERASED.items()}
 
 
 def test_the_replayer_uses_methods_vte_really_has():

@@ -23,6 +23,8 @@ Two screens, two very different problems:
 
 from __future__ import annotations
 
+import re
+from itertools import pairwise
 from pathlib import Path
 
 # Both the switch sequences and the screen each selects. `?1049` is what anything
@@ -176,6 +178,109 @@ class AltScreenScanner:
             ):
                 return length
         return 0
+
+
+# What drops the scrollback: ED 3, which `clear` sends for xterm-256color, and RIS, which
+# `reset` does and which clears the screen too. Measured, ED 3 drops it however much
+# scrollback the terminal keeps, the replay's unlimited one included (#362).
+RESET = b"\x1bc"
+ERASES = (b"\x1b[3J", RESET)
+_ERASE = re.compile(b"|".join(re.escape(erase) for erase in ERASES))
+
+
+def split_at_erases(data: bytes) -> list[bytes]:
+    """`data` cut before each erase, so that every piece after the first begins with one.
+
+    What an erase drops has to be read before the erase reaches the terminal, and the
+    moment between two runs is the replay's only chance (#362).
+    """
+    cuts = [0, *(found.start() for found in _ERASE.finditer(data)), len(data)]
+    return [data[start:end] for start, end in pairwise(cuts) if end > start]
+
+
+# How many words the output after an erase must begin with, all of them what the erase
+# took and in the same order, before it counts as a redraw rather than new output (#362).
+REPRINT_WORDS = 20
+# A word of what the erase took counts as printed again when it is in a run of this many
+# that the redraw prints too.
+RUN_WORDS = 5
+# Box drawing, block elements and braille: borders, logos drawn in blocks, and spinners.
+# A redraw at another width draws them to other lengths, so a word never includes them.
+_DRAWING = re.compile(r"[\u2500-\u259f\u2800-\u28ff]")
+
+
+def _words(lines: list[str]) -> list[tuple[str, int]]:
+    """Each word in `lines`, with the index of the line it is on."""
+    return [
+        (word, index)
+        for index, line in enumerate(lines)
+        for word in _DRAWING.sub(" ", line).split()
+    ]
+
+
+def _runs(words: list[str]) -> list[tuple[str, ...]]:
+    """Each run of `RUN_WORDS` words in `words`, by the word it begins with."""
+    return list(zip(*(words[at:] for at in range(RUN_WORDS)), strict=False))
+
+
+def unreprinted(erased: list[str], following: list[str]) -> list[str]:
+    """The lines of `erased` that `following`, when it is a redraw of them, does not print.
+
+    A program that clears the screen and the scrollback only to print it all again, as
+    Gemini CLI does when its terminal is resized, would otherwise be in the transcript
+    once per clear. Measured over a recording with 9 such clears, keeping all that each
+    one took put its screen in the transcript 17 times.
+
+    `following` is a redraw when it begins with `REPRINT_WORDS` words that `erased` has,
+    in the same order. Words are compared, not lines: a redraw at another width wraps
+    its text and draws its borders differently, while its words stay the same. From the
+    first place those words appear, a line of `erased` goes when each word on it is in a
+    run of `RUN_WORDS` that `following` prints too, wherever it prints it: measured,
+    Gemini CLI printed its screen twice after some clears, once at each width. Lines
+    with no words, such as a border or a logo drawn in blocks, go with their screen:
+    when the line with words below them goes, or there is none, and the one above them
+    goes too, or comes before the redraw, or there is none. Everything else is kept.
+    """
+    again = [word for word, _ in _words(following)]
+    probe = again[:REPRINT_WORDS]
+    if len(probe) < REPRINT_WORDS:
+        return list(erased)
+    words = _words(erased)
+    tokens = [word for word, _ in words]
+    start = next(
+        (
+            at
+            for at in range(len(tokens) - REPRINT_WORDS + 1)
+            if tokens[at] == probe[0] and tokens[at : at + REPRINT_WORDS] == probe
+        ),
+        None,
+    )
+    if start is None:
+        return list(erased)
+    runs = set(_runs(again))
+    printed = [False] * len(tokens)
+    for at, run in enumerate(_runs(tokens)):
+        if at >= start and run in runs:
+            printed[at : at + RUN_WORDS] = [True] * RUN_WORDS
+    gone = {index for _, index in words} - {
+        words[at][1] for at, done in enumerate(printed) if not done
+    }
+    kept: list[str] = []
+    held: list[str] = []
+    # Whether the lines with no words held since the last line with words go if the next
+    # one does: the line before them went, or came before the redraw.
+    beside = True
+    for index, line in enumerate(erased):
+        if not _DRAWING.sub(" ", line).split():
+            held.append(line)
+            continue
+        if not (beside and index in gone):
+            kept += held
+        held = []
+        if index not in gone:
+            kept.append(line)
+        beside = index in gone or index < words[start][1]
+    return kept if beside else kept + held
 
 
 def _blank(line: str) -> bool:
