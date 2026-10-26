@@ -222,6 +222,16 @@ moved to another folder takes that folder's colour. A tab you have renamed keeps
 host's colour. **Duplicate Host**'s copy has the same colour, and export and import carry
 a host's colour and a folder's.
 
+The server tree shows the colours too, as a small square before the name. A host's row
+shows the colour its tabs take, its own or its folder's. A folder's row shows the colour
+it gives the hosts in it, its own or one it takes from a folder above it. A host mounted
+with SSHFS has its square first, then the tick. The **Hosts** menu marks each host and
+folder in the same way. On the selected row, and on the menu item under the pointer, the
+square sits on a small patch of the row's usual background, so that it still shows when
+it is the selection's own colour. The tree and the menu follow each change at once.
+Rows without a colour have no square, so a tree with no colour set looks as it always
+has.
+
 The stripe leaves the tab's other marks as they were: the yellow of a tab ticked in the
 [cluster window](TERMINAL-USAGE.md#typing-into-several-consoles-at-once), the orange of
 [a tab that needs your attention](TERMINAL-USAGE.md#when-a-tab-needs-your-attention), the

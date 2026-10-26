@@ -482,6 +482,22 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   dialog's `chkTabColor` is greyed and unticked for a type that opens no tab, and shows
   the folder's colour while unticked. `tests/test_tabcolors.py` reads the pixels of real
   tabs, drawn into an image rather than read from the screen.
+  The server tree and the Hosts menu show the colour as `MARK`, a square, before the name
+  (#358). `row_color` in `app.py` gives a host's row `tab_color` and a folder's row
+  `folder_color`. `draw_name`, the name renderer's data function, puts `mark_markup` in
+  the name's own text, so the square is the name's size and on its line, and hands a row
+  without a colour to `draw_mount_mark`, which draws it as before. It is not a cell of its
+  own, which moved the name off `get_cells()[1]`, where a test reads it, nor a column of the
+  model, which tests slice from column 5. The markup puts the square on a patch of the
+  row's own background, the model's column 3. Measured in Adwaita, without it a square of
+  the selection's colour could not be seen on the selected row: `#3584e4`, which the host
+  dialog's colour button starts with. `label_menu_item` gives a Hosts menu item the
+  menu's background in the same way, as Adwaita draws a hovered item `#3584e4` too.
+  `colored_items` keeps those items for `on_tvServers_style_updated`. Measured, a change
+  of theme emits the tree's `style-updated` once, when the menus already give the new
+  background, and emits no hidden menu's own. The real-GTK scenarios read a row's pixels in
+  the mark's own box, which Pango measures: on a selected row in Adwaita, the text beside
+  it is white, the colour of a patch on a white row.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
