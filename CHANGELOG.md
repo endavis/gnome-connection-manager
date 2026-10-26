@@ -74,6 +74,12 @@ the git log.
   A renamed host's session logs go in a folder of its new name from then on, while its
   earlier logs stay where they were, and `{name}` and its SSHFS mount folder follow the
   new name too.
+- **Save Transcript** dropped what a session printed after a full-screen application such
+  as `less` or `vim`, when the application started before the screen had filled, as it
+  can in a new tab or after `clear`. After `clear` or `reset` it also dropped lines from
+  the end of the session, all of them when fewer followed than were erased, which could
+  leave the transcript empty. It keeps those lines now. What `clear` and `reset`
+  themselves erase is still missing, and the guide now says so.
 
 ## [2.1.1] - 2026-10-24
 
