@@ -577,7 +577,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   goes when each of its words is in a run of `RUN_WORDS` that the redraw prints. Words,
   so that a redraw at another width still matches, and anywhere in the redraw, since
   Gemini CLI printed its screen twice after some clears, measured: matched in one
-  stretch, its screen was in the transcript 8 times.
+  stretch, its screen was in the transcript 8 times. `ScreenTracker.feed` passes over a
+  frame with no text, so the next is compared with the page before it, and `flush` gives
+  that page if the screen ends blank (#363). A blank holds none of the text
+  `screen_replaced` needs, so a program that blanked its page before leaving the
+  alternate screen, as xterm-r6's rmcup does, lost it, and a blank between two pages
+  lost the first, measured. A frame with a line or two of text still replaces a page
+  without emitting it.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's

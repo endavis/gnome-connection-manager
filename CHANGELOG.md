@@ -85,6 +85,9 @@ the git log.
   again, as Gemini CLI does when its window is resized, is in the transcript once. So is
   output of 20 words or more printed again straight after `clear`: the copy before `clear`
   is left out.
+- **Save Transcript** left out the last page of a full-screen application that blanked the
+  screen before leaving it, as one does under `TERM=xterm-r6` or `rxvt`. A blank screen
+  between two pages lost the first of them the same way. It keeps both now.
 
 ## [2.1.1] - 2026-10-24
 

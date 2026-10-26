@@ -289,6 +289,61 @@ def test_a_viewer_scrolling_past_gives_each_line_once_in_order():
     assert content == [f"content line {n:02d}" for n in range(1, 21)]
 
 
+# -- a frame with no text, which is not a page (#363) -------------------------
+
+
+def test_tracker_passes_over_a_frame_with_no_text():
+    """A program can blank its page before it leaves the alternate screen, as xterm-r6's
+    rmcup does. Taken for the last frame, the blank lost the page."""
+    tracker = ScreenTracker()
+    page = [f"pager line {n:02d}" for n in range(1, 9)]
+    tracker.feed(page)
+
+    assert tracker.feed(["", "  ", ""]) == []
+    assert tracker.flush() == page
+
+
+def test_tracker_compares_a_page_after_a_blank_with_the_page_before_it():
+    """Neither side of a blank holds the text a page turned needs, so compared with the
+    blank, the page before it was never emitted."""
+    tracker = ScreenTracker()
+    first = [f"pager line {n:02d}" for n in range(1, 9)]
+    tracker.feed(first)
+    tracker.feed([""] * 8)
+
+    assert tracker.feed([f"pager line {n:02d}" for n in range(20, 28)]) == first
+
+
+def test_tracker_gives_a_page_drawn_again_after_a_blank_once():
+    tracker, out = ScreenTracker(), []
+    page = [f"pager line {n:02d}" for n in range(1, 9)]
+    for frame in (page, [""] * 8, page):
+        out += tracker.feed(frame)
+    out += tracker.flush()
+
+    assert out == page
+
+
+def test_a_viewer_blanked_once_it_has_scrolled_gives_each_line_once_in_order():
+    tracker, out = ScreenTracker(), []
+    for first in range(1, 18):
+        out += tracker.feed(viewer(first, f"tick {first:03d}"))
+    out += tracker.feed([""] * 6)
+    out += tracker.flush()
+
+    content = [line for line in out if line.startswith("content line")]
+    assert content == [f"content line {n:02d}" for n in range(1, 21)]
+
+
+def test_tracker_ends_with_a_last_frame_that_has_any_text():
+    """Only a frame with no text at all is passed over, not one with a line on it."""
+    tracker = ScreenTracker()
+    tracker.feed([f"pager line {n:02d}" for n in range(1, 9)])
+    tracker.feed(["bye", "", ""])
+
+    assert tracker.flush() == ["bye"]
+
+
 # -- assembling the result ----------------------------------------------------
 
 
@@ -905,6 +960,43 @@ ERASED = {
 }
 
 
+def drawn(lines):
+    """`lines` drawn on a screen cleared from the top, the cursor left on the last."""
+    return b"\x1b[H\x1b[2J" + b"\r\n".join(line.encode() for line in lines)
+
+
+TURNED = ["pager 4", "pager 5", "pager 6"]
+
+BLANKED = {
+    # The terminfo entries for xterm-r6 and rxvt: smcup is \E7\E[?47h, rmcup \E[2J\E[?47l\E8.
+    "xterm-r6's exit": (
+        [b"$ one\r\n", b"\x1b7\x1b[?47h" + drawn(PAGED), b"\x1b[2J\x1b[?47l\x1b8$ two\r\n"],
+        ["$ one", *PAGED, "$ two"],
+    ),
+    "a blank before ?1049l": (
+        [b"$ one\r\n", PAGER, b"\x1b[2J" + LEAVE + b"$ two\r\n"],
+        ["$ one", *PAGED, "$ two"],
+    ),
+    "a blank between two pages": (
+        [b"$ one\r\n", PAGER, drawn([]), drawn(TURNED), LEAVE + b"$ two\r\n"],
+        ["$ one", *PAGED, *TURNED, "$ two"],
+    ),
+    "a blank, then the same page": (
+        [b"$ one\r\n", PAGER, drawn([]), drawn(PAGED), LEAVE + b"$ two\r\n"],
+        ["$ one", *PAGED, "$ two"],
+    ),
+    "a blank exit once the page has scrolled": (
+        [
+            b"$ one\r\n",
+            b"\x1b[?1049h" + drawn(numbered("row", 8)),
+            b"\x1b[8H\r\nrow 08\r\nrow 09",
+            b"\x1b[2J" + LEAVE + b"$ two\r\n",
+        ],
+        ["$ one", *numbered("row", 10), "$ two"],
+    ),
+}
+
+
 def replayed(tmp_path, scenarios):
     """Each scenario's writes replayed through the replayer in a real terminal."""
     pytest.importorskip("gi", reason="PyGObject not available")
@@ -961,6 +1053,23 @@ def test_the_replayer_keeps_what_clear_and_reset_erase(tmp_path):
     transcripts = replayed(tmp_path, ERASED)
 
     assert transcripts == {name: lines for name, (_, lines) in ERASED.items()}
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_the_replayer_keeps_the_page_a_blank_screen_followed(tmp_path):
+    """As the program leaves the alternate screen, or between two of its pages (#363).
+
+    A blank frame holds no text, so the screen tracker could not take the page before it
+    for one turned, and nothing else emitted it. xterm-r6's rmcup blanks the page before
+    it leaves, and a program that blanked it before `?1049l` lost it the same way,
+    measured against real VTE 0.76.
+    """
+    transcripts = replayed(tmp_path, BLANKED)
+
+    assert transcripts == {name: lines for name, (_, lines) in BLANKED.items()}
 
 
 def test_the_replayer_uses_methods_vte_really_has():
