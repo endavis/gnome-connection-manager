@@ -562,7 +562,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   straight after one shows what an earlier session left there. `AltScreenScanner`
   reports a switch with the chunk it ends, and `TranscriptReplayer._plan` feeds a run
   that is only a switch together with the frame after it, so that no such sample is
-  taken (#340).
+  taken (#340). `TranscriptReplayer._harvest` reads the primary screen's new rows by the
+  cursor's row: at a switch up to it, since output goes on from there once the
+  alternate screen is left, into rows that a screen not yet full has empty, and at the
+  end to a screen below it (#344). Not by the vertical adjustment: ED 3, which `clear`
+  sends, and a reset drop the scrollback even when it is unlimited, measured, and the
+  adjustment then counts from 0 again.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's

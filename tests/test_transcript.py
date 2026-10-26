@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import gettext
 import inspect
+import json
+import os
 import re
+import subprocess
+import sys
 import types
 from pathlib import Path
 
@@ -24,6 +28,7 @@ from gnome_connection_manager.utils.transcript import (
     screen_replaced,
     scroll_shift,
 )
+from tests.test_connections import glib_complaints
 
 # -- restoring the writes a recording was made with ---------------------------
 
@@ -584,6 +589,112 @@ def test_the_replayer_keeps_the_whole_scrollback(app_module):
     assert "set_scrollback_lines(-1)" in body
 
 
+# Each recording replayed through the replayer in a real terminal of 40 by 8, and its
+# transcript printed. HOME is a scratch folder.
+_REPLAY_SCRIPT = r"""
+import json, sys
+recordings, sys.argv = json.loads(sys.argv[1]), ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import GLib, Gtk
+from gnome_connection_manager import app
+
+transcripts = {}
+for name, raw, timing in recordings:
+    def finished(text, name=name):
+        transcripts[name] = text.splitlines()
+        GLib.idle_add(Gtk.main_quit)
+    app.TranscriptReplayer(raw, timing, 40, 8, finished).start()
+    Gtk.main()
+print(json.dumps(transcripts))
+"""
+
+
+def numbered(word, count):
+    return [f"{word} {n:02d}" for n in range(count)]
+
+
+def printed(lines):
+    return b"".join(f"{line}\r\n".encode() for line in lines)
+
+
+PAGER = b"\x1b[?1049h\x1b[H\x1b[2Jpager 1\r\npager 2\r\npager 3"
+PAGED = ["pager 1", "pager 2", "pager 3"]
+LEAVE = b"\x1b[?1049l"
+# What ncurses' clear sends for xterm-256color. ED 3 drops the scrollback, unlimited or not.
+CLEAR = b"\x1b[H\x1b[2J\x1b[3J"
+SESSION = [b"$ one\r\n", PAGER, LEAVE + b"$ two\r\n", b"$ three\r\n"]
+
+REPLAYED = {
+    "a pager on a screen not yet full": (SESSION, ["$ one", *PAGED, "$ two", "$ three"]),
+    "a pager after clear": (
+        [printed(numbered("line", 10)), CLEAR, *SESSION],
+        ["$ one", *PAGED, "$ two", "$ three"],
+    ),
+    # A clear without ED 3 keeps the scrollback, and leaves the cursor at the top.
+    "a pager after a clear that keeps the scrollback": (
+        [printed(numbered("line", 10)), b"\x1b[H\x1b[2J", *SESSION],
+        [*numbered("line", 10), "", "$ one", *PAGED, "$ two", "$ three"],
+    ),
+    "a pager on a full screen": (
+        [printed(numbered("line", 10)), *SESSION],
+        [*numbered("line", 10), "$ one", *PAGED, "$ two", "$ three"],
+    ),
+    "a row half written as a pager starts": (
+        [b"$ sh demo.sh\r\nabc", PAGER, LEAVE + b"def\r\n$ "],
+        ["$ sh demo.sh", *PAGED, "abcdef", "$"],
+    ),
+    # As a program that draws on the primary screen can leave it at the end.
+    "a status line on the last row, the cursor on the first": (
+        [b"$ one\r\n", b"\x1b[8H-- status --\x1b[H"],
+        ["$ one", "", "-- status --"],
+    ),
+    "clear after more than follows it": (
+        [printed(numbered("line", 100)), CLEAR, printed(["$ x", *numbered("late", 5)])],
+        ["$ x", *numbered("late", 5)],
+    ),
+    "reset after more than follows it": (
+        [printed(numbered("line", 30)), b"\x1bc", printed(["$ x", *numbered("late", 3)])],
+        ["$ x", *numbered("late", 3)],
+    ),
+}
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+def test_the_replayer_keeps_every_line_the_primary_screen_showed(tmp_path):
+    """However full the screen was when a full-screen program started (#344).
+
+    A harvest at a switch read to the screen's second last row and counted the rows
+    below the cursor as read, which the screen has empty until it fills, so what was
+    printed into them once the program ended was lost. And the vertical adjustment
+    counts from 0 again once ED 3 or a reset has dropped the scrollback, so an end read
+    from it fell short: a session that ran `clear` lost the lines after it, as many as it
+    had dropped. Measured against real VTE 0.76.
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    recordings = []
+    for index, (name, (writes, _)) in enumerate(REPLAYED.items()):
+        folder = tmp_path / str(index)
+        folder.mkdir()
+        recordings.append([name, *write_recording(folder, [(0.05, chunk) for chunk in writes])])
+    result = subprocess.run(
+        [sys.executable, "-c", _REPLAY_SCRIPT, json.dumps(recordings)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "HOME": str(tmp_path)},
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    transcripts = json.loads(result.stdout.splitlines()[-1])
+    assert transcripts == {name: lines for name, (_, lines) in REPLAYED.items()}
+    assert not glib_complaints(result.stderr), result.stderr[-3000:]
+
+
 def test_the_replayer_uses_methods_vte_really_has():
     """conftest stubs all of gi, so a fake can offer methods the real widget lacks."""
     gi = pytest.importorskip("gi", reason="PyGObject not available")
@@ -595,7 +706,7 @@ def test_the_replayer_uses_methods_vte_really_has():
         "set_scrollback_lines",
         "get_text_format",
         "get_text_range_format",
-        "get_vadjustment",
+        "get_cursor_position",
         "get_window_title",
         "get_column_count",
         "get_row_count",

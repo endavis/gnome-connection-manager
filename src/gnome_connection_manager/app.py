@@ -8744,14 +8744,21 @@ class TranscriptReplayer:
     def _harvest(self, final=False):
         """New primary-screen scrollback since the last harvest.
 
-        Rows are absolute and both ends are inclusive, and the last row is the one the
-        cursor is still on -- so it is left for the final harvest rather than emitted
-        half written.
+        Rows are absolute and both ends are inclusive. A harvest at a switch stops above
+        the cursor's row, which may be half written: once the alternate screen is left,
+        output goes on from there, and into the rows below it, which are empty until the
+        screen has filled. Taken as read, they lost what was printed into them (#344).
+        The final harvest reads to the end of the screen, never more than a screen below
+        the cursor, and a row past the end reads as empty.
+
+        Rows are numbered as the cursor's is, the numbering `get_text_range_format`
+        takes. The vertical adjustment's is not: ED 3, which `clear` sends, drops the
+        scrollback even when it is unlimited, and measured, the adjustment then counts
+        from 0 again. An end read from it fell short, by as many rows as were dropped.
         """
-        adjustment = self._terminal.get_vadjustment()
-        lower, upper = int(adjustment.get_lower()), int(adjustment.get_upper())
-        start = max(self._harvested, lower)
-        end = upper if final else upper - 1
+        _column, row = self._terminal.get_cursor_position()
+        start = self._harvested
+        end = row + self._rows if final else row
         if end <= start:
             return []
         text, _ = self._terminal.get_text_range_format(

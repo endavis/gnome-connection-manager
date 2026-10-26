@@ -303,6 +303,10 @@ It is worth knowing what it can and cannot recover:
 
 - **Anything outside a full-screen application is exact.** Ordinary shell output is
   reconstructed line for line from the terminal's own scrollback, with no guessing.
+- **`clear` and `reset` take ordinary output with them.** Both erase the scrollback, and
+  ordinary output is read back from it only when a full-screen application starts, and
+  once at the end. So a line either one erased is missing, unless a full-screen
+  application started after the line was shown and before it was erased.
 - **Inside a full-screen application it is a best effort.** There is no scrollback on the
   alternate screen, so the only record of what scrolled past is the difference between
   one frame and the next. Content that scrolled, and pages that were turned, come back;
