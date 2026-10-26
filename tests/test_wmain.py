@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from gnome_connection_manager.utils import logpaths, shortcuts
+from gnome_connection_manager.utils.folders import FolderTree
 
 
 class FakeIter:
@@ -5738,6 +5739,26 @@ def test_an_exported_host_keeps_its_tab_name_through_an_import(monkeypatch, tmp_
     assert {h.name: h.tab_name for h in imported} == {
         named.name: "tpl {name} ({folder})",
         "switch": "",
+    }
+
+
+def test_an_export_keeps_the_tab_colours_of_hosts_and_folders_through_an_import(
+    monkeypatch, tmp_path, app_module
+):
+    """A host's own (#350), and its folder's, which the folder tree carries."""
+    colored, plain = make_host(app_module), make_host(app_module)
+    colored.tab_color = "#e01b24"
+    plain.name = "switch"
+    tree = FolderTree()
+    tree.folders[tree.ensure_path("ops")].tab_color = "#3584e4"
+    monkeypatch.setattr(app_module, "folders", tree)
+
+    imported = export_then_import(monkeypatch, tmp_path, app_module, [colored, plain])
+
+    assert {h.name: h.tab_color for h in imported} == {colored.name: "#e01b24", "switch": ""}
+    assert {f.name: f.tab_color for f in app_module.folders.folders.values()} == {
+        "ops": "#3584e4",
+        "prod": "",
     }
 
 

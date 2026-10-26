@@ -564,6 +564,9 @@ def test_a_tab_keeps_the_host_it_was_opened_for(app_module, monkeypatch):
         def set_name(self, name, path):
             self.named = (name, path)
 
+        def set_color(self, color):
+            self.color = color
+
     monkeypatch.setattr(app_module, "NotebookTabLabel", Label)
     host = host_at(app_module, "1. Projects/infrafoundry/ansible")
     wmain = object.__new__(app_module.Wmain)

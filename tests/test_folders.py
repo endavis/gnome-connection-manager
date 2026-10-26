@@ -447,6 +447,39 @@ def test_folder_positions_survive_save_and_load():
     assert not config.has_option(f"folder {unarranged_id}", "position")
 
 
+def test_a_folders_tab_colour_survives_save_and_load_as_tab_color():
+    """Written only where set, as a host's is (#350), and kept as written."""
+    tree = FolderTree()
+    colored_id = tree.ensure_path("ops")
+    plain_id = tree.ensure_path("home")
+    tree.folders[colored_id].tab_color = "#3584E4"
+    config = configparser.RawConfigParser()
+
+    tree.save(config)
+    loaded, _fixes = FolderTree.load(reread(config))
+
+    assert config.get(f"folder {colored_id}", "tab-color") == "#3584E4"
+    assert loaded.folders[colored_id].tab_color == "#3584E4"
+    assert not config.has_option(f"folder {plain_id}", "tab-color")
+    assert loaded.folders[plain_id].tab_color == ""
+
+
+@pytest.mark.parametrize(
+    ("kept", "merged", "after"),
+    [("", "#3584e4", "#3584e4"), ("#e01b24", "#3584e4", "#e01b24"), ("", "", "")],
+)
+def test_merging_two_folders_of_one_name_keeps_a_colour_either_had(kept, merged, after):
+    """The hosts of the folder merged away keep the colour it gave their tabs, where the
+    folder they now share has none of its own to give them (#350)."""
+    tree = FolderTree()
+    tree.folders["o1"] = Folder("o1", "ops", ROOT, tab_color=kept)
+    tree.folders["o2"] = Folder("o2", "ops", ROOT, tab_color=merged)
+
+    tree.repair()
+
+    assert {folder_id: f.tab_color for folder_id, f in tree.folders.items()} == {"o1": after}
+
+
 @pytest.mark.parametrize(
     ("text", "position"),
     [("3", 3), (" 4 ", 4), ("0", 0), ("", None), ("x", None), ("2.5", None), (None, None)],

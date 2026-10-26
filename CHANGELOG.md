@@ -36,6 +36,14 @@ the git log.
   which opens no tab. It is saved as `tab-name` in the host's section of `gcm.conf`. An
   older GCM reads the file and leaves the option out when it saves. Session logs are named
   as before.
+- A host's tabs can carry a colour, a stripe across the top of each. Tick **Tab color** on
+  the host dialog's Properties tab and choose one, or give a folder one with **Tab Color**
+  in its menu, which colours the tabs of every host below it without a colour of its own
+  or a nearer folder's. **No Color** takes a folder's away. Open tabs follow at once. The
+  cluster window's yellow and the orange of a tab that needs attention start just below the
+  stripe, so both still show. A tab without a colour looks as before. It is saved as
+  `tab-color` in the host's or the folder's section of `gcm.conf`, which an older GCM reads
+  and leaves out when it saves.
 
 ### Changed
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the
@@ -47,6 +55,9 @@ the git log.
   keeps its name. Session logs are where they were.
 
 ### Fixed
+- On a dark theme, a tab ticked in the cluster window could not be read: the theme's light
+  text on the yellow. A tab that needs attention was hard to read on its orange. Both
+  marks now have dark text whatever the theme.
 - A folder could end up with two hosts of the same name, and nothing GCM showed told them
   apart: two rows in the tree and two tabs read the same. **Duplicate Host** could give a
   copy a name the folder had once an earlier copy was deleted. A `gcm.conf` edited or

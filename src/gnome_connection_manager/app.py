@@ -117,6 +117,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     logpaths,
     placeholders,
     remotefiles,
+    tabcolors,
     tabnames,
     transcript,
     updates,
@@ -722,6 +723,13 @@ def host_path(host):
     and the cluster window show it beside the tab's name."""
     hosts = [each for filed in groups.values() for each in filed]
     return tabnames.whole_path(configured_host(host, hosts))
+
+
+def host_tab_color(host):
+    """The colour `host`'s tabs are marked with, "" for none (#350): that of the host with
+    its id in the configuration, its own or its folder's, as utils/tabcolors.py finds it."""
+    hosts = [each for filed in groups.values() for each in filed]
+    return tabcolors.tab_color(configured_host(host, hosts), folders)
 
 
 def refile_ambiguous_hosts(groups_by_path, ambiguous_folders):
@@ -1512,6 +1520,33 @@ def inputbox(
     response = msgBox.value if msgBox.run() == Gtk.ResponseType.OK else None
     msgBox.destroy()
     return response
+
+
+# The response of the No Color button choose_tab_color adds. GTK's own are negative.
+NO_COLOR = 1
+
+
+def choose_tab_color(current: str, parent: Gtk.Window | None = None) -> str | None:
+    """A colour for a folder's tabs as `#rrggbb`, "" for none, or None when cancelled (#350).
+
+    GTK's colour chooser, with a No Color button, and starting at `current` where that is a
+    colour.
+    """
+    dialog = Gtk.ColorChooserDialog(title=_("Tab Color"), transient_for=parent)
+    dialog.set_icon_from_file(ICON_PATH)
+    dialog.set_use_alpha(False)
+    dialog.add_button(_("No Color"), NO_COLOR)
+    color = tabcolors.color_of(current)
+    if color:
+        dialog.set_rgba(parse_color_rgba(color))
+    response = dialog.run()
+    chosen = color_to_hex(dialog.get_rgba())
+    dialog.destroy()
+    if response == Gtk.ResponseType.OK:
+        return chosen
+    if response == NO_COLOR:
+        return ""
+    return None
 
 
 def paste_transform(text, single_line: bool = False) -> str:
@@ -3423,6 +3458,12 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.rename-folder")
         menuItem.show()
 
+        # The colour of the tabs of the hosts below the folder (#350).
+        self.popupMenuFolder.mnuFolderColor = menuItem = Gtk.MenuItem(label=_("Tab Color"))
+        self.popupMenuFolder.append(menuItem)
+        menuItem.set_action_name("app.folder-tab-color")
+        menuItem.show()
+
         self.popupMenuFolder.mnuSortFolder = menuItem = Gtk.MenuItem(label=_("Sort by Name"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.sort-folder")
@@ -4001,13 +4042,15 @@ class Wmain(GladeComponent):
         menu, and can be reordered and dragged into another pane. addTab opens a terminal
         through this, and a page of any other kind goes through it too, so that it is a
         tab like the rest. page_terminal is how the rest of GCM tells them apart. `host`
-        is the host the tab is opened for, which name_tabs names it after (#346), and
-        whose whole path it shows where there is room (#347).
+        is the host the tab is opened for, which name_tabs names it after (#346), whose
+        whole path it shows where there is room (#347), and whose colour it is marked with
+        (#350).
         """
         tab = NotebookTabLabel(f"  {title}  ", notebook, page, self.popupMenuTab)
         tab.host = host
         if host is not None:
             tab.set_name(title, host_path(host))
+            tab.set_color(host_tab_color(host))
         page.show_all()
         notebook.append_page(page, tab_label=tab)
         notebook.set_current_page(notebook.page_num(page))
@@ -4704,6 +4747,9 @@ class Wmain(GladeComponent):
         own host too, through the host dialog, as tab_namer says. A tab renamed by hand
         keeps its name, and takes its host's path, as every tab does (#347). The titles of
         the windows that name a tab, and an open cluster window's list, follow it.
+
+        Each tab takes its host's colour again too, so a colour given to a host or to a
+        folder, and a host moved to another folder, reach the open tabs (#350).
         """
         if not self.count:
             return
@@ -4715,6 +4761,7 @@ class Wmain(GladeComponent):
                 host = getattr(tab, "host", None)
                 if host is not None:
                     tab.set_name(name(host), host_path(host))
+                    tab.set_color(host_tab_color(host))
         self.title_windows()
         self.name_cluster_consoles()
 
@@ -4943,7 +4990,7 @@ class Wmain(GladeComponent):
         """Draw the user's eye to a console they are not watching, without stealing focus.
 
         The bell, output stopping out of sight and a session ending all come here (#208),
-        so each is shown the same way: a bold label until the tab is looked at, the taskbar
+        so each is shown the same way: an orange tab until it is looked at, the taskbar
         flag while the window holding the tab is not the active one, and a desktop
         notification if one is wanted. Only the bell can ask for the notification without
         the mark: its two preferences predate the other triggers, which have one each.
@@ -6157,6 +6204,21 @@ class Wmain(GladeComponent):
         if self.apply_folder_edit(lambda: folders.rename(folder.id, name), folder.parent, name):
             self.select_folder_row(folder.id)
 
+    def color_selected_folder(self):
+        """Choose the colour of the selected folder's tabs, or none (#350): those of every
+        host below it without a colour of its own, or a nearer folder's."""
+        iter_ = self.treeServers.get_selection().get_selected()[1]
+        if iter_ is None or not self.is_folder_row(iter_):
+            return
+        folder = folders.folders[self.folder_id_at(iter_)]
+        color = choose_tab_color(folder.tab_color, parent=self.window)
+        if color is None or color == folder.tab_color:
+            return
+        folder.tab_color = color
+        self.updateTree()
+        self.writeConfig()
+        self.select_folder_row(folder.id)
+
     def sort_selected_folder(self):
         """Put the selected folder back in name order, and keep it there as hosts are
         added. Only that folder: its subfolders keep whatever order they were given."""
@@ -6840,6 +6902,7 @@ class Wmain(GladeComponent):
                 self.popupMenuFolder.mnuCopyAddress.hide()
                 self.popupMenuFolder.mnuDup.hide()
                 self.popupMenuFolder.mnuRenameFolder.hide()
+                self.popupMenuFolder.mnuFolderColor.hide()
                 self.prepare_files_items(None)
             else:
                 path, col, cellx, celly = pthinfo
@@ -6849,12 +6912,14 @@ class Wmain(GladeComponent):
                     self.popupMenuFolder.mnuCopyAddress.hide()
                     self.popupMenuFolder.mnuDup.hide()
                     self.popupMenuFolder.mnuRenameFolder.show()
+                    self.popupMenuFolder.mnuFolderColor.show()
                     self.prepare_files_items(None)
                 else:
                     self.popupMenuFolder.mnuEdit.show()
                     self.popupMenuFolder.mnuCopyAddress.show()
                     self.popupMenuFolder.mnuDup.show()
                     self.popupMenuFolder.mnuRenameFolder.hide()
+                    self.popupMenuFolder.mnuFolderColor.hide()
                     self.prepare_files_items(self.get_selected_host())
                 self.popupMenuFolder.mnuDel.show()
                 self.treeServers.grab_focus()
@@ -7198,6 +7263,13 @@ class Whost(GladeComponent):
         self.txtBeforeCommand.set_text(host.before_command)
         self.txtAfterCommand.set_text(host.after_command)
         self.txtTabName.set_text(host.tab_name)
+        # Unticked, the button shows the colour the host's tabs take from its folder, where
+        # one gives them one (#350).
+        own = tabcolors.color_of(host.tab_color)
+        shown = own or tabcolors.folder_color(folders, host.folder)
+        if shown:
+            self.btnTabColor.set_rgba(parse_color_rgba(shown))
+        self.chkTabColor.set_active(bool(own))
         self.fill_type_pages(host)
 
     def update_texttags(self, *args):
@@ -7323,6 +7395,11 @@ class Whost(GladeComponent):
         host.before_command = self.txtBeforeCommand.get_text().strip()
         host.after_command = self.txtAfterCommand.get_text().strip() if kind.opens_tab else ""
         host.tab_name = self.txtTabName.get_text().strip() if kind.opens_tab else ""
+        host.tab_color = (
+            color_to_hex(self.btnTabColor.get_rgba())
+            if kind.opens_tab and self.chkTabColor.get_active()
+            else ""
+        )
         if not self.isNew and group == self.oldGroup:
             # Only while it stays in the same folder: a position means nothing elsewhere.
             host.position = self.oldPosition
@@ -7437,12 +7514,15 @@ class Whost(GladeComponent):
         self.chkCommands.set_sensitive(kind.sends_commands)
         self.txtCommands.set_sensitive(kind.sends_commands and self.chkCommands.get_active())
         # A host that opens no tab has no session to end, so nothing runs after one, and no
-        # tab to name (#349).
+        # tab to name (#349) or to colour (#350).
         self.txtAfterCommand.set_sensitive(kind.opens_tab)
         self.txtTabName.set_sensitive(kind.opens_tab)
+        self.chkTabColor.set_sensitive(kind.opens_tab)
         if not kind.opens_tab:
             self.txtAfterCommand.set_text("")
             self.txtTabName.set_text("")
+            self.chkTabColor.set_active(False)
+        self.btnTabColor.set_sensitive(kind.opens_tab and self.chkTabColor.get_active())
         self.show_type_page(kind, ignored)
 
     # -- Whost.on_cmbType_changed }
@@ -7519,6 +7599,11 @@ class Whost(GladeComponent):
         self.btnBColor.set_sensitive(not widget.get_active())
 
     # -- Whost.on_chkDefaultColors_toggled }
+
+    def on_chkTabColor_toggled(self, widget, *args):
+        """The tab colour is chosen only while ticked, and only for a type with a tab,
+        whose box is greyed otherwise (#350)."""
+        self.btnTabColor.set_sensitive(widget.get_active() and widget.get_sensitive())
 
     # -- Whost.on_btnFColor_clicked {
     def on_btnFColor_clicked(self, widget, *args):
@@ -9142,6 +9227,11 @@ class NotebookTabLabel(Gtk.HBox):
     host = None
     # That host's whole place in the folder tree, host_path (#347), given with its name.
     path = ""
+    # The colour the tab is marked with, "" for none, and the style that draws it, made
+    # when the tab is first given one, so that a tab never given one is drawn as tabs
+    # always were (#350).
+    color = ""
+    color_style = None
 
     def __init__(self, title, owner_, widget_, popup_):
         Gtk.HBox.__init__(self, homogeneous=False, spacing=0)
@@ -9208,6 +9298,28 @@ class NotebookTabLabel(Gtk.HBox):
             self.get_style_context().add_class("attention")
         else:
             self.get_style_context().remove_class("attention")
+
+    def set_color(self, color):
+        """Mark the tab with `color`, its host's or its folder's, or with none for "" (#350).
+
+        A stripe across the top of the tab, from a style of the tab's own, which takes no
+        room. A tab never given a colour has no such style, and is drawn as tabs always
+        were. `colored` starts a mark on the tab below the stripe, in data/style.css.
+        """
+        color = tabcolors.color_of(color)
+        if color == self.color:
+            return
+        self.color = color
+        if self.color_style is None:
+            self.color_style = Gtk.CssProvider()
+            self.get_style_context().add_provider(
+                self.color_style, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+        self.color_style.load_from_data(tabcolors.stripe_css(color).encode())
+        if color:
+            self.get_style_context().add_class("colored")
+        else:
+            self.get_style_context().remove_class("colored")
 
     def on_close_tab(self, widget, notebook, *args):
         if (
@@ -9618,6 +9730,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("duplicate-host", self._on_action_duplicate_host)
         self._create_action("new-folder", self._on_action_new_folder)
         self._create_action("rename-folder", self._on_action_rename_folder)
+        self._create_action("folder-tab-color", self._on_action_folder_tab_color)
         self._create_action("sort-folder", self._on_action_sort_folder)
         self._create_action("expand-groups", self._on_action_expand_groups)
         self._create_action("collapse-groups", self._on_action_collapse_groups)
@@ -9756,6 +9869,7 @@ class GcmApplication(Gtk.Application):
         folder_section = Gio.Menu()
         folder_section.append(_("New Folder"), "app.new-folder")
         folder_section.append(_("Rename Folder"), "app.rename-folder")
+        folder_section.append(_("Tab Color"), "app.folder-tab-color")
         folder_section.append(_("Sort by Name"), "app.sort-folder")
         servers_menu.append_section(None, folder_section)
         address_section = Gio.Menu()
@@ -10093,6 +10207,10 @@ class GcmApplication(Gtk.Application):
     def _on_action_rename_folder(self, action, _param):
         if self._controller is not None:
             self._controller.rename_selected_folder()
+
+    def _on_action_folder_tab_color(self, action, _param):
+        if self._controller is not None:
+            self._controller.color_selected_folder()
 
     def _on_action_sort_folder(self, action, _param):
         if self._controller is not None:

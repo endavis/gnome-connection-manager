@@ -199,6 +199,46 @@ An older GCM, such as 2.1.1, reads the file and names the host's tabs as it alwa
 it saves, it leaves `tab-name` out, so the host has no tab name of its own the next time this
 GCM starts.
 
+## Tab colours
+
+A host's tabs can carry a colour, as a stripe across the top of each. With many tabs open
+across several projects, a colour can be quicker to read than a name. A host can have a
+colour of its own, and a folder can give one to every host in it.
+
+- **A host's own:** tick **Tab color** on the host dialog's Properties tab, below **Tab
+  name**, and choose the colour with the button beside it. Unticked, as it starts, the
+  host's tabs take their colour from its folder, which the button then shows, greyed.
+- **A folder's:** right-click the folder in the tree and choose **Tab Color**, or choose it
+  from the **Servers** menu with the folder selected. Pick a colour and **Select** it, or
+  choose **No Color** to take the folder's away.
+
+A folder's colour reaches the hosts in its subfolders too. A host's own colour comes first,
+then that of the nearest folder above the host that has one, and a host with neither has
+none. So a project's folder can colour all its hosts, and one host among them a colour of
+its own.
+
+Saving the dialog, or choosing a folder's colour, colours the open tabs at once, and a host
+moved to another folder takes that folder's colour. A tab you have renamed keeps its
+host's colour. **Duplicate Host**'s copy has the same colour, and export and import carry
+a host's colour and a folder's.
+
+The stripe leaves the tab's other marks as they were: the yellow of a tab ticked in the
+[cluster window](TERMINAL-USAGE.md#typing-into-several-consoles-at-once), the orange of
+[a tab that needs your attention](TERMINAL-USAGE.md#when-a-tab-needs-your-attention), the
+grey of an ended session, and the theme's own mark on the tab in use, along its bottom.
+On a tab so marked, the mark starts just below the stripe, so that a yellow stripe still
+shows on a tab ticked in the cluster window. A tab without a colour looks as it always
+has.
+
+A web host opens no tab, so its dialog greys **Tab color** and unticks it.
+
+In `gcm.conf` it is `tab-color = #e01b24`, in the host's own section or in the folder's
+`[folder <id>]` section, written only when set. A value GCM cannot read as a colour, a `#`
+and three or six hexadecimal digits, colours nothing, and is kept as it is written. An
+older GCM, such as 2.1.1, reads the file and draws no colour. When it saves, it leaves
+`tab-color` out of the hosts and the folders, so they have no colour the next time this
+GCM starts.
+
 ## Commands on this computer
 
 A host can run a command on your computer before connecting, and another after

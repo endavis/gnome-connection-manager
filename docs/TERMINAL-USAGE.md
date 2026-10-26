@@ -572,8 +572,9 @@ exit** is set, and counts the consoles in every window.
 **Servers → Cluster** (`Ctrl+Shift+U`) opens a window listing your open consoles, each by its
 tab's name with where its host is filed under it, as the open-console list has them. Tick the
 ones to type into, or use **Select all**, **Clear selection** and **Invert selection**. A
-ticked console's tab is highlighted while the window is open. A tab that holds something
-other than a terminal is not listed.
+ticked console's tab is yellow while the window is open, its text dark whatever the theme,
+and below a [tab colour](HOSTS-AND-FOLDERS.md#tab-colours) where it has one. A tab that
+holds something other than a terminal is not listed.
 
 Type into the box at the bottom and press Enter: the text goes to each ticked console,
 followed by Enter. `Ctrl+Up` and `Ctrl+Down` bring back what you sent from the window,
@@ -593,8 +594,9 @@ the rest. A `{?Label}` is asked for once, for them all.
 ## When a tab needs your attention
 
 A tab you are not watching can ask for your attention in three ways, and GCM shows each the
-same way. The tab's label goes bold, the
-[open-console list](#finding-a-console-among-many) shows the same mark, and the window is
+same way. The tab turns orange, its text dark whatever the theme, and below a
+[tab colour](HOSTS-AND-FOLDERS.md#tab-colours) where it has one. The
+[open-console list](#finding-a-console-among-many) shows its name in bold, and the window is
 flagged in the taskbar if GCM is not the active window.
 
 - **The bell.** A program rings it with `\a`. `codex` does when it finishes a turn, and a
