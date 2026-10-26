@@ -88,6 +88,10 @@ the git log.
 - **Save Transcript** left out the last page of a full-screen application that blanked the
   screen before leaving it, as one does under `TERM=xterm-r6` or `rxvt`. A blank screen
   between two pages lost the first of them the same way. It keeps both now.
+- **Save Transcript** replayed a session at the size the screen had room for, not at the
+  tab's, where the tab was the larger: a tab zoomed out, or a screen scaled up. A
+  full-screen application's screens then wrapped and overwrote one another, and none of
+  their lines came back. It replays at the tab's size now, whatever the screen.
 
 ## [2.1.1] - 2026-10-24
 

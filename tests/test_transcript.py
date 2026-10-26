@@ -1072,6 +1072,89 @@ def test_the_replayer_keeps_the_page_a_blank_screen_followed(tmp_path):
     assert transcripts == {name: lines for name, (_, lines) in BLANKED.items()}
 
 
+# A frame of a full-screen program, every row numbered and written at its own place,
+# replayed through the replayer at a grid 10 columns and 10 rows larger than the screen
+# holds at the replay's own cell. Prints the grid asked for and the one the replay's
+# terminal took, the rows drawn, and the transcript.
+_OVERSIZED_SCRIPT = r"""
+import json, os, sys
+folder, sys.argv = sys.argv[1], ["gcm"]
+import gi
+gi.require_version("Gdk", "3.0"); gi.require_version("Gtk", "3.0")
+gi.require_version("Vte", "2.91")
+from gi.repository import Gdk, GLib, Gtk, Vte
+from gnome_connection_manager import app
+
+window, terminal = Gtk.OffscreenWindow(), Vte.Terminal()
+window.add(terminal)
+window.show_all()
+screen = Gdk.Display.get_default().get_monitor(0).get_geometry()
+columns = screen.width // terminal.get_char_width() + 10
+rows = screen.height // terminal.get_char_height() + 10
+window.destroy()
+
+drawn = [f"row {row:03d} " + "-" * (columns - 10) + "|" for row in range(1, rows + 1)]
+frame = b"\x1b[?1049h\x1b[H\x1b[2J" + b"".join(
+    f"\x1b[{row};1H{line}".encode() for row, line in enumerate(drawn, 1)
+)
+chunks = [b"$ program\r\n", frame, b"\x1b[?1049l$ "]
+raw, timing = os.path.join(folder, "s.raw"), os.path.join(folder, "s.timing")
+with open(raw, "wb") as handle:
+    handle.write(b"".join(chunks))
+with open(timing, "w") as handle:
+    handle.writelines(f"0.050000 {len(chunk)}\n" for chunk in chunks)
+
+result = {}
+def finished(text):
+    result["lines"] = text.splitlines()
+    GLib.idle_add(Gtk.main_quit)
+replayer = app.TranscriptReplayer(raw, timing, columns, rows, finished)
+replayer.start()
+result["grid"] = [replayer._terminal.get_column_count(), replayer._terminal.get_row_count()]
+Gtk.main()
+print(json.dumps({"asked": [columns, rows], "drawn": drawn, **result}))
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+@pytest.mark.parametrize(
+    "scales",
+    [{}, {"GDK_SCALE": "2", "GDK_DPI_SCALE": "2"}],
+    ids=["unscaled", "both scales at 2"],
+)
+def test_the_replayer_keeps_a_grid_larger_than_the_screen(tmp_path, scales):
+    """A frame drawn for the tab's grid comes back whole, whatever the screen holds (#365).
+
+    The replay's terminal was in a window, which GTK holds to the screen's size, and its
+    grid shrank with it. A full-screen program's frames then wrapped and overwrote one
+    another. Measured, a tab of 274 by 71 replayed at 239 by 63 on a 1920x1080 screen,
+    and none of the frame's rows came back.
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in ("GDK_SCALE", "GDK_DPI_SCALE")
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", _OVERSIZED_SCRIPT, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**environment, **scales, "HOME": str(tmp_path)},
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert not glib_complaints(result.stderr), result.stderr[-3000:]
+    replay = json.loads(result.stdout.splitlines()[-1])
+    assert replay["grid"] == replay["asked"]
+    assert replay["lines"] == ["$ program", *replay["drawn"], "$"]
+
+
 def test_the_replayer_uses_methods_vte_really_has():
     """conftest stubs all of gi, so a fake can offer methods the real widget lacks."""
     gi = pytest.importorskip("gi", reason="PyGObject not available")
@@ -1087,6 +1170,9 @@ def test_the_replayer_uses_methods_vte_really_has():
         "get_window_title",
         "get_column_count",
         "get_row_count",
+        "get_preferred_width",
+        "get_preferred_height",
+        "set_size_request",
         "feed",
     ):
         assert hasattr(Vte.Terminal, name), f"Vte.Terminal has no {name}"

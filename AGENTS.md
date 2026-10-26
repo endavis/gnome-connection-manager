@@ -583,7 +583,14 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `screen_replaced` needs, so a program that blanked its page before leaving the
   alternate screen, as xterm-r6's rmcup does, lost it, and a blank between two pages
   lost the first, measured. A frame with a line or two of text still replaces a page
-  without emitting it.
+  without emitting it. `TranscriptReplayer.start` puts its terminal in a
+  `Gtk.OffscreenWindow`, which no screen holds to its size (#365). GTK holds a window to
+  the screen's size, VTE's grid shrinks with its allocation, and `get_text_format` reads
+  only as far as that reaches: measured, a tab of 274 by 71 replayed at 239 by 63 on a
+  1920x1080 screen, and none of a full-screen frame's rows came back. An offscreen
+  window gives the terminal its least size, a grid of 2 by 1, so once it is shown the
+  grid is set again and the terminal asks for its natural size, which `check_resize`
+  applies before the window is hidden.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's

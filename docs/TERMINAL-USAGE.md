@@ -322,8 +322,9 @@ It is worth knowing what it can and cannot recover:
   bars that were on it appear in the transcript; they were on the screen. So is the last
   page of an application that blanks the screen before it leaves, as one does under
   `TERM=xterm-r6` or `rxvt`.
-- **The terminal's current size is used.** A session that was resized part-way through
-  replays at today's size, and long lines may wrap differently than they did.
+- **The terminal's current size is used**, however much larger it is than the screen, as
+  a tab zoomed out can be. A session that was resized part-way through replays at today's
+  size, and long lines may wrap differently than they did.
 
 Replay takes a while on a long session. The terminal parses about 60 frames a second and
 feeding it faster just makes it skip frames, so the progress dialog can cancel — you get
