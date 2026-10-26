@@ -8698,7 +8698,10 @@ class TranscriptReplayer:
         if not self._runs:
             self._finish()
             return
-        self._window = Gtk.Window()
+        # Offscreen, as GTK holds a window to the screen's size, and the terminal's grid
+        # with it. Measured, a tab of 274 by 71 replayed at 239 by 63 on a 1920x1080
+        # screen, and none of a full-screen frame's rows came back (#365).
+        self._window = Gtk.OffscreenWindow()
         self._terminal = Vte.Terminal()
         self._terminal.set_size(self._columns, self._rows)
         # The primary-screen transcript *is* this scrollback, so nothing may fall off
@@ -8706,9 +8709,20 @@ class TranscriptReplayer:
         # limit" -- keeps nothing at all, silently emptying the result.
         self._terminal.set_scrollback_lines(-1)
         self._window.add(self._terminal)
-        # Measured: an unrealised terminal, `realize()` alone and a Gtk.OffscreenWindow
-        # all extract nothing on the alternate screen. Shown once, then hidden, works.
+        # Measured: an unrealised terminal and `realize()` alone extract nothing on the
+        # alternate screen. Shown once, then hidden, works.
         self._window.show_all()
+        # An offscreen window gives the terminal its least size, a grid of 2 by 1, and
+        # the alternate screen is read only as far as the terminal's allocation reaches.
+        # The cell the grid is made of is known once the terminal is shown, so the grid
+        # is set again then, and the terminal asks for all of it. Measured, without
+        # `check_resize` the hidden window kept the allocation of 2 by 1, and one row
+        # of a frame came back.
+        self._terminal.set_size(self._columns, self._rows)
+        _minimum, width = self._terminal.get_preferred_width()
+        _minimum, height = self._terminal.get_preferred_height()
+        self._terminal.set_size_request(width, height)
+        self._window.check_resize()
         self._window.hide()
         self._handler = self._terminal.connect("window-title-changed", self._on_title)
         GLib.idle_add(self._step)
