@@ -78,8 +78,13 @@ the git log.
   as `less` or `vim`, when the application started before the screen had filled, as it
   can in a new tab or after `clear`. After `clear` or `reset` it also dropped lines from
   the end of the session, all of them when fewer followed than were erased, which could
-  leave the transcript empty. It keeps those lines now. What `clear` and `reset`
-  themselves erase is still missing, and the guide now says so.
+  leave the transcript empty. It keeps those lines now.
+- **Save Transcript** left out what `clear` and `reset` erased. Both empty the scrollback,
+  which the transcript was read from only when a full-screen application started, and once
+  at the end. It keeps those lines now. A program that clears only to print its screen
+  again, as Gemini CLI does when its window is resized, is in the transcript once. So is
+  output of 20 words or more printed again straight after `clear`: the copy before `clear`
+  is left out.
 
 ## [2.1.1] - 2026-10-24
 

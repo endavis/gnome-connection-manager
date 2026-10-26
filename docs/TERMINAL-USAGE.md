@@ -303,10 +303,14 @@ It is worth knowing what it can and cannot recover:
 
 - **Anything outside a full-screen application is exact.** Ordinary shell output is
   reconstructed line for line from the terminal's own scrollback, with no guessing.
-- **`clear` and `reset` take ordinary output with them.** Both erase the scrollback, and
-  ordinary output is read back from it only when a full-screen application starts, and
-  once at the end. So a line either one erased is missing, unless a full-screen
-  application started after the line was shown and before it was erased.
+- **What `clear` and `reset` erase is kept.** Both empty the scrollback, so the
+  transcript reads what each is about to erase before it does. Some programs clear only
+  to print the same screen again, as Gemini CLI does when its window is resized. Output
+  that begins with 20 words or more of what a clear erased is taken for such a redraw,
+  and the erased lines it prints again are left out, so the screen is in the transcript
+  once. Erased lines it does not print again are kept. The price is that output of 20
+  words or more printed again straight after `clear`, the same file shown twice, say, is
+  in the transcript once, as its second copy.
 - **Inside a full-screen application it is a best effort.** There is no scrollback on the
   alternate screen, so the only record of what scrolled past is the difference between
   one frame and the next. Content that scrolled, and pages that were turned, come back;

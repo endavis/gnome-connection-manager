@@ -567,7 +567,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   alternate screen is left, into rows that a screen not yet full has empty, and at the
   end to a screen below it (#344). Not by the vertical adjustment: ED 3, which `clear`
   sends, and a reset drop the scrollback even when it is unlimited, measured, and the
-  adjustment then counts from 0 again.
+  adjustment then counts from 0 again. What they drop is read before they go in (#362):
+  `_plan` cuts a primary run before each of `ERASES` with `split_at_erases`, and
+  `_harvest_erased` reads up to the cursor for ED 3 and a screen below it for a reset.
+  It keeps those rows waiting in `_erased`, and `_keep` adds them with the lines after
+  them, less what `unreprinted` finds those print again. Gemini CLI clears and prints its
+  screen again on every resize, measured, so keeping all of it put the screen in one
+  transcript 17 times. A redraw is told by its first `REPRINT_WORDS` words, and a line
+  goes when each of its words is in a run of `RUN_WORDS` that the redraw prints. Words,
+  so that a redraw at another width still matches, and anywhere in the redraw, since
+  Gemini CLI printed its screen twice after some clears, measured: matched in one
+  stretch, its screen was in the transcript 8 times.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's
