@@ -1183,6 +1183,34 @@ def draw_mount_mark(_column, cell, model, iter_, *_data):
         cell.set_property("text", marked_name(model.get_value(iter_, 0), folder))
 
 
+def row_color(model, iter_):
+    """The colour the tree's row shows (#358): a host's, as its tabs take it, its own or
+    its folder's, or a folder's, as it gives it to the hosts in it. "" for none."""
+    host = model.get_value(iter_, 1)
+    if host is not None:
+        return tabcolors.tab_color(host, folders)
+    return tabcolors.folder_color(folders, model.get_value(iter_, 4))
+
+
+def marked_markup(text, color, background):
+    """`text` as markup, after the square of `color` on a patch of `background`, as the
+    tree and the Hosts menu draw a host or a folder with a colour (#358)."""
+    return f"{tabcolors.mark_markup(color, background)} {GLib.markup_escape_text(text)}"
+
+
+def draw_name(column, cell, model, iter_, *_data):
+    """Draw a row's name after its marks: the square of its colour, on a patch of the
+    row's own background, which shows on the selected row alone (#358), then
+    MOUNTED_MARK, as draw_mount_mark draws it. In the name's own text, so at its size and
+    on its line. A row with no colour is drawn as before."""
+    color = row_color(model, iter_)
+    if not color:
+        draw_mount_mark(column, cell, model, iter_)
+        return
+    text = marked_name(model.get_value(iter_, 0), model.get_value(iter_, 5))
+    cell.set_property("markup", marked_markup(text, color, model.get_value(iter_, 3)))
+
+
 def mount_names(mounts, found):
     """What each of `mounts`, {folder: what is mounted there}, is called: the name of the
     first host `found`, {host: folder}, has mounted there, or else what is mounted."""
@@ -4415,7 +4443,7 @@ class Wmain(GladeComponent):
         column.pack_start(renderer, expand=True)
         column.add_attribute(renderer, "text", 0)
         column.add_attribute(renderer, "cell-background", 3)
-        column.set_cell_data_func(renderer, draw_mount_mark)
+        column.set_cell_data_func(renderer, draw_name)
 
         self.treeServers.set_has_tooltip(True)
         self.treeServers.connect("query-tooltip", self.on_treeServers_tooltip)
@@ -4730,6 +4758,8 @@ class Wmain(GladeComponent):
         mounts, found = self.find_mounts()
         # The Hosts menu's item for each host, which show_mounts marks as the tree's row.
         self.host_items = {}
+        # Its items with a colour's mark, which a change of theme marks again (#358).
+        self.colored_items = {}
         self.add_folder_rows(ROOT_FOLDER, None, self.menuServers, contents, occupied, found)
         self.list_mounts(mounts, found)
 
@@ -4769,14 +4799,17 @@ class Wmain(GladeComponent):
         """A folder's children in their order, subfolders drawn with their own. Until
         someone arranges a folder that is subfolders, then hosts, each by name -- the
         order the tree kept when it was drawn from path strings. Each host mounted is
-        marked, from `found`, {host: where}, in the tree and in the Hosts menu."""
+        marked, from `found`, {host: where}, in the tree and in the Hosts menu, and each
+        host and folder with a colour, as its tabs take it and as a folder gives it (#358)."""
         for child in contents.get(parent_id, []):
             if isinstance(child, Host):
                 folder = mounted_at(child, found)
                 self.treeModel.append(
                     parent_row, [child.name, child, "gtk-network", "#fff", "", folder]
                 )
-                mnuItem = Gtk.MenuItem(label=marked_name(child.name, folder))
+                mnuItem = Gtk.MenuItem(label="")
+                color = tabcolors.tab_color(child, folders)
+                self.label_menu_item(mnuItem, marked_name(child.name, folder), color)
                 self.host_items[child] = mnuItem
                 mnuItem.show()
                 mnuItem.connect(
@@ -4789,12 +4822,30 @@ class Wmain(GladeComponent):
             )
             submenu = parent_menu
             if child.id in occupied:
-                item = Gtk.MenuItem(label=child.name)
+                item = Gtk.MenuItem(label="")
+                self.label_menu_item(item, child.name, tabcolors.folder_color(folders, child.id))
                 submenu = Gtk.Menu()
                 item.set_submenu(submenu)
                 item.show()
                 parent_menu.append(item)
             self.add_folder_rows(child.id, row, submenu, contents, occupied, found)
+
+    def label_menu_item(self, item, text, color):
+        """Label a Hosts menu item `text`, after the square of `color`, as the tree draws
+        it, on a patch of the menu's own background, which shows on a hovered item alone
+        (#358). Measured in Adwaita, an item hovered is #3584e4, the colour the host dialog
+        starts with. An item without a colour is labelled as before.
+
+        An item's colour lasts as long as the item: every change to a colour rebuilds the
+        menu, through updateTree. `color` is one tabcolors read, or ""."""
+        if not color:
+            item.set_label(text)
+            return
+        background = self.menuServers.get_style_context().get_property(
+            "background-color", Gtk.StateFlags.NORMAL
+        )
+        self.colored_items[item] = (text, color)
+        item.get_child().set_markup(marked_markup(text, color, color_to_hex(background)))
 
     def is_folder_row(self, iter_):
         """Folder rows carry no host. This used to be asked as iter_has_child, which
@@ -5822,7 +5873,8 @@ class Wmain(GladeComponent):
             if model.get_value(iter_, 5) != folder:
                 model.set_value(iter_, 5, folder)
                 if host in items:
-                    items[host].set_label(marked_name(host.name, folder))
+                    text = marked_name(host.name, folder)
+                    self.label_menu_item(items[host], text, tabcolors.tab_color(host, folders))
             return False
 
         self.treeModel.foreach(mark)
@@ -6880,6 +6932,11 @@ class Wmain(GladeComponent):
 
     def on_tvServers_style_updated(self, widget, *args):
         self.update_row_color()
+        # And the Hosts menu's marks, on the new theme's background: measured, a change of
+        # theme emits this, the menus already give the new one in it, and a hidden menu's
+        # own style-updated is not emitted (#358).
+        for item, (text, color) in list(getattr(self, "colored_items", {}).items()):
+            self.label_menu_item(item, text, color)
 
     # -- Wmain.on_tvServers_button_press_event {
     def on_tvServers_button_press_event(self, widget, event, *args):

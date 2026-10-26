@@ -44,6 +44,12 @@ the git log.
   stripe, so both still show. A tab without a colour looks as before. It is saved as
   `tab-color` in the host's or the folder's section of `gcm.conf`, which an older GCM reads
   and leaves out when it saves.
+- The server tree and the Hosts menu show a tab colour too, as a small square in that
+  colour before the name. A host's row shows the colour its tabs take, its own or its
+  folder's, and a folder's row the colour it gives the hosts in it. On the selected row,
+  and on the item the pointer is over in the menu, the square sits on a patch of the
+  row's usual background, so it shows when it is the selection's own colour. The tree
+  follows each change at once. A tree with no colour set looks as before.
 
 ### Changed
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the
