@@ -359,13 +359,19 @@ open-console list like any tab. FreeRDP draws it into a window GCM makes for the
   the tab instead. A server that keeps a size of its own shows as much of the desktop as
   fits, unless smart sizing scales it.
 - **The keyboard** goes to the desktop when it would go to a terminal: when its tab is
-  opened or chosen, or the desktop is chosen from the open-console list. The desktop then
-  gets every key, GCM's shortcuts included, as a VNC desktop does. Click elsewhere in
-  GCM, in a terminal, the server tree or a tab strip, and the keyboard comes back.
+  opened or chosen, when the desktop is chosen from the open-console list, and when it is
+  clicked. The desktop then gets every key, GCM's shortcuts included, as a VNC desktop
+  does. Click elsewhere in GCM, in a terminal, the server tree or a tab strip, and the
+  keyboard comes back.
+- **A click** on the desktop, with any of the three buttons, reaches the remote desktop
+  where it was made, and gives the desktop the keyboard, which makes its tab the one in
+  use. Scrolling over it leaves the keyboard where it is. A click that moves the keyboard
+  waits for GCM to move it, and the pointer waits with it, in every program. So should
+  GCM stop responding, such a click holds the pointer still until GCM responds or is
+  ended. A click on the desktop once it has the keyboard does not wait for GCM.
 - **The pointer** reaches the desktop wherever it is over it, and a key pressed while it
   rests there goes to the desktop too, wherever the keyboard is: X gives a key to the
-  window under the pointer. A click on the desktop does not give it the keyboard, so to
-  type into it with the pointer elsewhere, choose its tab.
+  window under the pointer.
 - **Moving the tab** to another pane, or to a window of its own, keeps the session.
 - **Closing the tab** ends FreeRDP.
 - **Where it applies**: only where GCM runs on X11, which FreeRDP needs to draw into a

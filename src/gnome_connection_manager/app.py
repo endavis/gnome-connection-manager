@@ -9528,6 +9528,17 @@ class X11:
         lib.XResizeWindow.argtypes = [display, window, ctypes.c_uint, ctypes.c_uint]
         lib.XSetInputFocus.argtypes = [display, window, ctypes.c_int, ctypes.c_ulong]
         lib.XFlush.argtypes = [display]
+        # ClickToFocus's, on a connection of its own.
+        lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        lib.XOpenDisplay.restype = display
+        lib.XConnectionNumber.argtypes = [display]
+        lib.XGrabButton.argtypes = [display, ctypes.c_uint, ctypes.c_uint, window, ctypes.c_int]
+        # The event mask, the two modes, and the window to confine to and the cursor, XIDs.
+        lib.XGrabButton.argtypes += [ctypes.c_uint] + [ctypes.c_int] * 2 + [window] * 2
+        lib.XUngrabButton.argtypes = [display, ctypes.c_uint, ctypes.c_uint, window]
+        lib.XAllowEvents.argtypes = [display, ctypes.c_int, ctypes.c_ulong]
+        lib.XPending.argtypes = [display]
+        lib.XNextEvent.argtypes = [display, ctypes.POINTER(XEvent)]
         return lib
 
     @contextlib.contextmanager
@@ -9594,6 +9605,147 @@ class X11:
             self.lib.XSetInputFocus(self.xdisplay, xid, revert_to_parent, current_time)
 
 
+class XButtonEvent(ctypes.Structure):
+    """Xlib's XButtonEvent, a press as ClickToFocus reads it."""
+
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("serial", ctypes.c_ulong),
+        ("send_event", ctypes.c_int),
+        ("display", ctypes.c_void_p),
+        ("window", ctypes.c_ulong),
+        ("root", ctypes.c_ulong),
+        ("subwindow", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("x", ctypes.c_int),
+        ("y", ctypes.c_int),
+        ("x_root", ctypes.c_int),
+        ("y_root", ctypes.c_int),
+        ("state", ctypes.c_uint),
+        ("button", ctypes.c_uint),
+        ("same_screen", ctypes.c_int),
+    ]
+
+
+class XEvent(ctypes.Union):
+    """Xlib's XEvent, whose every kind begins with its type and fits in 24 longs."""
+
+    _fields_ = [("type", ctypes.c_int), ("button", XButtonEvent), ("pad", ctypes.c_long * 24)]
+
+
+class ClickToFocus:
+    """A click on an RDP desktop in its tab gives it the keyboard, as one on a terminal
+    does (#373).
+
+    FreeRDP's window takes a press made in it, so GTK never saw one, and the keyboard
+    stayed where it was. So GCM holds the window it gives FreeRDP, `holder`, as a window
+    manager holds a window for click to focus: a passive grab of the buttons, with the
+    pointer synchronous. X then gives GCM a press anywhere inside it first, and keeps the
+    pointer frozen until GCM replays the press, which X then delivers where it was made,
+    as though there had been no grab, a drag's motion and release with it, measured.
+    GCM replays every press it is given, a desktop's or not: until it does, or ends, the
+    pointer is frozen for every program on the display, measured. While a desktop has the
+    keyboard its buttons are let go, as Mutter 46.2 lets go a focused window's, for the
+    enter and leave events a grab sends the window, its source says. A press there has
+    nothing to change, and so needs nothing of GCM.
+
+    On a connection of GCM's own to the display, not GDK's: GDK reads every event on its
+    own, and made none of a press grabbed there, measured, so the pointer stayed frozen
+    with GCM's main loop running. An X error on this one is GDK's handler's to ignore,
+    measured on #227. Its requests are not ordered with GDK's, so GDK's are synced before
+    the first grab, as `holder` must exist by then.
+    """
+
+    # The buttons Mutter 46.2's click to focus grabs, and not the wheel's, 4 to 7:
+    # scrolling over a terminal does not give it the keyboard either.
+    BUTTONS = (1, 2, 3)
+    BUTTON_PRESS, BUTTON_PRESS_MASK, ANY_MODIFIER = 4, 1 << 2, 1 << 15
+    GRAB_MODE_SYNC, GRAB_MODE_ASYNC, REPLAY_POINTER, CURRENT_TIME = 0, 1, 2, 0
+    # Each display's, made for the first desktop on it.
+    made: dict = {}
+
+    @classmethod
+    def on(cls, display):
+        name = display.get_name()
+        if name not in cls.made:
+            cls.made[name] = cls(display)
+        return cls.made[name]
+
+    def __init__(self, display):
+        if X11.lib is None:
+            X11.lib = X11.load()
+        self.lib = X11.lib
+        self.display = display
+        # What a press in each holder calls, by the holder.
+        self.clicked = {}
+        self.xdisplay = self.lib.XOpenDisplay(display.get_name().encode())
+        if not self.xdisplay:
+            logger.warning("A click on an RDP desktop cannot give it the keyboard: no connection")
+            return
+        # Ahead of GDK's events, as the pointer is frozen until a press is replayed.
+        GLib.io_add_watch(
+            self.lib.XConnectionNumber(self.xdisplay),
+            GLib.PRIORITY_HIGH,
+            GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+            self.on_readable,
+        )
+
+    def watch(self, holder, clicked):
+        """Call `clicked` for a press in `holder` while it is held, which it is from now."""
+        self.clicked[holder] = clicked
+        self.display.sync()
+        self.hold(holder, True)
+
+    def forget(self, holder):
+        """`holder` is going, and its grab with it."""
+        self.clicked.pop(holder, None)
+
+    def hold(self, holder, held):
+        """Grab the buttons in `holder`, or let them go."""
+        if not self.xdisplay or holder not in self.clicked:
+            return
+        for button in self.BUTTONS:
+            if held:
+                self.lib.XGrabButton(
+                    self.xdisplay,
+                    button,
+                    self.ANY_MODIFIER,
+                    holder,
+                    False,
+                    self.BUTTON_PRESS_MASK,
+                    self.GRAB_MODE_SYNC,
+                    self.GRAB_MODE_ASYNC,
+                    0,
+                    0,
+                )
+            else:
+                self.lib.XUngrabButton(self.xdisplay, button, self.ANY_MODIFIER, holder)
+        self.lib.XFlush(self.xdisplay)
+
+    def on_readable(self, _fd, condition):
+        if condition & (GLib.IO_HUP | GLib.IO_ERR):
+            # X closed this connection: nothing more can be grabbed, or arrive.
+            self.xdisplay = None
+            return False
+        event = XEvent()
+        while self.lib.XPending(self.xdisplay):
+            self.lib.XNextEvent(self.xdisplay, ctypes.byref(event))
+            if event.type == self.BUTTON_PRESS:
+                # Reported on the window grabbed, as the grab's owner_events is False.
+                self.pressed(event.button.window)
+        return True
+
+    def pressed(self, holder):
+        """Give the keyboard to the desktop pressed in, then the press to FreeRDP."""
+        try:
+            clicked = self.clicked.get(holder)
+            if clicked is not None:
+                clicked()
+        finally:
+            self.lib.XAllowEvents(self.xdisplay, self.REPLAY_POINTER, self.CURRENT_TIME)
+            self.lib.XFlush(self.xdisplay)
+
+
 def can_show_desktops():
     """Whether an RDP desktop can be shown in a tab: only where GCM runs on X11, as
     FreeRDP draws into a window of GCM's only there (#227). On Wayland, GDK's windows have
@@ -9629,7 +9781,8 @@ class RdpDesktop(Gtk.DrawingArea):
     desktop gets every key, as a VNC desktop does (#234). Once GTK's focus moves elsewhere
     in GCM, X's comes back to GCM's window: GTK does not notice FreeRDP has it, measured.
     A key pressed with the pointer on the desktop goes to the desktop whatever has the
-    focus, as X gives it to the window under the pointer within the one that has it.
+    focus, as X gives it to the window under the pointer within the one that has it. A
+    click on the desktop gives it GTK's focus, through ClickToFocus (#373).
     """
 
     def __init__(self, terminal, scrollbar):
@@ -9643,6 +9796,8 @@ class RdpDesktop(Gtk.DrawingArea):
         self.set_no_show_all(True)
         self.x11 = X11(Gdk.Display.get_default())
         self.holder = self.x11.make_window()
+        self.clicks = ClickToFocus.on(Gdk.Display.get_default())
+        self.clicks.watch(self.holder, self.on_clicked)
         # FreeRDP's own window in `holder`, while there is one.
         self.desktop = None
         self.watch = None
@@ -9739,12 +9894,19 @@ class RdpDesktop(Gtk.DrawingArea):
     def on_size_allocate(self, _widget, _allocation):
         self.fit()
 
+    def on_clicked(self):
+        # Not once hidden, as by the session ending while the press waited for GCM.
+        if self.get_mapped():
+            self.grab_focus()
+
     def on_focus_in(self, _widget, _event):
         if self.desktop is not None:
             self.x11.focus(self.desktop)
+        self.clicks.hold(self.holder, False)
         return False
 
     def on_focus_out(self, _widget, _event):
+        self.clicks.hold(self.holder, True)
         # Only for a move within GCM. A window without the keyboard has lost it to
         # another, which GCM must not take back. Not is_active(): GTK says that changes
         # only after this, measured, and GCM took the keyboard back from another window.
@@ -9755,6 +9917,7 @@ class RdpDesktop(Gtk.DrawingArea):
 
     def on_destroy(self, _widget):
         self.stop_watching()
+        self.clicks.forget(self.holder)
         self.x11.destroy(self.holder)
 
 

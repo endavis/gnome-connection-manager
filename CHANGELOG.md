@@ -53,8 +53,8 @@ the git log.
 - An RDP host can show its remote desktop in its tab: choose **In its tab** for
   **Display** on the host dialog's RDP tab. The tab shows FreeRDP's questions while it
   connects, then the desktop at the tab's size, which follows the tab as it changes size.
-  The desktop takes the keyboard when its tab is chosen, and gives it back when you click
-  elsewhere in GCM. The tab can be split, moved between panes and windows, and chosen from
+  The desktop takes the keyboard when its tab is chosen or it is clicked, and gives it
+  back when you click elsewhere in GCM. The tab can be split, moved between panes and windows, and chosen from
   the open-console list like any other. It needs GCM to run on X11. Elsewhere, and with
   Windows Remote Desktop, the host opens in a window of its own as before, and its tab
   says why. **In a window** stays the default.
