@@ -121,6 +121,7 @@ def buttons(widget, found):
             buttons(child, found)
     return found
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 config = app.Wconfig()
 settle()
@@ -188,6 +189,7 @@ def buttons(widget, found):
             buttons(child, found)
     return found
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 area = app.monitor_workarea()
 config = app.Wconfig()
@@ -268,6 +270,7 @@ def lowest_button(window):
     assert found, "no OK or Cancel button in the dialog"
     return max(found)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 area = app.monitor_workarea()
 bottom = area.y + area.height
@@ -342,6 +345,7 @@ def notebook_of(component):
 def labels(nb):
     return [nb.get_tab_label_text(nb.get_nth_page(i)) for i in range(nb.get_n_pages())]
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 settle()
 
@@ -539,6 +543,7 @@ def settle(seconds=2.0):
         Gtk.main_iteration_do(False)
         time.sleep(0.005)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 settle()
 config = app.Wconfig()

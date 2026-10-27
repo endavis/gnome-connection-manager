@@ -880,6 +880,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - **A signal handler's exception does not end a scenario.** PyGObject prints it and
   carries on, measured: the scenario exits 0 having printed OK. So
   `tests/test_console_window.py` also fails on a traceback in the scenario's stderr.
+- **A scenario builds GCM with the update check off**, `app.conf.CHECK_UPDATES = False`.
+  `Wmain` starts the check on a daemon thread 2 s in, and a scenario that ends during its
+  request exits with that thread in C. The registry's open-in-browser scenario did so on
+  every run, measured, and is the one that died of SIGSEGV at exit on CI (#316).
+  `test_no_scenario_runs_the_check` fails on a scenario script that leaves it on.
 - **Test fakes must mirror the real widget API.** `tests/conftest.py` stubs all of `gi`, so a
   fake can define methods the real class lacks and nothing complains — this caused #30
   (`select_none()` on `Vte.Terminal`) and #41 (`set_attention()` on `Gtk.Label`). Several

@@ -681,6 +681,7 @@ from gnome_connection_manager.utils import tabcolors
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.AUTO_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.wMain = w = app.Wmain(application=None)
 w.wMain.show_all()
 STRIPE, GAP = tabcolors.STRIPE, tabcolors.GAP
@@ -962,6 +963,7 @@ from gnome_connection_manager import app
 from gnome_connection_manager.utils import tabcolors
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.conf.LEFT_PANEL_WIDTH = 300
 app.wMain = w = app.Wmain(application=None)
 w.wMain.resize(760, 400)

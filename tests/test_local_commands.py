@@ -27,6 +27,7 @@ from gnome_connection_manager import app
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False  # only the tabs each scenario opens
+app.conf.CHECK_UPDATES = False
 app.conf.AUTO_CLOSE_TAB = 0  # an ended tab stays, to be read
 app.wMain = w = app.Wmain(application=None)
 w.wMain.resize(1200, 800)  # room for every line: a small terminal scrolls the first away

@@ -350,6 +350,7 @@ from gi.repository import Gtk, Vte
 from gnome_connection_manager import app
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.conf.AUTO_CLOSE_TAB = 0
 shown_messages = []
 app.msgbox = lambda text, *args, **kwargs: shown_messages.append(text)

@@ -28,6 +28,7 @@ from gnome_connection_manager import app
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False  # only the tabs each scenario opens
+app.conf.CHECK_UPDATES = False
 app.conf.AUTO_CLOSE_TAB = 0  # an ended tab stays, to be read
 DEFAULT_ATTEMPTS = app.conf.RECONNECT_ATTEMPTS
 app.conf.RECONNECT_ATTEMPTS = 3
