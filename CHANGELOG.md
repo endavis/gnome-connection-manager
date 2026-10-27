@@ -104,6 +104,13 @@ the git log.
   with the request still running inside it. The test that crashed now and then as it
   exited, on CI, ended at that moment. The check now asks in a process of its own, which
   quitting ends.
+- `Ctrl+W`, and **Close Console** in a terminal's menu and the **Terminal** menu, closed
+  the tab but left the program in it running, out of sight, until GCM quit. They now end
+  its session, as the tab's close button does.
+- Closing an RDP tab, reconnecting it or quitting GCM left a folder FreeRDP 3 had mounted
+  in `/tmp`, one for every session, which reading `/tmp` then failed on with `Transport
+  endpoint is not connected` until it was unmounted by hand. GCM now asks FreeRDP to end,
+  and gives it a moment to remove the folder, before closing its tab.
 
 ## [2.1.1] - 2026-10-24
 

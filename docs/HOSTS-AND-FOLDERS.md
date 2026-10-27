@@ -299,7 +299,9 @@ a question about it on a first connection (see
 [A host's first connection](TERMINAL-USAGE.md#a-hosts-first-connection)), a prompt for
 anything the host does not store, and why a connection failed. The tab's session ends
 when FreeRDP exits. Closing FreeRDP's window is a clean exit, and a failed connection is
-not (see [When a session ends](TERMINAL-USAGE.md#when-a-session-ends)).
+not (see [When a session ends](TERMINAL-USAGE.md#when-a-session-ends)). Closing the tab,
+reconnecting it, or quitting GCM asks FreeRDP to end and gives it a moment to, so that
+FreeRDP 3 removes the folder it mounts in `/tmp` for files copied through the clipboard.
 
 The port is 3389 unless you change it, and the rest of the host goes to FreeRDP:
 

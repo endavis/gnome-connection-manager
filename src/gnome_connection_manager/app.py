@@ -52,6 +52,7 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -413,6 +414,12 @@ DESKTOP_POLL_MS = 100
 # a size of its own makes other than the tab's: 0.02 s after it appeared, measured against
 # FreeRDP's shadow server on this computer. A server farther away answers later.
 DESKTOP_SETTLE = 5
+# Seconds a session's programs asked to end, such as FreeRDP, are given to do so before
+# their tab hangs up on them anyway (#371). FreeRDP 3 ended within 40 ms, measured. GCM
+# waits without running its main loop, since the hangup follows once the wait is over.
+END_WAIT = 1.0
+# How often, in seconds, they are checked for having ended meanwhile.
+END_POLL = 0.005
 
 _COPY = ["copy"]
 _PASTE = ["paste"]
@@ -2057,7 +2064,41 @@ def note_child_pid(terminal, pid, error, _user_data=None):
     terminal.child_pid = pid if error is None and pid > 0 else None
 
 
+def end_programs(terminals):
+    """Ask what each terminal's session runs that its type asks to end, by SIGTERM, and
+    wait up to END_WAIT seconds in all for it to end (#371).
+
+    What ends a session otherwise is a hangup. VTE sends SIGHUP to a terminal's child as
+    it destroys the terminal, and ssh.expect and the relay, ended so, hang up the program
+    they run. GCM's exit hangs up every tab, and a spawn the one it replaces. FreeRDP 3
+    dies of a hangup with its clipboard's files still mounted in /tmp, measured, where
+    SIGTERM has it unmount them first. It is found among the tab's processes by name, as
+    a host's commands after login find ssh (#312), since the script or the relay can come
+    between. A terminal whose session has ended has no child_pid.
+    """
+    asked = []
+    for terminal in terminals:
+        root = getattr(terminal, "child_pid", None)
+        host = getattr(terminal, "host", None)
+        if root is None or host is None:
+            continue
+        for name in connections.for_host(host).asked_to_end:
+            pid = afterlogin.find_program(root, name)
+            if pid is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGTERM)
+                asked.append(pid)
+    deadline = time.monotonic() + END_WAIT
+    while True:
+        asked = [pid for pid in asked if not afterlogin.ended(pid)]
+        if not asked or time.monotonic() >= deadline:
+            return
+        time.sleep(END_POLL)
+
+
 def vte_run(terminal, command, arg=None, environment=None):
+    # A spawn replaces the session the terminal ran, as Reconnect's does, hanging it up.
+    end_programs([terminal])
     terminal.child_pid = None
     term_type = (
         terminal.host.term
@@ -3302,6 +3343,10 @@ class Wmain(GladeComponent):
             notebook = page.get_parent() if page is not None else None
             if notebook is not None:
                 notebook.remove_page(notebook.page_num(page))
+                # As the tab's close button does, which is what ends its session. Only
+                # taken out of its notebook, a page lived on, held by the handlers on its
+                # widgets, and its session ran on unseen until GCM exited, measured (#374).
+                page.destroy()
             return True
         elif item == "W":  # TO A WINDOW OF ITS OWN, OR BACK, whatever the tab holds (#255)
             self.toggle_console_window(self.get_context_tab_widget())
@@ -3846,6 +3891,9 @@ class Wmain(GladeComponent):
         `status` is the wait status VTE reports with the signal, which Close console
         needs to tell a clean exit from a failed one (#210).
         """
+        # Reaped, so its pid may be another process's by the time the tab closes and
+        # asks its session's programs to end (#371).
+        terminal.child_pid = None
         self.stop_commands(terminal)
         desktop = getattr(terminal, "desktop", None)
         if desktop is not None:
@@ -4261,6 +4309,10 @@ class Wmain(GladeComponent):
                 if kind.in_tab(host, connection_programs()) and elsewhere is None:
                     v.desktop = RdpDesktop(v, scrollbar)
                     scrollPane.pack_start(v.desktop, True, True, 0)
+            # Closing the tab, or its window, destroys the page, and the page's handlers
+            # run before it destroys the terminal, whose child VTE then hangs up. So the
+            # programs the session's type asks to end are asked here (#371).
+            scrollPane.connect("destroy", lambda _page: end_programs([v]))
 
             v.connect("bell", self.on_terminal_bell)
             v.connect("contents-changed", self.on_terminal_contents_changed)
@@ -4492,16 +4544,23 @@ class Wmain(GladeComponent):
         run_in_background(local_command(host, host.after_command), exited)
 
     def end_sessions(self):
-        """Run the command after disconnecting for each session still open (#238).
+        """End each session still open, as GCM quits: ask the programs its type asks to
+        end to do so (#371), and run the command after disconnecting (#238).
 
         Measured, quitting by Ctrl+Q ends GCM with no session's end reported, while
         closing the window reports each, with status 9. session_ended runs a host's
         command once, whichever comes first. Every window's, console windows' too (#255).
+        Ctrl+Q destroys no tab: GCM's exit is what hangs up their sessions, so nothing
+        else asks their programs to end first.
         """
-        for notebook in self.console_notebooks():
-            for index in range(notebook.get_n_pages()):
-                page = notebook.get_nth_page(index)
-                self.session_ended(page_terminal(page) or page)
+        pages = [
+            notebook.get_nth_page(index)
+            for notebook in self.console_notebooks()
+            for index in range(notebook.get_n_pages())
+        ]
+        end_programs([page_terminal(page) for page in pages])
+        for page in pages:
+            self.session_ended(page_terminal(page) or page)
 
     def send_data(self, terminal, data):
         vte_feed(terminal, f"{data}\r")

@@ -109,6 +109,26 @@ def text(name):
     whole, _ = terminal.get_text_range_format(Vte.Format.TEXT, 0, 0, row, 10000)
     return whole or ""
 
+def shell_of(name):
+    pid = page_of(name).get_children()[0].child_pid
+    assert pid, "%s's shell never started" % name
+    return pid
+
+def ended(pid, seconds=5):
+    # Gone, or a zombie not reaped yet.
+    def over():
+        try:
+            with open("/proc/%d/stat" % pid) as file:
+                return file.read().rsplit(")", 1)[1].split()[0] == "Z"
+        except FileNotFoundError:
+            return True
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if over():
+            return True
+        pump(0.05)
+    return over()
+
 if scenario == "clone-before-any-menu":
     open_tabs("A", "B", "C")
     use("B")
@@ -136,6 +156,18 @@ elif scenario == "close-after-a-dismissed-menu":
     application._on_action_console_close(None, None)
     pump()
     assert names() == [["A"]], names()
+
+elif scenario == "close-ends-the-session-it-closes":
+    # Only taken out of its notebook, the tab's page lived on, and its shell ran on
+    # unseen until GCM exited, measured (#374). The other tab's runs on.
+    open_tabs("A", "B")
+    use("B")
+    shells = {name: shell_of(name) for name in ("A", "B")}
+    application._on_action_console_close(None, None)
+    pump()
+    assert names() == [["A"]], names()
+    assert ended(shells["B"]), "B's shell outlived its tab"
+    assert not ended(shells["A"], 0), "A's shell ended with B's tab"
 
 elif scenario == "clone-after-a-dismissed-menu":
     open_tabs("A", "B", "C")
@@ -187,9 +219,12 @@ elif scenario.endswith("-from-the-menu-of-a-terminal-in-the-other-pane"):
         assert "GCM-PASTED" in text("B"), text("B")
         assert "GCM-PASTED" not in text("A"), text("A")
     elif action == "close":
+        shells = {name: shell_of(name) for name in ("A", "B")}
         application._on_action_console_close(None, None)
         pump()
         assert names() == [["A"], []], names()
+        assert ended(shells["B"]), "B's shell outlived its tab"
+        assert not ended(shells["A"], 0), "A's shell ended with B's tab"
     elif action == "clear":
         application._on_action_console_reset_clear(None, None)
         pump()
@@ -231,6 +266,7 @@ print("OK")
         "clone-before-any-menu",
         "paste-after-a-dismissed-menu",
         "close-after-a-dismissed-menu",
+        "close-ends-the-session-it-closes",
         "clone-after-a-dismissed-menu",
         "an-item-chosen-from-a-tab-menu",
         "clone-in-the-second-pane",
