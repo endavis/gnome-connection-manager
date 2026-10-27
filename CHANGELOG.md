@@ -50,6 +50,14 @@ the git log.
   and on the item the pointer is over in the menu, the square sits on a patch of the
   row's usual background, so it shows when it is the selection's own colour. The tree
   follows each change at once. A tree with no colour set looks as before.
+- An RDP host can show its remote desktop in its tab: choose **In its tab** for
+  **Display** on the host dialog's RDP tab. The tab shows FreeRDP's questions while it
+  connects, then the desktop at the tab's size, which follows the tab as it changes size.
+  The desktop takes the keyboard when its tab is chosen, and gives it back when you click
+  elsewhere in GCM. The tab can be split, moved between panes and windows, and chosen from
+  the open-console list like any other. It needs GCM to run on X11. Elsewhere, and with
+  Windows Remote Desktop, the host opens in a window of its own as before, and its tab
+  says why. **In a window** stays the default.
 
 ### Changed
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the

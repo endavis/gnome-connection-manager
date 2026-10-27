@@ -289,7 +289,8 @@ would pass the quotes along too. Anything else in braces is left as it is, so
 ## Remote desktop hosts
 
 A host of type **rdp** opens a remote desktop through FreeRDP, in a window of FreeRDP's
-own. GCM runs `xfreerdp3`, FreeRDP 3's client, or `xfreerdp` where only FreeRDP 2 is
+own, or in the host's tab (see [The desktop in its tab](#the-desktop-in-its-tab)). GCM
+runs `xfreerdp3`, FreeRDP 3's client, or `xfreerdp` where only FreeRDP 2 is
 installed. On Ubuntu they come from the `freerdp3-x11` and `freerdp2-x11` packages. With
 neither installed, GCM says so and opens nothing.
 
@@ -315,13 +316,13 @@ gives FreeRDP, before the extra arguments, which can still ask for anything else
 
 | Setting | Default | FreeRDP option |
 |---|---|---|
-| **Display**: **In a window**, **Full screen**, or **Full screen on all monitors** | In a window | none, `/f`, or `/f /multimon` |
+| **Display**: **In a window**, **In its tab**, **Full screen**, or **Full screen on all monitors** | In a window | none, `/parent-window:` and `/size:`, `/f`, or `/f /multimon` |
 | **Resize with the window**: FreeRDP asks the server to resize the remote desktop as you resize its window | on | `/dynamic-resolution` |
 | **Size**: a width and height, such as `1920x1080`, or a share of the screen, such as `80%` | empty: FreeRDP's own, 1024x768 | `/size:` |
 | **Desktop scale**: the remote desktop's text and icons drawn larger, as a percentage from 100 to 500 | empty: the server's own | `/scale-desktop:` |
 
-- **Size** applies in a window. Full screen is as large as the screen whatever the size
-  says.
+- **Size** applies in a window. In its tab, the desktop starts at the tab's size, and full
+  screen is as large as the screen, whatever the size says.
 - The dialog refuses a size or scale FreeRDP would refuse. Each side of a size runs from
   200 to 32766 pixels, and a share of the screen from 1% to 100%. FreeRDP also refuses a
   share that comes to under 200 pixels on the screen it opens on.
@@ -338,6 +339,39 @@ gives FreeRDP, before the extra arguments, which can still ask for anything else
 An RDP host sends no commands after login, and its dialog greys them. Its tab runs
 FreeRDP, which has no shell to run them, and a command typed while FreeRDP asks
 something would be taken for the answer, to its certificate question or as the password.
+
+### The desktop in its tab
+
+With **Display** set to **In its tab**, the remote desktop shows in the host's tab, where
+it can be split beside other consoles, moved between panes and windows, and chosen from the
+open-console list like any tab. FreeRDP draws it into a window GCM makes for the tab.
+
+- **While it connects**, the tab shows FreeRDP's terminal, as it does for a window. The
+  certificate question and any prompt are answered there, and nothing is shown over
+  them. The desktop takes the terminal's place once FreeRDP shows it. When the session
+  ends, the terminal comes back with what FreeRDP printed last, and Reconnect brings the
+  desktop back.
+- **Its size**: the desktop starts at the tab's size. With **Resize with the window** on,
+  FreeRDP asks the server to resize it as the tab changes size, with the window or a
+  split. With `/smart-sizing` in the extra arguments, the desktop's image is scaled to
+  the tab instead. A server that keeps a size of its own shows as much of the desktop as
+  fits, unless smart sizing scales it.
+- **The keyboard** goes to the desktop when it would go to a terminal: when its tab is
+  opened or chosen, or the desktop is chosen from the open-console list. The desktop then
+  gets every key, GCM's shortcuts included, as a VNC desktop does. Click elsewhere in
+  GCM, in a terminal, the server tree or a tab strip, and the keyboard comes back.
+- **The pointer** reaches the desktop wherever it is over it, and a key pressed while it
+  rests there goes to the desktop too, wherever the keyboard is: X gives a key to the
+  window under the pointer. A click on the desktop does not give it the keyboard, so to
+  type into it with the pointer elsewhere, choose its tab.
+- **Moving the tab** to another pane, or to a window of its own, keeps the session.
+- **Closing the tab** ends FreeRDP.
+- **Where it applies**: only where GCM runs on X11, which FreeRDP needs to draw into a
+  window of GCM's. Elsewhere the host opens in FreeRDP's own window, and the first line of
+  its tab says why. Under WSLg, GTK runs GCM on Wayland whenever `WAYLAND_DISPLAY` is set.
+  Starting GCM with `GDK_BACKEND=x11` runs it on WSLg's X server instead, which was not
+  tried with a desktop in a tab. With **Windows Remote Desktop** chosen, the host opens in
+  Remote Desktop Connection's own window, and its tab says that too.
 
 ### Windows Remote Desktop under WSL
 

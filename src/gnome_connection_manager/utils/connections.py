@@ -54,6 +54,16 @@ def N_(message: str) -> str:
 
 
 @dataclass(frozen=True)
+class TabWindow:
+    """The X window an RDP host's desktop is drawn in, inside its tab, and the tab's size
+    in pixels, as FreeRDP takes them (#227)."""
+
+    xid: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
 class Programs:
     """What a command needs from outside this module. app.py fills it in for each spawn."""
 
@@ -64,6 +74,9 @@ class Programs:
     # The RDP client Preferences chose: "freerdp", or "mstsc" for Windows Remote Desktop,
     # which an RDP host opens in only where it is found (#283).
     rdp_client: str = "freerdp"
+    # Where an RDP host shown in its tab is drawn, or None where it opens in a window of
+    # its own: before its tab exists, and where GCM does not run on X11 (#227).
+    tab_window: TabWindow | None = None
 
 
 @dataclass(frozen=True)
@@ -316,6 +329,11 @@ class Rdp(ConnectionType):
     """FreeRDP shows the desktop in a window of its own. The tab shows what it prints,
     takes its questions and ends with its status (#225).
 
+    Or in the tab itself, for a host whose Display says so, where GCM runs on X11 (#227).
+    FreeRDP draws into a window of GCM's, given as `/parent-window:`, which app.py puts
+    in the tab's place once FreeRDP's own window appears in it. Its questions come before
+    that, in the terminal as ever. Elsewhere such a host opens in a window.
+
     Or Windows Remote Desktop does, where Preferences chose it and WSL's interop finds it
     (#283). Its tab shows nothing, and ends when it exits. Closing the tab leaves it
     running, measured (#285). It exits 0 however its session ends, a connection that
@@ -336,6 +354,7 @@ class Rdp(ConnectionType):
             "window",
             choices=(
                 ("window", N_("In a window")),
+                ("tab", N_("In its tab")),
                 ("full-screen", N_("Full screen")),
                 ("all-monitors", N_("Full screen on all monitors")),
             ),
@@ -380,6 +399,26 @@ class Rdp(ConnectionType):
         # What mstsc_arguments never gives Windows Remote Desktop.
         return frozenset({"credentials", "arguments", "resize", "scale"})
 
+    def in_tab(self, host, programs: Programs) -> bool:
+        """Whether the host's desktop is to be shown in its tab (#227): its Display says
+        so, and FreeRDP is the client. Windows Remote Desktop draws in a window of its own
+        whatever it is given. Where GCM can show it there, it is app.py's to tell."""
+        return RDP.settings_of(host)["display"] == "tab" and windows_rdp_client(programs) is None
+
+    def window_instead(self, host, programs: Programs, x11: bool) -> str | None:
+        """Why a host whose Display asks for its tab opens in a window of its own instead,
+        for its tab to say, or None (#227). `x11` is whether GCM runs on X11, the only
+        place FreeRDP can draw into a window of GCM's."""
+        if RDP.settings_of(host)["display"] != "tab":
+            return None
+        if windows_rdp_client(programs) is not None:
+            return N_("Windows Remote Desktop shows the desktop in a window of its own.")
+        if not x11:
+            return N_(
+                "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
+            )
+        return None
+
     def command(self, host, programs: Programs) -> Command:
         windows = windows_rdp_client(programs)
         if windows is not None:
@@ -387,11 +426,11 @@ class Rdp(ConnectionType):
             # where a policy allows it.
             return Command([windows, *mstsc_arguments(host)])
         client = rdp_client()
+        args = rdp_arguments(host, programs.tab_window if self.in_tab(host, programs) else None)
         if host.user == "" or host.password == "":
-            return Command([client, *rdp_arguments(host)])
+            return Command([client, *args])
         return Command(
-            [programs.expect, host.type, client, *rdp_arguments(host)],
-            expect_environment(host.password),
+            [programs.expect, host.type, client, *args], expect_environment(host.password)
         )
 
 
@@ -560,6 +599,10 @@ def vnc_viewer() -> str | None:
 RDP_SIZE = re.compile(r"([0-9]+) *[xX] *([0-9]+)|([0-9]+) *% *([wh]?)")
 
 
+# The sides of a desktop FreeRDP connects with, in pixels, measured (#278).
+RDP_SIDE_MIN, RDP_SIDE_MAX = 200, 32766
+
+
 def rdp_size(text: str) -> str | None:
     """FreeRDP's /size: value for a host's Size, "" for none, or None for one FreeRDP
     refuses (#278).
@@ -578,9 +621,15 @@ def rdp_size(text: str) -> str | None:
     width, height, share, side = match.groups()
     if share is not None:
         return f"{int(share)}%{side}" if 1 <= int(share) <= 100 else None
-    if 200 <= int(width) <= 32766 and 200 <= int(height) <= 32766:
+    if RDP_SIDE_MIN <= int(width) <= RDP_SIDE_MAX and RDP_SIDE_MIN <= int(height) <= RDP_SIDE_MAX:
         return f"{int(width)}x{int(height)}"
     return None
+
+
+def rdp_side(pixels: int) -> int:
+    """A side of a tab a desktop is shown in, as FreeRDP takes it: no less than
+    RDP_SIDE_MIN and no more than RDP_SIDE_MAX, which it refuses to connect with (#227)."""
+    return min(max(pixels, RDP_SIDE_MIN), RDP_SIDE_MAX)
 
 
 def rdp_scale(text: str) -> str | None:
@@ -601,7 +650,14 @@ def asks_for_smart_sizing(args: list[str]) -> bool:
     return any(re.fullmatch(r"[/+]smart-sizing(:(?!off$).*)?", arg) for arg in args)
 
 
-def rdp_arguments(host) -> list[str]:
+def rdp_display(host, window: TabWindow | None = None) -> str:
+    """How an RDP host's desktop is shown: its Display, with In its tab read as In a
+    window where it has no window in a tab to be drawn in (#227)."""
+    display = str(RDP.settings_of(host)["display"])
+    return "window" if display == "tab" and window is None else display
+
+
+def rdp_arguments(host, window: TabWindow | None = None) -> list[str]:
     """FreeRDP's arguments for an RDP host: everything but the program and the password.
 
     Never the password. FreeRDP 3 masks /p: in its own argv once it has read it, measured,
@@ -610,22 +666,31 @@ def rdp_arguments(host) -> list[str]:
 
     Then an option for each of the host's RDP settings (#278), and its extra arguments
     last, so that they can still ask FreeRDP for anything else.
+
+    `window` is where a host shown in its tab is drawn (#227). FreeRDP makes the desktop
+    the size it is given, never its parent's, measured, so it is given the tab's. A host
+    whose Display asks for its tab and that has no window opens in a window instead,
+    with its Size.
     """
     args = [f"/v:{host.host}", f"/port:{host.port}"]
     if host.user:
         args.append(f"/u:{host.user}")
     extra = shlex.split(host.extra_params) if host.extra_params else []
     settings = RDP.settings_of(host)
+    display = rdp_display(host, window)
+    if display == "tab" and window is not None:
+        sides = f"{rdp_side(window.width)}x{rdp_side(window.height)}"
+        args += [f"/parent-window:{window.xid}", f"/size:{sides}"]
     # /multimon is full screen whether or not /f is given, measured.
-    if settings["display"] == "full-screen":
+    if display == "full-screen":
         args.append("/f")
-    elif settings["display"] == "all-monitors":
+    elif display == "all-monitors":
         args += ["/f", "/multimon"]
     if settings["resize"] and not asks_for_smart_sizing(extra):
         args.append("/dynamic-resolution")
     # Full screen is as large as the screen, whatever /size says, measured.
     size = rdp_size(str(settings["size"]))
-    if size and settings["display"] == "window":
+    if size and display == "window":
         args.append(f"/size:{size}")
     scale = rdp_scale(str(settings["scale"]))
     if scale:
@@ -654,12 +719,14 @@ def mstsc_arguments(host) -> list[str]:
     address = f"[{host.host}]" if is_ipv6(host.host) else host.host
     args = [f"/v:{address}:{host.port}" if host.port else f"/v:{address}"]
     settings = RDP.settings_of(host)
-    if settings["display"] == "full-screen":
+    # mstsc draws in a window of its own, whatever it is given: In its tab is a window.
+    display = rdp_display(host)
+    if display == "full-screen":
         args.append("/f")
-    elif settings["display"] == "all-monitors":
+    elif display == "all-monitors":
         args += ["/f", "/multimon"]
     size = rdp_size(str(settings["size"]))
-    if size and "x" in size and settings["display"] == "window":
+    if size and "x" in size and display == "window":
         width, height = size.split("x")
         args += [f"/w:{width}", f"/h:{height}"]
     return args

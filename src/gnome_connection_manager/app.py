@@ -43,6 +43,7 @@ import binascii
 import builtins
 import configparser
 import contextlib
+import ctypes
 import dataclasses
 import json
 import logging
@@ -88,6 +89,14 @@ try:
 except (ImportError, ValueError):
     # Optional: without gtk-vnc's bindings a VNC host runs a VNC viewer instead (#234).
     GtkVnc = None
+
+try:
+    gi.require_version("GdkX11", "3.0")
+    from gi.repository import GdkX11
+except (ImportError, ValueError):
+    # Without it no RDP desktop is shown in a tab, and a host asking for one opens in a
+    # window of its own (#227).
+    GdkX11 = None
 
 
 def bindtextdomain(app_name, locale_dir=None):
@@ -396,6 +405,14 @@ QUIET_POLL_MS = 500
 # How often a session whose commands after login wait is checked for having started
 # (#312). The timer exists only until they have gone.
 SESSION_POLL_MS = 50
+# How often an RDP tab showing its desktop in the tab looks for FreeRDP's window, once
+# FreeRDP has started (#227). The timer exists only until the window appears.
+DESKTOP_POLL_MS = 100
+# For how long after FreeRDP's window appears it is kept at the tab's size, in seconds.
+# FreeRDP makes it the session's size as it finishes connecting, which a server that keeps
+# a size of its own makes other than the tab's: 0.02 s after it appeared, measured against
+# FreeRDP's shadow server on this computer. A server farther away answers later.
+DESKTOP_SETTLE = 5
 
 _COPY = ["copy"]
 _PASTE = ["paste"]
@@ -2145,6 +2162,40 @@ def connection_programs():
     )
 
 
+def connection_command(host, desktop=None):
+    """What a host's session spawns, as a terminal keeps it: (program, argv, environment).
+    For an RDP desktop shown in its tab, given where FreeRDP draws and the tab's size now
+    (#227)."""
+    programs = connection_programs()
+    if desktop is not None:
+        programs = dataclasses.replace(programs, tab_window=desktop.tab_window())
+    spawn = connections.for_host(host).command(host, programs)
+    return (spawn.program, spawn.argv, spawn.environment)
+
+
+def spawn_command(terminal):
+    """Spawn the terminal's command, as addTab and Reconnect do. An RDP desktop shown in
+    its tab has the command built again, for the tab's size now, and looks for FreeRDP's
+    window once it runs (#227)."""
+    desktop = getattr(terminal, "desktop", None)
+    if desktop is not None:
+        terminal.command = connection_command(terminal.host, desktop)
+    program, argv, environment = terminal.command
+    vte_run(terminal, program, argv, environment)
+    if desktop is not None:
+        desktop.started()
+    while Gtk.events_pending():
+        Gtk.main_iteration()
+
+
+def keyboard_of(widget):
+    """What takes the keyboard for a tab whose `widget` would: the RDP desktop shown in
+    a terminal's place, rather than the terminal hidden behind it, whose keys would reach
+    FreeRDP's terminal (#227). Anything else takes it itself."""
+    desktop = getattr(widget, "desktop", None)
+    return desktop if desktop is not None and desktop.get_visible() else widget
+
+
 def page_terminal(page):
     """The terminal a console page holds, or None when the page holds something else.
 
@@ -2697,10 +2748,7 @@ class Wmain(GladeComponent):
                         # widget.fork_command(SHELL)
                         vte_run(widget, SHELL)
                     else:
-                        # widget.fork_command(widget.command[0], widget.command[1])
-                        vte_run(widget, widget.command[0], widget.command[1], widget.command[2])
-                        while Gtk.events_pending():
-                            Gtk.main_iteration()
+                        spawn_command(widget)
                     widget.get_parent().get_parent().get_tab_label(
                         widget.get_parent()
                     ).mark_tab_as_active()
@@ -2951,7 +2999,7 @@ class Wmain(GladeComponent):
         self.use_window(window)
         terminal = page_terminal(page)
         if terminal is not None:
-            window.set_focus(terminal)
+            window.set_focus(keyboard_of(terminal))
             self.on_tab_focus(terminal)
             return True
         focus = window.get_focus()
@@ -3799,6 +3847,9 @@ class Wmain(GladeComponent):
         needs to tell a clean exit from a failed one (#210).
         """
         self.stop_commands(terminal)
+        desktop = getattr(terminal, "desktop", None)
+        if desktop is not None:
+            desktop.ended()
         then = getattr(terminal, "before_then", None)
         if then is not None:
             # The host's command before connecting has ended (#238).
@@ -4153,7 +4204,7 @@ class Wmain(GladeComponent):
         behind a desktop opened 1 ms after it, for 15 ms (#264).
         """
         if self.page_in_use() is page:
-            self.wMain.set_focus(widget)
+            self.wMain.set_focus(keyboard_of(widget))
         return False
 
     def addTab(self, notebook, host):
@@ -4203,6 +4254,13 @@ class Wmain(GladeComponent):
             scrollbar = Gtk.Scrollbar().new(Gtk.Orientation.VERTICAL, v.get_vadjustment())
             scrollPane.pack_start(v, True, True, 0)
             scrollPane.pack_start(scrollbar, False, False, 0)
+            # An RDP desktop shown in its tab, in the terminal's place once it appears (#227).
+            elsewhere = None
+            if isinstance(kind, connections.Rdp):
+                elsewhere = kind.window_instead(host, connection_programs(), can_show_desktops())
+                if kind.in_tab(host, connection_programs()) and elsewhere is None:
+                    v.desktop = RdpDesktop(v, scrollbar)
+                    scrollPane.pack_start(v.desktop, True, True, 0)
 
             v.connect("bell", self.on_terminal_bell)
             v.connect("contents-changed", self.on_terminal_contents_changed)
@@ -4233,6 +4291,8 @@ class Wmain(GladeComponent):
             self.wMain.set_focus(v)
             self.on_tab_focus(v)
             self.set_terminal_logger(v, host.log)
+            if elsewhere:
+                v.feed((_(elsewhere) + "\r\n").encode())
 
             GLib.timeout_add(200, self.focus_again, scrollPane, v)
 
@@ -4243,8 +4303,7 @@ class Wmain(GladeComponent):
             if kind.remote:
                 # Before the command before connecting runs, so that Reconnect has it
                 # even when that command failed and nothing was spawned.
-                spawn = kind.command(host, connection_programs())
-                v.command = (spawn.program, spawn.argv, spawn.environment)
+                v.command = connection_command(host, getattr(v, "desktop", None))
             self.run_before_command(v, lambda: self.start_session(v))
         except Exception:
             logger.exception("Error connecting to host")
@@ -4265,10 +4324,7 @@ class Wmain(GladeComponent):
         if not hasattr(terminal, "command"):
             vte_run(terminal, SHELL)
         else:
-            program, argv, environment = terminal.command
-            vte_run(terminal, program, argv, environment)
-            while Gtk.events_pending():
-                Gtk.main_iteration()
+            spawn_command(terminal)
 
         if commands and host_sends_commands(host):
             groups = afterlogin.command_groups(host.commands)
@@ -9367,6 +9423,280 @@ class VncPage(Gtk.Box):
                     )
                 )
         self.ended(0 if self.closed_by_gcm else 1)
+
+
+class X11:
+    """The few X11 calls an RDP desktop shown in its tab needs, which GDK has none of
+    (#227): libX11's, through ctypes, made on GDK's own connection to the display.
+
+    GDK's own, so that each runs after the requests GDK made before it. Over a second
+    connection, a window reparented into one GDK had only just made stayed at the root,
+    measured. PyGObject gives the connection as a pointer whose hash() is its address,
+    measured. Each call is made inside GDK's error trap: FreeRDP's window can go at any
+    moment, and an X error GDK has not trapped ends GTK, measured.
+    """
+
+    lib = None
+
+    def __init__(self, display):
+        self.display = display
+        self.xdisplay = hash(GdkX11.X11Display.get_xdisplay(display))
+        if X11.lib is None:
+            X11.lib = X11.load()
+
+    @staticmethod
+    def load():
+        lib = ctypes.cdll.LoadLibrary("libX11.so.6")
+        display, window = ctypes.c_void_p, ctypes.c_ulong
+        lib.XQueryTree.argtypes = [
+            display,
+            window,
+            ctypes.POINTER(window),
+            ctypes.POINTER(window),
+            ctypes.POINTER(ctypes.POINTER(window)),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
+        lib.XGetGeometry.argtypes = [display, window, ctypes.POINTER(window)]
+        lib.XGetGeometry.argtypes += [ctypes.POINTER(ctypes.c_int)] * 2
+        lib.XGetGeometry.argtypes += [ctypes.POINTER(ctypes.c_uint)] * 4
+        lib.XFree.argtypes = [ctypes.c_void_p]
+        lib.XCreateSimpleWindow.argtypes = [display, window, ctypes.c_int, ctypes.c_int]
+        lib.XCreateSimpleWindow.argtypes += [ctypes.c_uint] * 3 + [ctypes.c_ulong] * 2
+        lib.XCreateSimpleWindow.restype = window
+        for name in ("XDestroyWindow", "XMapWindow", "XUnmapWindow"):
+            getattr(lib, name).argtypes = [display, window]
+        lib.XReparentWindow.argtypes = [display, window, window, ctypes.c_int, ctypes.c_int]
+        lib.XResizeWindow.argtypes = [display, window, ctypes.c_uint, ctypes.c_uint]
+        lib.XSetInputFocus.argtypes = [display, window, ctypes.c_int, ctypes.c_ulong]
+        lib.XFlush.argtypes = [display]
+        return lib
+
+    @contextlib.contextmanager
+    def trapped(self):
+        GdkX11.X11Display.error_trap_push(self.display)
+        try:
+            yield
+        finally:
+            self.lib.XFlush(self.xdisplay)
+            GdkX11.X11Display.error_trap_pop_ignored(self.display)
+
+    def children(self, xid):
+        """The windows inside `xid`, the one on top last, or none where it is gone."""
+        root, parent = ctypes.c_ulong(), ctypes.c_ulong()
+        found, count = ctypes.POINTER(ctypes.c_ulong)(), ctypes.c_uint()
+        with self.trapped():
+            done = self.lib.XQueryTree(
+                self.xdisplay, xid, ctypes.byref(root), ctypes.byref(parent), found, count
+            )
+        if not done:
+            return []
+        windows = [found[index] for index in range(count.value)]
+        if found:
+            self.lib.XFree(found)
+        return windows
+
+    def size(self, xid):
+        """The width and height of `xid`, or None where it is gone."""
+        root, x, y = ctypes.c_ulong(), ctypes.c_int(), ctypes.c_int()
+        width, height, border, depth = (ctypes.c_uint() for _ in range(4))
+        with self.trapped():
+            done = self.lib.XGetGeometry(
+                self.xdisplay, xid, root, x, y, width, height, border, depth
+            )
+        return (width.value, height.value) if done else None
+
+    def make_window(self):
+        """A window of GCM's own at the root, unmapped, black where nothing covers it."""
+        root = GdkX11.X11Window.get_xid(self.display.get_default_screen().get_root_window())
+        with self.trapped():
+            return self.lib.XCreateSimpleWindow(self.xdisplay, root, 0, 0, 1, 1, 0, 0, 0)
+
+    def destroy(self, xid):
+        with self.trapped():
+            self.lib.XDestroyWindow(self.xdisplay, xid)
+
+    def put(self, xid, parent):
+        """Move `xid` into `parent`, at its top left corner."""
+        with self.trapped():
+            self.lib.XReparentWindow(self.xdisplay, xid, parent, 0, 0)
+
+    def resize(self, xid, width, height):
+        with self.trapped():
+            self.lib.XResizeWindow(self.xdisplay, xid, max(width, 1), max(height, 1))
+
+    def show(self, xid, shown):
+        with self.trapped():
+            (self.lib.XMapWindow if shown else self.lib.XUnmapWindow)(self.xdisplay, xid)
+
+    def focus(self, xid):
+        """Give `xid` the keyboard, which goes back to its parent should it be unmapped."""
+        revert_to_parent, current_time = 2, 0
+        with self.trapped():
+            self.lib.XSetInputFocus(self.xdisplay, xid, revert_to_parent, current_time)
+
+
+def can_show_desktops():
+    """Whether an RDP desktop can be shown in a tab: only where GCM runs on X11, as
+    FreeRDP draws into a window of GCM's only there (#227). On Wayland, GDK's windows have
+    no X window, measured, and such a host opens in a window of its own."""
+    return GdkX11 is not None and isinstance(Gdk.Display.get_default(), GdkX11.X11Display)
+
+
+class RdpDesktop(Gtk.DrawingArea):
+    """An RDP host's desktop, shown in its tab, in place of FreeRDP's terminal (#227).
+
+    The tab is the terminal's page, as #225's is, so that what reads a tab's terminal
+    still does, and this is beside the terminal in it. It is hidden while FreeRDP
+    connects and asks its questions in the terminal, and takes the terminal's place once
+    FreeRDP's own window appears. When the session ends, the terminal shows again, with
+    what FreeRDP printed last.
+
+    FreeRDP draws into `holder`, a window of GCM's made for the tab and given to FreeRDP
+    as `/parent-window:`. Each realize puts it inside this widget's own window, and each
+    unrealize puts it back at the root. Moving a tab between panes or windows makes the
+    widget a new window, measured. FreeRDP 3 kept running with nothing to draw in once
+    its window went with the old one, and FreeRDP 2 ended. So the window FreeRDP draws in
+    is never one GTK can destroy, which also serves Reconnect.
+
+    FreeRDP makes its window the session's size and never follows its parent's, measured,
+    so each allocation resizes both windows to this widget. FreeRDP takes that as it takes
+    a change to its own window: Resize with the window asks the server for the new size,
+    and smart sizing scales the desktop to it. As it finishes connecting, FreeRDP makes
+    its window the session's size again, which a server that keeps a size of its own makes
+    other than the tab's, measured, so for DESKTOP_SETTLE seconds after it appears the
+    window is made the tab's size again whenever it is not.
+
+    The keyboard: while this widget has GTK's focus, X's goes to FreeRDP's window, and the
+    desktop gets every key, as a VNC desktop does (#234). Once GTK's focus moves elsewhere
+    in GCM, X's comes back to GCM's window: GTK does not notice FreeRDP has it, measured.
+    A key pressed with the pointer on the desktop goes to the desktop whatever has the
+    focus, as X gives it to the window under the pointer within the one that has it.
+    """
+
+    def __init__(self, terminal, scrollbar):
+        Gtk.DrawingArea.__init__(self)
+        self.terminal = terminal
+        self.scrollbar = scrollbar
+        self.set_can_focus(True)
+        self.set_hexpand(True)
+        self.set_vexpand(True)
+        # Shown once FreeRDP's window appears, which add_page's show_all is not.
+        self.set_no_show_all(True)
+        self.x11 = X11(Gdk.Display.get_default())
+        self.holder = self.x11.make_window()
+        # FreeRDP's own window in `holder`, while there is one.
+        self.desktop = None
+        self.watch = None
+        self.settle = 0.0
+        self.connect("realize", self.on_realize)
+        self.connect("unrealize", self.on_unrealize)
+        self.connect("size-allocate", self.on_size_allocate)
+        self.connect("focus-in-event", self.on_focus_in)
+        self.connect("focus-out-event", self.on_focus_out)
+        self.connect("destroy", self.on_destroy)
+
+    def tab_window(self):
+        """Where FreeRDP is to draw, and the tab's size in the screen's pixels."""
+        page = self.get_parent()
+        scale = self.get_scale_factor()
+        return connections.TabWindow(
+            self.holder, page.get_allocated_width() * scale, page.get_allocated_height() * scale
+        )
+
+    def pixels(self):
+        """This widget's size in the screen's pixels, which X's windows are measured in."""
+        scale = self.get_scale_factor()
+        return (self.get_allocated_width() * scale, self.get_allocated_height() * scale)
+
+    def started(self):
+        """Watch for FreeRDP's window, once a session has been spawned."""
+        self.stop_watching()
+        self.watch = GLib.timeout_add(DESKTOP_POLL_MS, self.look_for_desktop)
+
+    def stop_watching(self):
+        if self.watch is not None:
+            GLib.source_remove(self.watch)
+            self.watch = None
+
+    def look_for_desktop(self):
+        """Show FreeRDP's window once it appears, and keep it the tab's size for a while."""
+        if self.desktop is None:
+            windows = self.x11.children(self.holder)
+            if not windows:
+                return True
+            self.show_desktop(windows[-1])
+            self.settle = time.monotonic() + DESKTOP_SETTLE
+        elif self.get_realized() and self.x11.size(self.desktop) != self.pixels():
+            self.fit()
+        if time.monotonic() < self.settle:
+            return True
+        self.watch = None
+        return False
+
+    def show_desktop(self, desktop):
+        self.desktop = desktop
+        had_keyboard = self.terminal.is_focus()
+        self.terminal.hide()
+        self.scrollbar.hide()
+        self.show()
+        self.fit()
+        if had_keyboard:
+            self.grab_focus()
+
+    def ended(self):
+        """The session has ended: show the terminal again, with what FreeRDP said last."""
+        self.stop_watching()
+        self.desktop = None
+        if self.get_visible():
+            had_keyboard = self.is_focus()
+            self.hide()
+            self.terminal.show()
+            self.scrollbar.show()
+            if had_keyboard:
+                self.terminal.grab_focus()
+
+    def fit(self):
+        """Make both windows the size of this widget, in the screen's pixels."""
+        if not self.get_realized():
+            return
+        width, height = self.pixels()
+        self.x11.resize(self.holder, width, height)
+        if self.desktop is not None:
+            self.x11.resize(self.desktop, width, height)
+
+    def on_realize(self, _widget):
+        window = self.get_window()
+        window.ensure_native()
+        self.x11.put(self.holder, GdkX11.X11Window.get_xid(window))
+        self.fit()
+        self.x11.show(self.holder, True)
+
+    def on_unrealize(self, _widget):
+        # Before GTK destroys this widget's window, and FreeRDP's with it.
+        self.x11.show(self.holder, False)
+        root = self.get_screen().get_root_window()
+        self.x11.put(self.holder, GdkX11.X11Window.get_xid(root))
+
+    def on_size_allocate(self, _widget, _allocation):
+        self.fit()
+
+    def on_focus_in(self, _widget, _event):
+        if self.desktop is not None:
+            self.x11.focus(self.desktop)
+        return False
+
+    def on_focus_out(self, _widget, _event):
+        # Only for a move within GCM. A window without the keyboard has lost it to
+        # another, which GCM must not take back. Not is_active(): GTK says that changes
+        # only after this, measured, and GCM took the keyboard back from another window.
+        window = self.get_toplevel()
+        if self.desktop is not None and window.has_toplevel_focus():
+            self.x11.focus(GdkX11.X11Window.get_xid(window.get_window()))
+        return False
+
+    def on_destroy(self, _widget):
+        self.stop_watching()
+        self.x11.destroy(self.holder)
 
 
 # Pages GCM draws a host's tab with, by the type's id, where a type's tab is not a

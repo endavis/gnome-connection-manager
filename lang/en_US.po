@@ -2135,3 +2135,12 @@ msgstr "Tab Color"
 
 msgid "No Color"
 msgstr "No Color"
+
+msgid "In its tab"
+msgstr "In its tab"
+
+msgid "Windows Remote Desktop shows the desktop in a window of its own."
+msgstr "Windows Remote Desktop shows the desktop in a window of its own."
+
+msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
+msgstr "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
