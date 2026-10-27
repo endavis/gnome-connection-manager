@@ -167,6 +167,10 @@ class ConnectionType:
     # The program whose own terminal shows when its session has started, by the name /proc
     # gives it, so that the commands go then rather than after a fixed wait (#312).
     session_program: str | None = None
+    # The programs a session of this type runs that are asked to end, by SIGTERM, before
+    # their tab hangs up on them, by the names /proc gives them (#371). A hangup ends a
+    # program as it is, where SIGTERM lets it clean up first.
+    asked_to_end: tuple[str, ...] = ()
     # False for a type opened outside GCM, with no tab: a web host's page opens in the
     # browser, from its url() rather than a command.
     opens_tab = True
@@ -345,6 +349,12 @@ class Rdp(ConnectionType):
     # FreeRDP asks something is taken for the answer, to its certificate question or as
     # the password.
     sends_commands = False
+    # FreeRDP 3 mounts its clipboard's files at /tmp/com.freerdp.client.cliprdr.<pid>, and
+    # a hangup kills it with them still mounted, until someone unmounts them by hand.
+    # SIGTERM has it unmount them first. It ended within 40 ms of one, connected or at its
+    # questions, measured with 3.32.1 (#371). FreeRDP 2.11.5 mounts nothing and ended
+    # within 7 ms, and Fedora installs FreeRDP 3 as xfreerdp.
+    asked_to_end = RDP_CLIENTS
     # How FreeRDP shows the desktop (#278). rdp_arguments gives FreeRDP an option for each,
     # before the host's extra arguments, which can still ask for anything else.
     settings = (

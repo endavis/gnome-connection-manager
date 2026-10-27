@@ -257,8 +257,20 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the window is not measured. A click made in the same instant as a move landed where
   the pointer had been, as FreeRDP sent the press first and the shadow server presses
   wherever its pointer is, so a test lets the pointer settle before it clicks. FreeRDP 3
-  ended by SIGHUP, as a closed tab's is, leaves its clipboard's FUSE mount at
-  `/tmp/com.freerdp.client.cliprdr.<pid>`, measured, where SIGTERM and SIGINT unmount it.
+  ended by SIGHUP, as a closed tab's was, leaves its clipboard's FUSE mount at
+  `/tmp/com.freerdp.client.cliprdr.<pid>`, measured, where SIGTERM and SIGINT unmount it
+  (#371). So the type's `asked_to_end` names FreeRDP's clients, and `end_programs` in
+  `app.py` sends SIGTERM to each one `afterlogin.find_program` finds among a tab's
+  processes, then waits up to `END_WAIT` for `afterlogin.ended`, before anything hangs
+  up on it. It runs from a terminal page's `destroy`, whose handlers run before the page
+  destroys the terminal and VTE hangs up its child. It runs from `end_sessions` at
+  Ctrl+Q, which destroys no tab, and from `vte_run`, before a spawn such as Reconnect's
+  replaces a session. GCM waits because, measured, a hangup straight after SIGTERM left
+  FreeRDP 3's mount, or its folder. Given the time, FreeRDP 3 unmounted within 20 ms and
+  exited 145 within 38 ms. FreeRDP 2.11.5 mounts nothing. `on_terminal_child_exited`
+  clears `child_pid`, as a reaped pid can be another process's. The fake that stands for
+  this in `tests/test_rdp.py` runs as `xfreerdp3` itself, with Python in its `#!` line:
+  one a shell script runs is named `python` in /proc, and is not found.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the
@@ -578,7 +590,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   prompt in such a session reads as a question, which restarts `GIVE_UP` for as long as
   it shows. A fake ssh must enter raw mode with `TCSADRAIN`, as ssh does: Python's
   `tty.setraw` defaults to `TCSAFLUSH`, which discards what was typed and not yet read,
-  the very thing a test of this is about.
+  the very thing a test of this is about. `find_program`, and `ended`, which takes a
+  zombie not yet reaped for ended, also serve the end of an RDP tab, which asks FreeRDP
+  to end first (#371).
 - `src/gnome_connection_manager/utils/updates.py` – whether this repository has released a
   newer GCM (#295). `newer_release` compares the `vX.Y.Z` tags GitHub lists at
   `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original
@@ -1080,7 +1094,12 @@ Practices below have each caught real bugs in this repo. They are worth the time
   Nothing may take a page's first child for its terminal; `page_terminal` answers, with None for a
   page that holds something else. Terminal actions then do nothing, and tab actions --
   Rename, Close console, Split, moving between panes and windows, the open-console list --
-  work on any tab. `NotebookTabLabel.prepare_menu` offers such a tab Rename, Split and
+  work on any tab. Close console destroys the page once it is out of its notebook, as
+  the close button's `close_tab` does, which is what ends its session. Only taken out, a
+  page lived on, held by the handlers on its widgets, and its session ran on unseen
+  until GCM exited, measured (#374). It keeps its own `remove_page`, not `close_tab`,
+  whose `is_closed` has `check_notebook_pages` remove an emptied pane, which Close
+  console has never done. `NotebookTabLabel.prepare_menu` offers such a tab Rename, Split and
   Move to New Window only, and the cluster window leaves it out. Measured, choosing a tab
   whose page cannot take the keyboard leaves the keyboard on the notebook itself. Alt+1 to
   Alt+9 are handled in `on_terminal_keypress`, not as accelerators, so they do nothing

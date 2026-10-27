@@ -643,18 +643,27 @@ class ClosingNotebook:
         self.pages.pop(position)
 
 
+class ClosingPage(types.SimpleNamespace):
+    destroyed = False
+
+    def destroy(self):
+        self.destroyed = True
+
+
 def test_closing_a_console_closes_the_tab_in_use_through_the_real_wiring(app_module):
     """The real wiring, not just the call shape.
 
     "X" read `popupMenu.terminal`, which only the terminal branch of
     trigger_popup_action set. Sent down the tab branch it was unset, so Ctrl+W raised
     AttributeError and the console stayed open (#95). It now reads the context tab,
-    which the tab branch sets, and needs no terminal at all (#223).
+    which the tab branch sets, and needs no terminal at all (#223). The page is
+    destroyed too, which ends its session: only taken out of its notebook, it lived on,
+    and its session with it.
     """
     controller = app_module.Wmain.__new__(app_module.Wmain)
     controller._context_tab_widget = None
     controller._context_terminal = None
-    showing, other = types.SimpleNamespace(), types.SimpleNamespace()
+    showing, other = ClosingPage(), ClosingPage()
     notebook = ClosingNotebook(other, showing)
     controller.page_in_use = lambda: showing
 
@@ -663,4 +672,5 @@ def test_closing_a_console_closes_the_tab_in_use_through_the_real_wiring(app_mod
     app._on_action_console_close(None, None)
 
     assert notebook.pages == [other], "the tab in use was not closed"
+    assert showing.destroyed and not other.destroyed, "the closed tab's page lived on"
     assert controller._context_tab_widget is None, "the context outlived the action"

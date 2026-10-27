@@ -16,6 +16,9 @@ processes and `terminal_state` reads the terminal it reads.
 Until the commands have gone, `Gate` decides what becomes of each key typed into the
 tab: held, and typed after them, or passed on, as an answer to the login.
 
+`find_program` and `ended` also serve a tab's end: FreeRDP is found among its processes
+the same way, asked to end before the tab hangs up on it, and waited for (#371).
+
 Pure but for reading /proc, whose root is an argument. The time is an argument too.
 """
 
@@ -143,6 +146,19 @@ def find_program(root: int, name: str, proc: str = "/proc") -> int | None:
             continue
         queue += children(pid, proc)
     return None
+
+
+def ended(pid: int, proc: str = "/proc") -> bool:
+    """Whether process `pid` has ended: gone, or a zombie its parent has not reaped yet.
+
+    A tab's own child stays one until GLib's watch reaps it, in the main loop, which a
+    wait inside the loop holds up."""
+    try:
+        stat = Path(proc, str(pid), "stat").read_text()
+    except OSError:
+        return True
+    # After the name, in parentheses, which can hold either of its own.
+    return stat.rsplit(")", 1)[1].split()[0] == "Z"
 
 
 class Gate:

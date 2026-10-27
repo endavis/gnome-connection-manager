@@ -236,6 +236,49 @@ def test_parents_reads_a_name_with_parentheses(tmp_path):
     assert (20, 1) in afterlogin.parents(fake_proc(tmp_path, TREE))
 
 
+# -- whether a process has ended (#371) ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stat", "gone"),
+    [
+        ("40 (xfreerdp3) S 1 40 40 0 -1", False),
+        ("40 (xfreerdp3) R 1 40 40 0 -1", False),
+        ("40 (xfreerdp3) Z 1 40 40 0 -1", True),
+        # A name can hold a parenthesis and a state of its own.
+        ("40 (a) Z (b) S 1 40 40 0 -1", False),
+        ("40 (a) S (b) Z 1 40 40 0 -1", True),
+    ],
+)
+def test_ended_reads_the_state_a_process_is_in(tmp_path, stat, gone):
+    (tmp_path / "40").mkdir()
+    (tmp_path / "40" / "stat").write_text(stat + "\n")
+
+    assert afterlogin.ended(40, str(tmp_path)) is gone
+
+
+def test_a_process_that_is_gone_has_ended(tmp_path):
+    assert afterlogin.ended(40, str(tmp_path)) is True
+
+
+def test_a_real_child_has_ended_before_it_is_reaped():
+    """A tab's own child stays a zombie until GLib reaps it in the main loop, which the
+    wait for it holds up, so a zombie has ended."""
+    process = subprocess.Popen(["sleep", "30"])
+    try:
+        assert afterlogin.ended(process.pid) is False
+        process.terminate()
+        deadline = time.monotonic() + 5
+        while not afterlogin.ended(process.pid) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert afterlogin.ended(process.pid) is True
+        assert Path(f"/proc/{process.pid}").exists(), "reaped before it was looked at"
+    finally:
+        process.kill()
+        process.wait()
+    assert afterlogin.ended(process.pid) is True
+
+
 # -- when the commands are due ------------------------------------------------------
 
 

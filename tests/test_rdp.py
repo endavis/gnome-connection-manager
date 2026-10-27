@@ -51,6 +51,16 @@ def test_the_newest_freerdp_installed_is_used(app_module, monkeypatch, installed
     assert app_module.connections.rdp_client() == chosen
 
 
+def test_freerdp_alone_is_asked_to_end_before_its_tab_hangs_up(app_module):
+    """FreeRDP 3 dies of a hangup with its clipboard still mounted in /tmp (#371). Both
+    names, as Fedora installs FreeRDP 3 as xfreerdp. No other type's program is asked."""
+    connections = app_module.connections
+
+    assert connections.RDP.asked_to_end == ("xfreerdp3", "xfreerdp")
+    others = [kind for kind in connections.CONNECTION_TYPES if kind is not connections.RDP]
+    assert others and all(kind.asked_to_end == () for kind in others)
+
+
 # -- what FreeRDP is given ---------------------------------------------------
 
 
@@ -484,3 +494,203 @@ def test_an_rdp_host_against_real_gtk(tmp_path, scenario):
 
     assert result.returncode == 0, result.stderr[-3000:]
     assert "OK" in result.stdout
+
+
+# -- ending FreeRDP before its tab hangs up on it (#371) ----------------------
+
+# FreeRDP 3 as it ends, measured with 3.32.1 against FreeRDP's shadow server (#371).
+# Connected, it has its clipboard's files mounted in /tmp. SIGTERM has it unmount them
+# and exit 145, which takes it a while, and a hangup kills it with them still mounted,
+# meanwhile too. A file beside it stands for the mount, and a slower unmount than the
+# real one's 12 ms shows a hangup that comes before it has ended. Given a user without
+# a password, it asks for one, as FreeRDP 2 does, so that ssh.expect types it. It runs
+# as xfreerdp3 itself, the name /proc gives it and GCM looks for: a shell script that
+# ran Python would be named python.
+_FAKE_FREERDP_3 = r"""
+import os, signal, sys, termios, time
+here = os.path.dirname(os.path.abspath(sys.argv[0]))
+log = open(os.path.join(here, "freerdp.log"), "a", buffering=1)
+mount = os.path.join(here, "mount.%d" % os.getpid())
+
+
+def terminated(signum, frame):
+    log.write("SIGTERM %d\n" % os.getpid())
+    time.sleep(0.2)
+    os.unlink(mount)
+    os._exit(145)
+
+
+signal.signal(signal.SIGTERM, terminated)
+signal.signal(signal.SIGHUP, signal.SIG_DFL)
+arguments = sys.argv[1:]
+if any(arg.startswith("/u:") for arg in arguments):
+    attributes = termios.tcgetattr(0)
+    quiet = list(attributes)
+    quiet[3] &= ~termios.ECHO
+    termios.tcsetattr(0, termios.TCSADRAIN, quiet)
+    print("Password: ", end="", flush=True)
+    sys.stdin.readline()
+    termios.tcsetattr(0, termios.TCSADRAIN, attributes)
+open(mount, "w").close()
+log.write("connected %d\n" % os.getpid())
+print("connected", flush=True)
+while True:
+    time.sleep(1)
+"""
+
+_END_SCRIPT = r"""
+import os, sys, tempfile, time
+scenario, scratch = sys.argv[1], sys.argv[2]
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
+app.conf.AUTO_CLOSE_TAB = 0
+app.conf.CONFIRM_ON_CLOSE_TAB = 0
+if scenario == "under-the-relay":
+    app.conf.LOG_PATH = tempfile.mkdtemp()
+    app.conf.RAW_SESSION_LOG = True
+# Started as GCM starts, so that quitting quits the application.
+application = app.GcmApplication()
+assert application.register(None)
+application.activate()
+w = application._controller
+
+def until(condition, seconds=20):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        Gtk.main_iteration_do(False)
+        if condition():
+            return True
+        time.sleep(0.005)
+    return False
+
+def said():
+    try:
+        with open(os.path.join(scratch, "freerdp.log")) as file:
+            return file.read().splitlines()
+    except FileNotFoundError:
+        return []
+
+def connected():
+    return [int(line.split()[1]) for line in said() if line.startswith("connected ")]
+
+def ended(pid):
+    # Gone, or a zombie not reaped yet.
+    try:
+        with open("/proc/%d/stat" % pid) as file:
+            return file.read().rsplit(")", 1)[1].split()[0] == "Z"
+    except FileNotFoundError:
+        return True
+
+def asked_first(pid):
+    # Asked to end, and ended with its mount gone, by the time GCM has hung up on it.
+    mounted = os.path.exists(os.path.join(scratch, "mount.%d" % pid))
+    return ("SIGTERM %d" % pid) in said() and ended(pid) and not mounted
+
+def open_host(display="window", user=""):
+    host = app.Host("Work", "desk", "", "win.example.test", user, "secret" if user else "")
+    host.type, host.port = "rdp", "3389"
+    host.type_settings = {"rdp.display": display}
+    before = len(connected())
+    w.addTab(w.nbConsole, host)
+    page = w.nbConsole.get_nth_page(w.nbConsole.get_current_page())
+    assert until(lambda: len(connected()) > before), said()
+    return page, app.page_terminal(page), connected()[-1]
+
+def close(page):
+    page.get_parent().get_tab_label(page).close_tab(None)
+
+if scenario == "closing-its-tab":
+    page, v, pid = open_host()
+    assert v.command[0] == "xfreerdp3", v.command
+    close(page)
+    assert asked_first(pid), said()
+elif scenario == "close-console":
+    page, v, pid = open_host()
+    application._on_action_console_close(None, None)
+    assert asked_first(pid), said()
+elif scenario == "under-the-script":
+    page, v, pid = open_host(user="me")
+    assert v.command[0] == app.SSH_COMMAND, v.command
+    close(page)
+    assert asked_first(pid), said()
+elif scenario == "under-the-relay":
+    page, v, pid = open_host()
+    assert "gnome_connection_manager.relay" in open("/proc/%d/cmdline" % v.child_pid).read()
+    close(page)
+    assert asked_first(pid), said()
+elif scenario == "in-its-tab":
+    page, v, pid = open_host(display="tab")
+    assert hasattr(v, "desktop"), "not shown in its tab"
+    close(page)
+    assert asked_first(pid), said()
+elif scenario == "closing-the-window":
+    pids = [open_host()[2], open_host(user="me")[2]]
+    w.wMain.destroy()
+    assert all(asked_first(pid) for pid in pids), said()
+elif scenario == "quitting":
+    pids = [open_host()[2], open_host(user="me")[2]]
+    # Ctrl+Q destroys no tab: GCM's exit is what hangs up their sessions.
+    w.request_quit()
+    assert all(asked_first(pid) for pid in pids), said()
+elif scenario == "reconnecting":
+    page, v, pid = open_host()
+    application._on_action_console_reconnect(None, None)
+    assert asked_first(pid), said()
+    assert until(lambda: len(connected()) == 2), said()
+elif scenario == "a-session-over-is-forgotten":
+    # Its pid can be another process's once reaped, which a close must not signal.
+    page, v, pid = open_host()
+    os.kill(pid, 15)
+    assert until(lambda: v.child_pid is None), "the ended session's pid was kept"
+else:
+    raise SystemExit("no scenario " + scenario)
+print("OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real terminal",
+)
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "closing-its-tab",
+        "close-console",
+        "under-the-script",
+        "under-the-relay",
+        "in-its-tab",
+        "closing-the-window",
+        "quitting",
+        "reconnecting",
+        "a-session-over-is-forgotten",
+    ],
+)
+def test_freerdp_ends_before_its_tab_hangs_up_against_real_gtk(tmp_path, scenario):
+    """Whichever way its tab closes, FreeRDP is asked to end, and has ended, its mount
+    gone, by the time anything hangs up on it (#371)."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    if shutil.which("expect") is None:
+        pytest.skip("needs expect")
+    fake = tmp_path / "xfreerdp3"
+    fake.write_text(f"#!{sys.executable}\n{_FAKE_FREERDP_3}")
+    fake.chmod(0o755)
+    result = subprocess.run(
+        [sys.executable, "-c", _END_SCRIPT, scenario, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert "OK" in result.stdout
+    # PyGObject prints what a signal handler raises, and carries on.
+    assert "Traceback" not in result.stderr, result.stderr[-3000:]
