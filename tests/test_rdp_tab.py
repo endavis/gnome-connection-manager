@@ -6,15 +6,17 @@ the desktop once FreeRDP's window appears there. Where GCM does not run on X11, 
 Remote Desktop is the client, the host opens in a window of its own, and its tab says why.
 
 The scenarios run real GCM on an Xvfb of their own, with a fake FreeRDP that draws a real
-X window into the one it is given, at the size it is given, and logs each key, click and
-size that reaches it. Their own, because they move X's keyboard focus and press keys and
-buttons through XTest, which on the display the other tests share could reach another
-test's windows. What the fake leaves out of FreeRDP was measured against FreeRDP 3.32.1
-and 2.11.5 with FreeRDP's shadow server and Weston's RDP backend, written up on #227.
+X window into the one it is given, at the size it is given, and logs each key, press,
+release and size that reaches it. Their own, because they move X's keyboard focus and
+press keys and buttons through XTest, which on the display the other tests share could
+reach another test's windows. What the fake leaves out of FreeRDP was measured against
+FreeRDP 3.32.1 and 2.11.5 with FreeRDP's shadow server and Weston's RDP backend, written
+up on #227, and a click on the desktop against both with the shadow server, on #373.
 """
 
 from __future__ import annotations
 
+import ctypes
 import os
 import shutil
 import subprocess
@@ -205,6 +207,182 @@ def test_a_desktop_is_shown_in_a_tab_only_on_x11(app_module, monkeypatch):
     assert app_module.can_show_desktops() is False
 
 
+# -- a click on the desktop ----------------------------------------------------
+
+CONNECTION = 0xD15
+GLIB_IO_IN, GLIB_IO_ERR, GLIB_IO_HUP = 1, 8, 16
+
+
+class FakeLibX11:
+    """libX11 as ClickToFocus calls it on its own connection: each call recorded in
+    `calls`, and `events` waiting to be read, as (type, window). Each function here is one
+    the real library has and X11.load declares, which a test below checks."""
+
+    def __init__(self, events=(), opens=True):
+        self.calls = []
+        self.events = list(events)
+        self.opens = opens
+
+    def XOpenDisplay(self, _name):
+        return CONNECTION if self.opens else None
+
+    def XConnectionNumber(self, _display):
+        return 7
+
+    def XGrabButton(self, *args):
+        self.calls.append(("XGrabButton", *args))
+
+    def XUngrabButton(self, *args):
+        self.calls.append(("XUngrabButton", *args))
+
+    def XAllowEvents(self, *args):
+        self.calls.append(("XAllowEvents", *args))
+
+    def XFlush(self, *args):
+        self.calls.append(("XFlush", *args))
+
+    def XPending(self, _display):
+        return len(self.events)
+
+    def XNextEvent(self, _display, event):
+        # The XEvent ClickToFocus hands over by reference.
+        event._obj.type, event._obj.button.window = self.events.pop(0)
+
+
+class FakeDisplay:
+    """GDK's display, as far as ClickToFocus asks it."""
+
+    def __init__(self, calls):
+        self.calls = calls
+
+    def get_name(self):
+        return ":9"
+
+    def sync(self):
+        self.calls.append(("sync",))
+
+
+def click_to_focus(app_module, monkeypatch, **fake):
+    """A ClickToFocus on the fake library, its calls, and the watches it added."""
+    lib, watches = FakeLibX11(**fake), []
+    monkeypatch.setattr(app_module.X11, "lib", lib)
+    glib = app_module.GLib
+    for name, value in (("IO_IN", GLIB_IO_IN), ("IO_ERR", GLIB_IO_ERR), ("IO_HUP", GLIB_IO_HUP)):
+        monkeypatch.setattr(glib, name, value)
+    monkeypatch.setattr(glib, "io_add_watch", lambda *args: watches.append(args) or 1)
+    return lib, app_module.ClickToFocus(FakeDisplay(lib.calls)), watches
+
+
+def test_every_press_is_replayed_whatever_came_of_it(app_module, monkeypatch):
+    """Until GCM replays a press, X keeps the pointer frozen for every program on the
+    display (#373): after the desktop takes the keyboard, in a holder no longer watched,
+    and when taking the keyboard failed."""
+    lib, clicks, _watches = click_to_focus(app_module, monkeypatch)
+
+    def failing():
+        raise RuntimeError("no keyboard")
+
+    clicks.watch(0x100, lambda: lib.calls.append(("clicked", 0x100)))
+    clicks.watch(0x200, failing)
+    replay = [("XAllowEvents", CONNECTION, 2, 0), ("XFlush", CONNECTION)]
+    lib.calls.clear()
+    clicks.pressed(0x100)
+    assert lib.calls == [("clicked", 0x100), *replay]
+    lib.calls.clear()
+    clicks.forget(0x100)
+    clicks.pressed(0x100)
+    assert lib.calls == replay
+    lib.calls.clear()
+    with pytest.raises(RuntimeError):
+        clicks.pressed(0x200)
+    assert lib.calls == replay
+
+
+def test_a_holder_is_held_by_buttons_1_to_3_until_let_go(app_module, monkeypatch):
+    """Buttons 1 to 3 under any modifiers, the pointer frozen and the keyboard not, as
+    Mutter 46.2's click to focus grabs a window, read in its source. Not the wheel, which
+    was measured to leave the keyboard where it was."""
+    lib, clicks, _watches = click_to_focus(app_module, monkeypatch)
+    any_modifier, button_press_mask, sync, not_sync = 1 << 15, 1 << 2, 0, 1
+    clicks.watch(0x100, lambda: None)
+    # GDK's connection made the holder, which a grab on this one must not overtake.
+    assert lib.calls == [
+        ("sync",),
+        *[
+            ("XGrabButton", CONNECTION, button, any_modifier, 0x100, False)
+            + (button_press_mask, sync, not_sync, 0, 0)
+            for button in (1, 2, 3)
+        ],
+        ("XFlush", CONNECTION),
+    ]
+    lib.calls.clear()
+    clicks.hold(0x100, False)
+    assert lib.calls == [
+        *[("XUngrabButton", CONNECTION, button, any_modifier, 0x100) for button in (1, 2, 3)],
+        ("XFlush", CONNECTION),
+    ]
+    lib.calls.clear()
+    clicks.forget(0x100)
+    clicks.hold(0x100, True)
+    assert lib.calls == []
+
+
+def test_every_event_waiting_is_read_and_only_a_press_acted_on(app_module, monkeypatch):
+    """Xlib reads all that has arrived into its own queue, and the socket says nothing
+    more until something else does, so an event left there would be a press never
+    replayed. A press is reported on the window grabbed, the holder."""
+    mapping_notify, button_press, button_release = 34, 4, 5
+    events = [(mapping_notify, 0), (button_press, 0x100), (button_release, 0x100)]
+    events.append((button_press, 0x200))
+    lib, clicks, watches = click_to_focus(app_module, monkeypatch, events=events)
+    pressed = []
+    clicks.watch(0x100, lambda: pressed.append(0x100))
+    clicks.watch(0x200, lambda: pressed.append(0x200))
+    ((fd, _priority, condition, on_readable),) = watches
+    assert fd == 7 and condition == GLIB_IO_IN | GLIB_IO_HUP | GLIB_IO_ERR
+    assert on_readable(fd, GLIB_IO_IN) is True
+    assert pressed == [0x100, 0x200] and lib.events == []
+    replays = [call for call in lib.calls if call[0] == "XAllowEvents"]
+    assert replays == [("XAllowEvents", CONNECTION, 2, 0)] * 2
+
+
+def test_without_a_connection_of_its_own_nothing_is_held(app_module, monkeypatch):
+    """None opened, or X closed it. A GLib watch reports a hangup for ever, and a request
+    on a connection gone is an X I/O error, which GDK's handler ends GCM for."""
+    lib, clicks, watches = click_to_focus(app_module, monkeypatch, opens=False)
+    clicks.watch(0x100, lambda: None)
+    assert watches == [] and lib.calls == [("sync",)]
+    lib, clicks, watches = click_to_focus(app_module, monkeypatch)
+    clicks.watch(0x100, lambda: None)
+    ((fd, _priority, _condition, on_readable),) = watches
+    assert on_readable(fd, GLIB_IO_HUP) is False
+    lib.calls.clear()
+    clicks.hold(0x100, True)
+    assert lib.calls == []
+
+
+def test_a_press_on_a_desktop_hidden_meanwhile_leaves_the_keyboard(app_module):
+    """A press waits for GCM's main loop, and the session can end, hiding the desktop,
+    before GCM reads it."""
+    taken = []
+    for mapped in (False, True):
+        desktop = types.SimpleNamespace(
+            get_mapped=lambda mapped=mapped: mapped, grab_focus=lambda: taken.append(True)
+        )
+        app_module.RdpDesktop.on_clicked(desktop)
+    assert taken == [True]
+
+
+def test_the_fake_libx11_offers_only_what_x11_load_declares(app_module):
+    """A fake that offers what the real thing lacks is how #30 and #41 shipped."""
+    lib = app_module.X11.load()
+    names = [name for name in vars(FakeLibX11) if name.startswith("X")]
+    assert names
+    for name in names:
+        assert getattr(lib, name).argtypes, name
+    assert ctypes.sizeof(app_module.XEvent) == 24 * ctypes.sizeof(ctypes.c_long)
+
+
 # -- against real GTK ----------------------------------------------------------
 
 # FreeRDP, as far as GCM sees it: its arguments in its terminal, the certificate question
@@ -214,7 +392,8 @@ def test_a_desktop_is_shown_in_a_tab_only_on_x11(app_module, monkeypatch):
 # makes its window that size as it finishes connecting. 0.02 s after it made the window,
 # measured on this computer, and here a second, as a server farther away answers later:
 # after GCM has found the window and fitted it to the tab once. It logs what reaches the window,
-# and ends on SIGHUP, which a terminal sends as it closes, as FreeRDP does.
+# and ends on SIGHUP, which a terminal sends as it closes, as FreeRDP does. A press that
+# reached it without its release would leave the button held down on the remote desktop.
 _FAKE_FREERDP = r"""
 import ctypes, os, sys, time
 
@@ -278,8 +457,8 @@ x11.XKeysymToString.restype = ctypes.c_char_p
 display = x11.XOpenDisplay(None)
 parent = int(options.get("parent-window") or x11.XDefaultRootWindow(display))
 window = x11.XCreateSimpleWindow(display, parent, 0, 0, width, height, 0, 0, 0xFF00FF)
-# KeyPress, ButtonPress and StructureNotify.
-x11.XSelectInput(display, window, (1 << 0) | (1 << 2) | (1 << 17))
+# KeyPress, ButtonPress, ButtonRelease and StructureNotify.
+x11.XSelectInput(display, window, (1 << 0) | (1 << 2) | (1 << 3) | (1 << 17))
 x11.XMapWindow(display, window)
 x11.XFlush(display)
 log.write("window %d\n" % window)
@@ -297,6 +476,8 @@ while True:
         log.write("key %s\n" % name.decode())
     elif event.type == 4:
         log.write("button %d at %d,%d\n" % (event.input.detail, event.input.x, event.input.y))
+    elif event.type == 5:
+        log.write("release %d at %d,%d\n" % (event.input.detail, event.input.x, event.input.y))
     elif event.type == 22 and event.configure.window == window:
         if (event.configure.width, event.configure.height) != size:
             size = (event.configure.width, event.configure.height)
@@ -411,10 +592,10 @@ def point(x, y):
     x11.XFlush(dpy)
     pump(0.3)
 
-def click(x, y):
+def click(x, y, button=1):
     point(x, y)
-    xtst.XTestFakeButtonEvent(dpy, 1, True, 0)
-    xtst.XTestFakeButtonEvent(dpy, 1, False, 0)
+    xtst.XTestFakeButtonEvent(dpy, button, True, 0)
+    xtst.XTestFakeButtonEvent(dpy, button, False, 0)
     x11.XFlush(dpy)
     pump(0.3)
 
@@ -433,6 +614,15 @@ def centre(widget):
     allocation = widget.get_allocation()
     _, x, y = widget.get_window().get_origin()
     return x + allocation.x + allocation.width // 2, y + allocation.y + allocation.height // 2
+
+def middle(widget):
+    # Where the middle of `widget` is on the screen, whether it has a window of its own,
+    # as the server tree does, or draws on its parent's, as a terminal does.
+    allocation = widget.get_allocation()
+    toplevel = widget.get_toplevel()
+    x, y = widget.translate_coordinates(toplevel, allocation.width // 2, allocation.height // 2)
+    _, left, top = toplevel.get_window().get_origin()
+    return left + x, top + y
 
 def focus():
     window, revert = ctypes.c_ulong(), ctypes.c_int()
@@ -587,6 +777,83 @@ elif scenario == "another-window-keeps-the-keyboard-it-took":
     pump(0.5)
     assert focus() == other, "GCM took the keyboard back from another window"
 
+elif scenario.startswith("a-click-gives-it-the-keyboard-from-"):
+    page, v, desktop = open_desktop()
+    if scenario.endswith("the-other-pane"):
+        w.addTab(w.nbConsole, "local")
+        elsewhere = app.page_terminal(w.nbConsole.get_nth_page(w.nbConsole.get_current_page()))
+        # The local console in a pane of its own, beside the desktop, both in sight.
+        application._on_action_split_horizontal(None, None)
+        pump(0.5)
+        assert desktop.get_mapped(), "the desktop is out of sight after the split"
+    else:
+        elsewhere = w.treeServers
+    w.wMain.set_focus(elsewhere)
+    toplevel = xid(w.wMain)
+    assert until(lambda: focus() == toplevel), (focus(), toplevel)
+    x, y = origin(desktop)
+    away = middle(elsewhere)
+    width, height = pixels(desktop)
+    assert not (x <= away[0] < x + width and y <= away[1] < y + height), away
+    click(x + 120, y + 90)
+    # FreeRDP gets the click where it was made, its release too, and the desktop the
+    # keyboard: GTK's focus, X's, and its tab is the one in use.
+    assert logged("button 1 at 120,90") and logged("release 1 at 120,90"), said()
+    assert until(lambda: w.wMain.get_focus() is desktop), w.wMain.get_focus()
+    assert until(lambda: focus() == window_id()), "FreeRDP's window never got X's focus"
+    assert w.page_in_use() is page
+    # So a key reaches it wherever the pointer is, and not what had the keyboard.
+    point(*away)
+    press(0x62)
+    assert logged("key b"), said()
+    if isinstance(elsewhere, Vte.Terminal):
+        pump(0.5)
+        assert "b" not in text(elsewhere), text(elsewhere)
+
+elif scenario == "a-press-waits-for-gcm-only-while-it-moves-the-keyboard":
+    # A press GCM holds waits for GCM's main loop, which this script runs only in pump()
+    # and until(). One in a desktop with the keyboard needs nothing of GCM.
+    page, v, desktop = open_desktop()
+    x, y = origin(desktop)
+
+    def press_without_gcm(dx, dy, seconds):
+        # Whether FreeRDP gets a click within `seconds` while GCM's main loop does not run.
+        point(x + dx, y + dy)
+        xtst.XTestFakeButtonEvent(dpy, 1, True, 0)
+        xtst.XTestFakeButtonEvent(dpy, 1, False, 0)
+        x11.XSync(dpy, 0)
+        line, end = "button 1 at %d,%d" % (dx, dy), time.monotonic() + seconds
+        while time.monotonic() < end and line not in said():
+            time.sleep(0.05)
+        return line in said()
+
+    w.wMain.set_focus(w.treeServers)
+    pump(0.3)
+    assert not press_without_gcm(100, 80, 1.5), "a click reached FreeRDP without GCM"
+    assert logged("button 1 at 100,80"), said()
+    assert until(lambda: w.wMain.get_focus() is desktop), w.wMain.get_focus()
+    assert press_without_gcm(110, 90, 5), "GCM held a click on a desktop with the keyboard"
+    pump(0.3)
+    w.wMain.set_focus(w.treeServers)
+    pump(0.3)
+    assert not press_without_gcm(120, 100, 1.5), "a click reached FreeRDP without GCM"
+    assert logged("button 1 at 120,100"), said()
+
+elif scenario == "the-wheel-leaves-the-keyboard-where-it-is":
+    page, v, desktop = open_desktop()
+    x, y = origin(desktop)
+    for button in (4, 5):
+        w.wMain.set_focus(w.treeServers)
+        pump(0.3)
+        click(x + 120, y + 90, button)
+        assert logged("button %d at 120,90" % button), said()
+        pump(0.3)
+        assert w.wMain.get_focus() is w.treeServers, (button, w.wMain.get_focus())
+    # The right button, which opens a menu on the remote desktop, takes it.
+    click(x + 130, y + 90, 3)
+    assert logged("button 3 at 130,90"), said()
+    assert until(lambda: w.wMain.get_focus() is desktop), w.wMain.get_focus()
+
 elif scenario == "moved-to-another-pane-and-a-window-of-its-own":
     page, v, desktop = open_desktop()
     pid, window = fake_pid(), window_id()
@@ -690,6 +957,10 @@ print("OK")
         ("choosing-its-tab-gives-it-the-keyboard", None),
         ("the-keyboard-comes-back-to-gcm", None),
         ("another-window-keeps-the-keyboard-it-took", None),
+        ("a-click-gives-it-the-keyboard-from-the-other-pane", None),
+        ("a-click-gives-it-the-keyboard-from-the-server-tree", None),
+        ("a-press-waits-for-gcm-only-while-it-moves-the-keyboard", None),
+        ("the-wheel-leaves-the-keyboard-where-it-is", None),
         ("moved-to-another-pane-and-a-window-of-its-own", None),
         ("the-certificate-question-is-the-users", None),
         ("an-end-shows-the-terminal-and-reconnect-the-desktop", None),

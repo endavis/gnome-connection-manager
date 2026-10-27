@@ -249,7 +249,21 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   GTK changes that only after the desktop's focus-out, measured, and GCM took the
   keyboard back from another window. X still gives a key to the window under the
   pointer, so a key typed with the pointer on the desktop goes to it, whatever has the
-  keyboard. `tests/test_rdp_tab.py` runs real GCM on an Xvfb of its own, with a fake
+  keyboard. A click on the desktop gives it GTK's focus through `ClickToFocus` (#373),
+  since FreeRDP's window takes the press and GTK never sees it. GCM holds buttons 1 to 3
+  on `holder` with a passive grab, the pointer synchronous, as Mutter 46.2's click to
+  focus holds a window, read in its source. X hands GCM the press and holds the pointer
+  until GCM replays it with `ReplayPointer`, after which FreeRDP gets it where it was
+  made, and a drag whole, measured. So every press is replayed, whatever came of taking
+  the keyboard. The grab is made on a connection of GCM's own, read from a GLib watch.
+  Measured with the grab on GDK's own connection, GDK made no event of the press, and
+  the pointer stayed frozen while GCM's main loop ran. PyGObject has no
+  `Gdk.Window.add_filter` to see it by, measured. The grab is let go while the desktop
+  has the keyboard, as Mutter lets go a focused window's, so such a click needs nothing
+  of GCM. Against the shadow server, FreeRDP 3.32.1 put a press from the server tree
+  where the pointer had begun, on `main` too and with no grab, while FreeRDP 2.11.5 put
+  each press and drag where it was made.
+  `tests/test_rdp_tab.py` runs real GCM on an Xvfb of its own, with a fake
   FreeRDP that draws a real X window and logs what reaches it. FreeRDP 3.32.1 and 2.11.5
   were measured, unpacked from Ubuntu's packages, against FreeRDP's shadow server and
   Weston's RDP backend, and the measurements are on #227. Neither server applies a
