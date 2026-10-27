@@ -460,6 +460,7 @@ from gnome_connection_manager import app
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 # A session that types back what it is sent.
 bin_dir = os.path.join(root, "bin")
 os.makedirs(bin_dir)

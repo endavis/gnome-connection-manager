@@ -43,6 +43,7 @@ from gnome_connection_manager import app
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.conf.AUTO_CLOSE_TAB = 2  # Only on clean exit
 # Started as GCM starts, so that its shortcuts are the window's accelerators. It is
 # NON_UNIQUE, so it never reaches a GCM already running.

@@ -621,7 +621,7 @@ def test_nor_does_a_local_shell_a_web_host_or_vnc():
 
 
 _SCRIPT = r"""
-import os, shutil, sys, tempfile, time
+import os, shutil, sys, tempfile, threading, time
 scenario = sys.argv[1]
 os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
 import gi
@@ -630,6 +630,7 @@ from gi.repository import Gtk
 from gnome_connection_manager import app
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.wMain = w = app.Wmain(application=None)
 
 def pump(seconds):
@@ -981,6 +982,10 @@ elif scenario == "a-types-page-in-the-host-dialog":
     assert edit.type_pages["example"][1]["codec"].get_active_id() == "tight"
 else:
     raise SystemExit("no scenario " + scenario)
+# Nothing still running as the process exits. With the update check on, open-in-browser
+# exited 16 ms into the check's request on every run, measured, and it is the scenario
+# that died of SIGSEGV at exit on CI now and then (#316).
+assert threading.enumerate() == [threading.main_thread()], threading.enumerate()
 print("OK")
 """
 

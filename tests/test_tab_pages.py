@@ -34,6 +34,7 @@ from gnome_connection_manager import app
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False  # only the tabs each scenario opens
+app.conf.CHECK_UPDATES = False
 app.wMain = w = app.Wmain(application=None)
 application = app.GcmApplication()
 application._controller = w

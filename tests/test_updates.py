@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import gettext
 import io
 import json
+import re
 import socket
 import types
 import urllib.error
@@ -166,6 +168,27 @@ def test_a_failure_shows_nothing(app_module, monkeypatch, failure):
 
 def test_the_check_never_holds_up_quitting(app_module):
     assert app_module.CheckUpdates(None).daemon
+
+
+def test_no_scenario_runs_the_check():
+    """A scenario builds GCM with the check off (#316). Wmain starts it on a daemon thread
+    2 s in, and the registry's open-in-browser scenario, which ends about then, exited 16
+    ms into its request on every run, measured, and died of SIGSEGV at exit on CI now and
+    then. Every scenario longer than 2 s also asked GitHub for the tags."""
+    builds = re.compile(r"app\.(Wmain|GcmApplication)\(")
+    scripts: list[str] = []
+    on: list[str] = []
+    for path in sorted((REPO / "tests").glob("test_*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+                continue
+            built = builds.search(node.value)
+            if built:
+                scripts.append(path.name)
+                if not 0 <= node.value.find("app.conf.CHECK_UPDATES = False") < built.start():
+                    on.append(f"{path.name}:{node.lineno}")
+    assert "test_connections.py" in scripts, scripts  # the scan finds the scripts at all
+    assert on == [], on
 
 
 def test_gcm_neither_asks_nor_links_to_the_original_authors_site():

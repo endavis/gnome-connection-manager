@@ -1056,6 +1056,7 @@ from gnome_connection_manager import app
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.conf.UPDATE_TITLE = 1
 app.conf.APP_TITLE = "GCM"
 logs = tempfile.mkdtemp()

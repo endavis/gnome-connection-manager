@@ -31,6 +31,7 @@ from gnome_connection_manager.utils import afterlogin
 
 app.conf.CONFIRM_ON_CLOSE_TAB = 0
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.conf.AUTO_CLOSE_TAB = 0  # an ended tab stays, to be read
 app.wMain = w = app.Wmain(application=None)
 w.wMain.resize(1200, 800)

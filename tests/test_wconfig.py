@@ -389,6 +389,7 @@ gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
 from gi.repository import Gtk
 from gnome_connection_manager import app
 
+app.conf.CHECK_UPDATES = False
 app.wMain = wmain = app.Wmain(application=None)
 prefs = app.Wconfig()
 prefs.get_widget("wConfig").destroy()

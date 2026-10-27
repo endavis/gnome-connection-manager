@@ -997,6 +997,7 @@ from gnome_connection_manager import app
 from gnome_connection_manager.utils.configfile import HOST_PREFIX
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.wMain = w = app.Wmain(application=None)
 
 def colour(spec):

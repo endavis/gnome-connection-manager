@@ -2147,6 +2147,7 @@ def pump(until, what, limit=20):
 def text(v):
     return v.get_text_format(Vte.Format.TEXT) or ""
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 nb = app.wMain.nbConsole
 host = app.Host("Work", "local", "", "", "", "", "local")
@@ -2228,6 +2229,7 @@ from gi.repository import Gdk, Gtk
 from gnome_connection_manager import app
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 
 def pump(seconds=0.3):
     deadline = time.monotonic() + seconds
@@ -2339,6 +2341,7 @@ from gi.repository import Gdk, Gtk
 from gnome_connection_manager import app
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 
 def pump(seconds=0.3):
     deadline = time.monotonic() + seconds
@@ -2705,6 +2708,7 @@ from gnome_connection_manager import app
 logs = tempfile.mkdtemp()
 app.conf.LOG_PATH = logs
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 # No host address, so this opens a local shell rather than reaching for the network.
 # The group, name and user are what the log path is built from either way.
@@ -2776,6 +2780,7 @@ def pump(until, what):
         time.sleep(0.005)
     raise AssertionError("timed out waiting for " + what)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 host = app.Host("Work", "bastion", "", "", "admed")
 host.log = True
@@ -2868,6 +2873,7 @@ def pump(until, what):
         time.sleep(0.005)
     raise AssertionError("timed out waiting for " + what)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 host = app.Host("Work", "bastion", "", "", "admed")
 host.log = False  # the log would reserve the number itself, before the spawn
@@ -3107,6 +3113,7 @@ from gi.repository import Gtk
 from gnome_connection_manager import app
 
 app.conf.STARTUP_LOCAL = False
+app.conf.CHECK_UPDATES = False
 app.wMain = w = app.Wmain(application=None)
 
 def pump(seconds=0.3):
@@ -3436,6 +3443,7 @@ def pump(seconds=0.3):
     while time.monotonic() < deadline:
         Gtk.main_iteration_do(False); time.sleep(0.005)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = wmain = app.Wmain(application=None)
 wmain.wMain.show_all()
 
@@ -3515,6 +3523,7 @@ def pump(seconds=0.3):
 
 app.conf.TAB_TITLE_FROM_TERMINAL = 1
 app.conf.AUTO_CLOSE_TAB = 0
+app.conf.CHECK_UPDATES = False
 app.wMain = wmain = app.Wmain(application=None)
 wmain.wMain.show_all()
 
@@ -3621,6 +3630,7 @@ def pump(seconds=0.3):
 
 app.conf.TAB_TITLE_FROM_TERMINAL = 1
 app.conf.AUTO_CLOSE_TAB = 0
+app.conf.CHECK_UPDATES = False
 app.wMain = wmain = app.Wmain(application=None)
 wmain.wMain.show_all()
 
@@ -3708,6 +3718,7 @@ def pump(seconds=0.3):
 
 app.conf.TAB_TITLE_FROM_TERMINAL = 1
 app.conf.AUTO_CLOSE_TAB = 0
+app.conf.CHECK_UPDATES = False
 app.wMain = wmain = app.Wmain(application=None)
 wmain.wMain.show_all()
 wmain.wMain.resize(1400, 900)
@@ -4131,6 +4142,7 @@ def settle(seconds):
         Gtk.main_iteration_do(False)
         time.sleep(0.005)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 nb = app.wMain.nbConsole
 host = app.Host("Work", "local", "", "", "", "", "local")
@@ -4219,6 +4231,7 @@ def settle(seconds):
         Gtk.main_iteration_do(False)
         time.sleep(0.005)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 nb = app.wMain.nbConsole
 host = app.Host("Work", "unreachable", "", "127.0.0.1", "me", "not-a-password")
@@ -4308,6 +4321,7 @@ def pump(until, what, limit=30):
         time.sleep(0.005)
     raise AssertionError("timed out waiting for " + what)
 
+app.conf.CHECK_UPDATES = False
 app.wMain = app.Wmain(application=None)
 nb = app.wMain.nbConsole
 host = app.Host("Work", "first", "", "example.invalid", "me", "not-a-password")
