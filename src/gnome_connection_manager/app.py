@@ -57,10 +57,8 @@ import sys
 import tempfile
 import time
 import tokenize
-import urllib.request
 import weakref
 from pathlib import Path
-from threading import Thread
 
 
 def _configure_logging():
@@ -2290,13 +2288,14 @@ class Wmain(GladeComponent):
     # new() gives each Wmain its own. These are for one built without it, as tests
     # build one: no console window, none in use, and no tab being dragged (#255), and no
     # host being mounted, and no application whose menus list the mounts (#267), and no
-    # console open (#346).
+    # console open (#346), and no update check running (#369).
     console_windows: tuple = ()
     window_in_use: object = None
     dragged_tab: object = None
     mounting: frozenset = frozenset()
     application: object = None
     count: int = 0
+    update_check: object = None
 
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
@@ -2493,8 +2492,43 @@ class Wmain(GladeComponent):
     #   Write your own methods here
 
     def check_updates(self):
-        checker = CheckUpdates(self)
-        checker.start()
+        """Ask this repository for its release tags, and say when one is newer than the
+        running GCM (#295). In a process of its own: asked on a thread, a GCM quit during
+        the request exited with the thread still inside it (#369)."""
+        command = [
+            sys.executable,
+            "-m",
+            "gnome_connection_manager.utils.updates",
+            updates.TAGS_URL,
+        ]
+        try:
+            self.update_check = Gio.Subprocess.new(
+                command, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE
+            )
+        except GLib.Error:
+            return
+        self.update_check.communicate_async(None, None, self.on_update_check_done)
+
+    def on_update_check_done(self, process, result):
+        self.update_check = None
+        try:
+            _done, answer, _errors = process.communicate_finish(result)
+            if not process.get_successful():
+                return
+            tags = updates.tag_names(json.loads(answer.get_data()))
+        except (GLib.Error, ValueError):
+            # No network, a refused request, an answer that is not JSON: no notice.
+            return
+        release = updates.newer_release(tags, app_version)
+        if release:
+            self.show_newer_release(release)
+
+    def show_newer_release(self, release):
+        available = _("GCM {new} is available. You are running {current}.").format(
+            new=release, current=app_version
+        )
+        install = _("How to install it: {url}").format(url=updates.INSTALL_PAGE)
+        msginfo(f"{available}\n\n{install}", self.get_widget("wMain"))
 
     def on_terminal_click(self, widget, event, *args):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
@@ -6478,6 +6512,9 @@ class Wmain(GladeComponent):
 
     def quit_application(self):
         """Quit through GtkApplication when available (fallback to Gtk.main_quit)."""
+        # An update check still asking ends with GCM, rather than outlive it (#369).
+        if self.update_check is not None:
+            self.update_check.force_exit()
         window = self.get_widget("wMain")
         application = window.get_application() if isinstance(window, Gtk.Window) else None
         if application is not None:
@@ -9747,39 +9784,6 @@ class EntryDialog(Gtk.Dialog):
     def click(self, button):
         self.value = self.entry.get_text()
         self.response(Gtk.ResponseType.OK)
-
-
-class CheckUpdates(Thread):
-    """Asks this repository for its release tags, and says when one is newer than the
-    running GCM (#295). A daemon, so that a slow answer never holds up quitting."""
-
-    def __init__(self, p):
-        Thread.__init__(self, daemon=True)
-        self.parent = p
-
-    def show(self, release):
-        available = _("GCM {new} is available. You are running {current}.").format(
-            new=release, current=app_version
-        )
-        install = _("How to install it: {url}").format(url=updates.INSTALL_PAGE)
-        msginfo(f"{available}\n\n{install}", self.parent.get_widget("wMain"))
-        return False
-
-    def run(self):
-        request = urllib.request.Request(
-            updates.TAGS_URL, headers={"Accept": "application/vnd.github+json"}
-        )
-        try:
-            # A timeout for this request alone: socket.setdefaulttimeout, which the
-            # check used before #295, sets one for every socket the process opens after.
-            with urllib.request.urlopen(request, timeout=5) as answer:
-                tags = updates.tag_names(json.load(answer))
-        except Exception:
-            # No network, a refused request, an answer that is not JSON: no notice.
-            return
-        release = updates.newer_release(tags, app_version)
-        if release:
-            GLib.idle_add(self.show, release)
 
 
 class GcmApplication(Gtk.Application):

@@ -5,12 +5,15 @@ measured to answer without signing in. The check this replaced asked the origina
 author's site, which serves that GCM's version, 1.2.1, and compared versions as
 strings, under which "10.0.0" is less than "9.0.0" and 2.0.0 was never told of anything.
 
-Pure: the tags and the running version are arguments, so nothing here needs a network.
+Pure but for `main`, the request itself, which GCM runs as a process of its own (#369):
+the tags and the running version are arguments.
 """
 
 from __future__ import annotations
 
 import re
+import sys
+import urllib.request
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -50,3 +53,27 @@ def newer_release(tags: Iterable[str], running: str) -> str | None:
     if current is None or not releases or max(releases) <= current:
         return None
     return ".".join(map(str, max(releases)))
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Ask for the URL given, TAGS_URL as GCM runs this, and write the answer to stdout as
+    it came. Exits 1 having written nothing on any failure: no network, a refused
+    request, no answer in time.
+
+    GCM runs this as a process of its own and reads what it writes (#369). It asked on a
+    thread before, and a GCM quit during the request exited with the thread still inside
+    it, as did the test that crashed at exit in #316. Quitting GCM ends this process.
+    """
+    [url] = sys.argv[1:] if argv is None else argv
+    request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(request, timeout=5) as answer:
+            body = answer.read()
+    except Exception:
+        return 1
+    sys.stdout.buffer.write(body)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

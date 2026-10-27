@@ -92,6 +92,10 @@ the git log.
   tab's, where the tab was the larger: a tab zoomed out, or a screen scaled up. A
   full-screen application's screens then wrapped and overwrote one another, and none of
   their lines came back. It replays at the tab's size now, whatever the screen.
+- GCM quit while the update check was asking GitHub, two seconds after it started, exited
+  with the request still running inside it. The test that crashed now and then as it
+  exited, on CI, ended at that moment. The check now asks in a process of its own, which
+  quitting ends.
 
 ## [2.1.1] - 2026-10-24
 
