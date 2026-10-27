@@ -546,8 +546,13 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   newer GCM (#295). `newer_release` compares the `vX.Y.Z` tags GitHub lists at
   `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original
   author's site, which serves that GCM's 1.2.1, and compared strings, under which 10.0.0
-  is less than 9.0.0. Pure. `CheckUpdates` in `app.py` asks on a daemon thread two
-  seconds after start, while `check-updates` is on, and says nothing on any failure.
+  is less than 9.0.0. Pure but for `main`, the request, which `Wmain.check_updates` runs
+  two seconds after start, while `check-updates` is on, as a process of its own:
+  `sys.executable -m`, as the relay is run (#369). It reads the answer in the main loop
+  through `Gio.Subprocess`, and says nothing on any failure. Not a thread: measured, a GCM
+  quit during the request exited with the thread still inside it, as did the test that
+  crashed at exit in #316. `quit_application`, which Ctrl+Q and closing the window both
+  reach, kills a check still running.
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
   without a terminal, a display or a pty.
@@ -880,10 +885,11 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - **A signal handler's exception does not end a scenario.** PyGObject prints it and
   carries on, measured: the scenario exits 0 having printed OK. So
   `tests/test_console_window.py` also fails on a traceback in the scenario's stderr.
-- **A scenario builds GCM with the update check off**, `app.conf.CHECK_UPDATES = False`.
-  `Wmain` starts the check on a daemon thread 2 s in, and a scenario that ends during its
-  request exits with that thread in C. The registry's open-in-browser scenario did so on
-  every run, measured, and is the one that died of SIGSEGV at exit on CI (#316).
+- **A scenario builds GCM with the update check off**, `app.conf.CHECK_UPDATES = False`,
+  and a scenario about the check starts it itself, against an answer of its own: with it
+  on, every scenario longer than 2 s asked GitHub for the tags. On the daemon thread the
+  check had before #369, the registry's open-in-browser scenario exited during its request
+  on every run, measured, and is the one that died of SIGSEGV at exit on CI (#316).
   `test_no_scenario_runs_the_check` fails on a scenario script that leaves it on.
 - **Test fakes must mirror the real widget API.** `tests/conftest.py` stubs all of `gi`, so a
   fake can define methods the real class lacks and nothing complains — this caused #30
