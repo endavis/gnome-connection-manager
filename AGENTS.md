@@ -222,6 +222,43 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   its `Default.rdp`, which a connection with no size then opens at. It exits 0 however a
   session ends, a failed connection included, so `Rdp.dropped` and `Rdp.refused` never
   apply to it.
+  An RDP host whose Display is In its tab, `tab`, shows the desktop in its tab (#227),
+  through FreeRDP's `/parent-window:`, which needs X11. `Rdp.in_tab` says the host asks
+  for it and FreeRDP is the client, `can_show_desktops` in `app.py` that GCM runs on X11,
+  and `Rdp.window_instead` why a host asking opens in a window, which its tab prints
+  first. `rdp_display` reads In its tab as In a window, Size and all, without a
+  `TabWindow`, the window and the tab's size `Programs.tab_window` carries. The tab is
+  `addTab`'s terminal page with an `RdpDesktop` packed after the terminal, so
+  `page_terminal` still finds it. The desktop is hidden while FreeRDP connects and asks
+  in the terminal, and takes its place once FreeRDP's window appears in `holder`, a
+  window of GCM's own, which each realize puts into the widget's window and each
+  unrealize back at the root. Moving a tab remakes the widget's window, measured, and
+  FreeRDP 3 then kept running with nothing to draw in, where FreeRDP 2 ended.
+  `spawn_command` builds the command again at each spawn, Reconnect's included, for the
+  tab's size then, and `keyboard_of` gives the keyboard to the desktop shown, never the
+  terminal hidden behind it, whose keys would reach FreeRDP's terminal. FreeRDP never
+  follows its parent's size, so each allocation resizes its window. For
+  `DESKTOP_SETTLE` seconds after the window appears, GCM resizes it again whenever it
+  differs: FreeRDP makes it the session's size as it finishes connecting, which a server
+  of a fixed size makes other than the tab's, measured. The X calls are `X11`'s, libX11
+  through ctypes on GDK's own connection, which PyGObject gives as a pointer whose
+  `hash()` is its address, measured, so they run in order with GDK's. Each is inside
+  GDK's error trap: measured, an X error GDK did not trap there ended GTK with status 1.
+  GTK's focus on the desktop gives FreeRDP's window X's. Focus leaving it within GCM
+  gives X's back to the toplevel, which `has_toplevel_focus` tells, not `is_active`:
+  GTK changes that only after the desktop's focus-out, measured, and GCM took the
+  keyboard back from another window. X still gives a key to the window under the
+  pointer, so a key typed with the pointer on the desktop goes to it, whatever has the
+  keyboard. `tests/test_rdp_tab.py` runs real GCM on an Xvfb of its own, with a fake
+  FreeRDP that draws a real X window and logs what reaches it. FreeRDP 3.32.1 and 2.11.5
+  were measured, unpacked from Ubuntu's packages, against FreeRDP's shadow server and
+  Weston's RDP backend, and the measurements are on #227. Neither server applies a
+  resize once connected, so that the remote desktop follows the tab under Resize with
+  the window is not measured. A click made in the same instant as a move landed where
+  the pointer had been, as FreeRDP sent the press first and the shadow server presses
+  wherever its pointer is, so a test lets the pointer settle before it clicks. FreeRDP 3
+  ended by SIGHUP, as a closed tab's is, leaves its clipboard's FUSE mount at
+  `/tmp/com.freerdp.client.cliprdr.<pid>`, measured, where SIGTERM and SIGINT unmount it.
   A web host (#231) opens no tab: its type's `opens_tab` is False, and `addTab` hands
   its `url` to `open_in_browser` in `app.py` and returns. `credentials` and `arguments`
   say whether a remote host's user and password, and its extra arguments, apply; the
@@ -1038,8 +1075,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   move the keyboard, measured.
 - A tab holds a page, and the page need not hold a terminal (#223). `addTab` builds one
   around a terminal and opens it with `add_page`, which a page of any other kind goes
-  through too: VNC's is one (#234), and web views and in-tab RDP are to be (#207). Nothing may
-  take a page's first child for its terminal; `page_terminal` answers, with None for a
+  through too: VNC's is one (#234), and web views are to be (#207). An RDP desktop shown
+  in its tab is not one: it sits after FreeRDP's terminal in the terminal's page (#227).
+  Nothing may take a page's first child for its terminal; `page_terminal` answers, with None for a
   page that holds something else. Terminal actions then do nothing, and tab actions --
   Rename, Close console, Split, moving between panes and windows, the open-console list --
   work on any tab. `NotebookTabLabel.prepare_menu` offers such a tab Rename, Split and
