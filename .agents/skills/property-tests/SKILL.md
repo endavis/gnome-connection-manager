@@ -42,7 +42,7 @@ strategy to cover the case.
 
 Mark it `@pytest.mark.property` -- the marker `pyproject.toml` registers under
 `[tool.pytest.ini_options]`. Put it next to any existing property tests for the module it covers;
-this template's own `tests/template/test_properties.py` is a worked example, asserting properties of
+this project's own `tests/template/test_properties.py` is a worked example, asserting properties of
 the skeleton's `greet` function.
 
 **Leave `deadline` and `max_examples` to the `ci` and `default` profiles in `tests/conftest.py`.** Do

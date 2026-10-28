@@ -56,6 +56,12 @@ moving ref rather than failing. Pinning is a consistency improvement; refusing t
 an API call failed would trade a small gain for a hard outage. Set `GITHUB_TOKEN` if you are being
 rate-limited.
 
+The drift check (`manage.py check`) does the opposite: it **stops with an error** when the ref
+cannot be pinned, before anything under `tmp/extracted/` changes. An extract of a moving ref cannot
+be recorded as a sync point, so continuing would only replace the reviewed extract `sync` needs. It
+uses `GITHUB_TOKEN`, or `gh auth token` when that is unset; if neither is available and the
+unauthenticated limit is spent, run `GITHUB_TOKEN=$(gh auth token) python tools/pyproject_template/manage.py check`.
+
 ## When to Update
 
 Consider checking for template updates when:

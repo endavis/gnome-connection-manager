@@ -77,7 +77,7 @@ Because the glob loads every `.md` file in the directory, `.claude/rules/` holds
 nothing else. This page lived there as `README.md` until #957 and was loaded into every session —
 about 6 KB of authoring guidance no agent applies while coding. Keep docs about rule files here.
 
-If you fork this template and delete the shipped rule file, remove the import too — Claude Code
+If you delete the shipped rule files, remove the import too — Claude Code
 tolerates a glob matching nothing, but leaving it invites a future file to load unnoticed.
 
 ## Mirroring across agent surfaces
@@ -115,7 +115,7 @@ file is not ready to be written yet.
 The following sketch illustrates what a `codegen.md` rule file might look like for a downstream
 project (`pynetappfoundry`) that generates typed Python from a YANG schema and has an ADR
 (ADR-0008) documenting a round-trip invariant. **This example is illustrative only** — actual rule
-files belong in downstream repos, not in this template.
+files come from a project's own observed failures, not from this sketch.
 
 ```
 Skill: codegen

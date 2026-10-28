@@ -787,7 +787,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   in `.agents/skills/<name>/SKILL.md`, and `doit skills_sync` writes Claude's copy under
   `.claude/skills/`, which is never edited by hand: `tests/template/test_skills_sync.py`
   fails when the two part. "Implement issue N" runs the `implement-issue` skill, which
-  replaced the per-agent plan and implement commands (#324). The review and
+  replaced the per-agent plan and implement commands (#324), and "N is green" runs the
+  `merge-pr` skill (#385). The review and
   adversarial-review commands, and the bridges that hand them to another agent, are in
   `.claude/commands/`, `.github/skills/` and `.agents/skills/`. `.claude/rules/` holds
   narrow footgun rules that apply on top of this file, and `.github/instructions/` and
@@ -1315,6 +1316,18 @@ commands once wired (#119).
   and `require-label` blocks the merge until someone does.
 - Section headings in an issue body must be `##`; the validator parses on that and reports
   "Missing required sections" for `###`.
+- **Approving work on an issue runs `implement-issue`**, as "implement issue N" does, a
+  "yes" to a fix an agent filed as an issue included, and authorizes its commit, push and
+  PR on that issue's branch. A question is not approval. **"N is green" or "merge N" runs
+  `merge-pr`**: consent to merge that PR and to close the issues it fully addresses, never
+  to add `ready-to-merge`. See
+  [Slash Commands and Workflows](docs/development/ai/slash-commands.md#merge-pr-n).
+- **A security review's findings stay private until fixed.** Fix those that belong to the
+  change at hand. Never put an unfixed one in a public issue, PR, comment or commit
+  message (`.github/SECURITY.md`). Reproduce it and keep the command and its output, then
+  file it as a private draft security advisory, one per finding:
+  `gh api -X POST repos/{owner}/{repo}/security-advisories --input <file>`. If that is
+  refused, stop and ask, and never fall back to a public issue.
 
 See `.github/CONTRIBUTING.md` (Development Workflow) for the full account.
 

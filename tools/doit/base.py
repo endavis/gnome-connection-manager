@@ -146,6 +146,36 @@ def install_check_or_skip(package: str, hint: str) -> str:
     return f"uv pip show {package} >/dev/null 2>&1 || {{ echo {shlex.quote(hint)}; exit 0; }}; "
 
 
+def warn_if_env_drifted() -> None:
+    """Warn, but do not fail, when the environment has drifted from ``uv.lock``.
+
+    Runs ``uv sync --all-extras --dev --check``, which exits non-zero when the
+    installed environment no longer matches ``uv.lock`` (verified with uv
+    0.9.8: exit 0 and "Would make no changes" in sync, non-zero otherwise).
+    On a non-zero exit this prints a one-line reminder and returns — it never
+    raises or calls ``sys.exit``, so the doit task that called it keeps going.
+
+    This is the replacement for `uv-sync-on-pull`/`uv-sync-on-checkout`
+    (#1033): those `post-merge`/`post-checkout` pre-commit hooks ran `uv sync`
+    automatically on `git checkout`/`git pull`, before anyone had reviewed the
+    branch. The code that reminds a developer to sync now runs only when they
+    choose to run a `doit` task — `doit check` and `doit test` call this
+    first — on a branch they have already decided to trust.
+    """
+    result = subprocess.run(  # nosec B603 B607
+        ["uv", "sync", "--all-extras", "--dev", "--check"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        console = Console()
+        console.print(
+            verbatim("uv.lock changed — run: doit install_dev", "yellow"),
+            soft_wrap=True,
+        )
+
+
 def _child_env(env: Mapping[str, str] | None) -> dict[str, str]:
     """Build the environment for a child process spawned by a streaming helper.
 

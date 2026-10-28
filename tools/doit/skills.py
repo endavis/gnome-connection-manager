@@ -37,6 +37,7 @@ SHARED_SKILLS: tuple[str, ...] = (
     "security-triage",
     "dead-code-triage",
     "perf-change",
+    "merge-pr",
     "ghi-status",
     "implement-issue",
     "multi-plan",

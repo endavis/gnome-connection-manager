@@ -13,7 +13,7 @@ tags:
 
 ## Purpose
 
-This page is the imperative-form rulebook AI agents must follow when generating code in this template. It complements [Tooling Roles and Architectural Boundaries](../tooling-roles.md), which explains *why* the layering exists and is written for human readers. This page restates those rules as short directives plus concrete anti-patterns AI agents frequently hit. Do not duplicate the rationale here — read `tooling-roles.md` when you need the reasoning.
+This page is the imperative-form rulebook AI agents must follow when generating code in this project. It complements [Tooling Roles and Architectural Boundaries](../tooling-roles.md), which explains *why* the layering exists and is written for human readers. This page restates those rules as short directives plus concrete anti-patterns AI agents frequently hit. Do not duplicate the rationale here — read `tooling-roles.md` when you need the reasoning.
 
 ## Rules
 
@@ -35,7 +35,7 @@ This page is the imperative-form rulebook AI agents must follow when generating 
 
 ## Common failure modes
 
-Concrete anti-patterns AI agents hit in this template, with the correct framing for each.
+Concrete anti-patterns AI agents hit in this project, with the correct framing for each.
 
 ### 1. Adding a new user-facing feature as a doit task
 

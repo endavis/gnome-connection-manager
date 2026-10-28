@@ -34,4 +34,4 @@ Ensures bad code never enters the repository, provides fast feedback loop (secon
 ## Related Documentation
 
 - [Coding Standards](../development/coding-standards.md)
-- [Installation Guide](https://github.com/endavis/pyproject-template/blob/main/docs/getting-started/installation.md)
+- [Installation Guide](../getting-started/installation.md)

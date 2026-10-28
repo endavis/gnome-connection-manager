@@ -32,9 +32,12 @@ Consequences of that single definition:
 2. **`get_latest_release()` is removed.** With releases out of the model it is a dead path that
    invites reintroducing the assumption.
 3. **One archive URL shape**: `/archive/{sha}.zip`, for every ref kind.
-4. **Resolution failure warns and continues** against the unresolved ref, matching
-   `bootstrap.resolve_ref`. Refusing to run a drift check because `api.github.com` is unreachable
-   trades a small consistency gain for a hard outage.
+4. **Resolution failure warns and continues in `bootstrap.py`** against the unresolved ref.
+   Refusing to bootstrap because `api.github.com` is unreachable trades a small consistency gain
+   for a hard outage. **The drift check fails closed instead** (amended by #1026): an extract of a
+   moving ref cannot be recorded as a sync point, and continuing used to replace the reviewed extract
+   `sync` needs, so `sync` then failed with no hint of why. `manage.py check` stops with the cause and
+   the `GITHUB_TOKEN` remedy, and falls back to `gh auth token` when `GITHUB_TOKEN` is unset.
 5. **The flag keeps its name.** `--template-version` was exposed hours before this decision (#779);
    renaming it to `--template-ref` twice in a day is churn for a cosmetic gain, and "version" is
    what a consumer calls the thing regardless of its form.
@@ -82,6 +85,9 @@ project starts cutting them — the difference is that nothing *depends* on thei
   and pass that same SHA to `manage.py check`. One identifier across the whole path.
 
 ## Related Issues
+- Issue #1026: a rate-limited drift check continued against the moving `main`, replaced the
+  reviewed extract, and `sync` then failed without saying why. Consequence 4 now applies to
+  `bootstrap.py` only; the drift check fails closed
 - Issue #805: the archive root is named for the resolved commit, which this decision made true and
   `manage.py` was never updated for — it kept looking for a fixed `pyproject-template-main`, which
   silently killed the check -> sync handoff. The fix reads the reviewed commit off the archive root's
@@ -94,6 +100,7 @@ project starts cutting them — the difference is that nothing *depends* on thei
 
 ## Related Documentation
 - [Keeping Up to Date](../template/updates.md) — the consumer-facing description of what a run pins
+- [Template Manager](../template/manage.md) — the troubleshooting entries for an unpinned check
 - [AI Sync Checklist](../template/ai-sync-checklist.md) — the two phases this decision aligns
 - [Template Tooling](../template/tools-reference.md) — `manage.py check` and its flags
 - [ADR-9018](9018-agentsmd-carries-only-shared-always-on-instructions.md) — the precedent for

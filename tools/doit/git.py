@@ -36,6 +36,8 @@ _REBUILDABLE_IGNORED = (
     "dist",
     "site",
     "*.egg-info",
+    ".pre-commit",  # PRE_COMMIT_HOME, set by .envrc under tmp/
+    "mutants",  # mutmut's copy of the project, made again by the next run
 )
 
 
@@ -82,9 +84,9 @@ def task_changelog() -> dict[str, Any]:
 
 
 def task_pre_commit_install() -> dict[str, Any]:
-    """Install pre-commit hooks.
+    """Install pre-commit hooks, and remove `post-merge`/`post-checkout` if present.
 
-    One action, deliberately. `.pre-commit-config.yaml` declares
+    The install line is deliberately bare. `.pre-commit-config.yaml` declares
     `default_install_hook_types`, so a bare `pre-commit install` installs every
     declared type — including `commit-msg`, which carries conventional-commit
     validation and the branch/issue check (#741).
@@ -96,9 +98,21 @@ def task_pre_commit_install() -> dict[str, Any]:
     add a type would have followed the pattern and silently changed nothing.
     The config is the single source; `tests/template/test_doit_git.py` holds the
     two to each other.
+
+    The uninstall is new in #1033. `pre-commit install` only adds the hook
+    types the config currently declares — it does not remove a type that used
+    to be declared and no longer is. A repo that ran this task before #1033
+    still has `post-merge`/`post-checkout` on disk, and either one is
+    config-from-the-branch: it reads `.pre-commit-config.yaml` from whatever
+    is checked out, so an untrusted branch can replace the hook with its own.
+    `pre-commit uninstall` on a type that was never installed is a no-op that
+    exits 0, so this is safe to run unconditionally on every repo.
     """
     return {
-        "actions": ["uv run pre-commit install"],
+        "actions": [
+            "uv run pre-commit install",
+            "uv run pre-commit uninstall -t post-checkout -t post-merge",
+        ],
         "title": title_with_actions,
     }
 

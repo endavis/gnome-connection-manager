@@ -981,7 +981,7 @@ uv run nox -s tests # Run specific session
 
 ## Summary
 
-This template provides a solid foundation with the most commonly needed tools. Add extensions from this guide as your project grows and your needs evolve.
+This project provides a solid foundation with the most commonly needed tools. Add extensions from this guide as your project grows and your needs evolve.
 
 ### Quick Reference: When to Add What
 

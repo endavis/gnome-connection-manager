@@ -139,7 +139,7 @@ ignore = [
 # Same reasoning as the tools/ entries above: they are replaced wholesale on a sync, and
 # upstream lints them under a config that does not select TC (flake8-type-checking).
 "tests/test_hook_*.py" = ["TC"]
-"tests/test_bash_ban_raw_tools.py" = ["TC"]
+"tests/test_doc_scan.py" = ["TC"]
 "tests/test_ci_workflow.py" = ["TC"]
 "tests/test_codeql_workflow.py" = ["TC"]
 "tests/test_workflow_action_pinning.py" = ["TC"]
@@ -149,11 +149,12 @@ ignore = [
 
 [tool.ruff.lint.isort]
 # Sorted as the template sorts them, whose `src` is ruff's default, the root and src/ (#324).
-# There tools/ is the project's own, and tests/agent_roster.py, the helper the tests taken
-# from it import as a module of its own, is not. Naming tests/ in `src` turned both round,
-# so each file taken had its imports out of order here and in order upstream.
+# There tools/ is the project's own, and tests/agent_roster.py and tests/doc_scan.py, the
+# helpers the tests taken from it import as modules of their own (#385), are not. Naming
+# tests/ in `src` turned both round, so each file taken had its imports out of order here
+# and in order upstream.
 known-first-party = ["tools"]
-known-third-party = ["agent_roster"]
+known-third-party = ["agent_roster", "doc_scan"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -207,6 +208,13 @@ disable_error_code = [
     "func-returns-value",
     "unused-ignore",
 ]
+
+[[tool.mypy.overrides]]
+# Taken from the template, which imports tests/doc_scan.py as `doc_scan`. tests/ is a
+# package here and not there, so mypy cannot find that module, types what comes from it
+# as Any, and reports each function returning it, 3 errors, measured (#385).
+module = ["tests.test_markdown_links", "tests.test_instruction_pointers"]
+disable_error_code = ["no-any-return"]
 
 # Bandit - security linter
 [tool.bandit]

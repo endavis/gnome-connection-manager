@@ -74,7 +74,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $SYSTEM_PACKAGES
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "latest"
 
@@ -142,7 +142,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $SYSTEM_PACKAGES
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "latest"
 
@@ -161,6 +161,10 @@ jobs:
 
       # Each check runs whether or not the one before it failed, so a PR shows every
       # failing check at once instead of one per push, as the template's lint job does.
+      - name: Check environment drift
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run doit env_check
+
       - name: Check code formatting
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run doit format_check
@@ -197,7 +201,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: "latest"
 

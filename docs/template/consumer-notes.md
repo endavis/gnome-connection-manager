@@ -91,6 +91,40 @@ where an implicit trust assumption should not be extended. See
 
 ## Needs a one-off action
 
+### `manage.py repo` now disables CodeQL default setup
+
+**Who.** Any repository that enabled GitHub's own CodeQL **default setup** (Settings →
+Code security → CodeQL analysis) before adopting the committed `.github/workflows/codeql.yml`
+advanced workflow. That is every repository that synced the template rather than being created
+fresh from it, if it ever used GitHub's own CodeQL setup.
+
+**What changed.** `update_all_repo_settings()` now checks `GET
+/repos/{owner}/{repo}/code-scanning/default-setup` and, if `state` is `configured`, disables it
+with `PATCH ... {"state": "not-configured"}`. GitHub refuses to process SARIF uploaded by an
+advanced workflow while default setup stays enabled, so every `CodeQL` check run failed until
+someone disabled it by hand (endavis/bastproxy#9).
+
+**What it looks like if you don't run `manage.py repo`.** The `Analyze (*)` jobs in
+`.github/workflows/codeql.yml` keep succeeding, but the `CodeQL` summary job fails with:
+
+```
+Code Scanning could not process the submitted SARIF file:
+CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled
+```
+
+Since the template's ruleset requires the `CodeQL` check, this blocks every PR from merging.
+
+**The fix.** Run `python tools/pyproject_template/manage.py repo` once after adopting
+`codeql.yml` (if `tools/pyproject_template/` was already cleaned up, disable default setup by
+hand instead, at `https://github.com/<owner>/<repo>/settings/security_analysis`). The same run now
+also starts with an admin-access check (`check_admin_access()`) and fails with one clear message
+if the token lacks the repository's Administration permission, rather than a 403 on every later
+step -- see [GitHub Repository Settings → Required
+Permissions](../development/github-repository-settings.md#required-permissions).
+
+**Why it is not optional.** A synced repository that already had default setup enabled cannot
+merge any PR once `codeql.yml` is adopted, until this runs (or the equivalent manual change).
+
 ### `multi-plan`, `multi-review` and `multi-adversarial-review` moved to shared skills
 
 **Who.** Any project that customized `.claude/commands/multi-{plan,review,adversarial-review}.md` or
@@ -163,7 +197,7 @@ block that does not parse, why. An ADR must also replace the template's placehol
 **Who.** Every project that ran it *before* adopting the `.pre-commit-config.yaml` that declares
 `default_install_hook_types`.
 
-**Why.** The config now declares four hook types, and `commit-msg` is newly among them. A project
+**Why.** The config now declares two hook types, and `commit-msg` is newly among them. A project
 that installed hooks earlier has no `commit-msg` hook on disk, so **neither conventional-commit
 enforcement nor the branch/issue check runs for it** — silently, because nothing fails when a hook
 that was never installed does not fire.
@@ -172,8 +206,16 @@ that was never installed does not fire.
 doit pre_commit_install
 ```
 
-Verify with `ls .git/hooks/` — `commit-msg`, `pre-commit`, `post-merge` and `post-checkout` should
-all be present.
+Verify with `ls .git/hooks/` — `commit-msg` and `pre-commit` should be present.
+
+**#1033: this also removes `post-merge`/`post-checkout` if your project installed them.** Those two
+hook types ran `uv sync --all-extras --dev` automatically after a `git pull` or branch switch. They
+are gone, not fixed: `pre-commit` reads `.pre-commit-config.yaml` from whatever is checked out, so a
+hook of either type — ours, or one an untrusted branch supplies in its own copy of the file — runs
+before anyone has reviewed that branch. Running `doit pre_commit_install` again uninstalls both
+types (`pre-commit uninstall -t post-checkout -t post-merge`, a no-op if they were never installed).
+`doit check` and `doit test` now warn instead, without failing, when `uv.lock` has drifted from the
+installed environment.
 
 ## Behaviour you will notice
 
@@ -239,6 +281,19 @@ customization on top of the context-file convention rather than the old inline `
 [`doit-tasks-reference.md` — `delegation_context`](../development/doit-tasks-reference.md#delegation_context)
 and [Cross-Agent Delegation Matrix — Context-file
 convention](../development/ai/cross-agent-delegation.md#context-file-convention).
+
+### The doc-link and doc-path tests honor `sync-exclude.toml` and skip git-ignored markdown
+
+`tests/test_markdown_links.py`, `tests/test_documented_paths.py` and `tests/test_instruction_pointers.py`
+now discover markdown through `git ls-files` instead of walking the filesystem with a hardcoded
+skip list, and skip a link or documented-path target that matches a pattern in
+`.config/pyproject_template/sync-exclude.toml`. If you adopted a shared skill or a 9xxx ADR that
+links to a template-only page you chose not to adopt (`docs/template/*.md`,
+`src/package_name/core.py`, and so on), add that path to `sync-exclude.toml` rather than editing
+the adopted file. A new helper module, `tests/doc_scan.py`, ships alongside the three tests and
+must be adopted with them — see
+[AI Sync Checklist](ai-sync-checklist.md#phase-1-sync-template-management-tools-always-run-first).
+See [ADR-9026](../decisions/9026-doc-scanning-tests-honor-sync-excludetoml-and-discover-markdown-via-git.md).
 
 ### `doit release_tag`'s next steps depend on `release.yml`
 

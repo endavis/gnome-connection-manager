@@ -152,7 +152,7 @@ HEADLESS_CODEX_HOST_FILES: dict[str, Path] = {
 NON_INTERACTIVE_INVOCATIONS: dict[str, str] = {
     "claude": "claude -p '<prompt>'",
     "codex": "codex -a never --dangerously-bypass-hook-trust exec '<prompt>' < /dev/null",
-    "copilot": "copilot --allow-all -p '<prompt>'",
+    "copilot": "GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true copilot --allow-all -p '<prompt>'",
     "antigravity": (
         "agy -p '<prompt>' --dangerously-skip-permissions "
         '--add-dir "$(git rev-parse --show-toplevel)"'

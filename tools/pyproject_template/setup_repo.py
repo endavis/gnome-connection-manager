@@ -480,13 +480,6 @@ chore: configure project from template
             )
             if result.returncode == 0:
                 Logger.success("Pre-commit hooks installed")
-                # Install post-merge and post-checkout hooks for auto uv sync
-                for hook_type in ["post-merge", "post-checkout"]:
-                    subprocess.run(
-                        ["uv", "run", "pre-commit", "install", "--hook-type", hook_type],
-                        capture_output=True,
-                        text=True,
-                    )
             else:
                 Logger.warning("Failed to install pre-commit hooks")
                 Logger.info("You can install manually with: uv run pre-commit install")

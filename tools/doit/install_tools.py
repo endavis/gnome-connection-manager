@@ -20,7 +20,7 @@ from doit.tools import title_with_actions
 # Hosts whose release assets we fetch without a caller-supplied digest.
 #
 # This is not a claim that GitHub is trustworthy in some absolute sense — it is
-# the same trust already extended by cloning this template. What it excludes is
+# the same trust already extended by cloning this repository. What it excludes is
 # the `url_template` escape hatch (ADR-9015), which exists precisely to fetch
 # from arbitrary third parties such as `releases.hashicorp.com`. Those bypass
 # even that implicit trust, so they must name what they expect to receive.

@@ -191,6 +191,13 @@ document that still need the same treatment.
 | Missing | Files in template that don't exist in your project |
 | Extra | Files in your project that don't exist in template |
 
+**Stale `template-sync` skill warning:** Before the drift report, the check compares your local
+`template-sync` `SKILL.md` copies (`.agents/skills/template-sync/SKILL.md` and
+`.claude/skills/template-sync/SKILL.md`) against the template just downloaded. If either is missing
+or differs, it prints a warning naming the upstream URL to re-read before triaging. A template ref
+old enough to predate the skill is not flagged. This only warns — the skill is downstream-owned, and
+adopting a stale copy goes through the normal drift triage, never an overwrite by this check.
+
 ### Skipped Paths
 
 The comparison automatically skips:

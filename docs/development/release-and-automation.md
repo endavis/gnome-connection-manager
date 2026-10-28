@@ -42,7 +42,7 @@ This guide covers automated versioning, release management, governance validatio
 
 ## Automated Versioning
 
-This template uses **hatch-vcs** for automated, git tag-based versioning. Version numbers are derived from git tags - no manual edits to `pyproject.toml` or `_version.py` are required.
+This project uses **hatch-vcs** for automated, git tag-based versioning. Version numbers are derived from git tags - no manual edits to `pyproject.toml` or `_version.py` are required.
 
 ### How It Works
 
@@ -323,7 +323,7 @@ enhancement but not a blocker for publishing.
 
 ### One-step bootstrap: `doit publish_setup`
 
-New projects adopting this template should run `doit publish_setup` once
+New projects should run `doit publish_setup` once
 after first push:
 
 ```bash
@@ -562,7 +562,7 @@ Each linked issue is closed with the comment `Addressed in PR #XX`, matching the
 
 ## Security & Quality Tasks
 
-This template includes comprehensive security scanning and code quality tools.
+This project includes comprehensive security scanning and code quality tools.
 
 ### Security Tasks
 
@@ -745,7 +745,7 @@ jobs:
 
 ## Governance Validation
 
-This template enforces governance rules to ensure code quality and traceability.
+This project enforces governance rules to ensure code quality and traceability.
 
 ### Validation Functions
 
@@ -881,7 +881,7 @@ See docs/template/migration.md for upgrade instructions."
 
 ### Using direnv (Recommended)
 
-This template supports `direnv` for automatic environment management:
+This project supports `direnv` for automatic environment management:
 
 ```bash
 # Install direnv

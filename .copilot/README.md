@@ -18,7 +18,7 @@ All Copilot-host workflow skills live under `.github/skills/<target>-<action>/SK
 Planning and implementation are not part of this matrix — "implement issue N" runs the shared
 `implement-issue` skill instead (see below).
 
-The `multi-*` orchestrators (`/multi-plan`, `/multi-review`, `/multi-adversarial-review`), `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage` and `/perf-change` come from `.agents/skills/` (interoperable Codex skill path) and are auto-discovered by Copilot. Verify with `copilot skill list`.
+The `multi-*` orchestrators (`/multi-plan`, `/multi-review`, `/multi-adversarial-review`), `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change` and `/merge-pr` come from `.agents/skills/` (interoperable Codex skill path) and are auto-discovered by Copilot. Verify with `copilot skill list`.
 
 ## Known limitation: delegate-* skill bleed
 

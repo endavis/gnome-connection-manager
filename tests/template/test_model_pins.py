@@ -3,9 +3,7 @@
 A model pin in a *template* is different from a pin in an ordinary repo: every
 project spawned from it inherits the value, and nothing in the update-checking
 machinery looks at model IDs. `CLAUDE_CODE_SUBAGENT_MODEL` sat at
-`claude-sonnet-4-6` for two model generations, and the same stale ID had spread
-into `precompact-checkpoint.py`, which passes it to a live `claude -p`
-invocation (#696).
+`claude-sonnet-4-6` for two model generations before anyone noticed (#696).
 
 The pin itself is deliberate — `AI_SETUP.md` records it as a cost/quality
 trade-off, with `implement-worker` intentionally not overriding it. So these
@@ -38,10 +36,10 @@ AI_SETUP = REPO_ROOT / "docs" / "development" / "AI_SETUP.md"
 # accepted claude-sonnet-4-6 forever.
 CURRENT_MODEL_IDS = frozenset(
     {
-        "claude-opus-5",
-        "claude-sonnet-5",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+        "claude-fable-5-1",
+        "claude-haiku-5-5",
     }
 )
 
@@ -52,8 +50,6 @@ _MODEL_RE = re.compile(r"claude-(?:opus|sonnet|haiku|fable)-[0-9][0-9a-z-]*")
 _SCANNED = (
     SETTINGS,
     AI_SETUP,
-    REPO_ROOT / "tools" / "hooks" / "ai" / "precompact-checkpoint.py",
-    REPO_ROOT / "docs" / "development" / "ai" / "auto-checkpoint-hook.md",
 )
 
 
@@ -100,4 +96,4 @@ def test_the_scanner_actually_finds_model_ids() -> None:
     vacuously — the same silent-success shape the pin itself had.
     """
     total = sum(len(_MODEL_RE.findall(p.read_text(encoding="utf-8"))) for p in _SCANNED)
-    assert total >= 4, f"expected the scanned files to name model IDs, found {total}"
+    assert total >= 3, f"expected the scanned files to name model IDs, found {total}"

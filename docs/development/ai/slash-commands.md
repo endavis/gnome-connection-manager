@@ -1,6 +1,6 @@
 ---
 title: Slash Commands and Workflows
-description: Reference for the slash commands and dual-agent workflow this template ships with
+description: Reference for the slash commands and dual-agent workflow this project ships with
 audience:
   - contributors
   - ai-agents
@@ -14,12 +14,12 @@ tags:
 
 ## Purpose
 
-This page documents the slash commands this template ships — the shared `implement-issue` skill
+This page documents the slash commands this project ships — the shared `implement-issue` skill
 that drives an issue to an open PR, self-action and multi-agent review commands under
 `.claude/commands/`; the shared workflow skills (`implement-issue`, `ghi-status`,
 `checkpoint`/`restore`, `template-sync`, `template-migrate`, `add-dependency`, `mutation-triage`,
 `property-tests`, `deprecate-api`, `python-version-bump`, `security-triage`, `dead-code-triage`,
-`perf-change`) written once under `.agents/skills/` and generated for Claude under `.claude/skills/`
+`perf-change`, `merge-pr`) written once under `.agents/skills/` and generated for Claude under `.claude/skills/`
 by `doit skills_sync` — and the single-agent and multi-agent workflows built on top of them. It is
 written for contributors who want to understand or extend the workflow, and for AI agents that need
 to know which command to run at each stage of the issue lifecycle.
@@ -47,10 +47,12 @@ artifact the next step expects.
    for fix-ups (the skill is not re-run for small corrections — just edit, `doit check`, commit, and
    push).
 4. **User-driven merge** — the user reviews the PR, adds the `ready-to-merge` label, and merges via
-   `doit pr_merge` (or the web UI). This step is never automated — `implement-issue` never applies
-   the label or merges.
-5. **Close the issue** — after the PR merges, run `doit pr_merge --auto-close` (or `gh issue close
-   <n>`) to close the linked issue and post a closing comment.
+   `doit pr_merge` (or the web UI), or says "merge \<n\>" to run [`merge-pr`](#merge-pr-n). The
+   label stays manual — neither `implement-issue` nor `merge-pr` applies it, and
+   `implement-issue` never merges.
+5. **Close the issue** — `merge-pr` closes the issues the PR fully addresses and comments on the
+   rest. Merging by hand, run `doit pr_merge --auto-close` (or `gh issue close <n>`) to close the
+   linked issue and post a closing comment.
 
 ### Multi-agent workflow
 
@@ -85,7 +87,7 @@ uses the same format `implement-issue` posts on its own.
 
 ## Shared workflow skills: one source, generated for Claude
 
-Seventeen workflow skills — `implement-issue`, `ghi-status`, `checkpoint`, `restore`, `template-sync`, `template-migrate`, `add-dependency`, `mutation-triage`, `property-tests`, `deprecate-api`, `python-version-bump`, `security-triage`, `dead-code-triage`, `perf-change`, `multi-plan`, `multi-review`, `multi-adversarial-review` — are written once, in `.agents/skills/<name>/SKILL.md`, with no Claude-only frontmatter so Claude can auto-invoke them from their `description:` the same way Codex, Antigravity and Copilot do. **Edit only the `.agents/skills/` copy.** `doit skills_sync` then copies each one, byte for byte, to `.claude/skills/<name>/SKILL.md` — the path Claude Code reads (verified against Claude Code 2.1.304, which does not read `.agents/skills/`). The task runs only when this project wires Claude Code; `doit skills_sync --check` reports drift and exits non-zero instead of writing anything, and `tests/template/test_skills_sync.py` enforces that the generated copies never drift from source in this repo.
+Eighteen workflow skills — `implement-issue`, `ghi-status`, `checkpoint`, `restore`, `template-sync`, `template-migrate`, `add-dependency`, `mutation-triage`, `property-tests`, `deprecate-api`, `python-version-bump`, `security-triage`, `dead-code-triage`, `perf-change`, `merge-pr`, `multi-plan`, `multi-review`, `multi-adversarial-review` — are written once, in `.agents/skills/<name>/SKILL.md`, with no Claude-only frontmatter so Claude can auto-invoke them from their `description:` the same way Codex, Antigravity and Copilot do. **Edit only the `.agents/skills/` copy.** `doit skills_sync` then copies each one, byte for byte, to `.claude/skills/<name>/SKILL.md` — the path Claude Code reads (verified against Claude Code 2.1.304, which does not read `.agents/skills/`). The task runs only when this project wires Claude Code; `doit skills_sync --check` reports drift and exits non-zero instead of writing anything, and `tests/template/test_skills_sync.py` enforces that the generated copies never drift from source in this repo.
 
 The slash names are unchanged for Claude users: `/add-dependency` and the rest still work, now as skills rather than single-file commands. `multi-plan`, `multi-review` and `multi-adversarial-review` joined this list in #975, once each could say "the entry in the table that matches the CLI running this skill is you" instead of hardcoding one agent as self — see [Multi-agent orchestration](cross-agent-delegation.md#multi-agent-orchestration-multi-) for what changed. `ghi-finalize` and the per-agent `plan`/`implement` matrix are gone entirely, replaced by `implement-issue` (#976).
 
@@ -101,9 +103,9 @@ Runs an adversarial review using the host agent (self-action) or delegates to a 
 
 ### implement issue N
 
-**Args:** issue number, optionally followed by `with <agent>` to delegate only the coding step. **Sources:** `.agents/skills/implement-issue/SKILL.md` (Codex, Antigravity, Copilot, and the source Claude's copy is generated from); `.claude/skills/implement-issue/SKILL.md` (Claude, generated by `doit skills_sync`); `.claude/agents/implement-worker.md` (Claude's Coder-brief subagent).
+**Args:** issue number, optionally followed by `with <agent>` to delegate only the coding step. **Trigger:** "implement issue N" or a close variant, or the user approving work on an issue — including a "yes" to a fix the agent proposed and filed as an issue. A question is not approval. **Sources:** `.agents/skills/implement-issue/SKILL.md` (Codex, Antigravity, Copilot, and the source Claude's copy is generated from); `.claude/skills/implement-issue/SKILL.md` (Claude, generated by `doit skills_sync`); `.claude/agents/implement-worker.md` (Claude's Coder-brief subagent).
 
-Takes an open issue to an open PR in one run, replacing the former `/<ai>:plan` → `/<ai>:implement` → `/ghi-finalize` chain. Validates the issue is open, creates or resumes the branch `<type>/<n>-<short-description>` from a label→type mapping, decides whether to post a plan first (`needs-adr`, more than about three files, or more than one reasonable approach — otherwise the issue body is the spec), implements with tests in a subagent (the Coder brief; Claude's is `implement-worker`), runs `doit check` and `doit docs_build`, commits with `git commit` in the CONTRIBUTING format, pushes, and opens the PR with `doit pr` (`Addresses #<n>`). It then watches `gh pr checks` and fixes any job other than `require-label` for up to 3 rounds, stopping to report whatever is still red after that. **Workflow position:** first and only step of the single-agent workflow before PR review. **Design note:** there is no approval wait for the plan or the commit — the trade is explicit, and the skill never applies `ready-to-merge`, merges, or closes the issue. See [Cross-Agent Delegation Matrix — plan and implement are no longer part of this matrix](cross-agent-delegation.md) for why this replaced the per-agent matrix.
+Takes an open issue to an open PR in one run, replacing the former `/<ai>:plan` → `/<ai>:implement` → `/ghi-finalize` chain. Validates the issue is open, creates or resumes the branch `<type>/<n>-<short-description>` from a label→type mapping, decides whether to post a plan first (`needs-adr`, more than about three files, or more than one reasonable approach — otherwise the issue body is the spec), implements with tests in a subagent (the Coder brief; Claude's is `implement-worker`), or inline for a small change (see the skill's Step 4), runs `doit check` and `doit docs_build`, commits with `git commit` in the CONTRIBUTING format, pushes, and opens the PR with `doit pr` (`Addresses #<n>`). It then watches `gh pr checks` and fixes any job other than `require-label` for up to 3 rounds, stopping to report whatever is still red after that. **Workflow position:** first and only step of the single-agent workflow before PR review. **Design note:** there is no approval wait for the plan or the commit — the trade is explicit, and the skill never applies `ready-to-merge`, merges, or closes the issue. See [Cross-Agent Delegation Matrix — plan and implement are no longer part of this matrix](cross-agent-delegation.md) for why this replaced the per-agent matrix.
 
 ### `/<ai>:review [focus]` (Copilot: `/<ai>-review`)
 
@@ -141,9 +143,7 @@ Inspects the current git state (branch, uncommitted changes, recent log), extrac
 
 Pause-and-resume helpers for long-running workstreams. `/checkpoint` writes a paste-ready resumption prompt to `tmp/checkpoints/{inv_epoch}-{slug}.md`; `/restore` reads the matching file and treats its contents as the session's initial instructions. The `inv_epoch` prefix is a 10-digit decreasing integer so default `ls` lists newest first; users see only the slug. If `/restore` is invoked without a slug, it picks the most recent checkpoint. **Naming:** `checkpoint`/`restore` was chosen over `snapshot`/`resume` to avoid collisions with built-in slash commands across all four supported agents (Claude Code, Codex CLI and Copilot CLI all reserve `/resume`).
 
-**Cross-agent portability:** `tmp/checkpoints/` is intentionally shared (not per-agent), so a checkpoint taken in Claude can be restored in Codex or Copilot and vice versa. This is the documented exception to the `tmp/agents/<agent-type>/` rule in `AGENTS.md`. **Workflow position:** any time, independent of the issue lifecycle. **Design note:** checkpoints are immutable once written; the user is expected to verify referenced issues/PRs are still current before acting on stale references. **When to use it:** at the end of a session when work is unfinished and you want a clean handoff into the next session — capture the goal, current branch state, recommended next step, and any user direction or constraints that should bind the future session.
-
-**Auto-checkpoint (PreCompact / SessionStart hooks):** Claude Code also ships two lifecycle hooks that automate the pause/resume pattern for the most common context-loss event — autocompact firing mid-task. The `PreCompact` hook synthesizes a checkpoint to `tmp/checkpoints/{inv_epoch}-auto-precompact.md` before compaction; the `SessionStart` hook (matcher `compact|resume`) injects the newest auto-precompact file into the new session's context automatically. Auto-precompact files share the same filename convention and directory as manual `/checkpoint` files, so `/restore auto-precompact` also works. Set `CLAUDE_NO_AUTO_RESTORE=1` to opt out of the automatic restore; set `CLAUDE_RESTORE_ANY=1` to widen the restore glob to any `*.md` checkpoint. See [Auto-Checkpoint and Session-Restore Hooks](auto-checkpoint-hook.md) for full details.
+**Cross-agent portability:** `tmp/checkpoints/` is intentionally shared (not per-agent), so a checkpoint taken in Claude can be restored in Codex or Copilot and vice versa. This is the documented exception to the `tmp/agents/<agent-type>/` rule in `AGENTS.md`. **Workflow position:** any time, independent of the issue lifecycle. **Design note:** checkpoints are immutable once written; the user is expected to verify referenced issues/PRs are still current before acting on stale references. **When to use it:** at the end of a session when work is unfinished and you want a clean handoff into the next session — capture the goal, current branch state, recommended next step, and any user direction or constraints that should bind the future session. Use `/compact <instructions>` to steer native autocompact's own summary when a session is approaching its context limit, and take a manual `/checkpoint` first if you want a record other agents can read.
 
 ### `/template-sync [ref]`
 
@@ -205,7 +205,7 @@ Walks an agent through writing a Hypothesis property test: name the property fir
 
 **Args:** the phase (`deprecate` or `remove`) and the name or names it applies to. **Sources:** `.agents/skills/deprecate-api/SKILL.md` (Codex, Antigravity, Copilot), `.claude/skills/deprecate-api/SKILL.md` (Claude, generated by `doit skills_sync`).
 
-Retires a public name over two releases instead of breaking callers with no notice. In the `deprecate` phase it keeps the old name exported and routes it to the replacement, warns with `warnings.warn(..., DeprecationWarning, stacklevel=2)` — not `@warnings.deprecated`, since this template's floor (Python 3.12) predates it — requires a `pytest.warns` test in the same change, and documents the replacement in the docstring. In the `remove` phase, a later release, it refuses to delete the name until that deprecating release has already shipped, then deletes it and follows [AGENTS.md — Breaking Changes Policy](https://github.com/endavis/pyproject-template/blob/main/AGENTS.md#breaking-changes-policy): a `BREAKING CHANGE:` footer and a migration guide in the PR description, never a hand-edited `CHANGELOG.md` or `pyproject.toml` version — both come from `doit release`.
+Retires a public name over two releases instead of breaking callers with no notice. In the `deprecate` phase it keeps the old name exported and routes it to the replacement, warns with `warnings.warn(..., DeprecationWarning, stacklevel=2)` — not `@warnings.deprecated`, since this project's floor (Python 3.12) predates it — requires a `pytest.warns` test in the same change, and documents the replacement in the docstring. In the `remove` phase, a later release, it refuses to delete the name until that deprecating release has already shipped, then deletes it and follows [AGENTS.md — Breaking Changes Policy](../../../AGENTS.md#breaking-changes-policy): a `BREAKING CHANGE:` footer and a migration guide in the PR description, never a hand-edited `CHANGELOG.md` or `pyproject.toml` version — both come from `doit release`.
 
 **Workflow position:** whenever a public name needs to change, in two separate PRs a release apart. **Design note:** pytest's own configuration (`--strict-config --strict-markers`, no `filterwarnings`) does not fail a test merely because code under test raises `DeprecationWarning`, so the `pytest.warns` test is the only thing that catches a shim that silently stops warning — measured against this project's own `tests/test_core.py`. `tests/test_deprecate_api_skill.py` enforces that both bodies take the same phases and steps in the same order and carry the same gate sentences, and that neither body's code examples use `@warnings.deprecated` or `@typing_extensions.deprecated`.
 
@@ -241,9 +241,17 @@ Turns a performance change into a measured one instead of a claimed one. It conf
 
 **Workflow position:** mid-task, whenever the work is a performance change or a speedup claim needs backing. **Design note:** the local `doit benchmark_save` / change / `doit benchmark_compare` loop used to compare against a pinned first save regardless of how many baselines existed (`tools/doit/benchmark.py`); #840 made `--benchmark-compare` use the latest one instead, which is what makes running this loop as-is trustworthy. CI tracks its own benchmark history too (see [CI/CD and Testing — Benchmark Tracking](../ci-cd-testing.md#benchmark-tracking)), but only from pushes to `main` — the workflow's `store` job, the only one that writes history or can comment, is gated on `github.event_name == 'push'`. A PR gets no benchmark comparison from CI, so this loop's pasted table is the only before/after number the PR carries. `tests/test_perf_change_skill.py` enforces that both bodies take the same steps in the same order, carry the same benchmark, comparison and correctness gates word for word, and never tell the agent to pin the comparison to a specific saved run.
 
+### `/merge-pr [N]`
+
+**Args:** the PR number; "N is green", "merge N" and "merge PR N" all invoke it. **Sources:** `.agents/skills/merge-pr/SKILL.md` (Codex, Antigravity, Copilot), `.claude/skills/merge-pr/SKILL.md` (Claude, generated by `doit skills_sync`).
+
+Merges a finished PR and closes the issues it fully addresses. It checks that the PR is open, mergeable, clean and labelled `ready-to-merge`, that every `gh pr checks` job passes or is skipped, and compares each `Addresses #X` issue's success criteria with the diff. It then runs `doit pr_merge --pr=N --auto-close` from the main checkout when every linked issue is fully addressed; otherwise it merges without `--auto-close`, closes only the addressed issues and comments on the rest with what is missing.
+
+**Consent scope:** invoking `merge-pr` is consent to merge that PR and to close the issues it fully addresses. It never adds `ready-to-merge` (the human merge gate), never uses `--admin`, `--force` or `--no-verify`, and stops when a precondition or check fails. **Workflow position:** after the PR is reviewed and the user has added the `ready-to-merge` label. `tests/test_merge_pr_skill.py` enforces the contract.
+
 ## Codex
 
-Codex does not use repo-defined slash commands in this template. Instead, the Codex workflow is provided through **repo-scoped skills** under `.agents/skills/`, which Codex can invoke through its built-in `/skills` browser or explicit mentions such as `$implement-issue`, `$codex-review`, and `$ghi-status`.
+Codex does not use repo-defined slash commands in this project. Instead, the Codex workflow is provided through **repo-scoped skills** under `.agents/skills/`, which Codex can invoke through its built-in `/skills` browser or explicit mentions such as `$implement-issue`, `$codex-review`, and `$ghi-status`.
 
 **Workflow coverage:** the checked-in Codex skills cover taking an issue to a PR, review, and adversarial review. They preserve the same repo artifact contract used by the Claude flow:
 
@@ -262,14 +270,15 @@ Codex does not use repo-defined slash commands in this template. Instead, the Co
 - `$security-triage` fixes or justifies each bandit and pip-audit finding, and stops to ask before a `skips` entry or an ignored advisory
 - `$dead-code-triage` triages a `doit deadcode` finding against `[tool.vulture]` in `pyproject.toml` — unused import, unused variable, or unreachable code — before fixing it, adding a documented exception, or asking
 - `$perf-change` takes a measured baseline before a performance change, profiles with `cProfile`, and compares after, so a speedup claim is backed by a pasted table
+- `$merge-pr` merges a PR that is open, clean, green and labelled `ready-to-merge`, then closes the issues it fully addresses and comments on the rest
 
 **Config and safety:** `.codex/config.toml` still configures approvals and hook wiring for Codex. The shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` applies to Codex, and the approval-policy deny rules remain a secondary defense layer.
 
-**Out of scope for Codex in this template:** no repo-defined custom slash commands, no dual-agent orchestration, and no Codex-specific close-issue automation.
+**Out of scope for Codex in this project:** no repo-defined custom slash commands, no dual-agent orchestration, and no Codex-specific close-issue automation.
 
 ## Antigravity
 
-Antigravity (`agy`) does not use repo-defined slash commands in this template. Instead, the Antigravity workflow is provided through **repo-scoped skills** under `.agents/skills/` (the same directory and `SKILL.md` format Codex uses), which `agy` activates by matching your request against each skill's `description:` frontmatter — there is no slash or `$` prefix.
+Antigravity (`agy`) does not use repo-defined slash commands in this project. Instead, the Antigravity workflow is provided through **repo-scoped skills** under `.agents/skills/` (the same directory and `SKILL.md` format Codex uses), which `agy` activates by matching your request against each skill's `description:` frontmatter — there is no slash or `$` prefix.
 
 **Workflow coverage:** the checked-in Antigravity skills cover taking an issue to a PR, review, and adversarial review. They preserve the same repo artifact contract used by the Claude flow:
 
@@ -288,8 +297,9 @@ Antigravity (`agy`) does not use repo-defined slash commands in this template. I
 - The shared `security-triage` skill fixes or justifies each bandit and pip-audit finding, and stops to ask before a `skips` entry or an ignored advisory
 - The shared `dead-code-triage` skill triages a `doit deadcode` finding against `[tool.vulture]` in `pyproject.toml` — unused import, unused variable, or unreachable code — before fixing it, adding a documented exception, or asking
 - The shared `perf-change` skill takes a measured baseline before a performance change, profiles with `cProfile`, and compares after, so a speedup claim is backed by a pasted table
+- The shared `merge-pr` skill merges a PR that is open, clean, green and labelled `ready-to-merge`, then closes the issues it fully addresses and comments on the rest
 
-**Config and safety:** `.agents/hooks.json` wires the shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` for Antigravity (a `PreToolUse` matcher on `run_command`/`write_to_file`). Unlike the exit-code-2 CLIs, `agy` blocks by printing `{"decision":"deny"}` on stdout, which holds even under `--dangerously-skip-permissions`. Because `agy` only loads workspace customizations for an active/trusted workspace, headless `agy -p` invocations must pass `--add-dir <repo-root>`.
+**Config and safety:** `.agents/hooks.json` wires the shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` for Antigravity (a `PreToolUse` matcher on `run_command`, `write_file`, `edit_file` and `write_to_file`). Unlike the exit-code-2 CLIs, `agy` blocks by printing `{"decision":"deny"}` on stdout, which holds even under `--dangerously-skip-permissions`. Because `agy` only loads workspace customizations for an active/trusted workspace, headless `agy -p` invocations must pass `--add-dir <repo-root>`.
 
 **Out of scope for Antigravity in this phase:** cross-agent delegation bridges and multi-agent orchestration for `agy` land in a later phase.
 
@@ -375,7 +385,7 @@ rather than checked.
 
 ## Cross-agent delegation matrix
 
-This template ships a `<target>:<action>` matrix for `review` and `adversarial-review`, where `<target>` can be **the same agent** (self-action) or **any of the other three** (cross-agent delegation). Self-action (`/claude:review`, etc.) and cross-agent delegation (`/codex:review` from Claude, etc.) share the same `<ai>:<action>` naming convention. Planning and implementation are not part of this matrix — they run through the single shared `implement-issue` skill instead (see [implement issue N](#implement-issue-n) above). The full design — convention, file layout, prefix mapping (`/foo` vs `$foo` for Codex), Hybrid C runtime behavior, and the `.agents/skills/` ↔ Copilot conflict mitigation — is documented separately:
+This project ships a `<target>:<action>` matrix for `review` and `adversarial-review`, where `<target>` can be **the same agent** (self-action) or **any of the other three** (cross-agent delegation). Self-action (`/claude:review`, etc.) and cross-agent delegation (`/codex:review` from Claude, etc.) share the same `<ai>:<action>` naming convention. Planning and implementation are not part of this matrix — they run through the single shared `implement-issue` skill instead (see [implement issue N](#implement-issue-n) above). The full design — convention, file layout, prefix mapping (`/foo` vs `$foo` for Codex), Hybrid C runtime behavior, and the `.agents/skills/` ↔ Copilot conflict mitigation — is documented separately:
 
 → See [Cross-Agent Delegation Matrix](cross-agent-delegation.md).
 
@@ -403,6 +413,6 @@ implement issue 42 with codex          # delegates only the coding step to Codex
 - [First 5 Minutes with an AI Agent](first-5-minutes.md) — narrative onboarding walkthrough showing the workflow end to end.
 - [AI Agent Setup Guide](../AI_SETUP.md) — per-CLI configuration and whitelists.
 - [Architectural Conventions](architectural-conventions.md) — imperative rules for AI-generated code.
-- [AI Enforcement Principles](enforcement-principles.md) — how this template enforces rules in code, not just instructions.
+- [AI Enforcement Principles](enforcement-principles.md) — how this project enforces rules in code, not just instructions.
 - [AI Command Blocking](command-blocking.md) — tool-level hooks that block dangerous commands.
 - [AGENTS.md](../../../AGENTS.md) — universal context file and workflow reference.

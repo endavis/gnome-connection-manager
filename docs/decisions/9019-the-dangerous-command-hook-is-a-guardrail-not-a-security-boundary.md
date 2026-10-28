@@ -104,6 +104,17 @@ and the draft that flipped it to `BLOCK` was wrong.
   proposed today, and this ADR exists partly so the next one is not.
 - **Future "should the hook catch X" is answered by category and rule**, not re-argued. If X is
   category 3 and needs new parsing, the answer is no.
+- **A heredoc-boundary misread is fixed in the boundary finder, not by scanning bodies too.**
+  #1025 showed a here-string (`<<<`) or an arithmetic shift (`$((1<<EOF))`) read as a heredoc
+  start, hiding the lines after it from the credential and env-dump checks. The finder was fixed,
+  because an ordinary `cmd <<< "$x"` hits it. The fail-closed alternative, re-running those checks
+  on the full command with bodies included, was declined: it re-blocks every data heredoc whose body
+  names a credential read or an env dump, ten recorded `ALLOW` cases among them.
+- **A bypass report is actionable only when an agent could produce the shape by accident.** A
+  shape built to slip past the hook (`cat <<<EOF` then `cat ~/.netrc` on the next line) is a
+  category-3 gap by construction; the parse bug under it may be worth fixing, the bypass is not.
+  Ending the cycle of shape-by-shape fixes (#1007, #1011, #1023, #1025) needs a real shell parser,
+  which is a separate decision.
 - **The hook stays small enough to audit.** It is a single file every agent depends on; the cost of
   a subtle mistake in it is higher than the cost of the false positives it produces.
 - This constrains contributors who will reasonably want to close a demonstrated gap. The constraint
@@ -116,6 +127,11 @@ and the draft that flipped it to `BLOCK` was wrong.
   refused — the crude-layer false positive this ADR declines to fix in the matcher
 - Issue #678: git global options, refspecs and shell wrappers — an earlier round of the same
   precise-versus-crude question
+- Issue #1025: a here-string or arithmetic `<<` misread as a heredoc start — the boundary-finder
+  fix, and the fail-closed body scan this ADR declines
+- Issue #1037: Copilot and unrecognised edit tools fell through to allow, and the Bash
+  env-persistence check needed the literal var name — both closed as coverage gaps in ordinary
+  use, not as evasions this ADR puts out of scope
 - ADR-9005: the decision to block at the tool level, which this scopes
 
 ## Related Documentation

@@ -6,8 +6,12 @@ from doit.tools import title_with_actions
 
 
 def task_test() -> dict[str, Any]:
-    """Run pytest with parallel execution."""
+    """Run pytest with parallel execution.
+
+    ``env_check`` runs first (#1033): see ``tools/doit/quality.py::task_check``.
+    """
     return {
+        "task_dep": ["env_check"],
         "actions": ["uv run pytest -n auto -v"],
         "title": title_with_actions,
         "verbosity": 0,

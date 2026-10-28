@@ -67,5 +67,5 @@ A working setup returns the file path and line number near-instantly. A broken s
 ## Related
 
 - [LSP Tool and Diagnostic Noise](../docs/development/ai/lsp-tool.md) — what agents see, why diagnostics arrive stale, and how to opt out
-- [AI Setup](../docs/development/AI_SETUP.md) — broader AI agent setup for this template
+- [AI Setup](../docs/development/AI_SETUP.md) — broader AI agent setup for this project
 - [Pyright Documentation](https://microsoft.github.io/pyright/)

@@ -30,7 +30,7 @@ stays the source of truth:
 | :--- | :--- |
 | `claude` | `claude -p '<prompt>'` |
 | `codex` | `codex -a never --dangerously-bypass-hook-trust exec '<prompt>' < /dev/null` |
-| `copilot` | `copilot --allow-all -p '<prompt>'` |
+| `copilot` | `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true copilot --allow-all -p '<prompt>'` |
 | `antigravity` | `agy -p '<prompt>' --dangerously-skip-permissions --add-dir "$(git rev-parse --show-toplevel)"` |
 
 A headless Codex host (`codex exec -a never`) can read GitHub through `.codex/rules/gh.rules` but cannot write to it or delegate to another agent CLI — see [Headless Codex host limits](../../../docs/development/ai/cross-agent-delegation.md#headless-codex-host-limits). It cannot run Step 3's delegation to the other listed agents or Step 4's `gh issue comment` headless; Codex hosts this skill interactively instead.

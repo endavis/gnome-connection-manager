@@ -30,5 +30,5 @@ uv is a modern Python package manager written in Rust by Astral (creators of ruf
 
 ## Related Documentation
 
-- [Installation Guide](https://github.com/endavis/pyproject-template/blob/main/docs/getting-started/installation.md)
+- [Installation Guide](../getting-started/installation.md)
 - [Tools Reference](../template/tools-reference.md)

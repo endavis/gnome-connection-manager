@@ -7,7 +7,7 @@ Claude's #1 priority is to use tokens efficiently:
 - Keep responses brief and to the point
 - Use local tools (Grep, Read, Edit) as a priority over Task tool
 - Only use the Task tool when necessary
-- Always inform user and ask for consent before starting sub agents
+- Always inform user and ask for consent before starting sub agents, except the ones a skill runs as its own step (implement-issue's Planner and Coder). Invoking the skill is the consent.
 
 Examples of when to use local tools instead of Task tool:
 - Updating types in function declarations
@@ -60,11 +60,10 @@ When asked to create a commit or PR, Claude MUST:
 1. Read .github/CONTRIBUTING.md and locate the "## Commit Guidelines" section
 2. Review the commit message format rules under that section
 3. Draft commit message following the exact format specified
-4. Commit with `doit commit` when the session is interactive. It wraps commitizen
-   and enforces the format. When it is not — a headless or delegated run cannot
-   answer its prompts — use `git commit` with a message in the conventional
-   format from step 1. Never `git commit` without that format. The
-   `implement-issue` skill always commits with `git commit` in that format, never
-   `doit commit` — it runs unattended and cannot answer commitizen's prompts.
+4. Commit with `git commit` and a message in the conventional format from step 1 —
+   `-F <file>` under `tmp/agents/claude/` for anything longer than a one-liner (see
+   CONTRIBUTING.md "Passing the Message"). Never `doit commit`: it wraps commitizen,
+   whose prompts need a terminal the agent's shell tool does not have. Never
+   `git commit` without that format.
 
 NO EXCEPTIONS. If .github/CONTRIBUTING.md has fallen out of context, READ IT FIRST.

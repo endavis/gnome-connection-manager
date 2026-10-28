@@ -158,7 +158,7 @@ def test_allowlist_hooks_dir_allows_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Read on a hooks/ path always passes through."""
-    _set_stdin(monkeypatch, _read_payload("tools/hooks/ai/bash-ban-raw-tools.py"))
+    _set_stdin(monkeypatch, _read_payload("tools/hooks/ai/block-dangerous-commands.py"))
     with pytest.raises(SystemExit) as exc_info:
         sys.exit(hook.main())
     assert exc_info.value.code == 0
@@ -313,7 +313,7 @@ def test_malformed_json_exits_1(
     hook: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Malformed JSON input exits with code 1 (parity with bash-ban-raw-tools)."""
+    """Malformed JSON input exits with code 1 (parity with block-dangerous-commands)."""
     _set_stdin(monkeypatch, "not valid json{{")
     with pytest.raises(SystemExit) as exc_info:
         sys.exit(hook.main())

@@ -1644,9 +1644,18 @@ def _reconcile_labels(
             counters["unchanged"] += 1
             continue
 
+        # Name only the fields that actually differ -- printing "(color=X)" for a
+        # description-only change read as a no-op colour change (#1034).
+        changes: list[str] = []
+        if existing["color"] != color:
+            changes.append(f"color={color}")
+        if existing["description"] != description:
+            changes.append("description")
+        detail = ", ".join(changes)
+
         prefix = "would update" if dry_run else "updated"
         console.print(
-            Text.assemble(verbatim(f"~ {prefix}", "yellow"), verbatim(f" {name} (color={color})"))
+            Text.assemble(verbatim(f"~ {prefix}", "yellow"), verbatim(f" {name} ({detail})"))
         )
         counters["updated"] += 1
         if not dry_run:
@@ -1923,6 +1932,46 @@ def task_publish_setup() -> dict[str, Any]:
     }
 
 
+def sync_labels(
+    file: str = DEFAULT_LABELS_FILE,
+    *,
+    prune: bool = False,
+    dry_run: bool = False,
+    console: Console | None = None,
+) -> dict[str, int] | None:
+    """Reconcile GitHub labels against *file*: create missing, update drifted.
+
+    ``manage.py repo`` reaches this through ``uv run doit labels_sync`` rather
+    than importing it, so the template tooling stays standard-library-only (#1034).
+
+    Args:
+        file: Path to the labels YAML file.
+        prune: If True, delete labels present on GitHub but absent from the file.
+        dry_run: If True, print planned actions and make no mutating API calls.
+        console: Rich console for output; a new one is created if not given.
+
+    Returns:
+        The reconcile counters (``created``/``updated``/``unchanged``/``deleted``/
+        ``skipped``), or ``None`` when *file* defines no labels.
+
+    Raises:
+        SystemExit: Via :func:`_load_labels_file`, when *file* does not exist or is
+            malformed. A caller reusing this outside the CLI should catch ``SystemExit``.
+    """
+    console = console or Console()
+    desired = _load_labels_file(Path(file), console)
+    if not desired:
+        console.print(verbatim(f"No labels defined in {file}; nothing to sync.", "yellow"))
+        return None
+
+    console.print(verbatim(f"Loaded {len(desired)} label(s) from {file}", "dim"))
+    current = _fetch_github_labels(console)
+    console.print(f"[dim]Fetched {len(current)} label(s) from GitHub[/dim]")
+    console.print()
+
+    return _reconcile_labels(desired, current, prune=prune, dry_run=dry_run, console=console)
+
+
 def task_labels_sync() -> dict[str, Any]:
     """Sync GitHub labels with ``.github/labels.yml`` (idempotent).
 
@@ -1942,7 +1991,7 @@ def task_labels_sync() -> dict[str, Any]:
         doit labels_sync --file=custom/labels.yml
     """
 
-    def sync_labels(
+    def sync_labels_action(
         dry_run: bool = False,
         prune: bool = False,
         file: str = DEFAULT_LABELS_FILE,
@@ -1959,23 +2008,9 @@ def task_labels_sync() -> dict[str, Any]:
         console.print()
 
         try:
-            desired = _load_labels_file(Path(file), console)
-            if not desired:
-                console.print(verbatim(f"No labels defined in {file}; nothing to sync.", "yellow"))
+            counters = sync_labels(file, prune=prune, dry_run=dry_run, console=console)
+            if counters is None:
                 return
-
-            console.print(verbatim(f"Loaded {len(desired)} label(s) from {file}", "dim"))
-            current = _fetch_github_labels(console)
-            console.print(f"[dim]Fetched {len(current)} label(s) from GitHub[/dim]")
-            console.print()
-
-            counters = _reconcile_labels(
-                desired,
-                current,
-                prune=prune,
-                dry_run=dry_run,
-                console=console,
-            )
 
             console.print()
             summary = (
@@ -1998,7 +2033,7 @@ def task_labels_sync() -> dict[str, Any]:
             sys.exit(1)
 
     return {
-        "actions": [sync_labels],
+        "actions": [sync_labels_action],
         "params": [
             {
                 "name": "dry_run",

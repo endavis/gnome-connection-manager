@@ -11,6 +11,14 @@ mkdocs 1.6 reports both classes identically (`links.not_found`), so silencing
 the out-of-docs links there would also silence genuinely broken ones. The
 validation therefore lives here, where a link can be checked against the whole
 repository rather than only against `docs_dir`.
+
+Discovery is filtered through `doc_scan.committed_markdown_files()`, so a
+git-ignored tree is never read. A link whose target matches
+`.config/pyproject_template/sync-exclude.toml` (ADR-9026) is also exempt, the
+same way `_points_into_an_unwired_agent` exempts a dropped agent's config root:
+a downstream project names the target because an adopted file still describes
+it, not because the link is broken. Upstream has no such file, so both skips
+are no-ops here.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from pathlib import Path
 
 import pytest
 from agent_roster import ALL_AGENTS, agent_is_present, present_agents
+from doc_scan import committed_markdown_files, is_excluded, load_sync_excludes
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_DIR = REPO_ROOT / "docs"
@@ -44,11 +53,17 @@ _PLACEHOLDER_PARTS = ("path/to/", "<", "{{", "$")
 
 
 def _iter_markdown() -> list[Path]:
-    """Every checked markdown file: docs/, the repo root, and .github/."""
+    """Every checked markdown file: docs/, the repo root, and .github/.
+
+    Filtered through `doc_scan.committed_markdown_files` so a file git ignores
+    -- a build artifact, a third-party tree someone checked out nearby -- is
+    never read (#1012).
+    """
     paths = list(DOCS_DIR.rglob("*.md"))
     paths += [REPO_ROOT / name for name in _ROOT_MARKDOWN if (REPO_ROOT / name).is_file()]
     paths += list(_GITHUB_MARKDOWN_DIR.glob("*.md"))
-    return sorted(set(paths))
+    committed = set(committed_markdown_files(REPO_ROOT))
+    return sorted(set(paths) & committed)
 
 
 def _link_targets(path: Path) -> list[str]:
@@ -97,6 +112,43 @@ def _points_into_an_unwired_agent(resolved: Path) -> bool:
     return False
 
 
+# Loaded once: sync-exclude.toml is hand-managed, not written mid-run.
+_SYNC_EXCLUDES = load_sync_excludes(REPO_ROOT)
+
+
+def _points_into_an_excluded_path(
+    resolved: Path, excludes: list[str], root: Path = REPO_ROOT
+) -> bool:
+    """Return whether *resolved* matches a `sync-exclude.toml` pattern (ADR-9026).
+
+    Mirrors `_points_into_an_unwired_agent`: a link into a path a downstream
+    project deliberately did not adopt is expected to dangle, not broken. A
+    target outside *root* cannot match an upstream-relative pattern.
+    """
+    try:
+        rel = resolved.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    return is_excluded(rel, excludes)
+
+
+def _broken_links(
+    doc: Path, excludes: list[str] | None = None, root: Path = REPO_ROOT
+) -> list[str]:
+    """Return "<target> -> <resolved>" for every link in *doc* that fails to resolve."""
+    excludes = _SYNC_EXCLUDES if excludes is None else excludes
+    broken = []
+    for target in _link_targets(doc):
+        resolved = _resolve(doc, target)
+        if (
+            not resolved.exists()
+            and not _points_into_an_unwired_agent(resolved)
+            and not _points_into_an_excluded_path(resolved, excludes, root)
+        ):
+            broken.append(f"{target} -> {resolved}")
+    return broken
+
+
 @pytest.mark.parametrize("doc", _iter_markdown(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_relative_links_resolve(doc: Path) -> None:
     """Every relative link in a docs page points at a file that exists.
@@ -104,12 +156,26 @@ def test_relative_links_resolve(doc: Path) -> None:
     Covers links that leave `docs/` as well as those inside it — the whole
     point of validating here rather than in mkdocs.
     """
-    broken = []
-    for target in _link_targets(doc):
-        resolved = _resolve(doc, target)
-        if not resolved.exists() and not _points_into_an_unwired_agent(resolved):
-            broken.append(f"{target} -> {resolved}")
+    broken = _broken_links(doc)
     assert not broken, f"{doc.relative_to(REPO_ROOT)} has broken links:\n  " + "\n  ".join(broken)
+
+
+def test_excluded_missing_link_target_is_skipped(tmp_path: Path) -> None:
+    """A missing link target matching sync-exclude.toml is not reported (ADR-9026)."""
+    doc = tmp_path / "source.md"
+    doc.write_text("[link](docs/template/manage.md)\n", encoding="utf-8")
+
+    assert _broken_links(doc, excludes=["docs/template/**"], root=tmp_path) == []
+
+
+def test_non_excluded_missing_link_target_still_fails(tmp_path: Path) -> None:
+    """The same missing target, without a matching exclude, is still reported."""
+    doc = tmp_path / "source.md"
+    doc.write_text("[link](docs/template/manage.md)\n", encoding="utf-8")
+
+    broken = _broken_links(doc, excludes=[], root=tmp_path)
+    assert len(broken) == 1
+    assert "docs/template/manage.md" in broken[0]
 
 
 def test_links_stay_inside_the_repository() -> None:

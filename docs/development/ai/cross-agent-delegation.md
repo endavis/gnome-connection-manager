@@ -129,7 +129,7 @@ Each bridge invokes the target CLI in headless mode. Each CLI requires a flag to
 | :--- | :--- | :--- |
 | Claude Code | `claude -p '<prompt>'` | `-p` runs headless. No additional approval-bypass flag needed for the typical tool surface. |
 | Codex CLI | `codex -a never --dangerously-bypass-hook-trust exec '<prompt>' < /dev/null` | `-a never` (`--ask-for-approval never`) prevents Codex from asking the (absent) user before running shell commands. Without it, every tool call in the delegated session is denied. The trailing `< /dev/null` stops `codex exec` waiting forever on stdin when the caller's stdin is a pipe or socket (#980). The prompt no longer needs `gh`-chaining guidance (`GH_STANDALONE_SENTENCE`, pre-#985): the host now pre-fetches any GitHub data the delegated prompt needs with `doit delegation_context` and writes it to files under `tmp/agents/<host>/<task>-<n>/`, so `<prompt>` reads those instead of calling `gh` itself — see [Context-file convention](#context-file-convention) below. |
-| Copilot CLI | `copilot --allow-all -p '<prompt>'` | `--allow-all` enables all permissions (equivalent to `--allow-all-tools --allow-all-paths --allow-all-urls`). Without it, Copilot prompts for path or URL access mid-session, which the absent user can't answer. **Order matters:** `--allow-all` must precede `-p`, since `-p <text>` consumes its argument and would otherwise grab the next flag. |
+| Copilot CLI | `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true copilot --allow-all -p '<prompt>'` | `--allow-all` enables all permissions (equivalent to `--allow-all-tools --allow-all-paths --allow-all-urls`). Without it, Copilot prompts for path or URL access mid-session, which the absent user can't answer. **Order matters:** `--allow-all` must precede `-p`, since `-p <text>` consumes its argument and would otherwise grab the next flag. `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true` makes prompt mode load `.github/hooks/`, so the dangerous-command hook runs; without it, in a folder Copilot has not trusted, the hook never fires. It must be `true` — `1` does not enable it (#1042, see [Copilot CLI](command-blocking.md#copilot-cli)). |
 | Antigravity CLI | `agy -p '<prompt>' --dangerously-skip-permissions --add-dir "$(git rev-parse --show-toplevel)"` | `-p` runs headless; `--dangerously-skip-permissions` auto-approves tool calls the absent user can't confirm. `--add-dir <repo-root>` is **required** so `agy` treats the repo as an active workspace and loads `.agents/` (skills + the shared dangerous-command hook) — a headless `agy -p` otherwise falls back to its own home workspace and ignores the repo's `.agents/`. The safety hook's stdout `{"decision":"deny"}` still hard-blocks dangerous commands even under `--dangerously-skip-permissions`. |
 
 These flags are intentional: in delegated invocations, the human is at the *source* agent and not at the target's prompt. Approval prompts in the target session can never be answered, so they must be bypassed. The source agent retains full visibility through captured stdout and can stop the chain at any point.
@@ -164,7 +164,7 @@ prompt is told to read the files in that directory instead of calling `gh`, and 
 is: a missing context file, not a failed `gh` call. The orchestrating skill that created the
 directory deletes it once every delegated agent (or subagent) using it has returned.
 
-This removes `gh` from every delegated prompt this template ships: `implement-issue`'s Planner and
+This removes `gh` from every delegated prompt this project ships: `implement-issue`'s Planner and
 Coder briefs, `multi-plan`'s and `multi-review`'s per-agent delegated prompt, and the six Codex
 bridge files, which now give Codex only git-based inline steps (`.agents/skills/delegate-codex-
 {review,adversarial-review}/SKILL.md`, `.github/skills/codex-{review,adversarial-review}/SKILL.md`,
@@ -226,7 +226,7 @@ is pinned byte-identical across the three skills by
 **Supported stance.** Codex hosts `multi-*` and `implement-issue … with <agent>` interactively, where
 it can ask the user to approve the write step or the delegation. A headless Codex host supports
 neither; a user who wants one anyway can add a personal `~/.codex/rules/` entry for that one command,
-knowing the rule runs it outside the sandbox. This template does not add a repo-level rule for `gh`
+knowing the rule runs it outside the sandbox. This project does not add a repo-level rule for `gh`
 writes or for delegated CLIs — that would trade the sandbox boundary away for exactly the commands
 it exists to contain, which is a decision for a later issue, not this one.
 
@@ -297,7 +297,7 @@ Codex does not read `.claude/commands/`, `.copilot/commands/`, or `.github/skill
 
 ## Multi-agent orchestration (`/multi-*`)
 
-In addition to the 1-to-1 delegation matrix above, this template ships three N-to-1 orchestrators that let any host agent run **any combination** of agents in parallel and synthesize the results:
+In addition to the 1-to-1 delegation matrix above, this project ships three N-to-1 orchestrators that let any host agent run **any combination** of agents in parallel and synthesize the results:
 
 | Command | Args | Description |
 | :--- | :--- | :--- |
