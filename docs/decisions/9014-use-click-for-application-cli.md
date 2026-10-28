@@ -36,7 +36,7 @@ The template previously shipped with an empty `[project.scripts]` block
 and no CLI module. Contributors adding a CLI had no obvious convention to
 follow, and `docs/development/tooling-roles.md` forward-referenced a
 guide that did not yet exist. This ADR documents the chosen framework and
-grounds the new [CLI Guide](https://github.com/endavis/pyproject-template/blob/main/docs/usage/cli.md) in real code.
+grounds the new [CLI Guide](../usage/cli.md) in real code.
 
 The runtime/dev split documented in
 [ADR-9002](9002-use-doit-for-task-automation.md)
@@ -98,6 +98,6 @@ runtime CLI framework is needed to make that boundary concrete.
 
 ## Related Documentation
 
-- [CLI Guide](https://github.com/endavis/pyproject-template/blob/main/docs/usage/cli.md)
+- [CLI Guide](../usage/cli.md)
 - [Tooling Roles and Architectural Boundaries](../development/tooling-roles.md)
 - [ADR-9002: Use doit for task automation](9002-use-doit-for-task-automation.md)

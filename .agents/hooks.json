@@ -2,7 +2,7 @@
   "block-dangerous-commands": {
     "PreToolUse": [
       {
-        "matcher": "run_command|write_to_file",
+        "matcher": "run_command|write_to_file|write_file|edit_file",
         "hooks": [
           {
             "type": "command",

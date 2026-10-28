@@ -57,6 +57,7 @@ doit test
 ```
 
 **What it does:**
+- Depends on `env_check` first, which warns (without failing) if `uv.lock` has drifted (#1033)
 - Runs `pytest -n auto -v` for parallel test execution
 - Uses all available CPU cores
 
@@ -254,10 +255,12 @@ doit check
 ```
 
 **What it does:**
+- Warns, without failing, if the environment has drifted from `uv.lock` (#1033)
 - Runs format check, lint, type check, security, spelling, a wheel smoke test, a strict docs build, and tests
 - Stops on first failure
 
 **Task dependencies:**
+- `env_check`
 - `format_check`
 - `lint`
 - `type_check`
@@ -266,6 +269,29 @@ doit check
 - `wheel_check`
 - `docs_build`
 - `test`
+
+### `env_check`
+
+Warn, without failing, when the installed environment has drifted from `uv.lock`.
+
+```bash
+doit env_check
+```
+
+**What it does:**
+- Runs `uv sync --all-extras --dev --check`
+- If it exits non-zero, prints `uv.lock changed — run: doit install_dev` and returns — it never
+  fails the task and never runs `uv sync` itself
+
+**Why it exists (#1033):** it replaces the `uv-sync-on-pull`/`uv-sync-on-checkout` pre-commit hooks,
+which auto-ran `uv sync --all-extras --dev` on `git pull`/`git checkout`, before anyone had
+reviewed the branch. `check` and `test` both depend on this task first, so the reminder runs only
+when a developer runs `doit` themselves, on a branch they have already decided to trust.
+
+**Equivalent command:**
+```bash
+uv sync --all-extras --dev --check
+```
 
 ### `spell_check`
 
@@ -1075,7 +1101,10 @@ doit pre_commit_install
 
 **What it does:**
 - Installs every hook type declared by `default_install_hook_types` in `.pre-commit-config.yaml`:
-  `pre-commit`, `commit-msg`, `post-merge` and `post-checkout`
+  `pre-commit` and `commit-msg`
+- Uninstalls `post-checkout` and `post-merge` if a previous run of this task installed them
+  (`pre-commit uninstall -t post-checkout -t post-merge`; a no-op, exit 0, if they were never
+  installed)
 - Hooks run automatically on the matching git action
 
 **Why `commit-msg` matters:** it carries conventional-commit validation and the check that a
@@ -1083,9 +1112,17 @@ commit's issue reference matches its branch (#741). A project that installed hoo
 type was declared does not have it, and neither check runs — silently, because a hook that was
 never installed cannot fail. Run this task again to pick it up, then confirm with `ls .git/hooks/`.
 
+**Why `post-checkout`/`post-merge` are uninstalled, not fixed (#1033):** `pre-commit` reads
+`.pre-commit-config.yaml` from whatever is checked out, so a hook of either type — ours, or one an
+untrusted branch supplies in its own copy of the file — runs before anyone has reviewed that
+branch. No change to what the hook does closes that; only not installing the type does. `doit
+check` and `doit test` warn instead, without failing, when `uv.lock` has drifted from the installed
+environment.
+
 **Equivalent command:**
 ```bash
-uv run pre-commit install   # installs all declared hook types
+uv run pre-commit install   # installs the declared hook types
+uv run pre-commit uninstall -t post-checkout -t post-merge   # removes the two that are not declared
 ```
 
 ### `pre_commit_run`
@@ -1369,7 +1406,7 @@ The `protect-dynamic-version` hook prevents accidental changes to the `dynamic` 
 
 ## See Also
 
-- [Usage Guide](https://github.com/endavis/pyproject-template/blob/main/docs/usage/basics.md) - Development workflows
+- [Usage Guide](../usage/basics.md) - Development workflows
 - [Release Automation](release-and-automation.md) - Release process details
 - [Coding Standards](coding-standards.md) - Code quality guidelines
 - [CI/CD Testing](ci-cd-testing.md) - Continuous integration

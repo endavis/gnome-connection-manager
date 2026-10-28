@@ -137,6 +137,7 @@ nav:
           - ADR-9023 Shared skills: decisions/9023-shared-workflow-skills-live-in-agents-skills-generated-for-claude.md
           - ADR-9024 Implement-issue skill: decisions/9024-one-implement-issue-skill-takes-an-issue-to-a-green-pr.md
           - ADR-9025 Delegation context: decisions/9025-delegated-agents-receive-github-data-from-the-host-and-run-without-network.md
+          - ADR-9026 Doc-scan sync-exclude: decisions/9026-doc-scanning-tests-honor-sync-excludetoml-and-discover-markdown-via-git.md
   - Contents: TABLE_OF_CONTENTS.md
   - Development:
       - Tooling roles: development/tooling-roles.md
@@ -154,7 +155,6 @@ nav:
       - Architectural conventions: development/ai/architectural-conventions.md
       - Enforcement principles: development/ai/enforcement-principles.md
       - Command blocking: development/ai/command-blocking.md
-      - Auto-checkpoint hook: development/ai/auto-checkpoint-hook.md
       - Ruff-fix hook: development/ai/ruff-fix-hook.md
       - Cross-agent delegation: development/ai/cross-agent-delegation.md
       - Review focus areas: development/ai/review-focus-areas.md

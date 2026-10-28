@@ -46,7 +46,7 @@ itself (and needs to be tested as runtime code).
 
 | Tool | Role | Audience | Never use for |
 | :--- | :--- | :--- | :--- |
-| **Application console script** | The package's user-facing command-line interface, defined as a `[project.scripts]` entry under `src/__PACKAGE_NAME__/`. | End users of the published package. | Development workflow tasks. See the [CLI Guide](https://github.com/endavis/pyproject-template/blob/main/docs/usage/cli.md) for the application CLI. |
+| **Application console script** | The package's user-facing command-line interface, defined as a `[project.scripts]` entry under `src/__PACKAGE_NAME__/`. | End users of the published package. | Development workflow tasks. See the [CLI Guide](../usage/cli.md) for the application CLI. |
 | **`doit`** | Development task runner. Wraps tests, linting, type-checking, releases, issue and PR creation, and other contributor workflows. | Contributors and CI. | Fronting the application's user-facing CLI. doit is a *dev* surface, not a runtime surface. |
 | **`uv`** | Package and environment management. Installs dependencies, runs Python, manages the lockfile. | Contributors and CI. | Replacing the application's runtime entry point. |
 | **`gh`** | GitHub API access for operations not wrapped by `doit` (read-only queries, ad-hoc API calls). | Contributors and CI. | Write operations that already have a `doit` wrapper (e.g. use `doit pr` not `gh pr create`). |
@@ -72,7 +72,7 @@ The template is opinionated about a small number of things:
 - **The application's user-facing CLI is a console script under
   `src/__PACKAGE_NAME__/`, not a doit task.** End users should never need to
   install `doit` to use the published package. See the
-  [CLI Guide](https://github.com/endavis/pyproject-template/blob/main/docs/usage/cli.md) for how the CLI is structured and how to
+  [CLI Guide](../usage/cli.md) for how the CLI is structured and how to
   add subcommands.
 - **ADRs document the *why*.** When a tooling decision is non-obvious, it
   gets an ADR under `docs/decisions/`. Template-meta decisions use the
@@ -84,7 +84,7 @@ The template is opinionated about a small number of things:
 `doit` is declared under `[project.optional-dependencies] dev` in
 `pyproject.toml` and is **not** installed when adopters install the
 published package. `rich` remains a runtime dependency because most CLIs
-built on this template use it for user-facing output, which is a
+built on pyproject-template use it for user-facing output, which is a
 legitimate runtime use.
 
 > **Historical note:** `doit` was briefly placed in `[project] dependencies`

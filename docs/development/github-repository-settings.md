@@ -13,13 +13,27 @@ tags:
 
 # GitHub Repository Settings
 
-Complete reference for the GitHub repository settings this template expects.
+Complete reference for the GitHub repository settings this project expects.
 New repositories created from the template are configured automatically by
 [`repo_settings.py`](../../tools/pyproject_template/repo_settings.py) via
 `update_all_repo_settings()`. This page documents what each setting is, why
 it is needed, and whether it is set automatically or requires manual action.
 
 For the initial setup workflow, see the [New Project Setup](../template/new-project.md) guide.
+
+## Required Permissions
+
+`manage.py repo` (which calls `update_all_repo_settings()`) starts with `check_admin_access()`:
+one `GET /repos/{owner}/{repo}` call that reads `.permissions.admin`. Every step below --
+the repository-settings `PATCH`, the ruleset `POST`/`PUT` calls, and the CodeQL
+default-setup check -- needs the repository's **Administration** permission, so this
+single up-front check turns a missing permission into one clear message instead of a
+403 on every later step.
+
+| Token kind | Required permission |
+| :--- | :--- |
+| Fine-grained PAT / GitHub App | Repository permission **Administration** (read for the check, write for everything that mutates settings) |
+| Classic PAT / OAuth app | `repo` scope (`public_repo` is enough for public repos) |
 
 ## Repository Settings
 
@@ -73,7 +87,15 @@ to the default branch.
 | **Bypass actors** | Repository admin role (always) |
 
 **Automated:** Yes, rulesets are replicated from the template by
-`configure_branch_protection()`.
+`configure_branch_protection()`. A ruleset is matched to an existing one by
+name first; if no name matches and the template's ruleset targets the
+default branch (`~DEFAULT_BRANCH` in `conditions.ref_name.include`),
+it falls back to matching any existing ruleset with the same `target` and
+the same `~DEFAULT_BRANCH` condition, regardless of its name, and keeps that
+ruleset's own name rather than renaming it. Without this fallback, a
+downstream repository whose branch-protection ruleset happened to be named
+differently from the template's got a second, duplicate ruleset on every
+sync instead of an update to its existing one (#1034).
 
 ## Labels
 
@@ -123,7 +145,17 @@ To add a label: edit `.github/labels.yml`, run `doit labels_sync --dry-run` to p
 | Documentation Request | `documentation`, `needs-triage` |
 | Chore / Maintenance | `chore`, `needs-triage` |
 
-**Automated:** Yes, labels are copied from the template repository.
+**Automated:** Yes. `manage.py repo` (`update_all_repo_settings()`) runs
+`uv run doit labels_sync` against the project's own `.github/labels.yml`. That
+creates missing labels *and* updates ones whose color or description drifted. It
+replaced an earlier `replicate_labels()` copy that only created labels: its `POST`
+to an existing label failed with 422 and the error was swallowed, so an existing
+label kept its old color and description (#1034).
+
+`manage.py` runs under a bare Python with no third-party packages, so it starts
+`doit` as a subprocess rather than importing it. When `uv` or `.github/labels.yml`
+is missing, it falls back to `replicate_labels()` with a warning. `setup_repo.py`
+calls `replicate_labels()` directly, since it runs before the repository is cloned.
 
 ## GitHub Actions Workflows
 
@@ -245,9 +277,23 @@ Security features are configured by `_configure_security_settings()` in
     repositories. Private repositories require GitHub Advanced Security (GHAS).
 
 **Automated:** Yes, security settings are copied from the template. CodeQL
-runs as a committed GitHub Actions workflow (`.github/workflows/codeql.yml`)
-and is replicated automatically when the template generator copies workflow
-files into a new repository — no extra API call is required.
+runs as a committed GitHub Actions workflow (`.github/workflows/codeql.yml`),
+replicated automatically when the template generator copies workflow files
+into a new repository. A fresh repository needs no API call for this, since
+default setup was never enabled on it.
+
+A repository that enabled GitHub's own CodeQL **default setup** before
+adopting `codeql.yml` does need one: GitHub refuses to process SARIF
+uploaded by an advanced workflow while default setup stays enabled, so every
+`CodeQL` run fails until default setup is switched off. `update_all_repo_settings()`
+checks this with `disable_codeql_default_setup()`: `GET
+/repos/{owner}/{repo}/code-scanning/default-setup`, and if its `state` is
+`configured`, `PATCH ... {"state": "not-configured"}`. A 403 from either call
+warns instead of failing the run -- it can mean the token lacks the
+Administration permission, that GitHub Advanced Security isn't enabled for
+the repository, or (`PATCH` only) that the repository is archived. See
+issues #431 and #1034, and
+[Consumer Notes](../template/consumer-notes.md#managepy-repo-now-disables-codeql-default-setup).
 
 ## Dependabot
 

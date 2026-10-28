@@ -20,14 +20,22 @@ Anchors were all resolving when this was written. The check is preventive, and
 `test_anchor_checker_detects_a_broken_anchor` keeps it from passing merely because
 it looks at nothing. `test_section_name_checker_detects_a_broken_pointer` does the
 same for the third shape.
+
+A fourth kind of skip layers on top of all three: a downstream project lists in
+`.config/pyproject_template/sync-exclude.toml` (ADR-9026) upstream-only targets it
+did not adopt (`docs/template/*.md`, `src/package_name/core.py`, and so on). A
+pointer whose target name matches one of those patterns is skipped rather than
+reported missing. Upstream has no such file, so this is a no-op here.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess  # nosec B404 - subprocess is required to build a test git repo
 from pathlib import Path
 
 import pytest
+from doc_scan import committed_markdown_files, is_excluded, load_sync_excludes
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,8 +51,6 @@ INSTRUCTION_GLOBS = (
     ".copilot/commands/*.md",
     ".github/instructions/*.md",
 )
-
-SKIP_DIRS = {".venv", "node_modules", "site", "tmp", ".git", "__pycache__", "worktrees"}
 
 # A quoted markdown heading. Backslashes are excluded so that shell examples like
 # `--body="## Problem\nDescribe the problem"` in AGENTS.md are not mistaken for
@@ -71,16 +77,14 @@ def _instruction_files() -> list[Path]:
 
 
 def _markdown_files(root: Path = REPO_ROOT) -> list[Path]:
-    """Return the markdown files under *root*, minus those in SKIP_DIRS.
+    """Return the markdown files git tracks or would add under *root*.
 
-    SKIP_DIRS applies to directories inside *root* only. Matched against the
-    absolute path, a checkout under a directory named `tmp` skipped every file (#848).
+    Delegates to `doc_scan.committed_markdown_files`, which asks git rather than
+    walking the filesystem with a hardcoded skip set -- see that function's
+    docstring for why. A directory git ignores, such as `worktrees/` or `tmp/`,
+    drops out without this function needing to know its name.
     """
-    return sorted(
-        p
-        for p in root.rglob("*.md")
-        if not SKIP_DIRS.intersection(p.relative_to(root).parts) and p.is_file()
-    )
+    return committed_markdown_files(root)
 
 
 def _headings(path: Path) -> set[str] | None:
@@ -143,12 +147,20 @@ def _section_references() -> list[tuple[Path, int, str, str]]:
 
 
 def _resolve_named(name: str, root: Path = REPO_ROOT) -> Path | None:
-    """Resolve a bare filename mentioned in prose to a file under *root*."""
+    """Resolve a markdown filename or relative path mentioned in prose to a file under *root*.
+
+    Every caller of this function only ever names a `.md` file (`MD_FILENAME`
+    and `PARENTHESIZED_SECTION` both anchor on that extension), so the fallback
+    search is scoped to `doc_scan.committed_markdown_files` rather than an
+    unrestricted `rglob` -- git-ignored and untracked-ignored copies, such as a
+    worktree's, are never candidates.
+    """
     direct = root / name
     if direct.is_file():
         return direct
-    for candidate in root.rglob(Path(name).name):
-        if not SKIP_DIRS.intersection(candidate.relative_to(root).parts):
+    target_name = Path(name).name
+    for candidate in committed_markdown_files(root):
+        if candidate.name == target_name:
             return candidate
     return None
 
@@ -176,11 +188,21 @@ def _names_a_heading(section: str, headings: set[str]) -> bool:
 
 
 def _unresolved_section_names(
-    refs: list[tuple[Path, int, str, str]], root: Path = REPO_ROOT
+    refs: list[tuple[Path, int, str, str]],
+    root: Path = REPO_ROOT,
+    excludes: list[str] | None = None,
 ) -> list[str]:
-    """Describe each reference whose file is missing or has no such heading."""
+    """Describe each reference whose file is missing or has no such heading.
+
+    A reference whose target name matches *excludes* (ADR-9026) is skipped
+    rather than reported -- a downstream project names it because an adopted
+    file (such as a shared skill) still describes the upstream-only target it
+    chose not to adopt.
+    """
     broken = []
     for source, line_no, section, name in refs:
+        if excludes and is_excluded(name, excludes):
+            continue
         where = f"{source.relative_to(root)}:{line_no}"
         target = _resolve_named(name, root)
         if target is None:
@@ -190,19 +212,37 @@ def _unresolved_section_names(
     return broken
 
 
-def test_quoted_section_references_resolve() -> None:
-    """Every `Read <file> and locate the "## X" section` must name a real heading."""
+def _unresolved_quoted_references(
+    refs: list[tuple[Path, int, str, str]],
+    root: Path = REPO_ROOT,
+    excludes: list[str] | None = None,
+) -> list[str]:
+    """Describe each quoted-heading reference whose target is missing or lacks the heading.
+
+    A reference whose target name matches *excludes* (ADR-9026) is skipped --
+    see `_unresolved_section_names`, which does the same for the parenthesized
+    pointer shape.
+    """
     broken = []
-    for source, line_no, heading, target_name in _section_references():
-        target = _resolve_named(target_name)
+    for source, line_no, heading, target_name in refs:
+        if excludes and is_excluded(target_name, excludes):
+            continue
+        target = _resolve_named(target_name, root)
         if target is None:
-            broken.append(f"{source.relative_to(REPO_ROOT)}:{line_no} -> {target_name} not found")
+            broken.append(f"{source.relative_to(root)}:{line_no} -> {target_name} not found")
             continue
         headings = _headings(target)
         if headings is not None and heading not in headings:
             broken.append(
-                f"{source.relative_to(REPO_ROOT)}:{line_no} -> {heading!r} not in {target_name}"
+                f"{source.relative_to(root)}:{line_no} -> {heading!r} not in {target_name}"
             )
+    return broken
+
+
+def test_quoted_section_references_resolve() -> None:
+    """Every `Read <file> and locate the "## X" section` must name a real heading."""
+    excludes = load_sync_excludes(REPO_ROOT)
+    broken = _unresolved_quoted_references(_section_references(), excludes=excludes)
 
     assert not broken, "instruction pointers that resolve to nothing:\n  " + "\n  ".join(broken)
 
@@ -213,9 +253,45 @@ def test_parenthesized_section_references_resolve() -> None:
     AGENTS.md sent every agent to `.github/CONTRIBUTING.md` (Dependencies) before
     it added a dependency, and CONTRIBUTING.md had no such section (#828).
     """
-    broken = _unresolved_section_names(_parenthesized_references(_instruction_files()))
+    excludes = load_sync_excludes(REPO_ROOT)
+    broken = _unresolved_section_names(
+        _parenthesized_references(_instruction_files()), excludes=excludes
+    )
 
     assert not broken, "instruction pointers that resolve to nothing:\n  " + "\n  ".join(broken)
+
+
+def _broken_anchors(
+    sources: list[Path], root: Path = REPO_ROOT, excludes: list[str] | None = None
+) -> list[str]:
+    """Describe each `[text](file.md#anchor)` whose target or anchor does not resolve.
+
+    A link whose target, repo-relative to *root*, matches *excludes* (ADR-9026)
+    is skipped. A target outside *root* (``ValueError`` from ``relative_to``) is
+    never excluded -- excludes are upstream-relative patterns, so a path with no
+    such relation cannot match one.
+    """
+    broken = []
+    excludes = excludes or []
+    for source in sources:
+        for match in MD_LINK.finditer(source.read_text(encoding="utf-8")):
+            target = match.group(1)
+            if target.startswith(("http", "mailto:", "#")) or "#" not in target:
+                continue
+            path_part, _, fragment = target.partition("#")
+            resolved = (source.parent / path_part).resolve()
+            try:
+                rel = resolved.relative_to(root).as_posix()
+            except ValueError:
+                rel = None
+            if rel is not None and is_excluded(rel, excludes):
+                continue
+            anchors = _anchors(resolved)
+            if anchors is None:
+                broken.append(f"{source.relative_to(root)}: {target} (file missing)")
+            elif fragment.lower() not in anchors:
+                broken.append(f"{source.relative_to(root)}: {target}")
+    return broken
 
 
 def test_markdown_anchors_resolve() -> None:
@@ -223,19 +299,8 @@ def test_markdown_anchors_resolve() -> None:
 
     Complements `tests/test_markdown_links.py`, which strips the fragment.
     """
-    broken = []
-    for source in _markdown_files():
-        for match in MD_LINK.finditer(source.read_text(encoding="utf-8")):
-            target = match.group(1)
-            if target.startswith(("http", "mailto:", "#")) or "#" not in target:
-                continue
-            path_part, _, fragment = target.partition("#")
-            resolved = (source.parent / path_part).resolve()
-            anchors = _anchors(resolved)
-            if anchors is None:
-                broken.append(f"{source.relative_to(REPO_ROOT)}: {target} (file missing)")
-            elif fragment.lower() not in anchors:
-                broken.append(f"{source.relative_to(REPO_ROOT)}: {target}")
+    excludes = load_sync_excludes(REPO_ROOT)
+    broken = _broken_anchors(_markdown_files(), excludes=excludes)
 
     assert not broken, "markdown links with anchors that resolve to nothing:\n  " + "\n  ".join(
         broken
@@ -335,6 +400,18 @@ def test_anchor_checker_detects_a_broken_anchor(tmp_path: Path) -> None:
     assert "no-such-heading" not in (_anchors(target) or set())
 
 
+def test_excluded_anchor_link_target_is_skipped(tmp_path: Path) -> None:
+    """A missing anchor-link target matching sync-exclude.toml is not reported (ADR-9026)."""
+    source = tmp_path / "source.md"
+    source.write_text("[link](missing.md#some-heading)\n", encoding="utf-8")
+
+    assert _broken_anchors([source], tmp_path, excludes=["missing.md"]) == []
+    # The same missing target, unexcluded, is still reported.
+    assert _broken_anchors([source], tmp_path, excludes=[]) == [
+        "source.md: missing.md#some-heading (file missing)"
+    ]
+
+
 def test_fenced_comments_are_not_headings(tmp_path: Path) -> None:
     """A `# comment` in a code block names no section (#844).
 
@@ -377,6 +454,7 @@ def test_section_name_checker_detects_a_broken_pointer(tmp_path: Path) -> None:
     word is a shell comment in a code block, which `_headings` read as a heading
     until #844.
     """
+    _init_repo(tmp_path)
     (tmp_path / "target.md").write_text(
         "# Real Heading\n\n```bash\n# Install dependencies\n```\n", encoding="utf-8"
     )
@@ -397,14 +475,56 @@ def test_section_name_checker_detects_a_broken_pointer(tmp_path: Path) -> None:
     ]
 
 
-def test_markdown_files_skip_only_directories_inside_the_root(tmp_path: Path) -> None:
-    """A `tmp` directory above the checkout must not hide the whole tree (#848).
+def test_excluded_parenthesized_target_is_skipped(tmp_path: Path) -> None:
+    """A missing parenthesized target matching sync-exclude.toml is not reported (ADR-9026)."""
+    _init_repo(tmp_path)
+    source = tmp_path / "source.md"
+    source.write_text("| `missing.md` (Some Heading) |\n", encoding="utf-8")
 
-    A worktree under `tmp/agents/<agent>/` has `tmp` in every absolute path, and
-    CI's checkout path has none, so nothing else would catch a regression.
+    refs = _parenthesized_references([source])
+    assert _unresolved_section_names(refs, tmp_path, excludes=["missing.md"]) == []
+    # The same missing target, unexcluded, is still reported.
+    assert _unresolved_section_names(refs, tmp_path, excludes=[]) == [
+        "source.md:1 -> missing.md not found"
+    ]
+
+
+def test_excluded_quoted_target_is_skipped(tmp_path: Path) -> None:
+    """A missing quoted-section target matching sync-exclude.toml is not reported (ADR-9026)."""
+    _init_repo(tmp_path)
+    refs = [(tmp_path / "source.md", 1, "## Some Heading", "missing.md")]
+
+    assert _unresolved_quoted_references(refs, tmp_path, excludes=["missing.md"]) == []
+    assert _unresolved_quoted_references(refs, tmp_path, excludes=[]) == [
+        "source.md:1 -> missing.md not found"
+    ]
+
+
+def _git(args: list[str], cwd: Path) -> None:
+    subprocess.run(  # nosec B603 B607 - fixed argv, no shell, test fixture only
+        ["git", *args], cwd=cwd, check=True, capture_output=True
+    )
+
+
+def _init_repo(root: Path) -> None:
+    _git(["init", "--quiet"], root)
+    _git(["config", "user.email", "test@example.com"], root)
+    _git(["config", "user.name", "Test"], root)
+
+
+def test_markdown_files_skip_only_directories_inside_the_root(tmp_path: Path) -> None:
+    """A `tmp/` directory inside the repo is skipped via `.gitignore`, not path heredity.
+
+    The old hardcoded `SKIP_DIRS` matched by absolute path parts, so a checkout
+    under a directory named `tmp` hid the whole tree (#848). Discovery through
+    `git ls-files` only ever sees paths relative to the repo root it is run in,
+    so that failure mode cannot recur; this pins the in-repo case it replaces.
     """
-    root = tmp_path / "tmp" / "checkout"
-    (root / "docs").mkdir(parents=True)
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _init_repo(root)
+    (root / ".gitignore").write_text("tmp/*\n", encoding="utf-8")
+    (root / "docs").mkdir()
     (root / "docs" / "kept.md").write_text("# Kept\n", encoding="utf-8")
     (root / "tmp").mkdir()
     (root / "tmp" / "skipped.md").write_text("# Skipped\n", encoding="utf-8")
@@ -416,7 +536,11 @@ def test_markdown_files_skip_worktrees(tmp_path: Path) -> None:
     """Each worktree under `worktrees/` is a full copy of the repository (#854).
 
     Scanning them would check every copy's instruction files, not this checkout's.
+    `worktrees/` is gitignored (mirroring the real `.gitignore`), so the git-based
+    scan drops it without a hardcoded skip list.
     """
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("/worktrees/\n", encoding="utf-8")
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "kept.md").write_text("# Kept\n", encoding="utf-8")
     copy = tmp_path / "worktrees" / "feat" / "42-add-export"

@@ -637,7 +637,8 @@ fast-forwards `main`. See
 
 **Format:** `<type>: <subject>`
 
-Use `doit commit` for interactive commit creation with commitizen.
+Humans at a terminal can use `doit commit` for interactive commit creation with commitizen.
+AI agents use `git commit` with a message in this format (see [Passing the Message](#passing-the-message)), since commitizen's prompts need a terminal.
 
 **Enforced by:**
 - Pre-commit hooks (locally)

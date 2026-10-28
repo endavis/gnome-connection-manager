@@ -189,9 +189,10 @@ It reads your GitHub user and repository from `.config/pyproject_template/settin
 which step 3 wrote. Some settings are unavailable on private repositories without GitHub
 Advanced Security; the script reports those and continues.
 
-**Labels specifically.** `manage.py repo` copies the template's labels as they exist on
-GitHub. To sync against the committed `.github/labels.yml` instead — the better choice
-once your project starts diverging — use:
+**Labels specifically.** `manage.py repo` runs `doit labels_sync` against the committed
+`.github/labels.yml`, creating missing labels and updating drifted ones. If `uv` or that
+file is missing it falls back to copying the template's labels as they exist on GitHub.
+To run the sync yourself:
 
 ```bash
 doit labels_sync            # add and update

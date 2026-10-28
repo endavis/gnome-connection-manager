@@ -4,6 +4,7 @@ from typing import Any
 
 from doit.tools import title_with_actions
 
+from .base import warn_if_env_drifted
 from .install_tools import create_install_task
 
 _DIRENV_POST_INSTALL_MESSAGE = (
@@ -20,6 +21,23 @@ def task_install() -> dict[str, Any]:
             "uv sync",
         ],
         "title": title_with_actions,
+    }
+
+
+def task_env_check() -> dict[str, Any]:
+    """Warn, without failing, when the installed environment has drifted from ``uv.lock``.
+
+    `doit check` and `doit test` depend on this task first (#1033): it is the
+    on-purpose replacement for the `uv-sync-on-pull`/`uv-sync-on-checkout`
+    pre-commit hooks that used to run `uv sync` automatically on `git
+    checkout`/`git pull`. It runs only when a developer runs a `doit` task on
+    a branch they have already decided to trust, and never syncs by itself —
+    it just names the command to run.
+    """
+    return {
+        "actions": [warn_if_env_drifted],
+        "title": title_with_actions,
+        "verbosity": 2,
     }
 
 

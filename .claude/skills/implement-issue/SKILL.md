@@ -1,14 +1,15 @@
 ---
 name: implement-issue
-description: Use when the user says "implement issue N" (or close variants — "work on issue N", "take issue N to a PR", "pick up #N"). Takes an open GitHub issue from its current state to an open PR in one run: decides whether to plan first, posts a plan comment when it does, implements the change with tests, validates it, commits, pushes, opens the PR, and fixes CI for up to 3 rounds. Never adds ready-to-merge, never merges, and never closes the issue.
+description: Use when the user says "implement issue N" (or close variants — "work on issue N", "take issue N to a PR", "pick up #N"), or when the user approves working on an issue — including a "yes" to a fix you proposed and filed as an issue. Takes an open GitHub issue from its current state to an open PR in one run: decides whether to plan first, posts a plan comment when it does, implements the change with tests, validates it, commits, pushes, opens the PR, and fixes CI for up to 3 rounds. Never adds ready-to-merge, never merges, and never closes the issue.
 ---
 
 # Implement Issue
 
 Take an open GitHub issue to a PR whose only expected failing check is `require-label`.
 
-"Implement issue N" replaces the old three-command chain (`/claude:plan`, `/claude:implement`,
-`/ghi-finalize`). Nothing here waits for plan approval or commit approval — the trade is explicit:
+"Implement issue N" — or the user approving work on an issue, including a "yes" to a fix the agent
+proposed and filed as an issue — replaces the old three-command chain (`/claude:plan`,
+`/claude:implement`, `/ghi-finalize`). Nothing here waits for plan approval or commit approval — the trade is explicit:
 the agent commits and pushes on the issue's own branch, and the user's first checkpoint is reviewing
 the open PR, not approving each step along the way.
 
@@ -70,10 +71,23 @@ gh issue comment <n> --body "<plan>"
 
 There is no approval wait — the plan is posted, not proposed.
 
-### Step 4: Code (subagent, or delegated)
+### Step 4: Code (inline, subagent, or delegated)
 
-Re-fetch the context into the same directory — Step 3 posted a comment since the last fetch, so
-`comments.json` needs to pick it up:
+Do the coding inline, without a subagent, when Step 2 skipped planning and the change is one of:
+
+- a version bump of an existing dependency, such as a `pip-audit` fix: `pyproject.toml` and
+  `uv.lock` only;
+- a documentation-only change to one or two files, such as a typo, a broken link or a stale
+  example;
+- any other change to one or two files with no new module and no change in behavior.
+
+Inline coding follows the Coder brief all the same: read the rules it lists, add tests when code
+changes, and run `doit check`. A subagent saves no work on a change this small; it only adds the
+handoff. Adding a new dependency is never small; it is an ask-first trigger. "Implement issue N
+with \<agent\>" still delegates.
+
+Otherwise, re-fetch the context into the same directory — Step 3 posted a comment since the last
+fetch, so `comments.json` needs to pick it up (when Step 3 did not run, this is the first fetch):
 
 ```bash
 doit delegation_context --kind=issue --n=<n> --out=tmp/agents/<host>/implement-issue-<n>/
@@ -86,7 +100,8 @@ using the non-interactive invocation for that host documented in
 — the delegated agent reads the context directory instead of calling `gh` itself, so the invocation
 needs no `gh`-specific guidance. "With \<agent\>" hands off only this step; every other step still
 runs in the host that received "implement issue N". Delete
-`tmp/agents/<host>/implement-issue-<n>/` once this step returns; it has served its purpose.
+`tmp/agents/<host>/implement-issue-<n>/` once this step returns; it has served its purpose (an inline
+run that never fetched it has nothing to delete).
 
 ### Step 5: Check the work
 
@@ -120,8 +135,8 @@ The PR body follows `.github/pull_request_template.md` and includes `Addresses #
 
 ### Step 8: Stop and report
 
-Report: the PR URL, a summary of the change, whether a plan was posted and why (or why not), any
-deviations from the plan, and the CI state (green, or the round-capped failures from Step 7).
+Report: the PR URL, a summary of the change, whether a plan was posted and why (or why not), whether
+coding ran inline or in a subagent, any deviations from the plan, and the CI state (green, or the round-capped failures from Step 7).
 
 ## Ask-first triggers
 
@@ -210,6 +225,8 @@ run the brief in the session itself instead of failing the step.
   `copilot --help`) for parallel subagent work; the `task` tool for the Coder brief, the same
   mechanism `.claude/agents/implement-worker.md` already documents being read through for Copilot.
   `copilot skill list | grep implement-issue` finds the skill.
+  A delegated Copilot run must set `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`, as the
+  documented invocation does, or its dangerous-command hook does not load under `-p` (#1042).
 - **Antigravity CLI (`agy`):** no dedicated subagent/delegation flag found — `agy --help` lists no
   subagent-style option, and `agy agent` (the "list available agents" subcommand) returns no
   output for this workspace. Run both briefs in the session itself. `agy --sandbox --add-dir "$PWD"

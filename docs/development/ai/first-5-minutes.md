@@ -14,7 +14,7 @@ tags:
 
 ## Purpose
 
-This page is a narrative walkthrough of the AI agent workflow this template ships with. It is aimed at a new adopter who has Claude Code installed, has opened the repository for the first time, and wants to see what a full issue-to-merge cycle looks like before diving into the reference material. It is intentionally not a reference — the command-by-command reference lives in [Slash Commands and Workflows](slash-commands.md). Read this page once, then use the reference when you need the details.
+This page is a narrative walkthrough of the AI agent workflow this project ships with. It is aimed at a new adopter who has Claude Code installed, has opened the repository for the first time, and wants to see what a full issue-to-merge cycle looks like before diving into the reference material. It is intentionally not a reference — the command-by-command reference lives in [Slash Commands and Workflows](slash-commands.md). Read this page once, then use the reference when you need the details.
 
 ## Prerequisites
 
@@ -135,4 +135,4 @@ Run `/ghi-status`. It is read-only, has no side effects, and will tell you the c
 - [`.github/instructions/` scaffold](../../../.github/instructions/README.md) — per-stack instruction-file pattern for GitHub Copilot.
 - [`.agents/skills/` scaffold](../../../.agents/skills/README.md) — per-stack rule-shaped skill pattern for Codex CLI.
 - <!-- TODO: wire this link up properly when #342 lands -->
-  For an end-to-end example of the *coding* side of a feature (creating a module, CLI subcommand, tests, and docs), see [the add-a-feature example](https://github.com/endavis/pyproject-template/blob/main/docs/examples/add-a-feature.md) (tracked in [#342](https://github.com/endavis/pyproject-template/issues/342)).
+  For an end-to-end example of the *coding* side of a feature (creating a module, CLI subcommand, tests, and docs), see [the add-a-feature example](../../examples/add-a-feature.md) (tracked in [#342](https://github.com/endavis/pyproject-template/issues/342)).

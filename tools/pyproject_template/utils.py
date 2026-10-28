@@ -3,6 +3,7 @@ Shared utilities for pyproject-template tools.
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess  # nosec B404
@@ -64,9 +65,10 @@ def extracted_template_commit(template_dir: Path) -> str | None:
 
     Read from the directory name, so it names what is actually on disk rather
     than what a second API call thinks the ref points at now. Returns None when
-    the suffix is not a full SHA -- which happens when `resolve_template_ref`
-    could not reach the API and fell back to the moving ref. A moving ref is not
-    a sync point, so recording it would be worse than recording nothing.
+    the suffix is not a full SHA -- an extract of a moving ref, which an older
+    `resolve_template_ref` produced when it could not reach the API (#1026). A
+    moving ref is not a sync point, so recording it would be worse than
+    recording nothing.
     """
     prefix = _ARCHIVE_ROOT_GLOB.rstrip("*")
     name = template_dir.name
@@ -282,6 +284,47 @@ def command_exists(command: str) -> bool:
         return result.returncode == 0
     except (subprocess.SubprocessError, FileNotFoundError):
         return False
+
+
+def github_token() -> str | None:
+    """Return a GitHub token for API calls, or None when none is available.
+
+    `GITHUB_TOKEN` wins. Otherwise `gh auth token` is asked, since `gh` is
+    already a project prerequisite: the unauthenticated API allows 60 requests
+    an hour, and a drift check that runs out of them cannot pin the template to
+    a commit (#1026).
+    """
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    token = result.stdout.strip()
+    return token if result.returncode == 0 and token else None
+
+
+def github_api_request(
+    url: str, accept: str = "application/vnd.github.v3+json"
+) -> urllib.request.Request:
+    """Build a GitHub API request, authenticated whenever a token is available.
+
+    Every API call in the management suite is built here, so one token covers
+    the whole check -> sync flow. Building them by hand let two of the three
+    drift from the token: `check` got past the rate limit and `sync` then
+    recorded `commit_date = "unknown"` (#1027).
+    """
+    request = urllib.request.Request(url, headers={"Accept": accept})
+    token = github_token()
+    if token:
+        request.add_header("Authorization", f"token {token}")
+    return request
 
 
 def get_git_config(key: str, default: str = "") -> str:
@@ -552,7 +595,11 @@ def download_and_extract_archive(url: str, target_dir: Path) -> Path:
         Logger.error(f"Failed to download archive: {e}")
         sys.exit(1)
 
-    extract_dir = target_dir / "extracted"
+    # Extract into a staging directory and swap it in only once extraction has
+    # succeeded, so a failed run never destroys the extract a previous check
+    # left for `sync` to record (#1026).
+    final_dir = target_dir / "extracted"
+    extract_dir = target_dir / "extracted.tmp"
     if extract_dir.exists():
         shutil.rmtree(extract_dir)
     extract_dir.mkdir(parents=True, exist_ok=True)
@@ -580,16 +627,21 @@ def download_and_extract_archive(url: str, target_dir: Path) -> Path:
             raise ValueError("Unknown archive format")
     except Exception as e:
         Logger.error(f"Failed to extract archive: {e}")
+        shutil.rmtree(extract_dir, ignore_errors=True)
         sys.exit(1)
     finally:
         if archive_path.exists():
             archive_path.unlink()
 
+    if final_dir.exists():
+        shutil.rmtree(final_dir)
+    extract_dir.rename(final_dir)
+
     # If the archive contains a single top-level directory, return that
-    contents = list(extract_dir.iterdir())
+    contents = list(final_dir.iterdir())
     if len(contents) == 1 and contents[0].is_dir():
         return contents[0]
-    return extract_dir
+    return final_dir
 
 
 class GitHubCLI:

@@ -5,11 +5,17 @@
 # been enforcing nothing since it was added. Declaring the types here means a
 # plain `pre-commit install` wires all of them, rather than depending on each
 # caller remembering the right `--hook-type` flags (#741).
+#
+# `post-merge` and `post-checkout` are deliberately absent (#1033): the
+# installed hook reads this file with a relative path, so after `git checkout`
+# or `git pull` it reads the config from the branch just switched to, not from
+# `main`. A hook of either type — ours or one an untrusted branch supplies in
+# its own copy of this file — then runs before anyone has reviewed that
+# branch. `doit pre_commit_install` also uninstalls both types from repos that
+# installed them before this change (`tools/doit/git.py`).
 default_install_hook_types:
   - pre-commit
   - commit-msg
-  - post-merge
-  - post-checkout
 
 repos:
   # Generic file checks (not Python-specific, keep external)
@@ -51,7 +57,13 @@ repos:
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
+      # Upstream declares no `stages`, which makes a hook run at every stage
+      # pre-commit fires for an installed hook type — including `post-checkout`
+      # while that type was still installed (#1033). Pin it to `pre-commit`
+      # explicitly rather than relying on `default_install_hook_types` no
+      # longer including anything riskier.
       - id: actionlint
+        stages: [pre-commit]
 
   # Local hooks using project's installed tools via uv
   # This ensures version consistency with pyproject.toml
@@ -236,20 +248,11 @@ repos:
         files: ^pyproject\.toml$
         stages: [pre-commit]
 
-      # Auto-sync dependencies when uv.lock changes after git pull
-      - id: uv-sync-on-pull
-        name: Auto uv sync after pull (lock changed)
-        entry: bash -c 'git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD | grep -q "^uv\.lock$" && echo "uv.lock changed — running uv sync..." && uv sync --all-extras --dev || true'
-        language: system
-        stages: [post-merge]
-        pass_filenames: false
-        always_run: true
-
-      # Auto-sync dependencies when uv.lock changes after branch switch
-      - id: uv-sync-on-checkout
-        name: Auto uv sync after branch switch (lock changed)
-        entry: bash -c 'if [ "$3" = "1" ]; then git diff --name-only "$1" "$2" | grep -q "^uv\.lock$" && echo "uv.lock changed — running uv sync..." && uv sync --all-extras --dev || true; fi'
-        language: system
-        stages: [post-checkout]
-        pass_filenames: false
-        always_run: true
+      # `uv-sync-on-pull` and `uv-sync-on-checkout` used to run `uv sync` here,
+      # on `post-merge` and `post-checkout`. Removed in #1033: those hook
+      # types run before anyone has reviewed the branch just checked out, and
+      # a hook of either type is config-from-the-branch, so it cannot be made
+      # safe by changing what it does — only by not installing the type. The
+      # replacement reminder lives in `doit check` / `doit test`
+      # (`tools/doit/base.py::warn_if_env_drifted`), which a developer runs on
+      # purpose on a branch they have already decided to trust.

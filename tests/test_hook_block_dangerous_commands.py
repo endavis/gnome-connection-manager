@@ -4,7 +4,7 @@ The hook script lives at ``tools/hooks/ai/block-dangerous-commands.py``. Its
 filename contains hyphens, so it isn't directly importable as a module — we
 load it via ``importlib`` and invoke ``main()`` directly with a stubbed stdin.
 
-Pattern mirrors ``tests/test_bash_ban_raw_tools.py``.
+Pattern mirrors ``tests/test_hook_cbm_code_discovery_gate.py``.
 """
 
 from __future__ import annotations
@@ -72,6 +72,8 @@ def _run(
     deterministic regardless of the actual checkout state (TRAP 2 from the plan).
     """
     monkeypatch.setattr(hook, "get_current_branch", lambda: branch)
+    # The allowed example copy asks git about the checkout (#1061)
+    monkeypatch.setattr(hook, "_envrc_example_modified", lambda: False)
     _set_stdin(monkeypatch, _bash_payload(command))
     # ``main()`` returns its exit code rather than calling ``sys.exit()``, so
     # call it directly. ``int()`` narrows the module attribute's ``Any`` type
@@ -410,6 +412,171 @@ def test_non_dict_tool_input_is_tolerated(
     assert code == 0
 
 
+# --- Copilot apply_patch with bare patch text (issue #1042) -----------------
+#
+# Copilot CLI 1.0.104 in -p mode edits files through ``apply_patch`` and sends
+# the patch text itself as ``toolArgs`` -- not JSON. It also runs the
+# Claude-format hooks with ``tool_name: "Edit"`` and the same text as
+# ``tool_input``. Both shapes below are copied from a live probe's debug log.
+
+_BASHRC_PATCH = (
+    "*** Begin Patch\n*** Update File: /home/user/.bashrc\n@@\n"
+    "+export ALLOW_AI_READY_TO_MERGE=1\n*** End Patch\n"
+)
+_BENIGN_PATCH = (
+    "*** Begin Patch\n*** Add File: docs/x.md\n+Never run git reset --hard here.\n*** End Patch\n"
+)
+
+
+def test_copilot_apply_patch_text_blocks_env_persistence(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A Copilot patch-text payload persisting the bypass var is denied."""
+    payload = json.dumps({"toolName": "apply_patch", "toolArgs": _BASHRC_PATCH})
+    code, out = _run_raw(hook, monkeypatch, capsys, payload)
+    assert code == 0
+    assert json.loads(out)["permissionDecision"] == "deny"
+
+
+def test_claude_format_patch_text_blocks_env_persistence(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Copilot's Claude-format ``Edit`` payload carrying patch text is denied."""
+    payload = json.dumps(
+        {"hook_event_name": "PreToolUse", "tool_name": "Edit", "tool_input": _BASHRC_PATCH}
+    )
+    code, _ = _run_raw(hook, monkeypatch, capsys, payload)
+    assert code == 2
+
+
+def test_copilot_apply_patch_text_checks_move_destination(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A patch-text ``*** Move to:`` onto a protected file is denied."""
+    patch = (
+        "*** Begin Patch\n*** Update File: notes.txt\n*** Move to: .envrc.local\n@@\n"
+        "+export ALLOW_AI_READY_TO_MERGE=1\n*** End Patch\n"
+    )
+    payload = json.dumps({"toolName": "apply_patch", "toolArgs": patch})
+    code, out = _run_raw(hook, monkeypatch, capsys, payload)
+    assert code == 0
+    assert json.loads(out)["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"toolName": "apply_patch", "toolArgs": _BENIGN_PATCH},
+        {"tool_name": "Edit", "tool_input": _BENIGN_PATCH},
+    ],
+    ids=["copilot", "claude-format"],
+)
+def test_patch_text_mentioning_dangerous_command_is_allowed(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    payload: dict[str, str],
+) -> None:
+    """Patch text is file content, not a shell command: it is not scanned as one."""
+    code, out = _run_raw(hook, monkeypatch, capsys, json.dumps(payload))
+    assert code == 0
+    assert out.strip() == ""
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": "apply_patch <<PATCH\n" + _BASHRC_PATCH + "PATCH",
+                "_raw_patch": "",
+            },
+        },
+        {
+            "tool_name": "Write",
+            "tool_input": {
+                "file_path": "/home/user/.bashrc",
+                "content": "export ALLOW_AI_READY_TO_MERGE=1",
+                "_raw_patch": "",
+            },
+        },
+        {
+            "toolName": "create",
+            "toolArgs": json.dumps(
+                {
+                    "_raw_patch": "",
+                    "path": "/home/user/.bashrc",
+                    "content": "export ALLOW_AI_READY_TO_MERGE=1",
+                }
+            ),
+        },
+    ],
+    ids=["codex-apply-patch", "claude-write", "copilot-json"],
+)
+def test_caller_supplied_raw_patch_key_does_not_skip_checks(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    payload: dict[str, object],
+) -> None:
+    """A tool call that sets the internal ``_raw_patch`` key itself is still checked."""
+    code, out = _run_raw(hook, monkeypatch, capsys, json.dumps(payload))
+    assert code == 2 or json.loads(out)["permissionDecision"] == "deny"
+
+
+# --- apply_patch with JSON path/content instead of a command (issue #1048) --
+#
+# No CLI is known to send this shape. Without a ``command`` the Codex branch
+# must fall through to the shape-based fallback rather than allow.
+
+_BASHRC_WRITE = {"path": "/home/user/.bashrc", "content": "export ALLOW_AI_READY_TO_MERGE=1"}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"tool_name": "apply_patch", "tool_input": _BASHRC_WRITE},
+        {"toolName": "apply_patch", "toolArgs": json.dumps(_BASHRC_WRITE)},
+    ],
+    ids=["claude-format", "copilot"],
+)
+def test_apply_patch_json_path_content_blocks_env_persistence(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    payload: dict[str, object],
+) -> None:
+    """An ``apply_patch`` call with path + content and no command is still checked."""
+    code, out = _run_raw(hook, monkeypatch, capsys, json.dumps(payload))
+    assert code == 2 or json.loads(out)["permissionDecision"] == "deny"
+
+
+def test_apply_patch_json_path_content_ordinary_write_is_allowed(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The fall-through does not block an ordinary path + content write."""
+    payload = {"tool_name": "apply_patch", "tool_input": {"path": "docs/x.md", "content": "hi"}}
+    code, out = _run_raw(hook, monkeypatch, capsys, json.dumps(payload))
+    assert code == 0
+    assert out.strip() == ""
+
+
+def test_raw_patch_input_ignores_non_patch_strings(hook: types.ModuleType) -> None:
+    """Only a string naming a patch target is wrapped; anything else stays empty."""
+    assert hook._raw_patch_input("{not valid json") == {}
+    assert hook._raw_patch_input(42) == {}
+    assert hook._raw_patch_input(_BASHRC_PATCH) == {hook._RAW_PATCH_KEY: _BASHRC_PATCH}
+
+
 # --- Fail-closed behaviour (issue #679) ------------------------------------
 #
 # The hook uses two deny contracts: exit code 2 (Claude/Gemini/Codex) and
@@ -699,6 +866,44 @@ def test_redirect_fires_only_on_a_commit_heredoc(
         ("git merge --ff-only origin/main", 0),
         ("git merge --ff-only origin/main; echo merge", 0),
         ("git merge --ff-only;echo done", 0),
+        # Gap 5 (#1007): a newline or a `#` comment does not end the command for
+        # shlex, so `--ff-only` on the next line or inside a comment used to
+        # count as an argument to the `git merge` before it.
+        ("git merge feature\necho --ff-only", 2),
+        ("git merge feature # --ff-only", 2),
+        ("git merge feature #--ff-only", 2),
+        ("git merge feature # c\n--ff-only", 2),
+        # A `#` mid-word, or quoted, is not a comment, so the merge after it runs.
+        ("x#y; git merge feature", 2),
+        ("echo '#' ; git merge feature", 2),
+        ("x\\ #; git merge feature", 2),
+        # A quoted string spanning lines stays one word, and a glued `&&`
+        # still ends the command before it.
+        ('echo "x\n# y" ; git merge feature', 2),
+        ('echo "a\nb"&&git merge feature', 2),
+        ('echo "unterminated\n&&git merge feature', 2),
+        # A backslash-newline continuation is still one command.
+        ("git \\\nmerge feature", 2),
+        ("git merge feature \\\n--ff-only", 0),
+        # A real `--ff-only` elsewhere on the same command still allows.
+        ("git merge feature $(echo --ff-only)", 2),
+        ("git merge feature && git pull --ff-only", 2),
+        # Gap 6 (#1007): `--attr-source` and `--config-env` are global options
+        # that take a separate value; missing them from
+        # `_GIT_GLOBAL_OPTS_WITH_VALUE` let their value be mistaken for the
+        # subcommand, so the merge rule never fired.
+        ("git --attr-source HEAD merge feature", 2),
+        ("git --config-env foo.bar=baz merge feature", 2),
+        # Gap 3 (#1011): the merge rule used to lex the whole command,
+        # heredoc bodies included. An unbalanced `"` in a body opened a quote
+        # that swallowed the `git merge` after the terminator. Passing the
+        # merge rule the command with heredoc bodies already stripped fixes
+        # it.
+        ("cat <<'EOF'\n\"\nEOF\ngit merge feature \"", 2),
+        # A merge in a heredoc body is still seen when the hook does not
+        # recognise the receiver as running it (#1011): bodies are skipped
+        # only in addition to the full scan, never instead of it.
+        ("env -i bash <<EOF\ngit merge feature\nEOF", 2),
     ],
 )
 def test_merge_rule_on_main_reads_each_command(
@@ -709,3 +914,182 @@ def test_merge_rule_on_main_reads_each_command(
 ) -> None:
     """Matching `git`, `merge` and `--ff-only` anywhere on the line got both ways wrong (#894)."""
     assert _run(hook, monkeypatch, command, branch="main") == expected
+
+
+# ---------------------------------------------------------------------------
+# Dynamic write targets and git restores of protected files (#1055)
+# ---------------------------------------------------------------------------
+
+_DYNAMIC_TARGET_BLOCKED = [
+    "f=.envrc.loc; echo x >> ${f}al",
+    "echo x >> .envrc.loca?",
+    "echo x >> .envrc.loca{l,}",
+    "echo x >> $(printf .envrc.local)",
+    "echo x >> `printf .envrc.local`",
+    "echo x >> .envrc.l*l",
+    "echo x >> .envrc.loca[l]",
+    "f=.envrc.local; echo x >> $f",
+    'echo x >> "$GITHUB_OUTPUT"',
+    "f=.envrc.local; echo x | tee -a $f",
+    "cp x .envrc.l*",
+    "sed -i s/a/b/ .envrc.l*",
+    "echo x >> $HOME/.config/fi*/config.fish",
+    "git checkout other -- .envrc.local.example",
+    "git restore --source=other .envrc.local.example",
+    "git -C . restore -s other .envrc.local.example",
+    "git checkout other -- .envrc.l*",
+    "echo x >> ~/.bash*",
+    # Grammar the scanner no longer tries to mirror: the rest is a wildcard
+    "git checkout other .envrc.local.example",
+    "echo x >> $'\\x2eenvrc.local'",
+    "echo x >> .envrc.loca[]l]",
+    "echo x >> .envrc.loc{a{l,},}",
+    # Gaps from #1061: sources, later sed operands, broad pathspecs, dd, extglob
+    "cp src/.envrc.loca? .",
+    "cp src/.envrc.loca? ./",
+    "mv src/.envrc.l* .",
+    "sed -i s/a/b/ .envrc.loca? other.txt",
+    "sed -e s/a/b/ -i .envrc.loca? other",
+    "git checkout HEAD~1 -- .",
+    "git checkout HEAD~1 .",
+    "git restore --source=HEAD~1 :/",
+    "git restore -s HEAD~1 ./",
+    "git restore -s X ..",
+    "git restore --source=X --pathspec-from-file=p",
+    "git checkout other -- :(top).envrc.local.example",
+    "dd if=evil of=.envrc.loca?",
+    "dd if=evil of=.envrc.local",
+    "echo x > .envrc.@(local)",
+    "echo x > .envrc.+(local)",
+    "echo x > .envrc.?(local)",
+    # Review of #1064: attached sed scripts, wildcard after the dot, unnormalized
+    # pathspecs, extglob outside redirects
+    "sed -i -es/a/b/ .envrc.local",
+    "sed -i -nes/a/b/ .envrc.loca?",
+    "sed -ni s/a/b/ .envrc.local",
+    "sed --in-place s/a/b/ .envrc.loca?",
+    "sed -i -f script.sed .envrc.loca?",
+    "cp src/.[e]nvrc.local .",
+    "cp src/.?nvrc.local .",
+    "git checkout HEAD~1 -- src/..",
+    "git restore -s HEAD~1 ./.",
+    "git restore -s HEAD~1 ../repo",
+    "git checkout HEAD~1 -- /abs/repo",
+    "cp src/.envrc.@(local) .",
+    "tee .envrc.@(local) < x",
+    # Second review of #1064: abbreviated long options, `~` paths, moved roots
+    "sed --in-pl s/a/b/ .envrc.loca?",
+    "sed -i --expr=s/a/b/ .envrc.loca?",
+    "sed -i --expr s/a/b/ .envrc.loca?",
+    "git restore --sour=HEAD~1 .",
+    "git restore --source=HEAD~1 --pathspec-from=p",
+    "git checkout HEAD~1 -- ~/src/repo",
+    "git -C .. checkout HEAD~1 -- repo/",
+    "git --work-tree=.. restore -s HEAD~1 repo/",
+]
+
+_DYNAMIC_TARGET_ALLOWED = [
+    "cp .envrc.local.example .envrc.local",
+    "echo 'export ENABLE_LSP_TOOL=1' >> .envrc.local",
+    "cp src/* build/",
+    "echo x >> out.log",
+    "echo x >> *.log",
+    "echo x >> $TMPDIR/out.log",
+    "git checkout main",
+    "git checkout -b feature/x",
+    "git checkout main -- src/foo.py",
+    "git restore src/foo.py",
+    'git commit -m "a >> $f"',
+    # Guard the everyday forms next to the #1061 gaps
+    "cp src/*.py build/",
+    "cp src/.* build/",  # documented residual: a bare `.*` is too common to block
+    "cp $src build/",
+    "sed -i s/a/b/ *.py",
+    "sed -i s/a/$/ file.txt",
+    "sed -i -e s/a/b/ file.txt",
+    "git checkout -- .",
+    "git checkout .",
+    "git restore .",
+    "git restore --staged .",
+    "git checkout main -- src/",
+    "git restore -s HEAD src/foo.py",
+    "dd if=a of=out.img",
+    "dd of=/dev/null",
+    "git stash pop",  # the later `cp` is gated on HEAD instead
+    "sed -i -es/a/$/ file.txt",
+    "sed -n -e s/a/b/ .envrc.local",  # no -i: reads only
+    "sed -i -E s/a/b/ file.txt",
+    "git checkout main -- src/../src/foo.py",
+    "git restore -s HEAD src/sub/..foo",
+    "sed -n --quiet -e s/a/b/ file.txt",
+    "git -C sub checkout -- file.py",  # no source: content comes from the index
+    "git restore --staged src/foo.py",
+]
+
+
+@pytest.mark.parametrize("command", _DYNAMIC_TARGET_BLOCKED)
+def test_dynamic_write_target_that_could_be_protected_is_blocked(
+    hook: types.ModuleType, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    assert _run(hook, monkeypatch, command) == 2
+
+
+@pytest.mark.parametrize("command", _DYNAMIC_TARGET_ALLOWED)
+def test_write_target_that_cannot_be_protected_is_allowed(
+    hook: types.ModuleType, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    assert _run(hook, monkeypatch, command) == 0
+
+
+# ---------------------------------------------------------------------------
+# The allowed example copy is gated on the example matching HEAD (#1061)
+# ---------------------------------------------------------------------------
+
+_ENVRC_COPY = "cp .envrc.local.example .envrc.local"
+
+
+def _run_with_git(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    outcome: int | BaseException,
+) -> int:
+    """Run the hook with ``subprocess.run`` faked: return code *outcome*, or raise it."""
+
+    def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return subprocess.CompletedProcess(args, outcome)
+
+    monkeypatch.setattr(hook, "get_current_branch", lambda: "feature/test")
+    monkeypatch.setattr(hook.subprocess, "run", fake_run)
+    _set_stdin(monkeypatch, _bash_payload(command))
+    return int(hook.main())
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        (1, 2),  # example differs from HEAD
+        (0, 0),  # clean
+        (128, 0),  # not a repo: fail open
+        (FileNotFoundError("git"), 0),  # git missing: fail open
+        (subprocess.TimeoutExpired("git", 5), 0),  # timeout: fail open
+    ],
+)
+def test_example_copy_is_gated_on_head(
+    hook: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: int | BaseException,
+    expected: int,
+) -> None:
+    assert _run_with_git(hook, monkeypatch, _ENVRC_COPY, outcome) == expected
+
+
+@pytest.mark.parametrize("outcome", [1, 0])
+def test_other_documented_write_and_stash_pop_ignore_head(
+    hook: types.ModuleType, monkeypatch: pytest.MonkeyPatch, outcome: int
+) -> None:
+    echo = "echo 'export ENABLE_LSP_TOOL=1' >> .envrc.local"
+    assert _run_with_git(hook, monkeypatch, echo, outcome) == 0
+    assert _run_with_git(hook, monkeypatch, "git stash pop", outcome) == 0

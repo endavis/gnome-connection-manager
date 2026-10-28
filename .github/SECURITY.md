@@ -80,6 +80,14 @@ We use automated tools to monitor dependencies:
 - GitHub Security Advisories for known vulnerabilities
 - Regular security audits with `doit audit` (pip-audit)
 
+### Untrusted Branches
+
+Review a branch you don't trust — a fork PR, a dependabot branch, any contributor branch you
+haven't read — before running anything on it, `doit` included. Tools that read config from the
+working tree (`pre-commit`, `doit`, `uv`) read whatever is checked out, so checking out the branch
+is already enough to run its code if the tool fires automatically; see
+endavis/pyproject-template#1033 for the case that prompted this.
+
 ## Security Audit
 
 Run a security audit of dependencies:

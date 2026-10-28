@@ -108,7 +108,7 @@ rule-shaped skill is not ready to be written yet.
 The following sketch illustrates what a `codegen/SKILL.md` rule-shaped skill might look like for a
 downstream project (`pynetappfoundry`) that generates typed Python from a YANG schema and has an ADR
 (ADR-0008) documenting a round-trip invariant. **This example is illustrative only** — actual
-rule-shaped skills belong in downstream repos, not in this template.
+rule-shaped skills come from a project's own observed failures, not from this sketch.
 
 ```
 ---
@@ -157,7 +157,7 @@ See [`docs/development/ai/rule-files.md`](../../docs/development/ai/rule-files.m
 
 ## Shipped rule: `typing-branch-narrowing`
 
-This template ships one rule file, mirrored across all three agent rule surfaces because every
+This project ships one rule file, mirrored across all three agent rule surfaces because every
 agent in the delegation matrix edits this codebase. The checklist body is identical everywhere;
 only the frontmatter and the loading mechanism differ.
 

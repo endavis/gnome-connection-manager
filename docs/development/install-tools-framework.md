@@ -247,7 +247,7 @@ create_install_task(
 the `url_template` escape hatch, which exists to reach third parties such as
 `releases.hashicorp.com`. Calling it without a digest aborts. GitHub-release installs
 are unchanged and stay optional, because fetching them already rests on the same trust
-as cloning this template.
+as cloning this repository.
 
 **What this does not do, stated plainly:** it does not fetch upstream `*.sha256`
 sibling files and verify against those. Over HTTPS from the same origin that serves the

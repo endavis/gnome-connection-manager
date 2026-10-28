@@ -243,7 +243,7 @@ def test_processor_validation_error(processor: Processor) -> None:
 
 ### Docstring Standards
 
-Docstrings are automatically extracted into the [API Reference](https://github.com/endavis/pyproject-template/blob/main/docs/reference/api.md)
+Docstrings are automatically extracted into the [API Reference](../reference/api.md)
 using [mkdocstrings](https://mkdocstrings.github.io/).
 
 **Requirements:**
@@ -365,7 +365,7 @@ When refactoring imports:
 
 ### Ruff Configuration
 
-This template uses Ruff for linting and formatting:
+This project uses Ruff for linting and formatting:
 
 - **Line length**: 100 characters
 - **Target version**: Python 3.12+
@@ -444,7 +444,7 @@ class UserManager:
 
 ### Overview
 
-This template uses [vulture](https://github.com/jendrikseipp/vulture) to detect unused code. Dead code accumulates over time and wastes maintenance effort.
+This project uses [vulture](https://github.com/jendrikseipp/vulture) to detect unused code. Dead code accumulates over time and wastes maintenance effort.
 
 ### Running Dead Code Analysis
 
@@ -523,7 +523,7 @@ Vulture may report false positives for code that's used dynamically. Common exam
 
 ### Overview
 
-This template uses [radon](https://radon.readthedocs.io/) to analyze code complexity. Complex code is harder to understand, test, and maintain.
+This project uses [radon](https://radon.readthedocs.io/) to analyze code complexity. Complex code is harder to understand, test, and maintain.
 
 ### Running Complexity Analysis
 

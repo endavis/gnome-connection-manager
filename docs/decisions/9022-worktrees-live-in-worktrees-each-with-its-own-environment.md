@@ -63,9 +63,10 @@ branch goes only if it still points at the commit the PR merged.
 ## Consequences
 - **Every repository-wide walker must skip `worktrees/`.** Each worktree is a full copy of the
   repository, so a scan from the main checkout would otherwise judge every copy.
-  `tests/test_documented_paths.py`, `tests/test_instruction_pointers.py` and
-  `tests/template/test_secret_env_policy.py` skip it, and each has a test that says so. A new
-  walker needs the same entry.
+  `tests/test_documented_paths.py` and `tests/test_instruction_pointers.py` get this skip from
+  `git ls-files` honoring `.gitignore` (ADR-9026) rather than from a hardcoded directory name;
+  `tests/template/test_secret_env_policy.py` still names `worktrees/` directly. Each has a test
+  that pins the skip. A new walker needs the same guarantee, by either mechanism.
 - **A worktree's shell still carries the main checkout's environment** until direnv is allowed
   in it. `uv run` is what makes commands use the worktree's `.venv`.
 - **Worktrees are always created from `origin/main`.** Branching from an unmerged branch, for
@@ -82,8 +83,12 @@ branch goes only if it still points at the commit the PR merged.
 - Issue #847: the stacked-PR trial where the manual worktree procedure failed
 - Issue #860: the rule is anchored to `/worktrees/`, and `.claude/worktrees/` has its own entry
 - Issue #863: `doit pr_merge` removes the merged PR's worktree and deletes its branch itself
+- Issue #1012: two of the three doc-scanning walkers switched from a hardcoded skip list to
+  `.gitignore`-driven discovery, which is what now gives them the `worktrees/` skip
 
 ## Related Documentation
 - [Doit Tasks Reference](../development/doit-tasks-reference.md) — the `worktree` task, how to
   work in a worktree, and how `pr_merge` removes it
+- [ADR-9026](9026-doc-scanning-tests-honor-sync-excludetoml-and-discover-markdown-via-git.md) —
+  the `git ls-files`-based discovery that now provides this skip for two of the three walkers
 - [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) — Development Workflow, step 2

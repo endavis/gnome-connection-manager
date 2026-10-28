@@ -1,6 +1,6 @@
 ---
 name: delegate-copilot-review
-description: Delegate a read-only code review of current changes to GitHub Copilot CLI. Hands the review to Copilot via `copilot --allow-all -p` and returns findings to the calling agent.
+description: Delegate a read-only code review of current changes to GitHub Copilot CLI. Hands the review to Copilot via `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true copilot --allow-all -p` and returns findings to the calling agent.
 ---
 
 # Delegate Review to Copilot
@@ -24,7 +24,7 @@ The user may include optional focus text after the trigger.
 2. Run Copilot CLI non-interactively. Copilot requires `--allow-all` for non-interactive mode. Hybrid C: prefer the existing `/copilot-review` skill if available, otherwise the prompt is fully inlined. Copilot uses hyphen naming for skills because skill names cannot contain colons.
 
    ```bash
-   copilot --allow-all -p 'Review the current uncommitted changes and the current branch vs main, read-only. If the /copilot-review skill is available, activate it. Otherwise: 1) Run `git status` and `git diff` to see what changed. 2) Run `git log main..HEAD --oneline` for branch context. 3) Read AGENTS.md and any relevant ADRs in docs/decisions/. 4) Identify correctness issues, risks, missing tests, style/convention violations, and concrete suggestions. 5) Print findings to stdout in a structured format (Summary / Issues / Suggestions). Do NOT modify any files. Focus area (optional): <focus>. If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.'
+   GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true copilot --allow-all -p 'Review the current uncommitted changes and the current branch vs main, read-only. If the /copilot-review skill is available, activate it. Otherwise: 1) Run `git status` and `git diff` to see what changed. 2) Run `git log main..HEAD --oneline` for branch context. 3) Read AGENTS.md and any relevant ADRs in docs/decisions/. 4) Identify correctness issues, risks, missing tests, style/convention violations, and concrete suggestions. 5) Print findings to stdout in a structured format (Summary / Issues / Suggestions). Do NOT modify any files. Focus area (optional): <focus>. If the focus area names any of `errors`, `tests`, `types`, `comments`, read `docs/development/ai/review-focus-areas.md` and apply those checklists in addition to the general review.'
    ```
 
 3. Capture stdout and summarize the review findings.

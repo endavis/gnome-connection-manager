@@ -29,6 +29,7 @@ import re
 import shutil
 import subprocess  # nosec B404
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -51,6 +52,7 @@ from utils import (  # noqa: E402
     Colors,
     Logger,
     download_and_extract_archive,
+    github_api_request,
 )
 
 # Frozen set for O(1) membership tests in the hot path of compare_files.
@@ -63,6 +65,20 @@ DEFAULT_TEMPLATE_REF = "main"
 # Project-managed exclude file: paths or globs of upstream files the downstream
 # project intentionally does not adopt. See docs/template/manage.md.
 SYNC_EXCLUDE_FILE = Path(".config/pyproject_template/sync-exclude.toml")
+
+# Downstream copies of the template-sync skill (#806, shared-skill layout #972).
+# These are downstream-owned: a sync adopts them through the normal drift triage,
+# never by this check overwriting them.
+TEMPLATE_SYNC_SKILL_REL_PATHS = (
+    ".agents/skills/template-sync/SKILL.md",
+    ".claude/skills/template-sync/SKILL.md",
+)
+
+# Upstream location of the skill source at a ref, named in the warning below so
+# an agent or admin can go re-read the current instructions before triaging a sync.
+TEMPLATE_SYNC_SKILL_URL = (
+    "https://raw.githubusercontent.com/{repo}/{ref}/.agents/skills/template-sync/SKILL.md"
+)
 
 
 def load_sync_excludes(project_root: Path) -> list[str]:
@@ -99,6 +115,10 @@ def load_sync_excludes(project_root: Path) -> list[str]:
     return [str(item) for item in excludes if isinstance(item, str)]
 
 
+class TemplateRefError(RuntimeError):
+    """The template ref could not be pinned to a commit."""
+
+
 def resolve_template_ref(ref: str) -> str:
     """Resolve *ref* -- a tag, branch or commit SHA -- to a commit SHA.
 
@@ -106,31 +126,48 @@ def resolve_template_ref(ref: str) -> str:
     (ADR-9020). A tag, a branch and a SHA all resolve here, so a comparison can
     be reproduced later and both halves of a sync can name the same commit.
 
-    On failure -- offline, rate-limited, an unknown ref -- returns *ref*
-    unchanged and warns. Refusing to run a drift check because api.github.com is
-    unreachable would trade a small gain for a hard outage, which is the same
-    call `bootstrap.resolve_ref` makes.
+    Raises:
+        TemplateRefError: offline, rate-limited, an unknown ref or a non-SHA
+            response. Unlike `bootstrap.resolve_ref`, the drift check does not
+            continue against the moving ref: an extract of a moving ref cannot
+            be recorded as a sync point, and continuing used to replace the
+            reviewed extract `sync` needs (#1026).
     """
     if SHA_RE.match(ref):
         return ref
 
     api_url = f"https://api.github.com/repos/{TEMPLATE_REPO}/commits/{ref}"
-    request = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github.sha"})
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        request.add_header("Authorization", f"token {token}")
+    request = github_api_request(api_url, accept="application/vnd.github.sha")
+    authenticated = request.has_header("Authorization")
     try:
         with urllib.request.urlopen(request, timeout=15) as response:  # nosec B310
             sha: str = response.read().decode("utf-8").strip()
+    except urllib.error.HTTPError as e:
+        cause = "rate limited" if e.code in (403, 429) else str(e)
+        raise TemplateRefError(_ref_error_message(ref, cause, authenticated)) from e
     except Exception as e:
-        Logger.warning(f"Could not resolve '{ref}' to a commit ({e}).")
-        Logger.info(f"Continuing against the moving ref '{ref}'.")
-        return ref
+        raise TemplateRefError(_ref_error_message(ref, str(e), authenticated)) from e
 
     if not SHA_RE.match(sha):
-        Logger.warning(f"Unexpected response resolving '{ref}'; using it as-is.")
-        return ref
+        raise TemplateRefError(
+            _ref_error_message(ref, "unexpected response from the API", authenticated)
+        )
     return sha
+
+
+def _ref_error_message(ref: str, cause: str, authenticated: bool) -> str:
+    """Name the cause of a failed ref lookup and the remedy for it."""
+    if authenticated:
+        remedy = (
+            "check network access and that the ref exists, or wait for the API rate "
+            "limit to reset, then re-run the check"
+        )
+    else:
+        remedy = (
+            "set GITHUB_TOKEN (e.g. GITHUB_TOKEN=$(gh auth token)) or log in with "
+            "`gh auth login`, then re-run the check"
+        )
+    return f"Could not resolve '{ref}' to a commit ({cause}): {remedy}."
 
 
 def download_template(target_dir: Path, ref: str | None = None) -> Path:
@@ -138,6 +175,9 @@ def download_template(target_dir: Path, ref: str | None = None) -> Path:
 
     `ref` is resolved to a commit first, so one URL shape serves all three and
     the archive is a fixed commit rather than a moving branch.
+
+    Raises:
+        TemplateRefError: *ref* could not be pinned; nothing was downloaded.
     """
     commit = resolve_template_ref(ref or DEFAULT_TEMPLATE_REF)
     archive_url = f"{TEMPLATE_URL}/archive/{commit}.zip"
@@ -323,6 +363,68 @@ def _emit_coupling_warnings(different_files: list[Path], project_root: Path) -> 
             )
 
 
+def stale_template_sync_skill_copies(project_root: Path, template_root: Path) -> list[Path]:
+    """Return project-relative paths of ``template-sync`` ``SKILL.md`` copies that are stale.
+
+    Checks each path in ``TEMPLATE_SYNC_SKILL_REL_PATHS`` -- the ``.agents/`` and
+    ``.claude/`` copies of the skill -- against ``template_root``. A path the
+    template lacks is skipped: it names an older ref that predates the
+    shared-skill layout (#806), so its absence is not drift, just a ref that
+    predates the feature.
+
+    A path is stale when the project's copy is missing, or when its contents
+    differ from the template's.
+
+    Args:
+        project_root: Downstream project root.
+        template_root: Extracted upstream template directory.
+
+    Returns:
+        Sorted project-relative paths that are missing or differ. Empty when
+        both copies match, or the template has neither path.
+    """
+    stale: list[Path] = []
+    for rel in TEMPLATE_SYNC_SKILL_REL_PATHS:
+        template_file = template_root / rel
+        if not template_file.is_file():
+            continue  # Older ref predates #806 -- not stale, just absent upstream.
+
+        project_file = project_root / rel
+        if not project_file.is_file() or not filecmp.cmp(
+            template_file, project_file, shallow=False
+        ):
+            stale.append(Path(rel))
+
+    return sorted(stale)
+
+
+def _warn_stale_template_sync_skill(
+    stale: list[Path], project_root: Path, ref: str = DEFAULT_TEMPLATE_REF
+) -> None:
+    """Warn, before the drift report, that the local ``template-sync`` skill is stale.
+
+    Prints nothing when ``stale`` is empty. This only warns and never writes --
+    the skill is downstream-owned (#806), and adopting a stale copy goes through
+    the normal drift triage (Step 5 of the skill itself), not an overwrite here.
+    A skill that is already running also cannot usefully reload itself mid-sync.
+
+    Args:
+        stale: Project-relative paths returned by ``stale_template_sync_skill_copies``.
+        project_root: Downstream project root the paths are relative to.
+        ref: Template ref the copies were compared against, named in the URL.
+    """
+    if not stale:
+        return
+
+    Logger.warning(
+        "Your local template-sync skill is older than the template's. Re-read "
+        f"{TEMPLATE_SYNC_SKILL_URL.format(repo=TEMPLATE_REPO, ref=ref)} before triaging this sync."
+    )
+    for rel_path in stale:
+        status = "(differs)" if (project_root / rel_path).is_file() else "(missing)"
+        print(f"  {rel_path} {status}")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare your project against the latest pyproject-template."
@@ -392,8 +494,19 @@ def run_check_updates(
         Logger.info("Dry run mode - would download and compare template files")
         return 0
 
-    # Download template
-    template_dir = download_template(tmp_dir, ref)
+    # Download template. A ref that cannot be pinned stops the check before
+    # anything on disk changes, so a reviewed extract survives it (#1026).
+    try:
+        template_dir = download_template(tmp_dir, ref)
+    except TemplateRefError as e:
+        Logger.error(str(e))
+        return 1
+
+    # Warn -- before anything else -- if the local template-sync skill copies
+    # are older than the template just downloaded. An agent following a stale
+    # skill triages the rest of this sync on out-of-date instructions.
+    stale_skill_copies = stale_template_sync_skill_copies(project_root, template_dir)
+    _warn_stale_template_sync_skill(stale_skill_copies, project_root, ref)
 
     # Open CHANGELOG.md for review
     if not skip_changelog:

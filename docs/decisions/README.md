@@ -136,6 +136,7 @@ The Issue contains the full discussion; the ADR summarizes the outcome.
 | [9023](9023-shared-workflow-skills-live-in-agents-skills-generated-for-claude.md) | Shared workflow skills live once in .agents/skills/ and are generated for Claude | Accepted |
 | [9024](9024-one-implement-issue-skill-takes-an-issue-to-a-green-pr.md) | One implement-issue skill takes an issue to a green PR | Accepted |
 | [9025](9025-delegated-agents-receive-github-data-from-the-host-and-run-without-network.md) | Delegated agents receive GitHub data from the host and run without network | Accepted |
+| [9026](9026-doc-scanning-tests-honor-sync-excludetoml-and-discover-markdown-via-git.md) | Doc-scanning tests honor sync-exclude.toml and discover markdown via git | Accepted |
 
 ### Project-level ADRs (0001+)
 

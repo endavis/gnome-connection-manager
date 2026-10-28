@@ -12,7 +12,7 @@ tags:
 
 # AI Agent Setup Guide
 
-This template is designed primarily for **Claude Code**, which is the only agent that ships the full slash-command workflow and acts as the orchestrator in single-agent and multi-agent flows. **GitHub Copilot CLI** is supported as a standalone alternative whose workflow is discovered as skills from `.github/skills/`. **Codex CLI** is supported as a standalone alternative without slash commands. **Antigravity CLI** (`agy`) is supported as a standalone alternative that shares the `.agents/` customization root with Codex. See the comparison table below for the per-agent breakdown.
+This project is designed primarily for **Claude Code**, which is the only agent that ships the full slash-command workflow and acts as the orchestrator in single-agent and multi-agent flows. **GitHub Copilot CLI** is supported as a standalone alternative whose workflow is discovered as skills from `.github/skills/`. **Codex CLI** is supported as a standalone alternative without slash commands. **Antigravity CLI** (`agy`) is supported as a standalone alternative that shares the `.agents/` customization root with Codex. See the comparison table below for the per-agent breakdown.
 
 > **New here?** Start with the [First 5 Minutes walkthrough](ai/first-5-minutes.md) for a narrative tour of the AI agent workflow. This page is the configuration reference.
 
@@ -23,9 +23,9 @@ This template is designed primarily for **Claude Code**, which is the only agent
 | Agent | Permission model | Hooks support | Slash commands | LSP | Dual-agent role |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Codex CLI** | TOML approval policies (`.codex/config.toml`) plus repo skills (`.agents/skills/`) | Project-level `tools/hooks/ai/` apply via Codex hooks | Built-in only; repo workflow uses skills (`codex-review`, `codex-adversarial-review`, `implement-issue`, `template-sync`, `template-migrate`, `add-dependency`, `mutation-triage`, `property-tests`, `deprecate-api`, `python-version-bump`, `security-triage`, `dead-code-triage`, `perf-change`) | Not documented | Standalone alternative (not part of dual-agent flow) |
-| **Antigravity CLI** (`agy`) | Skills + hooks in the shared `.agents/` root (`hooks.json`, `skills/`) | Project-level `tools/hooks/ai/` apply via `.agents/hooks.json` (stdout `deny` contract) | Built-in only; repo workflow uses `.agents/skills/` skills (`antigravity-review`, `antigravity-adversarial-review`, `implement-issue`, `ghi-status`, `template-sync`, `template-migrate`, `add-dependency`, `mutation-triage`, `property-tests`, `deprecate-api`, `python-version-bump`, `security-triage`, `dead-code-triage`, `perf-change`), activated by description | Not documented | Standalone alternative; full cross-agent delegation + `/multi-*` support |
-| **GitHub Copilot CLI** | JSON hook config (`.github/hooks/copilot-hooks.json`) | Project-level hooks apply; Copilot `preToolUse` hook wired | Self-action (`/copilot-review`, `/copilot-adversarial-review`) plus one cross-agent bridge per (target, action) pair (`/{claude,codex,antigravity}-{review,adversarial-review}`) — all under `.github/skills/<target>-<action>/SKILL.md` (Copilot-only path, invisible to Claude). Copilot uses hyphen naming because skill names cannot contain colons. `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change` and `/multi-*` come from `.agents/skills/` | Not documented | Standalone alternative |
-| **Claude Code** | Layered permissions (`.claude/settings.local.json` + `.claude/settings.json` PreToolUse hooks) | Project-level hooks plus Claude PreToolUse hooks | Self-action (`/claude:review`, `/claude:adversarial-review`) + `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change`, `/multi-plan`, `/multi-review`, `/multi-adversarial-review` (all `.claude/skills/<name>/SKILL.md`, generated from `.agents/skills/` by `doit skills_sync`) + one delegation command per (target, action) pair (`.claude/commands/<target>/`) | Supported | Primary orchestrator in single-agent and multi-agent flows |
+| **Antigravity CLI** (`agy`) | Skills + hooks in the shared `.agents/` root (`hooks.json`, `skills/`) | Project-level `tools/hooks/ai/` apply via `.agents/hooks.json` (stdout `deny` contract) | Built-in only; repo workflow uses `.agents/skills/` skills (`antigravity-review`, `antigravity-adversarial-review`, `implement-issue`, `ghi-status`, `template-sync`, `template-migrate`, `add-dependency`, `mutation-triage`, `property-tests`, `deprecate-api`, `python-version-bump`, `security-triage`, `dead-code-triage`, `perf-change`, `merge-pr`), activated by description | Not documented | Standalone alternative; full cross-agent delegation + `/multi-*` support |
+| **GitHub Copilot CLI** | JSON hook config (`.github/hooks/copilot-hooks.json`) | Project-level hooks apply; Copilot `preToolUse` hook wired | Self-action (`/copilot-review`, `/copilot-adversarial-review`) plus one cross-agent bridge per (target, action) pair (`/{claude,codex,antigravity}-{review,adversarial-review}`) — all under `.github/skills/<target>-<action>/SKILL.md` (Copilot-only path, invisible to Claude). Copilot uses hyphen naming because skill names cannot contain colons. `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change`, `/merge-pr` and `/multi-*` come from `.agents/skills/` | Not documented | Standalone alternative |
+| **Claude Code** | Layered permissions (`.claude/settings.local.json` + `.claude/settings.json` PreToolUse hooks) | Project-level hooks plus Claude PreToolUse hooks | Self-action (`/claude:review`, `/claude:adversarial-review`) + `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change`, `/merge-pr`, `/multi-plan`, `/multi-review`, `/multi-adversarial-review` (all `.claude/skills/<name>/SKILL.md`, generated from `.agents/skills/` by `doit skills_sync`) + one delegation command per (target, action) pair (`.claude/commands/<target>/`) | Supported | Primary orchestrator in single-agent and multi-agent flows |
 
 The project-level dangerous-command hooks under `tools/hooks/ai/` apply to all four agents regardless of per-agent config and cannot be bypassed by editing `.claude/settings.local.json`, `.codex/config.toml`, `.github/hooks/copilot-hooks.json`, or `.agents/hooks.json`. See [AI Enforcement Principles](ai/enforcement-principles.md) and [Command Blocking](ai/command-blocking.md).
 
@@ -69,7 +69,7 @@ trust](ai/command-blocking.md#codex-cli) for the measured behavior.
 - [Configuring Codex](https://developers.openai.com/codex/local-config/)
 - [Codex Security Guide](https://developers.openai.com/codex/security/)
 
-**Codex parity status:** Codex does not use repo-defined slash commands in this template. Instead, it uses repo-scoped workflow skills checked into `.agents/skills/` and invoked through Codex's built-in skill surface such as `/skills` or explicit mentions like `$codex-review`, `$codex-adversarial-review`, and `$implement-issue`. LSP integration is not documented for Codex here. Codex works as a standalone alternative for contributors who prefer the OpenAI CLI. The shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` applies to Codex via `.codex/config.toml`, and the approval-policy rules remain a secondary defense layer. For the broader workflow picture, see [Slash Commands and Workflows](ai/slash-commands.md).
+**Codex parity status:** Codex does not use repo-defined slash commands in this project. Instead, it uses repo-scoped workflow skills checked into `.agents/skills/` and invoked through Codex's built-in skill surface such as `/skills` or explicit mentions like `$codex-review`, `$codex-adversarial-review`, and `$implement-issue`. LSP integration is not documented for Codex here. Codex works as a standalone alternative for contributors who prefer the OpenAI CLI. The shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` applies to Codex via `.codex/config.toml`, and the approval-policy rules remain a secondary defense layer. For the broader workflow picture, see [Slash Commands and Workflows](ai/slash-commands.md).
 
 ### 2. Claude Code (Anthropic)
 
@@ -137,8 +137,8 @@ For complete setup instructions and troubleshooting, see `.claude/lsp-setup.md` 
 | Var | Value | Effect | Risk |
 | :--- | :--- | :--- | :--- |
 | `ENABLE_PROMPT_CACHING_1H` | `1` | Extends prompt cache TTL from 5 minutes to 1 hour. Cuts cost on repeated reads of the same context within a session. | None — pure efficiency flag. |
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `50` | Auto-compaction triggers at 50% of the context window instead of the default (~92%). Sessions compact earlier, leaving more headroom for the post-compact continuation. | More frequent compaction churn; mitigated by the [PreCompact handoff hook](ai/auto-checkpoint-hook.md) which preserves context across compaction events. |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | `claude-sonnet-5` | Subagents (e.g. `implement-worker`, spawned by the `implement-issue` skill) default to Sonnet 5 instead of inheriting the parent's Opus model. | Subagent output quality drops below Opus on hard reasoning tasks. Mitigate per-agent (see below). |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | `50` | Auto-compaction triggers at 50% of the context window instead of the default (~92%). Sessions compact earlier, leaving more headroom for the post-compact continuation. | More frequent compaction churn; native compaction already re-reads the project-root CLAUDE.md and recently used files, and `/checkpoint` is available for a manual checkpoint before a deliberate `/compact`. |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | `claude-sonnet-5-5` | Subagents (e.g. `implement-worker`, spawned by the `implement-issue` skill) default to Sonnet 5.5 instead of inheriting the parent's Opus model. | Subagent output quality drops below Opus on hard reasoning tasks. Mitigate per-agent (see below). |
 
 **Per-agent model overrides:**
 
@@ -147,15 +147,15 @@ For complete setup instructions and troubleshooting, see `.claude/lsp-setup.md` 
 ```yaml
 ---
 name: high-stakes-reviewer
-model: claude-opus-5   # overrides the env-var default for this agent only
+model: claude-opus-5-5   # overrides the env-var default for this agent only
 ---
 ```
 
-Agents without a `model:` line inherit the env-var default. This template's `.claude/agents/implement-worker.md` deliberately does not override — implement-worker runs on Sonnet 5 as an explicit cost/quality trade-off. Future high-stakes subagents (e.g. design review, security review) can opt into Opus on a per-file basis.
+Agents without a `model:` line inherit the env-var default. This project's `.claude/agents/implement-worker.md` deliberately does not override — implement-worker runs on Sonnet 5.5 as an explicit cost/quality trade-off. Future high-stakes subagents (e.g. design review, security review) can opt into Opus on a per-file basis.
 
 **Per-developer overrides:**
 
-To opt out or tune values for your local environment, override them in `.claude/settings.local.json` (already gitignored, used elsewhere in this template for personal config). Example:
+To opt out or tune values for your local environment, override them in `.claude/settings.local.json` (already gitignored, used elsewhere in this project for personal config). Example:
 
 ```json
 {
@@ -167,7 +167,7 @@ To opt out or tune values for your local environment, override them in `.claude/
 
 **Cross-references:**
 
-- The 50% autocompact threshold is paired with the [PreCompact handoff hook](ai/auto-checkpoint-hook.md) — earlier compaction has lower cost because the hook preserves context across compaction events automatically.
+- For a manual checkpoint before compaction, use `/checkpoint` and `/restore` — see [Slash Commands and Workflows](ai/slash-commands.md).
 - For operators who need more aggressive token reduction, see [AI Agent Token-Efficiency Add-Ons](ai/token-efficiency-add-ons.md) — a catalogue of opt-in external tools (RTK, Headroom, Caveman) with tipping-point guidance and trust caveats.
 
 ### 3. GitHub Copilot CLI
@@ -210,7 +210,7 @@ copilot
 - `.github/instructions/*.instructions.md` - Copilot-native per-stack instruction files (auto-discovered)
 - `.github/instructions/README.md` - Instruction-file scaffold and format reference
 - `.github/skills/<target>-<action>/SKILL.md` — Copilot-host workflow skills (one self-action skill per action plus one bridge per target and action; placed under `.github/skills/` so Claude does not also surface them)
-- `.agents/skills/` — interoperable Codex skill path, also read by Copilot (provides `/implement-issue`, `/ghi-status`, `/multi-*`, and the 12 other shared workflow skills)
+- `.agents/skills/` — interoperable Codex skill path, also read by Copilot (provides `/implement-issue`, `/ghi-status`, `/multi-*`, and the 13 other shared workflow skills)
 - `.claude/skills/` — Claude's generated copies of the shared workflow skills (`doit skills_sync`), byte-identical to their `.agents/skills/` source. Copilot also reads this path, but prefers `.agents/skills/` when both carry the same name
 - `.claude/agents/implement-worker.md` — Shared subagent definition
 
@@ -218,7 +218,7 @@ copilot
 - [GitHub Copilot CLI](https://github.com/github/copilot-cli)
 - [Copilot CLI Hooks](https://docs.github.com/en/copilot/how-tos/use-copilot-for-common-tasks/use-copilot-in-the-cli)
 
-**Copilot parity status:** Copilot CLI exposes every cross-agent matrix cell for its host under `.github/skills/<target>-<action>/SKILL.md` — a self-action skill per action (`/copilot-review`, `/copilot-adversarial-review`) plus a bridge per (target, action) pair (`/{claude,codex,antigravity}-{review,adversarial-review}`). The bridge bodies cannot be shared with Claude because each target CLI requires a different invocation (`claude -p`, `codex -a never --dangerously-bypass-hook-trust exec`, `agy -p`). The other workflow skills (`/implement-issue`, `/ghi-status`, `/multi-*`, and the 12 other shared workflow skills) come from `.agents/skills/`. The `.github/skills/` location was chosen because it's the only Copilot project skill path that Claude does not also read — bridges there do not surface as duplicate slash commands in Claude. Hyphen naming is a structural constraint (skill names cannot contain colons), not a stylistic choice. The project-level hooks under `tools/hooks/ai/` apply to Copilot via `.github/hooks/copilot-hooks.json` — see [Command Blocking](ai/command-blocking.md). For the broader slash-command picture, see [Slash Commands and Workflows](ai/slash-commands.md).
+**Copilot parity status:** Copilot CLI exposes every cross-agent matrix cell for its host under `.github/skills/<target>-<action>/SKILL.md` — a self-action skill per action (`/copilot-review`, `/copilot-adversarial-review`) plus a bridge per (target, action) pair (`/{claude,codex,antigravity}-{review,adversarial-review}`). The bridge bodies cannot be shared with Claude because each target CLI requires a different invocation (`claude -p`, `codex -a never --dangerously-bypass-hook-trust exec`, `agy -p`). The other workflow skills (`/implement-issue`, `/ghi-status`, `/multi-*`, and the 13 other shared workflow skills) come from `.agents/skills/`. The `.github/skills/` location was chosen because it's the only Copilot project skill path that Claude does not also read — bridges there do not surface as duplicate slash commands in Claude. Hyphen naming is a structural constraint (skill names cannot contain colons), not a stylistic choice. The project-level hooks under `tools/hooks/ai/` apply to Copilot via `.github/hooks/copilot-hooks.json` — see [Command Blocking](ai/command-blocking.md). For the broader slash-command picture, see [Slash Commands and Workflows](ai/slash-commands.md).
 
 ### 4. Antigravity CLI (Google)
 
@@ -237,7 +237,7 @@ curl -fsSL https://antigravity.google/cli/install.sh | bash
 agy
 ```
 
-**Antigravity parity status:** Antigravity does not use repo-defined slash commands; its workflow skills (`antigravity-review`, `antigravity-adversarial-review`, and the shared `implement-issue` skill) live in `.agents/skills/` and activate by description match. The shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` applies to Antigravity via `.agents/hooks.json` (a `PreToolUse` matcher on `run_command`/`write_to_file`); unlike the other agents it blocks by printing `{"decision":"deny"}` on stdout, which holds even under `--dangerously-skip-permissions`. `agy` only loads workspace customizations for an active/trusted workspace, so headless `agy -p` runs need `--add-dir <repo-root>`. Cross-agent delegation (both directions, reusing Codex's host-agnostic `delegate-*` skills) and the `/multi-*` orchestrators fully support `agy`. For the broader workflow picture, see [Slash Commands and Workflows](ai/slash-commands.md).
+**Antigravity parity status:** Antigravity does not use repo-defined slash commands; its workflow skills (`antigravity-review`, `antigravity-adversarial-review`, and the shared `implement-issue` skill) live in `.agents/skills/` and activate by description match. The shared dangerous-command hook at `tools/hooks/ai/block-dangerous-commands.py` applies to Antigravity via `.agents/hooks.json` (a `PreToolUse` matcher on `run_command`, `write_file`, `edit_file` and `write_to_file`); unlike the other agents it blocks by printing `{"decision":"deny"}` on stdout, which holds even under `--dangerously-skip-permissions`. `agy` only loads workspace customizations for an active/trusted workspace, so headless `agy -p` runs need `--add-dir <repo-root>`. Cross-agent delegation (both directions, reusing Codex's host-agnostic `delegate-*` skills) and the `/multi-*` orchestrators fully support `agy`. For the broader workflow picture, see [Slash Commands and Workflows](ai/slash-commands.md).
 
 ### 5. Other AI Tools
 
@@ -247,7 +247,7 @@ The `AGENTS.md` file serves as general-purpose documentation for any AI coding a
 - **Codeium**: Reference in project settings
 - **Tabnine**: Reference in configuration
 
-> **Note**: For the slash commands and dual-agent workflow this template ships with, see [Slash Commands and Workflows](ai/slash-commands.md).
+> **Note**: For the slash commands and dual-agent workflow this project ships with, see [Slash Commands and Workflows](ai/slash-commands.md).
 
 ## AGENTS.md - Universal Context File
 
@@ -267,7 +267,7 @@ This file is:
 
 ## Context files and precedence
 
-This template ships several files that influence agent behavior. They fall into two categories: **context/instruction files** (markdown) and **settings/config files** (JSON or TOML). Knowing which is which — and which one wins on conflict — matters when adapting the template for a new project.
+This project ships several files that influence agent behavior. They fall into two categories: **context/instruction files** (markdown) and **settings/config files** (JSON or TOML). Knowing which is which — and which one wins on conflict — matters when adapting the template for a new project.
 
 **File inventory:**
 
@@ -292,7 +292,7 @@ This template ships several files that influence agent behavior. They fall into 
 
 ### For Your Project
 
-When using this template for a new project:
+When setting up a new project:
 
 1. **Update AGENTS.md**: Customize project-specific details
 2. **Adjust permissions**: Modify `.codex/config.toml` and `.claude/settings.local.json` as needed
@@ -340,7 +340,7 @@ Copilot CLI does not use a per-command allowlist — the dangerous-command hook 
 
 All configuration files are set up with security in mind.
 
-> **Note**: This template enforces security rules in code and settings, not just instructions. See [AI Enforcement Principles](ai/enforcement-principles.md) for details.
+> **Note**: This project enforces security rules in code and settings, not just instructions. See [AI Enforcement Principles](ai/enforcement-principles.md) for details.
 
 > **Note**: For the architectural rules AI agents must follow when generating code, see [Architectural Conventions](ai/architectural-conventions.md).
 

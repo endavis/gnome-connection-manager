@@ -45,11 +45,14 @@ The hook uses Python's `shlex` module to properly parse shell quoting:
 
 #### Key Feature: Chained Command Detection
 
-The hook scans all token positions, so chained commands using `&&` or `;` are caught:
+The hook scans all token positions, so chained commands using `&&` or `;` are caught. The scan
+also runs on tokens where every `;`, `&&`, `||`, `|` and `&` is its own token, so a separator glued
+to the next command still ends the one before it (#1023):
 
 ```bash
 # BLOCKED - dangerous command after safe one
 git status; git push --force origin main
+true;git push --force origin main
 cd /path && doit release
 
 # ALLOWED - all commands in the chain are safe
@@ -59,9 +62,9 @@ git status; git push origin feat/branch
 
 #### Key Feature: Git Global Option Handling
 
-Git global options (e.g., `-C <path>`, `-c <k>=<v>`, `--git-dir=<dir>`) appear between the `git`
-token and the subcommand. The hook walks past them to find the real subcommand, so these are all
-caught:
+Git global options (e.g., `-C <path>`, `-c <k>=<v>`, `--git-dir=<dir>`, `--attr-source <ref>`,
+`--config-env <var>=<envvar>`) appear between the `git` token and the subcommand. The hook walks
+past them to find the real subcommand, so these are all caught:
 
 ```bash
 # BLOCKED - global options shift the subcommand position, but hook handles them
@@ -151,6 +154,49 @@ for why the scanner is not taught to recognise prose instead — the short versi
 bodies for a list of trusted receivers turns a mistake in that list into a bypass, and the flat
 scan is what covers interpreters nobody has listed.
 
+Finding the marker itself has to be quote-aware too: `echo "<<EOF"` is not a heredoc, it is an
+ordinary argument that happens to contain the characters `<<EOF`. `_heredoc_marker_match` walks
+each line with the same quote-tracking the comment stripper uses, carrying an open quote from one
+line to the next, and only tries the marker pattern outside a quote. A quoted `<<WORD`, including
+one that closes a string opened on an earlier line, is left alone, and the lines after it are not
+mistaken for its body (#1011). Where the quoting is too tangled to follow (a marker line that ends
+inside a quote, or a `$(...)`, `${...}` or backtick expansion inside a double quote, whose own
+quotes nest), the hook stops stripping heredoc bodies from that point on, so every later line is still
+scanned.
+
+```bash
+# BLOCKED - the quoted "<<EOF" is not a heredoc marker, so the read after it is still seen
+echo "<<EOF" ;
+cat ~/.netrc
+```
+
+Two other shapes contain `<<` without starting a heredoc: a here-string (`cat <<< "$x"`), whose
+word is on the same line, and a left shift inside arithmetic (`$((1<<n))`, `((x <<= 2))`). The
+marker scan skips both, so the lines after them are not mistaken for a body (#1025). Arithmetic left
+open at the end of a line is treated like tangled quoting: stripping stops there.
+
+```bash
+# BLOCKED - a here-string has no body, so the read on the next line is still seen
+cat <<<EOF
+cat ~/.netrc
+```
+
+The checks that need to know where a command *starts* (the merge rule, the credential-read check
+and the env-dump check) see the command with every heredoc body and terminator line removed.
+Without that, an unbalanced quote inside a heredoc body could open a quote that swallows everything
+after the terminator, hiding a real `git merge` or credential read from the scan meant to catch it.
+The merge rule also scans the full command, so a merge inside a body whose receiver the hook does not
+recognise as running it, such as `env -i bash <<EOF`, is still blocked:
+
+```bash
+# BLOCKED - the merge rule sees the heredoc-stripped command, so the quote in the
+# body does not swallow the `git merge` after the terminator
+cat <<'EOF'
+"
+EOF
+git merge feature "
+```
+
 ### Files
 
 | File | Description |
@@ -211,7 +257,13 @@ scan is what covers interpreters nobody has listed.
 }
 ```
 
-No change needed for Copilot — the hook fires on every tool call (no `matcher` field), so Edit/Write variants are automatically covered.
+No change needed to this config for Copilot — the hook fires on every tool call (no `matcher` field). But firing on the call is not the same as being understood: before #1037, the hook only recognised Claude/Codex's `Edit`/`Write`/`MultiEdit` names, Gemini's `write_file`/`replace`, and Antigravity's `write_to_file`/`write_file`/`edit_file` — none of which are Copilot's. Copilot's real file-edit tool names, from its shipped SDK docs rather than a live probe, are `create` and `edit`, with the target path under a `path` key. Its content key is not confirmed, so rather than guess one, the hook scans every string value in `tool_input` for the bypass var name when it sees Copilot's `create`/`edit`. See [Env-Var Persistence Blocks](#env-var-persistence-blocks) below.
+
+**Headless (`-p`) runs load repo hooks only when opted in.** Copilot CLI 1.0.104 skips `.github/hooks/` in prompt mode unless `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true` is set, `COPILOT_ALLOW_ALL=true` is set in the environment (the `--allow-all` flag alone does not count), or the folder is trusted. The value must be the literal string `true` — `=1` leaves the hook off. Every documented Copilot invocation in this repo (see [Non-interactive flags per CLI](cross-agent-delegation.md#non-interactive-flags-per-cli)) sets the variable. A `copilot -p` run started without it, in a folder Copilot has not trusted, runs with **no** dangerous-command protection (#1042).
+
+**In `-p` mode Copilot edits files through `apply_patch`, not `create`/`edit`.** A live probe (#1042) showed its `toolArgs` is the bare patch text (`*** Begin Patch\n*** Add File: …`), not JSON. Copilot also runs the Claude-format hooks in `.claude/settings.json`, sending `tool_name: "Edit"` with the same patch text as `tool_input`. The hook recognises a patch-text payload in either format and checks each `*** Add/Update/Delete File:` and `*** Move to:` target against the env-var persistence rules. Unlike Codex's `apply_patch`, whose payload is a shell command, the patch text is not scanned as a command, so a patch that mentions `git reset --hard` in a doc is allowed.
+
+An unrecognised tool name — Copilot's or any other CLI's — no longer falls through to "allow" either: `tool_input` carrying both a path-shaped key (`file_path`, `path`, `filename`) and a content-shaped key (`content`, `new_string`, `new_text`, `file_text`, `edits`) is routed into the same persistence check on shape alone.
 
 #### Codex CLI
 
@@ -262,7 +314,9 @@ Claude's `Write` was blocked.
 `apply_patch` is now checked on its own path, as **both** a command and a set of file edits: the
 envelope goes through the dangerous-flag scanning, and each `*** Add/Update/Delete File:` target is
 normalised into the `file_path`/`content` shape the env-persistence check expects, so the protected
-target list stays in one place.
+target list stays in one place. An `apply_patch` call with no `command` is not allowed by default:
+it goes on to the shape-based fallback, so a path + content payload under that name is checked like
+any other write (#1048).
 
 ##### Codex requires hook trust
 
@@ -383,7 +437,7 @@ convention](cross-agent-delegation.md#context-file-convention).
   "block-dangerous-commands": {
     "PreToolUse": [
       {
-        "matcher": "run_command|write_to_file",
+        "matcher": "run_command|write_to_file|write_file|edit_file",
         "hooks": [
           {
             "type": "command",
@@ -397,9 +451,19 @@ convention](cross-agent-delegation.md#context-file-convention).
 ```
 
 Antigravity sends a distinct hook payload — a nested `toolCall` with PascalCase args
-(`{"toolCall": {"name": "run_command", "args": {"CommandLine": "..."}}}`); its file-write tool is
-`write_to_file` (`TargetFile` / `CodeContent`). The hook normalizes these to the canonical
-`command` / `file_path` / `content` keys.
+(`{"toolCall": {"name": "run_command", "args": {"CommandLine": "..."}}}`). Its file tools, as logged
+from a live `agy` 1.4.3 session (#1006):
+
+| Tool | Args | Normalized to |
+| :--- | :--- | :--- |
+| `run_command` | `CommandLine` | `command` |
+| `write_file` | `Path`, `Content`, `Overwrite` | `file_path`, `content` |
+| `edit_file` | `Path`, `Target`, `Replacement` | `file_path`, `new_string` |
+| `write_to_file` (older releases) | `TargetFile`, `CodeContent` | `file_path`, `content` |
+
+`agy` 1.4.3 never called `write_to_file`; before #1006 the matcher named only it and `run_command`,
+so `write_file` and `edit_file` never reached the hook. A test in
+`tests/test_hook_dangerous_command_matrix.py` checks that the matcher matches every tool in this table.
 
 Unlike Claude/Codex (which block via exit code 2), `agy` blocks only when the hook prints
 `{"decision": "deny", "reason": "..."}` on **stdout** (exit code 0); a safe command prints nothing
@@ -477,6 +541,15 @@ everyone:
 | `printenv PATH` | Allowed — not secret-shaped |
 | `env -u FORCE_COLOR doit check`, `env VAR=1 make` | Allowed — an *invocation*, not a dump |
 | `cat ~/.pypirc`, `~/.netrc`, `~/.aws/credentials`, `~/.docker/config.json`, `gh/hosts.yml` | **Blocked** — credential stores |
+| `cat ~/.copilot/config.json`, `~/.codex/auth.json`, `~/.claude/.credentials.json`, `~/.gemini/antigravity-cli/antigravity-oauth-token` | **Blocked** — AI CLI credential stores (#1043) |
+| `echo hi; cat ~/.netrc`, `echo hi` *(newline)* `cat ~/.netrc`, `true` *(newline)* `printenv` | **Blocked** — a command position after a glued `;` or an unquoted newline counts (#1011) |
+
+Both checks above are anchored on where a command *starts*, so they need a tokenizer that treats an
+unquoted newline and a glued `;`/`&&`/`|` as separators of their own — `shlex.split` (what
+`tokenize()` uses) treats a newline as ordinary whitespace and leaves a glued separator stuck to
+its neighbour, so `hi;cat` never produced a `cat` in command position. `_structural_tokens` (built
+for the merge rule, and now shared by these two checks) is a plain `shlex.shlex` lex instead, with
+`;`, `&`, `|` and `\n` as punctuation characters.
 
 **What this is and is not.** It reduces *accidental* exposure — a secret dumped into a transcript
 that is then pasted into an issue, or read by a later summarisation step. It is not a boundary
@@ -580,8 +653,12 @@ Force push, delete, and merge operations are only blocked when targeting protect
 | `git merge branch` (on main) | BLOCKED (creates merge commit) |
 | `git merge --ff-only branch` (on main) | ALLOWED (fast-forward only) |
 | `git merge branch; echo --ff-only` (on main) | BLOCKED (`--ff-only` counts only on the merge itself) |
+| `git merge branch\necho --ff-only` (on main) | BLOCKED (a newline doesn't end the command either) |
+| `git merge branch # --ff-only` (on main) | BLOCKED (`#` starts a comment, not an argument) |
+| `git --attr-source HEAD merge branch` (on main) | BLOCKED (`--attr-source` is a value-taking global option) |
 | `git log --grep merge` (on main) | ALLOWED (a `git log`, not a merge) |
 | `git merge branch` (on feature) | ALLOWED |
+| `cat <<'EOF'` *(newline)* `"` *(newline)* `EOF` *(newline)* `git merge branch "` (on main) | BLOCKED (the merge rule reads the heredoc-stripped command, so the quote in the body doesn't swallow the merge after the terminator — #1011) |
 
 #### Blocked Workflow Commands
 
@@ -627,24 +704,47 @@ The hook reads `os.environ` at hook-startup time (the AI CLI's process environme
 
 #### Env-Var Persistence Blocks
 
-The hook fires on **Edit**, **Write**, and **MultiEdit** (Claude/Codex), **write_file**/**replace** (retained for Gemini compatibility), and **write_to_file** (Antigravity) in addition to Bash commands. Any operation whose payload contains the literal string `ALLOW_AI_READY_TO_MERGE` **and** whose target is a known persistence file is blocked.
+The hook fires on **Edit**, **Write**, and **MultiEdit** (Claude/Codex), **write_file**/**replace** (retained for Gemini compatibility), **write_file**/**edit_file**/**write_to_file** (Antigravity), **create**/**edit** (Copilot, `path` key) and Copilot's patch-text **apply_patch** (see [Copilot CLI](#copilot-cli) above) in addition to Bash commands. Tool names are matched case-insensitively. Any other tool name is still checked when its input has the *shape* of a write — a path-shaped key (`file_path`, `path`, `filename`) plus a content-shaped key (`content`, `new_string`, `new_text`, `file_text`, `edits`) — rather than being allowed by default (#1037).
 
-**Protected file basenames** (Bash redirect target or `file_path` argument):
+**Protected file basenames** (Bash redirect/`tee`/`cp`/`mv`/`dd`/`ln`/`install`/`rsync`/`sed -i` target, or a file-edit tool's path argument). A redirect counts in any spelling: `>`, `>>`, `>|`, `&>`, with an fd prefix (`1>>`), or glued to the word before it (`echo x>~/.bashrc`).
 
-| File | Notes |
-|------|-------|
-| `.bashrc`, `.zshrc`, `.profile`, `.bash_profile`, `.bash_login`, `.zshenv` | Shell init files |
-| `config.fish` | Only when parent path contains `.config/fish` |
-| `.envrc`, `.env`, `.env.local`, `.env.development`, `.env.production` | Project env files |
-| `settings.json`, `settings.local.json` | Only when parent dir is `.claude` or `.copilot` |
-| `config.toml` | Only when parent dir is `.codex` |
-| `copilot-hooks.json` | Any path (Copilot's env-injection vector) |
+| File | Notes | Write blocked (Bash or file-edit tool) |
+|------|-------|---------------------|
+| `.bashrc`, `.zshrc`, `.profile`, `.bash_profile`, `.bash_login`, `.zshenv` | Shell init files | Always, whatever the content |
+| `config.fish` | Only when parent path contains `.config/fish` | Always, whatever the content |
+| `.envrc`, `.env`, `.env.local`, `.env.development`, `.env.production` | Project env files | Always, whatever the content |
+| `copilot-hooks.json` | Any path (Copilot's env-injection vector) | Always, whatever the content |
+| `.envrc.local` | Loaded by `.envrc` on every directory entry | Always, except the two documented Bash setup commands |
+| `.envrc.local.example` | Source of the documented `cp` to `.envrc.local` | Always, whatever the content |
+| `settings.json`, `settings.local.json` | Only when parent dir is `.claude` or `.copilot` | Only when `ALLOW_AI_READY_TO_MERGE` is literally present |
+| `config.toml` | Only when parent dir is `.codex` | Only when `ALLOW_AI_READY_TO_MERGE` is literally present |
 
-**Example blocked Bash command:**
+The first group — shell rc files, env files, `copilot-hooks.json` and `.envrc.local` — blocks a confirmed Bash write (redirect, `tee`/`cp`/`mv`/`dd`/`ln`/`install`/`rsync`, `sed -i`) outright, whatever it writes, rather than only when the literal `ALLOW_AI_READY_TO_MERGE` string appears. That closes a gap where the shell assembles the name at run time (`v=ALLOW_AI_; echo "export ${v}READY_TO_MERGE=1" >> ~/.bashrc`) and no token ever contains the literal name (#1037, and #1051 for `.envrc.local`). The project documents two agent-runnable writes to `.envrc.local` — `cp .envrc.local.example .envrc.local` and `echo 'export ENABLE_LSP_TOOL=1' >> .envrc.local` in [AI Agent Setup](../AI_SETUP.md) — so those stay allowed, but only as the whole top-level command. Anything run before them in the same command could change what they write, such as a shell function that shadows `echo`. So could a `bash -c` wrapper that exports such a function into its payload. `.envrc.local.example` is protected too, because it is the `cp`'s source: writing it first and then copying would carry any content into `.envrc.local`. The AI CLI settings files keep the literal-name requirement, because `cp .codex/config.toml ~/.codex/config.toml` is a documented setup step that must stay allowed. A script interpreter invoked inline (`python -c`, `perl -e`, …) whose script only *mentions* a target's basename is a "might write" heuristic rather than a confirmed write, and also keeps the literal-name requirement for every target, confirmed or not.
+
+The hook sees the text of a write target, not what the shell expands it to, so it reads every expansion in a Bash write target as a wildcard and blocks the write if the result could name a file in the first group (#1055). That covers `${f}al`, `$(…)` and backtick substitution, globs (`.envrc.loca?`, `.envrc.l*l`, `[l]`) and brace expansion (`{l,}`). A target that is nothing but an expansion, such as `>> $f` or `>> "$GITHUB_OUTPUT"`, could expand to anything, so it is blocked too; write to a literal path instead. The destination of `cp`/`mv`/`install`/`rsync`/`ln`/`dd` is always read this way. A source glob is read only when its basename starts with a literal dot, such as `cp src/.envrc.loca? .` or `cp src/.[e]nvrc.local .` (#1061). Bash `*`, `?` and `[` never match a leading dot, so a glob can only reach a dotfile by writing the dot, and `cp src/* build/` and `cp src/*.py build/` still work. `dd` writes only its `of=` operand: the hook strips `of=` before matching, so `dd if=x of=.envrc.local` and `of=.envrc.loca?` are blocked, and ignores `if=`. For `sed -i` (also `--in-place`, any abbreviation such as `--in-pl`, and clusters such as `-ni`), every operand is matched against the literal names, and every operand after the script is read as dynamic too, not just the last (`sed -i s/a/b/ .envrc.loca? other.txt`). The script is the first operand unless `-e`/`-f` supplies it, attached (`-es/a/b/`, `-nes/a/b/`), abbreviated (`--expr=`) or not; it skips only the dynamic match, so `sed -i s/a/$/ file.txt` still works. An extglob (`.envrc.@(local)`, and the `+(`, `!(`, `?(` and `*(` forms) is read as a wildcard in every write target, redirect or command operand.
+
+`git checkout <rev> [--] <path>` and `git restore [--source=<rev>] <path>` count as writes to `<path>`, which stops `.envrc.local.example` from being swapped for another version ahead of the allowed `cp`. With an explicit source, a broad pathspec covers the example too and is blocked: anything that normalizes to `.` or above it (`.`, `./.`, `src/..`, `../repo`), an absolute or `~` path, `:/` and any other `:` pathspec magic, and `--pathspec-from-file` (`git checkout HEAD~1 -- .`, `git restore --source=HEAD~1 :/`). Under `git -C` or `--work-tree` every pathspec counts as broad, since the root has moved. Abbreviated long options (`--sour=`, `--pathspec-from=`) are read as the full name. `git checkout main -- src/` stays allowed, since a subdirectory cannot hold a root file. Without a source the content comes from the index, so `git checkout -- .`, `git restore .` and `git restore --staged .` stay allowed.
+
+Other git commands can rewrite the example as well (`stash pop`, `apply`, `am`, `cherry-pick`, `merge`, `checkout-index`, `read-tree -u`, `-c alias.*`). The hook does not list them, because most are everyday commands. It gates the sink instead: the allowed `cp .envrc.local.example .envrc.local` is blocked when `git diff --quiet HEAD -- .envrc.local.example` reports a difference (#1061). So `git stash pop` itself passes and the later `cp` is blocked. The gate fails open when git is missing, times out, is not in a repo or the file is untracked, as the hook is a guardrail (ADR-9019). If you edited the example on purpose, commit or restore it, or run the copy yourself. The `echo ... >> .envrc.local` setup line is not gated. HEAD is the reference point, so committing a modified example first defeats the gate; that leaves a commit in history for a human to see, which is the line ADR-9019 draws.
+
+Known residual gaps, left open on purpose under ADR-9019: `cp src/.* build/` (a bare `.*` is too common), a `$var` source (`cp $src build/`), and source globs onto `copilot-hooks.json` or `config.fish` (no leading dot to key on).
+
+A file-edit tool (Write, Edit, `apply_patch`, …) is blocked from every file in the first group whatever it writes, the same as a Bash write (#1051). bash or direnv runs these files when it loads them, so content that assembles the name (`v=ALLOW_AI_; export ${v}READY_TO_MERGE=1`) persists it without the literal string. That includes this template's own tracked `.envrc` and `.envrc.local.example`: a human edits them. The `ENABLE_LSP_TOOL` line goes in through the documented Bash `echo`, not an edit tool.
+
+The AI CLI settings files keep a literal-string content check for file-edit tools too. They are JSON or TOML that no shell runs, and AI agents edit `.claude/`, `.github/hooks/`, `.agents/` and `.codex/` through their edit tools as normal, sanctioned work, which a blunter check would make impossible. For Copilot's `create`/`edit`, whose content key the hook has not confirmed, every string value in `tool_input` is scanned instead of one guessed key name.
+
+**Example blocked Bash commands:**
 
 ```bash
 # BLOCKED — AI cannot persist the variable via shell redirect
 echo "export ALLOW_AI_READY_TO_MERGE=1" >> ~/.bashrc
+
+# BLOCKED — any write to a shell rc file is blocked, not only one carrying
+# the literal variable name
+echo "PATH=/foo" >> ~/.bashrc
+
+# ALLOWED — a documented, legitimate shell write to an AI CLI settings file
+cp .codex/config.toml ~/.codex/config.toml
 ```
 
 **Example blocked file edit:**
@@ -653,6 +753,10 @@ echo "export ALLOW_AI_READY_TO_MERGE=1" >> ~/.bashrc
 # BLOCKED — AI cannot persist the variable via Edit tool
 Edit ~/.bashrc
   new_string: "export ALLOW_AI_READY_TO_MERGE=1"
+
+# BLOCKED — any edit to a shell rc or env file, whatever it writes
+Edit ~/.bashrc
+  new_string: "export PATH=$PATH:/usr/local/bin"
 ```
 
 ### Adding New Patterns
@@ -683,4 +787,3 @@ Then run the test suite to verify.
 - [AI Enforcement Principles](enforcement-principles.md) - Why and how we enforce rules in code
 - [AGENTS.md](../../../AGENTS.md) - AI agent rules including "When Blocked Protocol"
 - [AI Agent Setup](../AI_SETUP.md) - Setting up AI coding assistants
-- [Bash raw-tool ban](token-efficiency-add-ons.md#bash-raw-tool-ban-opt-in) - Opt-in hook that blocks raw shell commands AI agents should use native tools for (`cat`, `head`, `tail`, `find`, `grep`, `rg`, `wc`)

@@ -58,4 +58,4 @@ For the broader layering rationale, see
 ## Related Documentation
 
 - [Tools Reference](../template/tools-reference.md)
-- [CLI Guide](https://github.com/endavis/pyproject-template/blob/main/docs/usage/cli.md)
+- [CLI Guide](../usage/cli.md)
