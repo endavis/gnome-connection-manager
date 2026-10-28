@@ -2085,11 +2085,11 @@ Ej: ##D=1000&lt;/span&gt;</property>
                             <property name="hexpand">True</property>
                             <property name="active">0</property>
                             <items>
-                              <item>Automatic</item>
-                              <item>ASCII Backspace 	[Ctrl+H 0x08]</item>
-                              <item>ASCII Delete    	[Ctrl+? 0x7F]</item>
-                              <item>Delete Sequence 	[@7]</item>
-                              <item>TTY Erase</item>
+                              <item translatable="yes">Automatic</item>
+                              <item translatable="yes">ASCII Backspace 	[Ctrl+H 0x08]</item>
+                              <item translatable="yes">ASCII Delete    	[Ctrl+? 0x7F]</item>
+                              <item translatable="yes">Delete Sequence 	[@7]</item>
+                              <item translatable="yes">TTY Erase</item>
                             </items>
                           </object>
                           <packing>

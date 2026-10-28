@@ -137,14 +137,6 @@ msgstr "Contrair tudo"
 msgid "Error al conectar con servidor"
 msgstr "Erro ao conectar ao servudor"
 
-#: ../gnome_connection_manager.py:335 ../gnome_connection_manager.py:491
-#: ../gnome_connection_manager.py:500 ../gnome_connection_manager.py:589
-#: ../gnome_connection_manager.py:692 ../gnome_connection_manager.py:778
-#: ../gnome_connection_manager.py:999 ../gnome_connection_manager.py:1031
-#: ../gnome_connection_manager.py:1099
-msgid "Servidores"
-msgstr "Servidores"
-
 #: ../gnome_connection_manager.py:359 ../gnome_connection_manager.py:387
 #: ../gnome_connection_manager.py:517 ../gnome_connection_manager.py:587
 #: ../gnome_connection_manager.py:527 ../gnome_connection_manager.py:597
@@ -323,10 +315,6 @@ msgstr "Host"
 msgid "Remoto"
 msgstr "Remoto"
 
-#: ../gnome-connection-manager.glade.h:34 ../gnome-connection-manager.glade:72
-msgid "Importar lista de servidores desde un archivo"
-msgstr "Importar lista de servidores de um arquivo"
-
 #: ../gnome_connection_manager.py:791 ../gnome_connection_manager.py:1242
 #: ../gnome_connection_manager.py:1253 ../gnome_connection_manager.py:1421
 #: ../gnome_connection_manager.py:1564 ../gnome_connection_manager.py:1695
@@ -471,14 +459,6 @@ msgstr "Ação"
 msgid "Atajo"
 msgstr "Atalho"
 
-#: ../gnome_connection_manager.py:1449 ../gnome_connection_manager.py:1461
-#: ../gnome_connection_manager.py:1661 ../gnome_connection_manager.py:1826
-#: ../gnome_connection_manager.py:1958 ../gnome_connection_manager.py:2241
-#: ../gnome_connection_manager.py:2342 ../gnome_connection_manager.py:2459
-#: ../gnome_connection_manager.py:2629
-msgid "Comando"
-msgstr "Comando"
-
 #: ../gnome_connection_manager.py:1052 ../gnome_connection_manager.py:1586
 #: ../gnome_connection_manager.py:1598 ../gnome_connection_manager.py:1551
 #: ../gnome_connection_manager.py:1784 ../gnome_connection_manager.py:1704
@@ -504,13 +484,6 @@ msgstr "Selecione a cor de fundo"
 #: ../gnome-connection-manager.glade:3397
 msgid "Seleccione el color del texto"
 msgstr "Selecione a cor do texto"
-
-#. -- main }
-#: ../gnome-connection-manager.glade.h:4 ../gnome-connection-manager.glade:144
-#: ../gnome-connection-manager.glade:156 ../gnome-connection-manager.glade:189
-#: ../gnome-connection-manager.glade:328
-msgid "A_cerca de"
-msgstr "_Sobre"
 
 #: ../gnome-connection-manager.glade.h:5 ../gnome-connection-manager.glade:180
 #: ../gnome-connection-manager.glade:192 ../gnome-connection-manager.glade:227
@@ -550,12 +523,6 @@ msgstr "Adicionar novo host"
 #: ../gnome-connection-manager.glade:3698
 msgid "Atajos"
 msgstr "Atalhos"
-
-#: ../gnome-connection-manager.glade.h:7 ../gnome-connection-manager.glade:135
-#: ../gnome-connection-manager.glade:147 ../gnome-connection-manager.glade:181
-#: ../gnome-connection-manager.glade:320
-msgid "Ay_uda"
-msgstr "A_juda"
 
 #: ../gnome-connection-manager.glade.h:8
 #: ../gnome-connection-manager.glade:2179
@@ -624,18 +591,6 @@ msgstr "Cores"
 msgid "Comandos"
 msgstr "Comandos"
 
-#: ../gnome-connection-manager.glade.h:14
-#: ../gnome-connection-manager.glade:2404
-#: ../gnome-connection-manager.glade:2609
-#: ../gnome-connection-manager.glade:2762
-#: ../gnome-connection-manager.glade:2864
-#: ../gnome-connection-manager.glade:3074
-#: ../gnome-connection-manager.glade:3193
-#: ../gnome-connection-manager.glade:3504
-#: ../gnome-connection-manager.glade:3643
-msgid "Comandos Personalizados"
-msgstr "Comandos Personalizados"
-
 #: ../gnome-connection-manager.glade.h:15
 #: ../gnome-connection-manager.glade:2347
 #: ../gnome-connection-manager.glade:2552
@@ -703,10 +658,6 @@ msgstr "Remover host selecionado"
 msgid "Enviar comandos al iniciar sesión"
 msgstr "Enviar comandos ao iniviar sessão"
 
-#: ../gnome-connection-manager.glade.h:25 ../gnome-connection-manager.glade:94
-msgid "Exportar lista de servidores a un archivo"
-msgstr "Exportar lista de servidores para um arquivo"
-
 #: ../gnome-connection-manager.glade.h:19
 #: ../gnome-connection-manager.glade:2147
 #: ../gnome-connection-manager.glade:2352
@@ -727,14 +678,6 @@ msgstr "Geral"
 #: ../gnome-connection-manager.glade:1438
 msgid "Grupo"
 msgstr "Grupo"
-
-#: ../gnome-connection-manager.glade.h:30 ../gnome-connection-manager.glade:51
-msgid "Guardar buffer _como"
-msgstr "Salvar buffer como"
-
-#: ../gnome-connection-manager.glade.h:31 ../gnome-connection-manager.glade:50
-msgid "Guardar buffer de la consola activa en un archivo"
-msgstr "Salvar buffer do console ativo em um arquivo"
 
 #: ../gnome-connection-manager.glade.h:24
 #: ../gnome-connection-manager.glade:1603
@@ -886,18 +829,6 @@ msgstr "Cores padrão"
 msgid "Usuario"
 msgstr "Usuário"
 
-#: ../gnome-connection-manager.glade.h:39 ../gnome-connection-manager.glade:41
-msgid "_Archivo"
-msgstr "_Arquivo"
-
-#: ../gnome-connection-manager.glade.h:51 ../gnome-connection-manager.glade:95
-msgid "_Exportar servidores"
-msgstr "_Exportar servidores"
-
-#: ../gnome-connection-manager.glade.h:52 ../gnome-connection-manager.glade:73
-msgid "_Importar servidores"
-msgstr "_Importar servidores"
-
 #. TRANSLATORS: Replace this string with your names, one name per line.
 #: ../gnome-connection-manager.glade.h:44
 #: ../gnome-connection-manager.glade:2048
@@ -1028,12 +959,6 @@ msgstr "Usar fonte de largura fixa padrão"
 msgid "Fuente:"
 msgstr "Fonte:"
 
-#: ../gnome_connection_manager.py:574 ../gnome_connection_manager.py:724
-#: ../gnome_connection_manager.py:742 ../gnome_connection_manager.py:795
-#: ../gnome_connection_manager.py:832 ../gnome-connection-manager.glade:257
-msgid "Comandos personalizados"
-msgstr "Comandos personalizados"
-
 #: ../gnome_connection_manager.py:613 ../gnome_connection_manager.py:763
 #: ../gnome_connection_manager.py:781 ../gnome_connection_manager.py:834
 #: ../gnome_connection_manager.py:871
@@ -1122,19 +1047,11 @@ msgstr "Insira o texto a ser enviado aos hosts: "
 msgid "Activar"
 msgstr "Ativar"
 
-#: ../gnome-connection-manager.glade:122
-msgid "Salir"
-msgstr "Sair"
-
 #: ../gnome_connection_manager.py:598 ../gnome_connection_manager.py:666
 #: ../gnome_connection_manager.py:684 ../gnome_connection_manager.py:737
 #: ../gnome_connection_manager.py:768 ../gnome-connection-manager.glade:193
 msgid "Copiar y Pegar"
 msgstr "Copiar e Colar"
-
-#: ../gnome-connection-manager.glade:122
-msgid "_Salir"
-msgstr "_Sair"
 
 #: ../gnome-connection-manager.glade:1348
 #: ../gnome-connection-manager.glade:1292
@@ -1227,18 +1144,6 @@ msgstr "Sempre"
 msgid "Sólo si no hay errores"
 msgstr "Somente se não houver erros"
 
-#: ../gnome-connection-manager.glade:147 ../gnome-connection-manager.glade:274
-msgid "_Ver"
-msgstr "Ver"
-
-#: ../gnome-connection-manager.glade:155 ../gnome-connection-manager.glade:282
-msgid "Mostrar Toolbar"
-msgstr "Mostrar Toolbar"
-
-#: ../gnome-connection-manager.glade:165 ../gnome-connection-manager.glade:292
-msgid "Mostrar Panel"
-msgstr "Mostrar Panel"
-
 #: ../gnome-connection-manager.glade:1931
 #: ../gnome-connection-manager.glade:2070
 msgid "Compresión"
@@ -1282,11 +1187,6 @@ msgstr "Backspace:"
 msgid "Delete:"
 msgstr "Delete:"
 
-#: ../gnome-connection-manager.glade:2989
-#: ../gnome-connection-manager.glade:3128
-msgid "Colores y Teclas"
-msgstr "Cores y Teclas"
-
 #: ../gnome_connection_manager.py:780 ../gnome-connection-manager.glade:231
 msgid "Copiar todo"
 msgstr "Copiar tudo"
@@ -1295,603 +1195,589 @@ msgstr "Copiar tudo"
 msgid "Abrir consola local al inicio"
 msgstr "Abrir console local na inicialização"
 
-#: ../gnome-connection-manager.glade:147
-msgid "_Editar"
-msgstr "_Editar"
-
-#: ../gnome-connection-manager.glade:308
-msgid "_Servidores"
-msgstr "_Servidores"
-
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "About"
-msgstr ""
+msgstr "Sobre"
 
 msgid "Actualizar"
-msgstr ""
+msgstr "Atualizar"
 
 msgid "Add Host"
-msgstr ""
+msgstr "Adicionar Host"
 
 msgid "Anexar el archivo de log existente"
-msgstr ""
+msgstr "Acrescentando ao arquivo de log existente"
 
 msgid "Buffer"
-msgstr ""
+msgstr "Buffer"
 
 msgid "Buscar"
-msgstr ""
+msgstr "Buscar"
 
 msgid "Campana audible"
-msgstr ""
+msgstr "Sinal sonoro"
 
 msgid "Cerrar"
-msgstr ""
+msgstr "Fechar"
 
 msgid "Clone"
-msgstr ""
+msgstr "Clonar"
 
 msgid "Close Console"
-msgstr ""
+msgstr "Fechar console"
 
 msgid "Collapse All Groups"
-msgstr ""
+msgstr "Contrair todos os grupos"
 
 msgid "Comando del editor"
-msgstr ""
+msgstr "Comando do editor"
 
 msgid "Confirmar al cerrar una consola con botón central del mouse"
-msgstr ""
+msgstr "Confirmar ao fechar um console com o botão do meio do mouse"
 
 msgid "Confirmar al pegar más de N bytes (0 desactiva)"
-msgstr ""
+msgstr "Confirmar ao colar mais de N bytes (0 desativa)"
 
 msgid "Confirmar al pegar más de N líneas (0 desactiva)"
-msgstr ""
+msgstr "Confirmar ao colar mais de N linhas (0 desativa)"
 
 msgid "Connect"
-msgstr ""
+msgstr "Conectar"
 
 msgid "Consola"
-msgstr ""
+msgstr "Console"
 
 msgid "Copiar pantalla si no hay selección"
-msgstr ""
+msgstr "Copiar a tela se não houver seleção"
 
 msgid "Copiar selección"
-msgstr ""
+msgstr "Copiar seleção"
 
 msgid "Copy"
-msgstr ""
+msgstr "Copiar"
 
 msgid "Copy & Paste"
-msgstr ""
+msgstr "Copiar e colar"
 
 msgid "Copy Address"
-msgstr ""
+msgstr "Copiar endereço"
 
 msgid "Copy All"
-msgstr ""
-
-msgid "Custom Commands"
-msgstr ""
+msgstr "Copiar tudo"
 
 msgid "Delete Host"
-msgstr ""
+msgstr "Excluir Host"
 
 msgid "Deshabilitar franjas alternas en la ventana de hosts"
-msgstr ""
+msgstr "Desativar faixas alternadas na janela de hosts"
 
 msgid "Duplicate Host"
-msgstr ""
+msgstr "Duplicar Host"
 
 msgid "Edit Host"
-msgstr ""
+msgstr "Editar Host"
 
 msgid "Expand All Groups"
-msgstr ""
+msgstr "Expandir todos os grupos"
 
 msgid "Export Hosts"
-msgstr ""
+msgstr "Exportar hosts"
 
 msgid "Fin del registro de sesión anterior"
-msgstr ""
+msgstr "Fim do log da sessão anterior"
 
 msgid "Find"
-msgstr ""
+msgstr "Localizar"
 
 msgid "Find Next"
-msgstr ""
+msgstr "Localizar próximo"
 
 msgid "Find Previous"
-msgstr ""
+msgstr "Localizar anterior"
 
 msgid "Fullscreen"
-msgstr ""
+msgstr "Tela cheia"
 
 msgid "Import Hosts"
-msgstr ""
+msgstr "Importar hosts"
 
 msgid "La sesion requiere atencion"
-msgstr ""
+msgstr "A sessão requer atenção"
 
 msgid "Log Session"
-msgstr ""
+msgstr "Registrar sessão"
 
 msgid "Log consola local"
-msgstr ""
+msgstr "Registrar sessões de console local"
 
 msgid "Marcar pestaña al recibir la campana"
-msgstr ""
+msgstr "Marcar a aba quando o sinal sonoro for emitido"
 
 msgid "Marcar pestaña cuando la salida se detiene N segundos (0 desactiva)"
-msgstr ""
+msgstr "Marcar a aba quando a saída parar por N segundos (0 desativa)"
 
 msgid "Marcar pestaña cuando termina la sesión"
-msgstr ""
+msgstr "Marcar a aba quando sua sessão terminar"
 
 msgid "Mostrar el título del programa en la pestaña"
-msgstr ""
+msgstr "Mostrar o título do programa na aba"
 
 msgid "New Local Console"
-msgstr ""
+msgstr "Novo console local"
 
 msgid "Next Console"
-msgstr ""
+msgstr "Próximo console"
 
 msgid "No se puede abrir el editor"
-msgstr ""
+msgstr "Não foi possível abrir o editor"
 
 msgid "Normal Size"
-msgstr ""
+msgstr "Tamanho normal"
 
 msgid "Notificar cuando una consola requiere atención"
-msgstr ""
+msgstr "Notificar quando um console precisar de atenção"
 
 msgid "Paste"
-msgstr ""
+msgstr "Colar"
 
 msgid "Paste as One Line"
-msgstr ""
+msgstr "Colar como uma linha"
 
 msgid "Pegar en una línea"
-msgstr ""
+msgstr "Colar como uma linha"
 
 msgid "Pegar {lines} líneas ({bytes} bytes)?"
-msgstr ""
+msgstr "Colar {lines} linhas ({bytes} bytes)?"
 
 msgid "Preferences"
-msgstr ""
+msgstr "Preferências"
 
 msgid "Previous Console"
-msgstr ""
+msgstr "Console anterior"
 
 msgid "Quit"
-msgstr ""
+msgstr "Sair"
 
 msgid "Quitar el salto de línea final al pegar"
-msgstr ""
+msgstr "Remover a quebra de linha final ao colar"
 
 msgid "Reconnect"
-msgstr ""
+msgstr "Reconectar"
 
 msgid "Refresh"
-msgstr ""
+msgstr "Atualizar"
 
 msgid "Reiniciar en el primer/último tab al llegar al final"
-msgstr ""
+msgstr "Circular entre as abas ao ir para a aba anterior ou a próxima"
 
 msgid "Rename"
-msgstr ""
+msgstr "Renomear"
 
 msgid "Reset"
-msgstr ""
+msgstr "Redefinir"
 
 msgid "Reset and Clear"
-msgstr ""
+msgstr "Redefinir e limpar"
 
 msgid "Ruta de log invalida"
-msgstr ""
+msgstr "Caminho de log inválido"
 
 msgid "Save Buffer"
-msgstr ""
+msgstr "Salvar buffer"
 
 msgid "Select All"
-msgstr ""
+msgstr "Selecionar tudo"
 
 msgid "Show Panel"
-msgstr ""
+msgstr "Mostrar painel"
 
 msgid "Show Toolbar"
-msgstr ""
+msgstr "Mostrar barra de ferramentas"
 
 msgid "Split H"
-msgstr ""
+msgstr "Dividir H"
 
 msgid "Split Horizontal"
-msgstr ""
+msgstr "Dividir horizontalmente"
 
 msgid "Split V"
-msgstr ""
+msgstr "Dividir V"
 
 msgid "Split Vertical"
-msgstr ""
+msgstr "Dividir verticalmente"
 
 msgid "TERM"
-msgstr ""
+msgstr "TERM"
 
 msgid "Título"
-msgstr ""
+msgstr "Título"
 
 msgid "Título dinámico"
-msgstr ""
+msgstr "Título dinâmico"
 
 msgid "Unsplit"
-msgstr ""
+msgstr "Desfazer divisão"
 
 msgid "Ver buffer"
-msgstr ""
+msgstr "Ver buffer"
 
 msgid "View Buffer"
-msgstr ""
+msgstr "Ver buffer"
 
 msgid "Zoom In"
-msgstr ""
+msgstr "Ampliar"
 
 msgid "Zoom Out"
-msgstr ""
+msgstr "Reduzir"
 
 msgid "_About"
-msgstr ""
+msgstr "_Sobre"
 
 msgid "_Edit"
-msgstr ""
+msgstr "_Editar"
 
 msgid "_File"
-msgstr ""
+msgstr "_Arquivo"
 
 msgid "_Help"
-msgstr ""
+msgstr "Aj_uda"
 
 msgid "_Hosts"
-msgstr ""
+msgstr "_Hosts"
 
 msgid "_Preferences"
-msgstr ""
+msgstr "_Preferências"
 
 msgid "_Quit"
-msgstr ""
+msgstr "Sai_r"
 
 msgid "_Servers"
-msgstr ""
+msgstr "_Servidores"
 
 msgid "_Terminal"
-msgstr ""
+msgstr "_Terminal"
 
 msgid "_View"
-msgstr ""
+msgstr "_Ver"
 
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
-msgstr ""
+msgstr "Permitir que aplicativos escrevam na área de transferência (OSC 52)"
 
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "Grabar la sesión en crudo (incluye secuencias de escape)"
-msgstr ""
+msgstr "Gravar a sessão bruta (inclui sequências de escape)"
 
 # --- glade strings that had no catalog entry ---
 
 msgid "A simple ssh connection manager for gnome"
-msgstr ""
+msgstr "Um gerenciador de conexões SSH simples para o GNOME"
 
 msgid "ASCII Backspace \t[Ctrl+H 0x08]"
-msgstr ""
+msgstr "Backspace ASCII \t[Ctrl+H 0x08]"
 
 msgid "ASCII Delete    \t[Ctrl+? 0x7F]"
-msgstr ""
+msgstr "Delete ASCII    \t[Ctrl+? 0x7F]"
 
 msgid "Automatic"
-msgstr ""
+msgstr "Automático"
 
 msgid "Cancel"
-msgstr ""
+msgstr "Cancelar"
 
 msgid "Close"
-msgstr ""
+msgstr "Fechar"
 
 msgid "Delete Sequence \t[@7]"
-msgstr ""
+msgstr "Sequência de exclusão \t[@7]"
 
 msgid "Gnome Connection Manager"
-msgstr ""
-
-msgid "Ingrese el texto a enviar a las consolas:"
-msgstr ""
+msgstr "Gnome Connection Manager"
 
 msgid "OK"
-msgstr ""
+msgstr "OK"
 
 msgid "Project's Homepage"
-msgstr ""
+msgstr "Página do projeto"
 
 msgid "TTY Erase"
-msgstr ""
+msgstr "TTY Erase"
 
 msgid "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
-msgstr ""
+msgstr "Este é o gnome-connection-manager, escrito e mantido por\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
 
 msgid "List open consoles"
-msgstr ""
+msgstr "Listar consoles abertos"
 
 msgid "No open consoles"
-msgstr ""
+msgstr "Nenhum console aberto"
 
 msgid "Open Consoles"
-msgstr ""
+msgstr "Consoles abertos"
 
 msgid "Pane {}"
-msgstr ""
+msgstr "Painel {}"
 
 msgid "Guardar transcripción"
-msgstr ""
+msgstr "Salvar transcrição"
 
 msgid "Esta sesión no tiene grabación. Active «Grabar la sesión en crudo» en Preferencias y abra una sesión nueva."
-msgstr ""
+msgstr "Esta sessão não tem gravação. Ative “Gravar a sessão bruta” nas Preferências e abra uma nova sessão."
 
 msgid "Reconstruyendo transcripción"
-msgstr ""
+msgstr "Reconstruindo a transcrição"
 
 msgid "Save Transcript"
-msgstr ""
+msgstr "Salvar transcrição"
 
 msgid "Esta grabación todavía no contiene texto"
-msgstr ""
+msgstr "Esta gravação ainda não tem texto"
 
 msgid "Error al importar servidores"
-msgstr ""
+msgstr "Erro ao importar hosts"
 
 msgid "Error al exportar servidores"
-msgstr ""
+msgstr "Erro ao exportar hosts"
 
 msgid "New Folder"
-msgstr ""
+msgstr "Nova pasta"
 
 msgid "Rename Folder"
-msgstr ""
+msgstr "Renomear pasta"
 
 msgid "Sort by Name"
-msgstr ""
+msgstr "Ordenar por nome"
 
 msgid "A folder name cannot contain /"
-msgstr ""
+msgstr "O nome de uma pasta não pode conter /"
 
 msgid "Delete folder"
-msgstr ""
+msgstr "Excluir pasta"
 
 msgid "GCM could not create its configuration directory, so it has not started."
-msgstr ""
+msgstr "O GCM não conseguiu criar seu diretório de configuração e, por isso, não foi iniciado."
 
 msgid "GCM could not read its configuration file, so it has not started."
-msgstr ""
+msgstr "O GCM não conseguiu ler seu arquivo de configuração e, por isso, não foi iniciado."
 
 msgid "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
-msgstr ""
+msgstr "Nada foi alterado. Corrija o arquivo ou mova-o para outro lugar para começar com uma configuração vazia."
 
 msgid "Some settings in gcm.conf could not be read, so each is at its default."
-msgstr ""
+msgstr "Algumas configurações em gcm.conf não puderam ser lidas, por isso cada uma está com seu valor padrão."
 
 msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
-msgstr ""
+msgstr "O GCM deixa essas linhas como estão até que você altere a configuração nas Preferências. Para corrigir uma delas no arquivo, edite-o com o GCM fechado."
 
 msgid "expects true or false"
-msgstr ""
+msgstr "espera true ou false"
 
 msgid "expects a whole number"
-msgstr ""
+msgstr "espera um número inteiro"
 
 msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
-msgstr ""
+msgstr "Nem xfreerdp3 nem xfreerdp foram encontrados. Instale o FreeRDP para abrir hosts RDP."
 
 msgid "xdg-open was not found. Install xdg-utils to open web hosts."
-msgstr ""
+msgstr "xdg-open não foi encontrado. Instale o xdg-utils para abrir hosts web."
 
 msgid "Could not open"
-msgstr ""
+msgstr "Não foi possível abrir"
 
 msgid "exited with status"
-msgstr ""
+msgstr "saiu com o status"
 
 msgid "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
-msgstr ""
+msgstr "Nem as ligações GObject do gtk-vnc nem um visualizador VNC foram encontrados. Instale um dos dois para abrir hosts VNC."
 
 msgid "Connecting to"
-msgstr ""
+msgstr "Conectando a"
 
 msgid "Disconnected"
-msgstr ""
+msgstr "Desconectado"
 
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
-msgstr ""
+msgstr "Desconectado antes de a área de trabalho ser exibida, sem motivo informado. O gtk-vnc desconecta assim quando não oferece suporte a nenhum dos tipos de segurança do servidor."
 
 msgid "Hide input"
-msgstr ""
+msgstr "Ocultar entrada"
 
 msgid "Mask what you type, for a password, and keep it out of the history"
-msgstr ""
+msgstr "Mascarar o que você digita, como para uma senha, e mantê-lo fora do histórico"
 
 msgid "Run on this computer before connecting:"
-msgstr ""
+msgstr "Executar neste computador antes de conectar:"
 
 msgid "Run on this computer after disconnecting:"
-msgstr ""
+msgstr "Executar neste computador depois de desconectar:"
 
 msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
-msgstr ""
+msgstr "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} e {type} são os valores do host, cada um entre aspas para o shell. A conexão espera o primeiro comando e só prossegue quando ele é bem-sucedido.</span>"
 
 msgid "Could not run"
-msgstr ""
+msgstr "Não foi possível executar"
 
 msgid "The command before connecting to"
-msgstr ""
+msgstr "O comando antes de conectar a"
 
 msgid "The command after disconnecting from"
-msgstr ""
+msgstr "O comando depois de desconectar de"
 
 msgid "Reconnect a dropped session N times (0 disables)"
-msgstr ""
+msgstr "Reconectar uma sessão interrompida N vezes (0 desativa)"
 
 msgid "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
-msgstr ""
+msgstr "Reconectando em {seconds} s, tentativa {attempt} de {attempts}. Pressione uma tecla para parar."
 
 msgid "Reconnecting stopped."
-msgstr ""
+msgstr "Reconexão interrompida."
 
 msgid "Snippets"
-msgstr ""
+msgstr "Trechos"
 
 msgid "Find Snippet…"
-msgstr ""
+msgstr "Localizar trecho…"
 
 msgid "Name or text"
-msgstr ""
+msgstr "Nome ou texto"
 
 msgid "New snippet"
-msgstr ""
+msgstr "Novo trecho"
 
 msgid "Name"
-msgstr ""
+msgstr "Nome"
 
 msgid "Folder"
-msgstr ""
+msgstr "Pasta"
 
 msgid "Key"
-msgstr ""
+msgstr "Tecla"
 
 msgid "Description"
-msgstr ""
+msgstr "Descrição"
 
 msgid "Text"
-msgstr ""
+msgstr "Texto"
 
 msgid "Add"
-msgstr ""
+msgstr "Adicionar"
 
 msgid "Delete"
-msgstr ""
+msgstr "Excluir"
 
 msgid "Its first line"
-msgstr ""
+msgstr "Sua primeira linha"
 
 msgid "Press the key that sends it"
-msgstr ""
+msgstr "Pressione a tecla que o envia"
 
 msgid "Backspace leaves it without a key"
-msgstr ""
+msgstr "Backspace o deixa sem tecla"
 
 msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
-msgstr ""
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder} e {type} são os valores do host da aba para a qual ele é enviado. {?Label} pede um valor no momento do envio."
 
 msgid "Send a snippet to each console selected, with its own host's values"
-msgstr ""
+msgstr "Enviar um trecho para cada console selecionado, com os valores do seu próprio host"
 
 msgid "Command"
-msgstr ""
+msgstr "Comando"
 
 msgid "Command line"
-msgstr ""
+msgstr "Linha de comando"
 
 msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
-msgstr ""
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder} e {type} são os valores do host, cada um entre aspas para o shell. {password} é a sua senha, passada ao comando como GCM_PASSWORD no seu ambiente, nunca em uma linha de comando. Ele é executado pelo sh, a partir da sua pasta pessoal."
 
 msgid "A command host needs a command, on its Command line tab."
-msgstr ""
+msgstr "Um host de comando precisa de um comando, na sua aba Linha de comando."
 
 msgid "Move to New Window"
-msgstr ""
+msgstr "Mover para nova janela"
 
 msgid "Move to Main Window"
-msgstr ""
+msgstr "Mover para a janela principal"
 
 msgid "Window {}"
-msgstr ""
+msgstr "Janela {}"
 
 msgid "Open in File Manager"
-msgstr ""
+msgstr "Abrir no gerenciador de arquivos"
 
 msgid "Mount with SSHFS"
-msgstr ""
+msgstr "Montar com SSHFS"
 
 msgid "Unmount SSHFS"
-msgstr ""
+msgstr "Desmontar SSHFS"
 
 msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
-msgstr ""
+msgstr "Nenhum gerenciador de arquivos foi encontrado para abrir {}. Instale um, como Arquivos (nautilus), Nemo, Thunar ou Dolphin, ou monte o host com SSHFS."
 
 msgid "Something else is mounted at {}: {}"
-msgstr ""
+msgstr "Outra coisa já está montada em {}: {}"
 
 msgid "Mounting a host needs sshfs, which is not installed."
-msgstr ""
+msgstr "Montar um host requer o sshfs, que não está instalado."
 
 msgid "Could not mount {} at {}: {}"
-msgstr ""
+msgstr "Não foi possível montar {} em {}: {}"
 
 msgid "Mounted {} at {}."
-msgstr ""
+msgstr "{} montado em {}."
 
 msgid "Unmounted {} from {}."
-msgstr ""
+msgstr "{} desmontado de {}."
 
 msgid "Unmounting needs fusermount, which is not installed."
-msgstr ""
+msgstr "Desmontar requer o fusermount, que não está instalado."
 
 msgid "Could not unmount {}: {}"
-msgstr ""
+msgstr "Não foi possível desmontar {}: {}"
 
 msgid "{} is mounted at {} already."
-msgstr ""
+msgstr "{} já está montado em {}."
 
 msgid "{} is not mounted at {}."
-msgstr ""
+msgstr "{} não está montado em {}."
 
 msgid "its user begins with -, which ssh would read as an option."
-msgstr ""
+msgstr "seu usuário começa com -, que o ssh leria como uma opção."
 
 msgid "Mounted"
-msgstr ""
+msgstr "Montados"
 
 msgid "Unmount All"
-msgstr ""
+msgstr "Desmontar tudo"
 
 msgid "Unmount {} from {}"
-msgstr ""
+msgstr "Desmontar {} de {}"
 
 msgid "Nothing is mounted"
-msgstr ""
+msgstr "Nada está montado"
 
 msgid "Mounted at {}"
-msgstr ""
+msgstr "Montado em {}"
 
 msgid "Servers"
 msgstr "Servidores"
 
 msgid "Mounted ({})"
-msgstr ""
+msgstr "Montados ({})"
 
 msgid "Open Folder"
-msgstr ""
+msgstr "Abrir pasta"
 
 msgid "Open over SFTP"
-msgstr ""
+msgstr "Abrir via SFTP"
 
 msgid "Unmount"
-msgstr ""
+msgstr "Desmontar"
 
 msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
-msgstr ""
+msgstr "Nenhum gerenciador de arquivos foi encontrado para abrir {}. Instale um, como Arquivos (nautilus), Nemo, Thunar ou Dolphin."
 
 msgid "SSH"
 msgstr "SSH"
@@ -1951,40 +1837,40 @@ msgid "How to install it: {url}"
 msgstr "Como instalá-lo: {url}"
 
 msgid "Some hosts had the name of another host in their folder, so GCM renamed them."
-msgstr ""
+msgstr "Alguns hosts tinham o nome de outro host da mesma pasta, por isso o GCM os renomeou."
 
 msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
-msgstr ""
+msgstr "Os logs de sessão de um host renomeado vão, a partir de agora, para uma pasta com o seu novo nome. Para dar outro nome a ele, edite o host."
 
 msgid "Tab name"
-msgstr ""
+msgstr "Nome da aba"
 
 msgid "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."
-msgstr ""
+msgstr "Como a aba de um host é chamada. {name}, {address}, {port}, {user}, {group}, {folder} e {type} são os valores do host, sendo {folder} a pasta onde ele está e {group} o caminho completo. Todo o resto é mantido como escrito."
 
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
-msgstr ""
+msgstr "O nome das abas deste host, usado como está, sem pasta na frente. {name}, {address}, {port}, {user}, {group}, {folder} e {type} são os valores do host. Se ficar vazio, o Nome da aba das Preferências dá nome a elas."
 
 msgid "Tab color"
-msgstr ""
+msgstr "Cor da aba"
 
 msgid "A stripe of this color across the top of the host's tabs. Unticked, the tabs take the color of the nearest folder above the host that has one, which a folder's menu gives it with Tab Color."
-msgstr ""
+msgstr "Uma faixa desta cor no topo das abas do host. Desmarcado, as abas assumem a cor da pasta mais próxima acima do host que tenha uma, que o menu de uma pasta define com Cor da aba."
 
 msgid "Select the tab color"
-msgstr ""
+msgstr "Selecionar a cor da aba"
 
 msgid "Tab Color"
-msgstr ""
+msgstr "Cor da aba"
 
 msgid "No Color"
-msgstr ""
+msgstr "Sem cor"
 
 msgid "In its tab"
-msgstr ""
+msgstr "Na sua aba"
 
 msgid "Windows Remote Desktop shows the desktop in a window of its own."
-msgstr ""
+msgstr "A Área de Trabalho Remota do Windows mostra a área de trabalho em uma janela própria."
 
 msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
-msgstr ""
+msgstr "O GCM não está sendo executado no X11, por isso o FreeRDP mostra a área de trabalho em uma janela própria."

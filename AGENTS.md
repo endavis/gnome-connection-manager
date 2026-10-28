@@ -1154,6 +1154,24 @@ Practices below have each caught real bugs in this repo. They are worth the time
   otherwise, and fails rather than reporting success when it finds nothing to compile.
   Add a locale by copying an existing `.po` and updating its headers; the Makefile still
   names each language, so add it there too.
+- Every message GCM shows is translated in every catalog, and `tests/test_i18n.py` holds
+  each to it (#359). A message added to the code or the glade comes with its translation
+  in all eight. An empty `msgstr` shows English, or Spanish for a Spanish msgid, which is
+  how each of the seven other catalogs came to leave about 200 untranslated.
+  - A translation keeps its msgid's placeholders by name, its underscores, its markup,
+    its newlines and its tabs.
+  - In the menu bar and in the application menu, listed in the test's `MENUS`, each
+    label's access key is its own, in every catalog but English. English's `_Hosts` and
+    `_Help` share one. Korean writes a key as GNOME's Korean does, `파일(_F)`.
+  - The test reads `_()` in either quote, since five messages sit in single quotes inside
+    f-strings. It reads a glade text as GtkBuilder looks it up, edge spaces included.
+    Measured with a catalog holding both forms of a label that ends in a space,
+    GtkBuilder showed the spaced form's translation.
+  - A catalog keeps no entry that nothing uses, bar `translator-credits`, which names its
+    translators.
+  - A `msgstr` that is the English text passes msgfmt and the test alike, and shows
+    English. Korean held nine and Polish one, found by asking `gettext` which messages
+    in use come back as the English.
 - Visible strings in Python and glade should be wrapped with `_()` so gettext picks them up.
 
 ## Packaging & Release Flow
