@@ -152,15 +152,6 @@ msgstr "Collapse all"
 msgid "Error al conectar con servidor"
 msgstr "Error connecting to server"
 
-#: ../gnome_connection_manager.py:335 ../gnome_connection_manager.py:491
-#: ../gnome_connection_manager.py:500 ../gnome_connection_manager.py:589
-#: ../gnome_connection_manager.py:692 ../gnome_connection_manager.py:778
-#: ../gnome_connection_manager.py:847 ../gnome_connection_manager.py:891
-#: ../gnome_connection_manager.py:999 ../gnome_connection_manager.py:1031
-#: ../gnome_connection_manager.py:1099
-msgid "Servidores"
-msgstr "Servers"
-
 #: ../gnome_connection_manager.py:359 ../gnome_connection_manager.py:387
 #: ../gnome_connection_manager.py:517 ../gnome_connection_manager.py:587
 #: ../gnome_connection_manager.py:527 ../gnome_connection_manager.py:597
@@ -363,10 +354,6 @@ msgstr "Host"
 msgid "Remoto"
 msgstr "Remote"
 
-#: ../gnome-connection-manager.glade.h:34 ../gnome-connection-manager.glade:72
-msgid "Importar lista de servidores desde un archivo"
-msgstr "Import server list from file"
-
 #: ../gnome_connection_manager.py:791 ../gnome_connection_manager.py:1242
 #: ../gnome_connection_manager.py:1253 ../gnome_connection_manager.py:1421
 #: ../gnome_connection_manager.py:1564 ../gnome_connection_manager.py:1695
@@ -546,15 +533,6 @@ msgstr "Action"
 msgid "Atajo"
 msgstr "Shortcut"
 
-#: ../gnome_connection_manager.py:1449 ../gnome_connection_manager.py:1461
-#: ../gnome_connection_manager.py:1661 ../gnome_connection_manager.py:1826
-#: ../gnome_connection_manager.py:1958 ../gnome_connection_manager.py:2043
-#: ../gnome_connection_manager.py:2124 ../gnome_connection_manager.py:2241
-#: ../gnome_connection_manager.py:2342 ../gnome_connection_manager.py:2459
-#: ../gnome_connection_manager.py:2629
-msgid "Comando"
-msgstr "Command"
-
 #: ../gnome_connection_manager.py:1052 ../gnome_connection_manager.py:1586
 #: ../gnome_connection_manager.py:1598 ../gnome_connection_manager.py:1551
 #: ../gnome_connection_manager.py:1784 ../gnome_connection_manager.py:1704
@@ -584,13 +562,6 @@ msgstr "Select background color"
 #: ../gnome-connection-manager.glade:3397
 msgid "Seleccione el color del texto"
 msgstr "Select foreground color"
-
-#. -- main }
-#: ../gnome-connection-manager.glade.h:4 ../gnome-connection-manager.glade:144
-#: ../gnome-connection-manager.glade:156 ../gnome-connection-manager.glade:189
-#: ../gnome-connection-manager.glade:328
-msgid "A_cerca de"
-msgstr "_About"
 
 #: ../gnome-connection-manager.glade.h:5 ../gnome-connection-manager.glade:180
 #: ../gnome-connection-manager.glade:192 ../gnome-connection-manager.glade:227
@@ -634,12 +605,6 @@ msgstr "Add new host"
 #: ../gnome-connection-manager.glade:3698
 msgid "Atajos"
 msgstr "Shortcuts"
-
-#: ../gnome-connection-manager.glade.h:7 ../gnome-connection-manager.glade:135
-#: ../gnome-connection-manager.glade:147 ../gnome-connection-manager.glade:181
-#: ../gnome-connection-manager.glade:320
-msgid "Ay_uda"
-msgstr "_Help"
 
 #: ../gnome-connection-manager.glade.h:8
 #: ../gnome-connection-manager.glade:2179
@@ -720,20 +685,6 @@ msgstr "Colors"
 msgid "Comandos"
 msgstr "Commands"
 
-#: ../gnome-connection-manager.glade.h:14
-#: ../gnome-connection-manager.glade:2404
-#: ../gnome-connection-manager.glade:2609
-#: ../gnome-connection-manager.glade:2762
-#: ../gnome-connection-manager.glade:2864
-#: ../gnome-connection-manager.glade:2877
-#: ../gnome-connection-manager.glade:2878
-#: ../gnome-connection-manager.glade:3074
-#: ../gnome-connection-manager.glade:3193
-#: ../gnome-connection-manager.glade:3504
-#: ../gnome-connection-manager.glade:3643
-msgid "Comandos Personalizados"
-msgstr "Custom Commands"
-
 #: ../gnome-connection-manager.glade.h:15
 #: ../gnome-connection-manager.glade:2347
 #: ../gnome-connection-manager.glade:2552
@@ -807,10 +758,6 @@ msgstr "Remove selected host"
 msgid "Enviar comandos al iniciar sesión"
 msgstr "Send commands after login"
 
-#: ../gnome-connection-manager.glade.h:25 ../gnome-connection-manager.glade:94
-msgid "Exportar lista de servidores a un archivo"
-msgstr "Export server list to file"
-
 #: ../gnome-connection-manager.glade.h:19
 #: ../gnome-connection-manager.glade:2147
 #: ../gnome-connection-manager.glade:2352
@@ -833,14 +780,6 @@ msgstr "General"
 #: ../gnome-connection-manager.glade:1438
 msgid "Grupo"
 msgstr "Group"
-
-#: ../gnome-connection-manager.glade.h:30 ../gnome-connection-manager.glade:51
-msgid "Guardar buffer _como"
-msgstr "Save buffer as"
-
-#: ../gnome-connection-manager.glade.h:31 ../gnome-connection-manager.glade:50
-msgid "Guardar buffer de la consola activa en un archivo"
-msgstr "Save active console buffer to file"
 
 #: ../gnome-connection-manager.glade.h:24
 #: ../gnome-connection-manager.glade:1603
@@ -1013,18 +952,6 @@ msgstr "Default colors"
 msgid "Usuario"
 msgstr "User"
 
-#: ../gnome-connection-manager.glade.h:39 ../gnome-connection-manager.glade:41
-msgid "_Archivo"
-msgstr "_File"
-
-#: ../gnome-connection-manager.glade.h:51 ../gnome-connection-manager.glade:95
-msgid "_Exportar servidores"
-msgstr "_Export servers"
-
-#: ../gnome-connection-manager.glade.h:52 ../gnome-connection-manager.glade:73
-msgid "_Importar servidores"
-msgstr "_Import servers"
-
 #. TRANSLATORS: Replace this string with your names, one name per line.
 #: ../gnome-connection-manager.glade.h:44
 #: ../gnome-connection-manager.glade:2048
@@ -1179,13 +1106,6 @@ msgstr "Use default fixed width font"
 msgid "Fuente:"
 msgstr "Font:"
 
-#: ../gnome_connection_manager.py:574 ../gnome_connection_manager.py:645
-#: ../gnome_connection_manager.py:673 ../gnome_connection_manager.py:724
-#: ../gnome_connection_manager.py:742 ../gnome_connection_manager.py:795
-#: ../gnome_connection_manager.py:832 ../gnome-connection-manager.glade:257
-msgid "Comandos personalizados"
-msgstr "Custom commands"
-
 #: ../gnome_connection_manager.py:613 ../gnome_connection_manager.py:684
 #: ../gnome_connection_manager.py:712 ../gnome_connection_manager.py:763
 #: ../gnome_connection_manager.py:781 ../gnome_connection_manager.py:834
@@ -1289,20 +1209,12 @@ msgstr "Enter text to send to hosts: "
 msgid "Activar"
 msgstr "Activate"
 
-#: ../gnome-connection-manager.glade:122
-msgid "Salir"
-msgstr "Quit"
-
 #: ../gnome_connection_manager.py:598 ../gnome_connection_manager.py:626
 #: ../gnome_connection_manager.py:666 ../gnome_connection_manager.py:684
 #: ../gnome_connection_manager.py:737 ../gnome_connection_manager.py:768
 #: ../gnome-connection-manager.glade:193
 msgid "Copiar y Pegar"
 msgstr "Copy and Paste"
-
-#: ../gnome-connection-manager.glade:122
-msgid "_Salir"
-msgstr "_Quit"
 
 #: ../gnome-connection-manager.glade:1348
 #: ../gnome-connection-manager.glade:1292
@@ -1403,18 +1315,6 @@ msgstr "Always"
 msgid "Sólo si no hay errores"
 msgstr "Only on clean exit"
 
-#: ../gnome-connection-manager.glade:147 ../gnome-connection-manager.glade:274
-msgid "_Ver"
-msgstr "_View"
-
-#: ../gnome-connection-manager.glade:155 ../gnome-connection-manager.glade:282
-msgid "Mostrar Toolbar"
-msgstr "Show Toolbar"
-
-#: ../gnome-connection-manager.glade:165 ../gnome-connection-manager.glade:292
-msgid "Mostrar Panel"
-msgstr "Show Panel"
-
 #: ../gnome-connection-manager.glade:1931
 #: ../gnome-connection-manager.glade:2070
 msgid "Compresión"
@@ -1458,11 +1358,6 @@ msgstr "Backspace:"
 msgid "Delete:"
 msgstr "Delete:"
 
-#: ../gnome-connection-manager.glade:2989
-#: ../gnome-connection-manager.glade:3128
-msgid "Colores y Teclas"
-msgstr "Colors and Keys"
-
 #: ../gnome_connection_manager.py:780 ../gnome-connection-manager.glade:231
 msgid "Copiar todo"
 msgstr "Copy all"
@@ -1474,14 +1369,6 @@ msgstr "Open local console on startup"
 #: ../gnome_connection_manager.py:2572
 msgid "Log consola local"
 msgstr "Log local console sessions"
-
-#: ../gnome-connection-manager.glade:147
-msgid "_Editar"
-msgstr "_Edit"
-
-#: ../gnome-connection-manager.glade:308
-msgid "_Servidores"
-msgstr "_Servers"
 
 # --- added for GCM UI strings that had no catalog entry ---
 
@@ -1547,9 +1434,6 @@ msgstr "Copy Address"
 
 msgid "Copy All"
 msgstr "Copy All"
-
-msgid "Custom Commands"
-msgstr "Custom Commands"
 
 msgid "Delete Host"
 msgstr "Delete Host"
@@ -1763,9 +1647,6 @@ msgstr "Delete Sequence \t[@7]"
 
 msgid "Gnome Connection Manager"
 msgstr "Gnome Connection Manager"
-
-msgid "Ingrese el texto a enviar a las consolas:"
-msgstr "Enter the text to send to the consoles:"
 
 msgid "OK"
 msgstr "OK"

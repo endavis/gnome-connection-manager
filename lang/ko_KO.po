@@ -58,7 +58,7 @@ msgstr "모든것 선택하기"
 #: ../gnome_connection_manager.py:696 ../gnome_connection_manager.py:749
 #: ../gnome_connection_manager.py:786
 msgid "Guardar buffer en archivo"
-msgstr "Save buffer to file"
+msgstr "버퍼를 파일로 저장"
 
 #: ../gnome_connection_manager.py:246 ../gnome_connection_manager.py:359
 #: ../gnome_connection_manager.py:1635 ../gnome_connection_manager.py:368
@@ -151,15 +151,6 @@ msgstr "모든것 축소하기"
 #: ../gnome_connection_manager.py:1085 ../gnome_connection_manager.py:1179
 msgid "Error al conectar con servidor"
 msgstr "서버 접속에 이상이 있습니다."
-
-#: ../gnome_connection_manager.py:335 ../gnome_connection_manager.py:491
-#: ../gnome_connection_manager.py:500 ../gnome_connection_manager.py:589
-#: ../gnome_connection_manager.py:692 ../gnome_connection_manager.py:778
-#: ../gnome_connection_manager.py:847 ../gnome_connection_manager.py:891
-#: ../gnome_connection_manager.py:999 ../gnome_connection_manager.py:1031
-#: ../gnome_connection_manager.py:1099
-msgid "Servidores"
-msgstr "서버들"
 
 #: ../gnome_connection_manager.py:359 ../gnome_connection_manager.py:387
 #: ../gnome_connection_manager.py:517 ../gnome_connection_manager.py:587
@@ -363,10 +354,6 @@ msgstr "호스트"
 msgid "Remoto"
 msgstr "원격지"
 
-#: ../gnome-connection-manager.glade.h:34 ../gnome-connection-manager.glade:72
-msgid "Importar lista de servidores desde un archivo"
-msgstr "파일로 부터 서버목록 들여놓기"
-
 #: ../gnome_connection_manager.py:791 ../gnome_connection_manager.py:1242
 #: ../gnome_connection_manager.py:1253 ../gnome_connection_manager.py:1421
 #: ../gnome_connection_manager.py:1564 ../gnome_connection_manager.py:1695
@@ -434,7 +421,7 @@ msgstr "구룹이 이미 존재합니다."
 #: ../gnome_connection_manager.py:2023 ../gnome_connection_manager.py:2116
 #: ../gnome_connection_manager.py:2222 ../gnome_connection_manager.py:2391
 msgid "Error al guardar el host. Descripcion"
-msgstr "Error saving host. Description"
+msgstr "호스트를 저장하는 중 오류가 발생했습니다. 설명"
 
 #: ../gnome_connection_manager.py:879 ../gnome_connection_manager.py:1332
 #: ../gnome_connection_manager.py:1343 ../gnome_connection_manager.py:1526
@@ -452,7 +439,7 @@ msgstr "원격지 호스트를 입력하세요."
 #: ../gnome_connection_manager.py:2090 ../gnome_connection_manager.py:2192
 #: ../gnome_connection_manager.py:2310 ../gnome_connection_manager.py:2479
 msgid "Puerto local ya fue asignado"
-msgstr "Local port already assigned"
+msgstr "로컬 포트가 이미 할당되어 있습니다"
 
 #: ../gnome_connection_manager.py:940 ../gnome_connection_manager.py:1401
 #: ../gnome_connection_manager.py:1412 ../gnome_connection_manager.py:1611
@@ -461,7 +448,7 @@ msgstr "Local port already assigned"
 #: ../gnome_connection_manager.py:2179 ../gnome_connection_manager.py:2280
 #: ../gnome_connection_manager.py:2398 ../gnome_connection_manager.py:2567
 msgid "Separador de Palabras"
-msgstr "Word separator"
+msgstr "단어 구분자"
 
 #: ../gnome_connection_manager.py:941 ../gnome_connection_manager.py:1402
 #: ../gnome_connection_manager.py:1413 ../gnome_connection_manager.py:1612
@@ -531,15 +518,6 @@ msgstr "시작"
 msgid "Atajo"
 msgstr "단축키"
 
-#: ../gnome_connection_manager.py:1449 ../gnome_connection_manager.py:1461
-#: ../gnome_connection_manager.py:1661 ../gnome_connection_manager.py:1826
-#: ../gnome_connection_manager.py:1958 ../gnome_connection_manager.py:2043
-#: ../gnome_connection_manager.py:2124 ../gnome_connection_manager.py:2241
-#: ../gnome_connection_manager.py:2342 ../gnome_connection_manager.py:2459
-#: ../gnome_connection_manager.py:2629
-msgid "Comando"
-msgstr "명령"
-
 #: ../gnome_connection_manager.py:1052 ../gnome_connection_manager.py:1586
 #: ../gnome_connection_manager.py:1598 ../gnome_connection_manager.py:1551
 #: ../gnome_connection_manager.py:1784 ../gnome_connection_manager.py:1704
@@ -569,13 +547,6 @@ msgstr "바탕 색깔을 선택하세요"
 #: ../gnome-connection-manager.glade:3397
 msgid "Seleccione el color del texto"
 msgstr "텍스트 색깔을 선택하세요"
-
-#. -- main }
-#: ../gnome-connection-manager.glade.h:4 ../gnome-connection-manager.glade:144
-#: ../gnome-connection-manager.glade:156 ../gnome-connection-manager.glade:189
-#: ../gnome-connection-manager.glade:328
-msgid "A_cerca de"
-msgstr "_About"
 
 #: ../gnome-connection-manager.glade.h:5 ../gnome-connection-manager.glade:180
 #: ../gnome-connection-manager.glade:192 ../gnome-connection-manager.glade:227
@@ -619,12 +590,6 @@ msgstr "새로운 호스트 추가"
 #: ../gnome-connection-manager.glade:3698
 msgid "Atajos"
 msgstr "바로가기"
-
-#: ../gnome-connection-manager.glade.h:7 ../gnome-connection-manager.glade:135
-#: ../gnome-connection-manager.glade:147 ../gnome-connection-manager.glade:181
-#: ../gnome-connection-manager.glade:320
-msgid "Ay_uda"
-msgstr "도움글"
 
 #: ../gnome-connection-manager.glade.h:8
 #: ../gnome-connection-manager.glade:2179
@@ -705,20 +670,6 @@ msgstr "색깔"
 msgid "Comandos"
 msgstr "명령"
 
-#: ../gnome-connection-manager.glade.h:14
-#: ../gnome-connection-manager.glade:2404
-#: ../gnome-connection-manager.glade:2609
-#: ../gnome-connection-manager.glade:2762
-#: ../gnome-connection-manager.glade:2864
-#: ../gnome-connection-manager.glade:2877
-#: ../gnome-connection-manager.glade:2878
-#: ../gnome-connection-manager.glade:3074
-#: ../gnome-connection-manager.glade:3193
-#: ../gnome-connection-manager.glade:3504
-#: ../gnome-connection-manager.glade:3643
-msgid "Comandos Personalizados"
-msgstr "사용자정의 명령"
-
 #: ../gnome-connection-manager.glade.h:15
 #: ../gnome-connection-manager.glade:2347
 #: ../gnome-connection-manager.glade:2552
@@ -792,10 +743,6 @@ msgstr "선택하신 호스트 삭제"
 msgid "Enviar comandos al iniciar sesión"
 msgstr "로그인 후 전송할 명령"
 
-#: ../gnome-connection-manager.glade.h:25 ../gnome-connection-manager.glade:94
-msgid "Exportar lista de servidores a un archivo"
-msgstr "서버 목록을 파일로 저장합니다."
-
 #: ../gnome-connection-manager.glade.h:19
 #: ../gnome-connection-manager.glade:2147
 #: ../gnome-connection-manager.glade:2352
@@ -818,14 +765,6 @@ msgstr "일반"
 #: ../gnome-connection-manager.glade:1438
 msgid "Grupo"
 msgstr "그룹"
-
-#: ../gnome-connection-manager.glade.h:30 ../gnome-connection-manager.glade:51
-msgid "Guardar buffer _como"
-msgstr "Save buffer as"
-
-#: ../gnome-connection-manager.glade.h:31 ../gnome-connection-manager.glade:50
-msgid "Guardar buffer de la consola activa en un archivo"
-msgstr "Save active console buffer to file"
 
 #: ../gnome-connection-manager.glade.h:24
 #: ../gnome-connection-manager.glade:1603
@@ -954,7 +893,7 @@ msgstr "형식"
 #: ../gnome-connection-manager.glade:2534
 #: ../gnome-connection-manager.glade:2673
 msgid "Túnel"
-msgstr "Port forwarding"
+msgstr "포트 포워딩"
 
 #: ../gnome-connection-manager.glade.h:36
 #: ../gnome-connection-manager.glade:711 ../gnome-connection-manager.glade:723
@@ -997,18 +936,6 @@ msgstr "기본 색깔"
 #: ../gnome-connection-manager.glade:1819
 msgid "Usuario"
 msgstr "사용자"
-
-#: ../gnome-connection-manager.glade.h:39 ../gnome-connection-manager.glade:41
-msgid "_Archivo"
-msgstr "_파일"
-
-#: ../gnome-connection-manager.glade.h:51 ../gnome-connection-manager.glade:95
-msgid "_Exportar servidores"
-msgstr "_서버 내보내기"
-
-#: ../gnome-connection-manager.glade.h:52 ../gnome-connection-manager.glade:73
-msgid "_Importar servidores"
-msgstr "_서버 들여놓기"
 
 #. TRANSLATORS: Replace this string with your names, one name per line.
 #: ../gnome-connection-manager.glade.h:44
@@ -1164,13 +1091,6 @@ msgstr "기본 설정된 글꼴 폭을 사용합니다."
 msgid "Fuente:"
 msgstr "글꼴:"
 
-#: ../gnome_connection_manager.py:574 ../gnome_connection_manager.py:645
-#: ../gnome_connection_manager.py:673 ../gnome_connection_manager.py:724
-#: ../gnome_connection_manager.py:742 ../gnome_connection_manager.py:795
-#: ../gnome_connection_manager.py:832 ../gnome-connection-manager.glade:257
-msgid "Comandos personalizados"
-msgstr "사용자 정의 명령"
-
 #: ../gnome_connection_manager.py:613 ../gnome_connection_manager.py:684
 #: ../gnome_connection_manager.py:712 ../gnome_connection_manager.py:763
 #: ../gnome_connection_manager.py:781 ../gnome_connection_manager.py:834
@@ -1245,7 +1165,7 @@ msgstr "사용할 콘솔을 선택하세요:"
 #: ../gnome-connection-manager.glade:3841
 #: ../gnome-connection-manager.glade:3980
 msgid "Limpiar selección"
-msgstr "Clear selection"
+msgstr "선택 해제"
 
 #: ../gnome-connection-manager.glade:3280
 #: ../gnome-connection-manager.glade:3293
@@ -1274,20 +1194,12 @@ msgstr "호스트에게 전송할 텍스트 입력하세요: "
 msgid "Activar"
 msgstr "활성화"
 
-#: ../gnome-connection-manager.glade:122
-msgid "Salir"
-msgstr "나가기"
-
 #: ../gnome_connection_manager.py:598 ../gnome_connection_manager.py:626
 #: ../gnome_connection_manager.py:666 ../gnome_connection_manager.py:684
 #: ../gnome_connection_manager.py:737 ../gnome_connection_manager.py:768
 #: ../gnome-connection-manager.glade:193
 msgid "Copiar y Pegar"
 msgstr "복사하고 붙혀넣기"
-
-#: ../gnome-connection-manager.glade:122
-msgid "_Salir"
-msgstr "_나가기"
 
 #: ../gnome-connection-manager.glade:1348
 #: ../gnome-connection-manager.glade:1292
@@ -1370,7 +1282,7 @@ msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN 이력 보기</span>"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Nunca"
-msgstr "Never"
+msgstr "하지 않기"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Siempre"
@@ -1379,18 +1291,6 @@ msgstr "항상"
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Sólo si no hay errores"
 msgstr "애러가 없을때만"
-
-#: ../gnome-connection-manager.glade:147 ../gnome-connection-manager.glade:274
-msgid "_Ver"
-msgstr "_보기"
-
-#: ../gnome-connection-manager.glade:155 ../gnome-connection-manager.glade:282
-msgid "Mostrar Toolbar"
-msgstr "툴바 보기"
-
-#: ../gnome-connection-manager.glade:165 ../gnome-connection-manager.glade:292
-msgid "Mostrar Panel"
-msgstr "판넬 보기"
 
 #: ../gnome-connection-manager.glade:1931
 #: ../gnome-connection-manager.glade:2070
@@ -1418,12 +1318,12 @@ msgstr "추가 옵션"
 #: ../gnome-connection-manager.glade:2015
 #: ../gnome-connection-manager.glade:2154
 msgid "Parámetros extra a pasar a la línea de comandos"
-msgstr "Extra arguments to pass to command line"
+msgstr "명령줄에 전달할 추가 옵션"
 
 #: ../gnome-connection-manager.glade:2851
 #: ../gnome-connection-manager.glade:2990
 msgid "Sequencias de Teclas:"
-msgstr "Key sequences"
+msgstr "키 시퀀스"
 
 #: ../gnome-connection-manager.glade:2880
 #: ../gnome-connection-manager.glade:3019
@@ -1435,11 +1335,6 @@ msgstr "Backspace:"
 msgid "Delete:"
 msgstr "삭제:"
 
-#: ../gnome-connection-manager.glade:2989
-#: ../gnome-connection-manager.glade:3128
-msgid "Colores y Teclas"
-msgstr "색 과 키"
-
 #: ../gnome_connection_manager.py:780 ../gnome-connection-manager.glade:231
 msgid "Copiar todo"
 msgstr "모두 복사"
@@ -1448,603 +1343,589 @@ msgstr "모두 복사"
 msgid "Abrir consola local al inicio"
 msgstr "시작 시 로컬 콘솔을 엽니다"
 
-#: ../gnome-connection-manager.glade:147
-msgid "_Editar"
-msgstr "_편집"
-
-#: ../gnome-connection-manager.glade:308
-msgid "_Servidores"
-msgstr "_서버들"
-
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "About"
-msgstr ""
+msgstr "정보"
 
 msgid "Actualizar"
-msgstr ""
+msgstr "새로 고침"
 
 msgid "Add Host"
-msgstr ""
+msgstr "호스트 추가"
 
 msgid "Anexar el archivo de log existente"
-msgstr ""
+msgstr "기존 로그 파일에 이어서 기록합니다"
 
 msgid "Buffer"
-msgstr ""
+msgstr "버퍼"
 
 msgid "Buscar"
-msgstr ""
+msgstr "검색"
 
 msgid "Campana audible"
-msgstr ""
+msgstr "소리로 벨 울리기"
 
 msgid "Cerrar"
-msgstr ""
+msgstr "닫기"
 
 msgid "Clone"
-msgstr ""
+msgstr "복제"
 
 msgid "Close Console"
-msgstr ""
+msgstr "콘솔 닫기"
 
 msgid "Collapse All Groups"
-msgstr ""
+msgstr "모든 그룹 접기"
 
 msgid "Comando del editor"
-msgstr ""
+msgstr "편집기 명령"
 
 msgid "Confirmar al cerrar una consola con botón central del mouse"
-msgstr ""
+msgstr "마우스 가운데 버튼으로 콘솔을 닫을 때 확인"
 
 msgid "Confirmar al pegar más de N bytes (0 desactiva)"
-msgstr ""
+msgstr "N바이트보다 많이 붙여넣을 때 확인 (0이면 사용 안 함)"
 
 msgid "Confirmar al pegar más de N líneas (0 desactiva)"
-msgstr ""
+msgstr "N줄보다 많이 붙여넣을 때 확인 (0이면 사용 안 함)"
 
 msgid "Connect"
-msgstr ""
+msgstr "연결"
 
 msgid "Consola"
-msgstr ""
+msgstr "콘솔"
 
 msgid "Copiar pantalla si no hay selección"
-msgstr ""
+msgstr "선택한 내용이 없으면 화면 복사"
 
 msgid "Copiar selección"
-msgstr ""
+msgstr "선택 영역 복사"
 
 msgid "Copy"
-msgstr ""
+msgstr "복사"
 
 msgid "Copy & Paste"
-msgstr ""
+msgstr "복사 후 붙여넣기"
 
 msgid "Copy Address"
-msgstr ""
+msgstr "주소 복사"
 
 msgid "Copy All"
-msgstr ""
-
-msgid "Custom Commands"
-msgstr ""
+msgstr "모두 복사"
 
 msgid "Delete Host"
-msgstr ""
+msgstr "호스트 삭제"
 
 msgid "Deshabilitar franjas alternas en la ventana de hosts"
-msgstr ""
+msgstr "호스트 창에서 줄무늬 배경 사용 안 함"
 
 msgid "Duplicate Host"
-msgstr ""
+msgstr "호스트 복제"
 
 msgid "Edit Host"
-msgstr ""
+msgstr "호스트 편집"
 
 msgid "Expand All Groups"
-msgstr ""
+msgstr "모든 그룹 펼치기"
 
 msgid "Export Hosts"
-msgstr ""
+msgstr "호스트 내보내기"
 
 msgid "Fin del registro de sesión anterior"
-msgstr ""
+msgstr "이전 세션 로그의 끝"
 
 msgid "Find"
-msgstr ""
+msgstr "찾기"
 
 msgid "Find Next"
-msgstr ""
+msgstr "다음 찾기"
 
 msgid "Find Previous"
-msgstr ""
+msgstr "이전 찾기"
 
 msgid "Fullscreen"
-msgstr ""
+msgstr "전체 화면"
 
 msgid "Import Hosts"
-msgstr ""
+msgstr "호스트 가져오기"
 
 msgid "La sesion requiere atencion"
-msgstr ""
+msgstr "세션에 주의가 필요합니다"
 
 msgid "Log Session"
-msgstr ""
+msgstr "세션 로그 기록"
 
 msgid "Log consola local"
-msgstr ""
+msgstr "로컬 콘솔 세션 로그 기록"
 
 msgid "Marcar pestaña al recibir la campana"
-msgstr ""
+msgstr "벨이 울리면 탭 표시"
 
 msgid "Marcar pestaña cuando la salida se detiene N segundos (0 desactiva)"
-msgstr ""
+msgstr "출력이 N초 동안 멈추면 탭 표시 (0이면 사용 안 함)"
 
 msgid "Marcar pestaña cuando termina la sesión"
-msgstr ""
+msgstr "세션이 끝나면 탭 표시"
 
 msgid "Mostrar el título del programa en la pestaña"
-msgstr ""
+msgstr "탭에 프로그램 제목 표시"
 
 msgid "New Local Console"
-msgstr ""
+msgstr "새 로컬 콘솔"
 
 msgid "Next Console"
-msgstr ""
+msgstr "다음 콘솔"
 
 msgid "No se puede abrir el editor"
-msgstr ""
+msgstr "편집기를 열 수 없습니다"
 
 msgid "Normal Size"
-msgstr ""
+msgstr "보통 크기"
 
 msgid "Notificar cuando una consola requiere atención"
-msgstr ""
+msgstr "콘솔에 주의가 필요하면 알림"
 
 msgid "Paste"
-msgstr ""
+msgstr "붙여넣기"
 
 msgid "Paste as One Line"
-msgstr ""
+msgstr "한 줄로 붙여넣기"
 
 msgid "Pegar en una línea"
-msgstr ""
+msgstr "한 줄로 붙여넣기"
 
 msgid "Pegar {lines} líneas ({bytes} bytes)?"
-msgstr ""
+msgstr "{lines}줄({bytes}바이트)을 붙여넣을까요?"
 
 msgid "Preferences"
-msgstr ""
+msgstr "기본 설정"
 
 msgid "Previous Console"
-msgstr ""
+msgstr "이전 콘솔"
 
 msgid "Quit"
-msgstr ""
+msgstr "끝내기"
 
 msgid "Quitar el salto de línea final al pegar"
-msgstr ""
+msgstr "붙여넣을 때 마지막 줄바꿈 제거"
 
 msgid "Reconnect"
-msgstr ""
+msgstr "다시 연결"
 
 msgid "Refresh"
-msgstr ""
+msgstr "새로 고침"
 
 msgid "Reiniciar en el primer/último tab al llegar al final"
-msgstr ""
+msgstr "이전/다음 탭으로 이동할 때 처음과 끝에서 순환"
 
 msgid "Rename"
-msgstr ""
+msgstr "이름 바꾸기"
 
 msgid "Reset"
-msgstr ""
+msgstr "초기화"
 
 msgid "Reset and Clear"
-msgstr ""
+msgstr "초기화 및 지우기"
 
 msgid "Ruta de log invalida"
-msgstr ""
+msgstr "잘못된 로그 경로"
 
 msgid "Save Buffer"
-msgstr ""
+msgstr "버퍼 저장"
 
 msgid "Select All"
-msgstr ""
+msgstr "모두 선택"
 
 msgid "Show Panel"
-msgstr ""
+msgstr "패널 표시"
 
 msgid "Show Toolbar"
-msgstr ""
+msgstr "도구 모음 표시"
 
 msgid "Split H"
-msgstr ""
+msgstr "수평 분할"
 
 msgid "Split Horizontal"
-msgstr ""
+msgstr "수평 분할"
 
 msgid "Split V"
-msgstr ""
+msgstr "수직 분할"
 
 msgid "Split Vertical"
-msgstr ""
+msgstr "수직 분할"
 
 msgid "TERM"
-msgstr ""
+msgstr "TERM"
 
 msgid "Título"
-msgstr ""
+msgstr "제목"
 
 msgid "Título dinámico"
-msgstr ""
+msgstr "동적 제목"
 
 msgid "Unsplit"
-msgstr ""
+msgstr "분할 해제"
 
 msgid "Ver buffer"
-msgstr ""
+msgstr "버퍼 보기"
 
 msgid "View Buffer"
-msgstr ""
+msgstr "버퍼 보기"
 
 msgid "Zoom In"
-msgstr ""
+msgstr "확대"
 
 msgid "Zoom Out"
-msgstr ""
+msgstr "축소"
 
 msgid "_About"
-msgstr ""
+msgstr "정보(_A)"
 
 msgid "_Edit"
-msgstr ""
+msgstr "편집(_E)"
 
 msgid "_File"
-msgstr ""
+msgstr "파일(_F)"
 
 msgid "_Help"
-msgstr ""
+msgstr "도움말(_H)"
 
 msgid "_Hosts"
-msgstr ""
+msgstr "호스트(_O)"
 
 msgid "_Preferences"
-msgstr ""
+msgstr "기본 설정(_P)"
 
 msgid "_Quit"
-msgstr ""
+msgstr "끝내기(_Q)"
 
 msgid "_Servers"
-msgstr ""
+msgstr "서버(_S)"
 
 msgid "_Terminal"
-msgstr ""
+msgstr "터미널(_T)"
 
 msgid "_View"
-msgstr ""
+msgstr "보기(_V)"
 
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
-msgstr ""
+msgstr "응용 프로그램이 클립보드에 쓰도록 허용 (OSC 52)"
 
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "Grabar la sesión en crudo (incluye secuencias de escape)"
-msgstr ""
+msgstr "원시 세션 녹화 (이스케이프 시퀀스 포함)"
 
 # --- glade strings that had no catalog entry ---
 
 msgid "A simple ssh connection manager for gnome"
-msgstr ""
+msgstr "그놈용 간단한 SSH 연결 관리자"
 
 msgid "ASCII Backspace \t[Ctrl+H 0x08]"
-msgstr ""
+msgstr "ASCII 백스페이스 \t[Ctrl+H 0x08]"
 
 msgid "ASCII Delete    \t[Ctrl+? 0x7F]"
-msgstr ""
+msgstr "ASCII 삭제       \t[Ctrl+? 0x7F]"
 
 msgid "Automatic"
-msgstr ""
+msgstr "자동"
 
 msgid "Cancel"
-msgstr ""
+msgstr "취소"
 
 msgid "Close"
-msgstr ""
+msgstr "닫기"
 
 msgid "Delete Sequence \t[@7]"
-msgstr ""
+msgstr "삭제 시퀀스 \t[@7]"
 
 msgid "Gnome Connection Manager"
-msgstr ""
-
-msgid "Ingrese el texto a enviar a las consolas:"
-msgstr ""
+msgstr "Gnome Connection Manager"
 
 msgid "OK"
-msgstr ""
+msgstr "확인"
 
 msgid "Project's Homepage"
-msgstr ""
+msgstr "프로젝트 홈페이지"
 
 msgid "TTY Erase"
-msgstr ""
+msgstr "TTY 지우기"
 
 msgid "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
-msgstr ""
+msgstr "이 프로그램은 gnome-connection-manager이며, 작성 및 유지 관리:\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - 칠레"
 
 msgid "List open consoles"
-msgstr ""
+msgstr "열린 콘솔 목록"
 
 msgid "No open consoles"
-msgstr ""
+msgstr "열린 콘솔이 없습니다"
 
 msgid "Open Consoles"
-msgstr ""
+msgstr "열린 콘솔"
 
 msgid "Pane {}"
-msgstr ""
+msgstr "영역 {}"
 
 msgid "Guardar transcripción"
-msgstr ""
+msgstr "트랜스크립트 저장"
 
 msgid "Esta sesión no tiene grabación. Active «Grabar la sesión en crudo» en Preferencias y abra una sesión nueva."
-msgstr ""
+msgstr "이 세션에는 녹화가 없습니다. 기본 설정에서 “원시 세션 녹화”를 켜고 새 세션을 여십시오."
 
 msgid "Reconstruyendo transcripción"
-msgstr ""
+msgstr "트랜스크립트 재구성 중"
 
 msgid "Save Transcript"
-msgstr ""
+msgstr "트랜스크립트 저장"
 
 msgid "Esta grabación todavía no contiene texto"
-msgstr ""
+msgstr "이 녹화에는 아직 텍스트가 없습니다"
 
 msgid "Error al importar servidores"
-msgstr ""
+msgstr "호스트 가져오기 오류"
 
 msgid "Error al exportar servidores"
-msgstr ""
+msgstr "호스트 내보내기 오류"
 
 msgid "New Folder"
-msgstr ""
+msgstr "새 폴더"
 
 msgid "Rename Folder"
-msgstr ""
+msgstr "폴더 이름 바꾸기"
 
 msgid "Sort by Name"
-msgstr ""
+msgstr "이름순 정렬"
 
 msgid "A folder name cannot contain /"
-msgstr ""
+msgstr "폴더 이름에는 /를 쓸 수 없습니다"
 
 msgid "Delete folder"
-msgstr ""
+msgstr "폴더 삭제"
 
 msgid "GCM could not create its configuration directory, so it has not started."
-msgstr ""
+msgstr "GCM이 설정 디렉터리를 만들 수 없어서 시작하지 않았습니다."
 
 msgid "GCM could not read its configuration file, so it has not started."
-msgstr ""
+msgstr "GCM이 설정 파일을 읽을 수 없어서 시작하지 않았습니다."
 
 msgid "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
-msgstr ""
+msgstr "아무것도 바뀌지 않았습니다. 파일을 고치거나, 빈 설정으로 시작하려면 파일을 다른 곳으로 옮기십시오."
 
 msgid "Some settings in gcm.conf could not be read, so each is at its default."
-msgstr ""
+msgstr "gcm.conf의 일부 설정을 읽을 수 없어서 각각 기본값을 사용합니다."
 
 msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
-msgstr ""
+msgstr "기본 설정에서 해당 설정을 바꿀 때까지 GCM은 이 줄들을 그대로 둡니다. 대신 파일에서 고치려면 GCM을 닫은 상태에서 편집하십시오."
 
 msgid "expects true or false"
-msgstr ""
+msgstr "true 또는 false여야 합니다"
 
 msgid "expects a whole number"
-msgstr ""
+msgstr "정수여야 합니다"
 
 msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
-msgstr ""
+msgstr "xfreerdp3도 xfreerdp도 찾을 수 없습니다. RDP 호스트를 열려면 FreeRDP를 설치하십시오."
 
 msgid "xdg-open was not found. Install xdg-utils to open web hosts."
-msgstr ""
+msgstr "xdg-open을 찾을 수 없습니다. 웹 호스트를 열려면 xdg-utils를 설치하십시오."
 
 msgid "Could not open"
-msgstr ""
+msgstr "열 수 없음"
 
 msgid "exited with status"
-msgstr ""
+msgstr "종료 상태:"
 
 msgid "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
-msgstr ""
+msgstr "gtk-vnc의 GObject 바인딩도, VNC 뷰어도 찾을 수 없습니다. VNC 호스트를 열려면 둘 중 하나를 설치하십시오."
 
 msgid "Connecting to"
-msgstr ""
+msgstr "연결 중:"
 
 msgid "Disconnected"
-msgstr ""
+msgstr "연결 끊김"
 
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
-msgstr ""
+msgstr "데스크톱이 표시되기 전에 이유를 알리지 않고 연결이 끊겼습니다. gtk-vnc는 서버의 보안 유형을 하나도 지원하지 않을 때 이렇게 연결을 끊습니다."
 
 msgid "Hide input"
-msgstr ""
+msgstr "입력 숨기기"
 
 msgid "Mask what you type, for a password, and keep it out of the history"
-msgstr ""
+msgstr "암호처럼 입력하는 내용을 가리고 기록에 남기지 않습니다"
 
 msgid "Run on this computer before connecting:"
-msgstr ""
+msgstr "연결하기 전에 이 컴퓨터에서 실행:"
 
 msgid "Run on this computer after disconnecting:"
-msgstr ""
+msgstr "연결을 끊은 후에 이 컴퓨터에서 실행:"
 
 msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
-msgstr ""
+msgstr "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder}, {type}은 호스트의 값이며, 각각 셸에 맞게 따옴표 처리됩니다. 연결은 첫 번째 명령을 기다렸다가, 그 명령이 성공할 때만 진행됩니다.</span>"
 
 msgid "Could not run"
-msgstr ""
+msgstr "실행할 수 없음"
 
 msgid "The command before connecting to"
-msgstr ""
+msgstr "다음 호스트에 연결하기 전 명령:"
 
 msgid "The command after disconnecting from"
-msgstr ""
+msgstr "다음 호스트에서 연결을 끊은 후 실행한 명령:"
 
 msgid "Reconnect a dropped session N times (0 disables)"
-msgstr ""
+msgstr "끊어진 세션을 N번 다시 연결 (0이면 사용 안 함)"
 
 msgid "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
-msgstr ""
+msgstr "{seconds}초 후 다시 연결합니다. 시도 {attempt}/{attempts}. 멈추려면 아무 키나 누르십시오."
 
 msgid "Reconnecting stopped."
-msgstr ""
+msgstr "다시 연결을 멈췄습니다."
 
 msgid "Snippets"
-msgstr ""
+msgstr "스니펫"
 
 msgid "Find Snippet…"
-msgstr ""
+msgstr "스니펫 찾기…"
 
 msgid "Name or text"
-msgstr ""
+msgstr "이름 또는 텍스트"
 
 msgid "New snippet"
-msgstr ""
+msgstr "새 스니펫"
 
 msgid "Name"
-msgstr ""
+msgstr "이름"
 
 msgid "Folder"
-msgstr ""
+msgstr "폴더"
 
 msgid "Key"
-msgstr ""
+msgstr "키"
 
 msgid "Description"
-msgstr ""
+msgstr "설명"
 
 msgid "Text"
-msgstr ""
+msgstr "텍스트"
 
 msgid "Add"
-msgstr ""
+msgstr "추가"
 
 msgid "Delete"
-msgstr ""
+msgstr "삭제"
 
 msgid "Its first line"
-msgstr ""
+msgstr "첫 번째 줄"
 
 msgid "Press the key that sends it"
-msgstr ""
+msgstr "보낼 때 쓸 키를 누르십시오"
 
 msgid "Backspace leaves it without a key"
-msgstr ""
+msgstr "백스페이스를 누르면 키가 지정되지 않습니다"
 
 msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
-msgstr ""
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder}, {type}은 보낼 탭의 호스트 값입니다. {?Label}은 보낼 때 값을 묻습니다."
 
 msgid "Send a snippet to each console selected, with its own host's values"
-msgstr ""
+msgstr "선택한 각 콘솔에 해당 호스트의 값으로 스니펫 보내기"
 
 msgid "Command"
-msgstr ""
+msgstr "명령"
 
 msgid "Command line"
-msgstr ""
+msgstr "명령줄"
 
 msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
-msgstr ""
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder}, {type}은 호스트의 값이며, 각각 셸에 맞게 따옴표 처리됩니다. {password}는 호스트의 암호이며, 명령줄에는 절대 넣지 않고 명령의 환경 변수 GCM_PASSWORD로 전달합니다. 명령은 홈 폴더에서 sh를 통해 실행됩니다."
 
 msgid "A command host needs a command, on its Command line tab."
-msgstr ""
+msgstr "명령 호스트에는 명령이 필요합니다. 명령줄 탭에서 입력하십시오."
 
 msgid "Move to New Window"
-msgstr ""
+msgstr "새 창으로 이동"
 
 msgid "Move to Main Window"
-msgstr ""
+msgstr "주 창으로 이동"
 
 msgid "Window {}"
-msgstr ""
+msgstr "창 {}"
 
 msgid "Open in File Manager"
-msgstr ""
+msgstr "파일 관리자에서 열기"
 
 msgid "Mount with SSHFS"
-msgstr ""
+msgstr "SSHFS로 마운트"
 
 msgid "Unmount SSHFS"
-msgstr ""
+msgstr "SSHFS 마운트 해제"
 
 msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
-msgstr ""
+msgstr "{}을(를) 열 파일 관리자를 찾을 수 없습니다. 파일(nautilus), Nemo, Thunar, Dolphin 같은 파일 관리자를 설치하거나, SSHFS로 호스트를 마운트하십시오."
 
 msgid "Something else is mounted at {}: {}"
-msgstr ""
+msgstr "{}에 이미 다른 것이 마운트되어 있습니다: {}"
 
 msgid "Mounting a host needs sshfs, which is not installed."
-msgstr ""
+msgstr "호스트를 마운트하려면 sshfs가 필요하지만, 설치되어 있지 않습니다."
 
 msgid "Could not mount {} at {}: {}"
-msgstr ""
+msgstr "{}을(를) {}에 마운트할 수 없습니다: {}"
 
 msgid "Mounted {} at {}."
-msgstr ""
+msgstr "{}을(를) {}에 마운트했습니다."
 
 msgid "Unmounted {} from {}."
-msgstr ""
+msgstr "{}을(를) {}에서 마운트 해제했습니다."
 
 msgid "Unmounting needs fusermount, which is not installed."
-msgstr ""
+msgstr "마운트를 해제하려면 fusermount가 필요하지만, 설치되어 있지 않습니다."
 
 msgid "Could not unmount {}: {}"
-msgstr ""
+msgstr "{}의 마운트를 해제할 수 없습니다: {}"
 
 msgid "{} is mounted at {} already."
-msgstr ""
+msgstr "{}은(는) 이미 {}에 마운트되어 있습니다."
 
 msgid "{} is not mounted at {}."
-msgstr ""
+msgstr "{}은(는) {}에 마운트되어 있지 않습니다."
 
 msgid "its user begins with -, which ssh would read as an option."
-msgstr ""
+msgstr "사용자 이름이 -로 시작하므로 ssh가 옵션으로 읽습니다."
 
 msgid "Mounted"
-msgstr ""
+msgstr "마운트됨"
 
 msgid "Unmount All"
-msgstr ""
+msgstr "모두 마운트 해제"
 
 msgid "Unmount {} from {}"
-msgstr ""
+msgstr "{}을(를) {}에서 마운트 해제"
 
 msgid "Nothing is mounted"
-msgstr ""
+msgstr "마운트된 것이 없습니다"
 
 msgid "Mounted at {}"
-msgstr ""
+msgstr "마운트 위치: {}"
 
 msgid "Servers"
 msgstr "서버들"
 
 msgid "Mounted ({})"
-msgstr ""
+msgstr "마운트됨 ({})"
 
 msgid "Open Folder"
-msgstr ""
+msgstr "폴더 열기"
 
 msgid "Open over SFTP"
-msgstr ""
+msgstr "SFTP로 열기"
 
 msgid "Unmount"
-msgstr ""
+msgstr "마운트 해제"
 
 msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
-msgstr ""
+msgstr "{}을(를) 열 파일 관리자를 찾을 수 없습니다. 파일(nautilus), Nemo, Thunar, Dolphin 같은 파일 관리자를 설치하십시오."
 
 msgid "SSH"
 msgstr "SSH"
@@ -2104,40 +1985,40 @@ msgid "How to install it: {url}"
 msgstr "설치 방법: {url}"
 
 msgid "Some hosts had the name of another host in their folder, so GCM renamed them."
-msgstr ""
+msgstr "일부 호스트가 같은 폴더에 있는 다른 호스트와 이름이 같아서 GCM이 이름을 바꿨습니다."
 
 msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
-msgstr ""
+msgstr "이름이 바뀐 호스트의 세션 로그는 이제부터 새 이름의 폴더에 저장됩니다. 다른 이름을 붙이려면 호스트를 편집하십시오."
 
 msgid "Tab name"
-msgstr ""
+msgstr "탭 이름"
 
 msgid "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."
-msgstr ""
+msgstr "호스트의 탭 이름입니다. {name}, {address}, {port}, {user}, {group}, {folder}, {type}은 호스트의 값이며, {folder}는 호스트가 있는 폴더, {group}은 전체 경로입니다. 나머지는 쓴 그대로 유지됩니다."
 
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
-msgstr ""
+msgstr "이 호스트의 탭 이름이며, 앞에 폴더를 붙이지 않고 그대로 씁니다. {name}, {address}, {port}, {user}, {group}, {folder}, {type}은 호스트의 값입니다. 비워 두면 기본 설정의 탭 이름이 이름을 붙입니다."
 
 msgid "Tab color"
-msgstr ""
+msgstr "탭 색상"
 
 msgid "A stripe of this color across the top of the host's tabs. Unticked, the tabs take the color of the nearest folder above the host that has one, which a folder's menu gives it with Tab Color."
-msgstr ""
+msgstr "호스트의 탭 위쪽에 이 색상의 줄이 그려집니다. 선택하지 않으면, 탭은 호스트 위에서 색상이 있는 가장 가까운 폴더의 색상을 따르며, 폴더의 색상은 폴더 메뉴의 탭 색상으로 정합니다."
 
 msgid "Select the tab color"
-msgstr ""
+msgstr "탭 색상 선택"
 
 msgid "Tab Color"
-msgstr ""
+msgstr "탭 색상"
 
 msgid "No Color"
-msgstr ""
+msgstr "색상 없음"
 
 msgid "In its tab"
-msgstr ""
+msgstr "탭 모드"
 
 msgid "Windows Remote Desktop shows the desktop in a window of its own."
-msgstr ""
+msgstr "Windows 원격 데스크톱은 데스크톱을 별도의 창에 표시합니다."
 
 msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
-msgstr ""
+msgstr "GCM이 X11에서 실행되고 있지 않아서, FreeRDP가 데스크톱을 별도의 창에 표시합니다."

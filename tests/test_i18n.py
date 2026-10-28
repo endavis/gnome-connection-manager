@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import gettext
 import re
+import string
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -24,7 +25,10 @@ PO_DIR = REPO / "lang"
 EN_PO = PO_DIR / "en_US.po"
 EN_MO = PO_DIR / "en" / "LC_MESSAGES" / "gcm-lang.mo"
 
-_GETTEXT_CALL = re.compile(r'_\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
+# A literal in either quote. Five messages sit in single quotes inside f-strings, such as
+# f"{_('Archivo invalido')}: {e}", and a pattern that took double quotes alone never saw
+# them: measured, it found 265 messages where an AST walk of the sources finds 270 (#359).
+_GETTEXT_CALL = re.compile(r"""_\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*\)""")
 
 # Whether a msgid is Spanish, and so needs an English translation before it is shown
 # to an English user. Accents alone do not answer that: "Permitir que las aplicaciones
@@ -98,7 +102,7 @@ def gettext_calls(text):
     backslash and an n, never matched its entry and was reported missing from every
     catalog (#298).
     """
-    return {ast.literal_eval(f'"{s}"') for s in _GETTEXT_CALL.findall(text) if s}
+    return {ast.literal_eval(s) for s in _GETTEXT_CALL.findall(text) if len(s) > 2}
 
 
 def translatable_strings():
@@ -114,6 +118,12 @@ def test_a_message_is_read_as_python_reads_it():
     """Not as `unescape` reads a msgid, which knows nothing of `\\u00e9`."""
     source = r'_("one\ntwo") _("a \"quoted\" word") _("\u00e9t\u00e9")'
     assert gettext_calls(source) == {"one\ntwo", 'a "quoted" word', "été"}
+
+
+def test_a_single_quoted_message_is_found():
+    """As inside an f-string, where the other quote is taken."""
+    source = """f"{_('Hay')} {count} {_('consolas abiertas, confirma que desea salir?')}" _('')"""
+    assert gettext_calls(source) == {"Hay", "consolas abiertas, confirma que desea salir?"}
 
 
 def test_a_message_with_an_escape_matches_its_catalog_entry(tmp_path):
@@ -232,18 +242,36 @@ _NOT_UI_TEXT = {"label", "page 1", "page 2", "localhost"}
 _PLACEHOLDER_PREFIX = "__glade_unnamed_"
 
 
-def glade_strings():
-    tree = ElementTree.parse(GLADE)
+def glade_strings(glade=GLADE):
+    """Each translatable text as GtkBuilder looks it up: as written, edge spaces and all.
+
+    Measured with a catalog holding both forms of a label that ends in a space, GtkBuilder
+    showed the spaced form's translation. Stripped here, the check asked every catalog for
+    an entry nothing reads, and none for the one the label shows (#359).
+    """
+    tree = ElementTree.parse(glade)
     found = set()
     for tag in ("property", "item"):
         for element in tree.iter(tag):
             if element.get("translatable") != "yes":
                 continue
-            text = (element.text or "").strip()
-            if not text or text in _NOT_UI_TEXT or text.startswith(_PLACEHOLDER_PREFIX):
+            text = element.text or ""
+            bare = text.strip()
+            if not bare or bare in _NOT_UI_TEXT or bare.startswith(_PLACEHOLDER_PREFIX):
                 continue
             found.add(text)
     return found
+
+
+def test_a_glade_text_keeps_its_edge_spaces(tmp_path):
+    glade = tmp_path / "x.glade"
+    glade.write_text(
+        '<interface><object class="GtkLabel">'
+        '<property name="label" translatable="yes">Enter text: </property>'
+        "</object></interface>",
+        encoding="utf-8",
+    )
+    assert glade_strings(glade) == {"Enter text: "}
 
 
 def test_glade_string_extraction_finds_a_realistic_number():
@@ -281,3 +309,154 @@ def test_every_glade_string_appears_in_every_catalog():
 def test_the_compiled_catalog_covers_the_glade_strings():
     """The .mo is what GtkBuilder reads; editing .po alone changes nothing at runtime."""
     assert_mo_matches_po(glade_strings(), "glade strings")
+
+
+# -- every catalog translates every message, keeping what the code relies on (#359) --
+
+CATALOGS = sorted(PO_DIR.glob("*.po"))
+_TAG = re.compile(r"<[^>]+>")
+# GNOME's convention: its msgstr names the catalog's translators, and translates nothing.
+_NOT_A_TRANSLATION = {"translator-credits"}
+
+
+def compiled(po):
+    """The catalog GCM loads for a source: `lang/de_DE.po` compiles to `lang/de/...`."""
+    return PO_DIR / po.stem.split("_")[0] / "LC_MESSAGES" / "gcm-lang.mo"
+
+
+@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
+def test_every_message_is_translated_in_every_catalog(po):
+    """A message a catalog leaves untranslated shows in English, or in Spanish.
+
+    Each of the seven other catalogs left about 200 so, until #359 translated them, and a
+    message added since has to come with its translations.
+    """
+    entries = catalog_entries(po)
+    untranslated = sorted(s for s in translatable_strings() | glade_strings() if not entries.get(s))
+
+    assert not untranslated, f"{po.name} has no translation for: {[s[:60] for s in untranslated]}"
+
+
+def format_fields(text):
+    """The `str.format` fields in a message, positional `{}` as an empty name."""
+    return sorted(field for _, field, _, _ in string.Formatter().parse(text) if field is not None)
+
+
+def form_problems(msgid, msgstr):
+    """What a translation changed of the parts the code relies on."""
+    problems = []
+    try:
+        if format_fields(msgid) != format_fields(msgstr):
+            problems.append("placeholders")
+    except ValueError:
+        problems.append("a lone brace")
+    # A menu label's underscore marks its access key, and one a translation adds to any
+    # other label marks one there: a menu built from a model reads it so.
+    if msgid.count("_") != msgstr.count("_"):
+        problems.append("underscores")
+    if _TAG.findall(msgid) != _TAG.findall(msgstr):
+        problems.append("markup")
+    if msgid.count("\n") != msgstr.count("\n"):
+        problems.append("newlines")
+    if msgid.count("\t") != msgstr.count("\t"):
+        problems.append("tabs")
+    return problems
+
+
+@pytest.mark.parametrize(
+    ("msgid", "msgstr", "problem"),
+    [
+        ("Pane {}", "Bereich", "placeholders"),
+        ("Paste {lines} lines", "{zeilen} Zeilen einfügen", "placeholders"),
+        ("Mounted ({})", "Eingehängt ({)", "a lone brace"),
+        ("_File", "Datei", "underscores"),
+        ("Copy", "_Kopieren", "underscores"),
+        ("<span size='smaller'>{name}</span>", "<span>{name}</span>", "markup"),
+        ("written by\nCopyright", "geschrieben von Copyright", "newlines"),
+        ("TTY Erase \t[@7]", "TTY-Löschen [@7]", "tabs"),
+    ],
+)
+def test_a_broken_translation_is_caught(msgid, msgstr, problem):
+    assert problem in form_problems(msgid, msgstr)
+
+
+def test_a_faithful_translation_passes():
+    assert (
+        form_problems("Could not mount {} at {}: {}", "Не удалось смонтировать {} в {}: {}") == []
+    )
+    assert form_problems("_Hosts", "H_osts") == []
+
+
+@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
+def test_every_translation_keeps_what_the_code_relies_on(po):
+    """Placeholders by name, an underscore, markup, newlines and tabs, as the msgid has them.
+
+    A placeholder lost is a KeyError or a value missing from the message, and an
+    underscore lost is a menu without its access key.
+    """
+    broken = {
+        msgid[:50]: problems
+        for msgid, msgstr in catalog_entries(po).items()
+        if msgid and msgstr and msgid not in _NOT_A_TRANSLATION
+        for problems in [form_problems(msgid, msgstr)]
+        if problems
+    }
+
+    assert not broken, f"{po.name}: {broken}"
+
+
+# The labels that carry an access key, by the menu each is in: _build_menus gives the menu
+# bar its submenus and the application menu its three items, and install_menubar adds
+# _Hosts before Help. Two labels in one menu with one key are reached only by pressing it
+# again, so each translation gives each label a key of its own (#359).
+MENUS = {
+    "menu bar": ("_File", "_Edit", "_View", "_Terminal", "_Servers", "_Hosts", "_Help"),
+    "application menu": ("_Preferences", "_About", "_Quit"),
+}
+# Names that hold an underscore and are no access key, kept as written in every catalog.
+_UNDERSCORED_NAMES = ("GCM_PASSWORD",)
+
+
+def access_key(label):
+    return label[label.index("_") + 1].lower()
+
+
+def test_every_label_with_an_access_key_is_in_a_listed_menu():
+    """So a label added to a menu is checked against the others there."""
+    listed = {label for labels in MENUS.values() for label in labels}
+    keyed = {
+        s
+        for s in translatable_strings() | glade_strings()
+        if "_" in s and not any(name in s for name in _UNDERSCORED_NAMES)
+    }
+
+    assert keyed == listed
+
+
+@pytest.mark.parametrize(
+    "po", [po for po in CATALOGS if po.name != EN_PO.name], ids=lambda po: po.stem
+)
+def test_each_menu_gives_its_labels_keys_of_their_own(po):
+    """Not English, the source, which gives _Hosts and _Help the same key."""
+    entries = catalog_entries(po)
+    for menu, labels in MENUS.items():
+        keys = {label: access_key(entries.get(label) or label) for label in labels}
+
+        assert len(set(keys.values())) == len(keys), f"{po.name}, the {menu}: {keys}"
+
+
+@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
+def test_every_compiled_catalog_matches_its_source(po):
+    """GCM loads the .mo, so a .po changed and not compiled changes nothing.
+
+    Only English's was compared before, so another language's could fall behind unseen.
+    """
+    with compiled(po).open("rb") as handle:
+        catalog = gettext.GNUTranslations(handle)
+    stale = sorted(
+        msgid
+        for msgid, msgstr in catalog_entries(po).items()
+        if msgid and msgstr and catalog.gettext(msgid) != msgstr
+    )
+
+    assert not stale, f"{compiled(po).relative_to(REPO)} is behind {po.name}: {stale[:5]}"

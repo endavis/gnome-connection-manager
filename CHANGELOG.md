@@ -69,6 +69,14 @@ the git log.
   keeps its name. Session logs are where they were.
 
 ### Fixed
+- GCM in German, French, Italian, Korean, Polish, Brazilian Portuguese or Russian left
+  about 200 of its messages untranslated: 34 to 38 of them showed in Spanish, GCM's
+  original language, and the rest in English. They included most of the menu bar, much of
+  Preferences, the snippets, the mounts and what the newer connection types say. Korean
+  also showed nine messages in English whose translation was the English text, and
+  Polish one. Each of the seven now translates every message. Each menu bar label has an access key of its own, as do the application menu's
+  three items. The **Backspace** choices on the host dialog's Terminal tab are translated,
+  as the **Delete** choices beside them already were.
 - On a dark theme, a tab ticked in the cluster window could not be read: the theme's light
   text on the yellow. A tab that needs attention was hard to read on its orange. Both
   marks now have dark text whatever the theme.
