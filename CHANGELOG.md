@@ -61,9 +61,9 @@ the git log.
 - GCM is translated into Spanish, the language of its original text: the menus,
   Preferences, the host dialog, the messages, and what the newer connection types say.
   Spanish locales such as `es_ES`, `es_MX` and `es_CL` read it. The messages GCM was first
-  written with keep the original author's wording, with their accents, opening question
-  marks and capitals corrected, and with the words GNOME uses for buffer, log, mouse and
-  password. Each menu bar label has an access key of its own.
+  written with keep the original author's wording where it is correct Spanish, with their
+  accents, opening question marks and capitals corrected, and with the words GNOME uses for
+  buffer, log, mouse and password. Each menu bar label has an access key of its own.
 
 ### Changed
 - For translators: GCM's messages are English now, so a message's msgid is its English text,

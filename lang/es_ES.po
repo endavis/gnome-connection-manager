@@ -1,7 +1,7 @@
 # Spanish translation of Gnome Connection Manager.
 # The Spanish of the 159 messages GCM was first written in is the original author's, Renzo
-# Bertuzzi L.'s, with its accents, opening question marks and capitals corrected. The other
-# 180 were translated in #391.
+# Bertuzzi L.'s, kept where it is correct Spanish and says what the English says, and
+# corrected where it is not. The other 180 were translated in #391.
 # This file is distributed under the same license as the Gnome Connection Manager package.
 #
 msgid ""
