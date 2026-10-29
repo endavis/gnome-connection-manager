@@ -119,6 +119,11 @@ the git log.
   in `/tmp`, one for every session, which reading `/tmp` then failed on with `Transport
   endpoint is not connected` until it was unmounted by hand. GCM now asks FreeRDP to end,
   and gives it a moment to remove the folder, before closing its tab.
+- The Preferences window, and the tooltip of the main toolbar's button that opens it, said
+  **Settings** in English, where the menu items that open it, GCM's messages and the
+  guides say **Preferences**. In French, Italian, Korean, Polish, Brazilian Portuguese and
+  Russian they named it otherwise than the menu items too. The window and the button now
+  say **Preferences**, in each language as its menu items do.
 
 ## [2.1.1] - 2026-10-24
 

@@ -705,24 +705,6 @@ msgstr "Standard Commands"
 msgid "Conectar a host seleccionado o a todos los host del grupo"
 msgstr "Connect to selected host or all hosts in selected group"
 
-#: ../gnome-connection-manager.glade.h:13
-#: ../gnome-connection-manager.glade:761
-#: ../gnome-connection-manager.glade:2055
-#: ../gnome-connection-manager.glade:2260
-#: ../gnome-connection-manager.glade:2311
-#: ../gnome-connection-manager.glade:2413
-#: ../gnome-connection-manager.glade:773
-#: ../gnome-connection-manager.glade:2426
-#: ../gnome-connection-manager.glade:2427
-#: ../gnome-connection-manager.glade:2623
-#: ../gnome-connection-manager.glade:2742
-#: ../gnome-connection-manager.glade:808
-#: ../gnome-connection-manager.glade:3053
-#: ../gnome-connection-manager.glade:947
-#: ../gnome-connection-manager.glade:3192
-msgid "Configuración"
-msgstr "Settings"
-
 #: ../gnome-connection-manager.glade.h:15
 #: ../gnome-connection-manager.glade:1064
 #: ../gnome-connection-manager.glade:1166

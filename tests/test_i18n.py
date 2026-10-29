@@ -460,3 +460,105 @@ def test_every_compiled_catalog_matches_its_source(po):
     )
 
     assert not stale, f"{compiled(po).relative_to(REPO)} is behind {po.name}: {stale[:5]}"
+
+
+# -- one name for Preferences, and no entry left unused (#383) --
+
+# A label app.py gives the action that opens Preferences, wrapped or not.
+_PREFERENCES_LABEL = re.compile(r'_\(\s*("(?:[^"\\]|\\.)*")\s*\),\s*"app\.preferences"')
+# An access key marked as most catalogs mark it, `_Preferences`, or as GNOME's Korean does,
+# `기본 설정(_P)`.
+_ACCESS_KEY = re.compile(r"\(_\w\)|_")
+
+
+def preferences_menu_labels() -> list[str]:
+    """The labels `app.py` gives the action that opens Preferences, as Python reads them."""
+    text = APP.read_text(encoding="utf-8")
+    return [ast.literal_eval(label) for label in _PREFERENCES_LABEL.findall(text)]
+
+
+def preferences_properties(glade: Path = GLADE) -> list[tuple[str, ElementTree.Element]]:
+    """What names Preferences in the glade file: (`title` or `tooltip`, its property).
+
+    The title is the window's, `wConfig`'s. The tooltip is the main toolbar button's, which
+    has no id of its own to find it by, so it is the one on the same action as the menus.
+    """
+    found = []
+    for element in ElementTree.parse(glade).iter("object"):
+        properties = {prop.get("name"): prop for prop in element.findall("property")}
+        action = properties.get("action-name")
+        opens_preferences = action is not None and action.text == "app.preferences"
+        if element.get("id") == "wConfig" and "title" in properties:
+            found.append(("title", properties["title"]))
+        if opens_preferences and "tooltip-text" in properties:
+            found.append(("tooltip", properties["tooltip-text"]))
+    return found
+
+
+def without_access_key(label: str) -> str:
+    """A menu label's name: the label with its access key taken off."""
+    return _ACCESS_KEY.sub("", label)
+
+
+@pytest.mark.parametrize(
+    ("label", "name"),
+    [
+        pytest.param("_Preferences", "Preferences", id="underscore"),
+        pytest.param("기본 설정(_P)", "기본 설정", id="bracketed"),
+        pytest.param("Preferences", "Preferences", id="no-key"),
+    ],
+)
+def test_an_access_key_is_taken_off_a_label(label: str, name: str) -> None:
+    """The key is an underscore before a letter, or, in Korean, one in brackets after the name."""
+    assert without_access_key(label) == name
+
+
+def test_the_texts_that_name_preferences_are_found() -> None:
+    """Guards the guard: finding nothing would make the checks below vacuous.
+
+    Each glade text must be translatable too. GtkBuilder shows one that is not as its
+    msgid in every language, and reads no catalog for it.
+    """
+    found = preferences_properties()
+
+    assert sorted(preferences_menu_labels()) == ["Preferences", "_Preferences"]
+    assert sorted(what for what, _ in found) == ["title", "tooltip"]
+    assert {prop.get("translatable") for _, prop in found} == {"yes"}
+
+
+@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
+def test_the_preferences_window_is_named_as_its_menu_items_are(po: Path) -> None:
+    """The window's title and its toolbar button's tooltip say what the menu items say.
+
+    Each as it reads in the catalog, the menu items without their access keys. The title
+    and the tooltip were the msgid `Configuración`, which English gave as Settings and six
+    of the seven other catalogs gave otherwise than the menu items. Only German agreed
+    (#383).
+    """
+    entries: dict[str, str] = catalog_entries(po)
+
+    def shown(msgid: str) -> str:
+        # What gettext gives: the msgid itself, where the catalog has no translation.
+        return entries.get(msgid) or msgid
+
+    menu_items = {label: without_access_key(shown(label)) for label in preferences_menu_labels()}
+    named = {what: shown(prop.text or "") for what, prop in preferences_properties()}
+
+    assert len(set(menu_items.values())) == 1, f"{po.name}: its menu items differ: {menu_items}"
+    assert set(named.values()) == set(menu_items.values()), (
+        f"{po.name}: the menu items say {menu_items}, but the window and its button say {named}"
+    )
+
+
+@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
+def test_no_catalog_keeps_an_entry_nothing_uses(po: Path) -> None:
+    """An entry nothing asks for is never shown, and is kept in step with the rest for nothing.
+
+    `Configuración` was one once the Preferences window took the Edit menu's msgid (#383).
+    The header is the entry with an empty msgid. A message that moves to a module outside
+    `SOURCES` shows up here as well, which is the cue to list the module.
+    """
+    used = translatable_strings() | glade_strings() | _NOT_A_TRANSLATION | {""}
+    unused = sorted(catalog_msgids(po) - used)
+
+    assert not unused, f"{po.name} keeps entries nothing uses: {[s[:60] for s in unused]}"
