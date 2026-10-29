@@ -339,6 +339,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_hosts.py",
     "tests/test_logpaths.py",
     "tests/test_main.py",
+    "tests/test_menuplacement.py",
     "tests/test_osc52.py",
     "tests/test_package.py",
     "tests/test_placeholders.py",
