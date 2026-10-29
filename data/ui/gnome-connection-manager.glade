@@ -442,7 +442,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
   </object>
   <object class="GtkDialog" id="wConfig">
     <property name="can-focus">False</property>
-    <property name="title" translatable="yes">Configuración</property>
+    <property name="title" translatable="yes">Preferences</property>
     <property name="modal">True</property>
     <property name="type-hint">dialog</property>
     <child internal-child="vbox">
@@ -2321,7 +2321,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Configuración</property>
+                <property name="tooltip-text" translatable="yes">Preferences</property>
                 <property name="label" translatable="yes">__glade_unnamed_32</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-preferences</property>
