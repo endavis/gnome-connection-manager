@@ -123,6 +123,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     connections,
     crypto,
     logpaths,
+    menuplacement,
     placeholders,
     remotefiles,
     tabcolors,
@@ -1729,6 +1730,118 @@ def clamp_to_workarea(width, height, workarea, allowance=0):
     )
 
 
+def menu_height(menu: Gtk.Menu) -> int:
+    """How tall `menu` is when it opens: the natural height of each item it shows, and its
+    own padding (#392).
+
+    Added up from the items rather than asked of the menu. A menu that is not showing
+    answers 0, measured, and showing it to ask would emit its `hide` when it closed again,
+    which clears the context the click set (`on_context_menu_hide`). Measured on X11 at
+    twice the usual text size, the sum is the height GTK gives the popped-up menu to the
+    pixel, for each of GCM's menus. What is counted: the theme's padding above and below,
+    and twice the container's border width. What is not: the CSS margin and border, and
+    the `vertical-padding` style property, each changed in turn without moving the menu's
+    height.
+    """
+    padding = menu.get_style_context().get_padding(Gtk.StateFlags.NORMAL)
+    height: int = padding.top + padding.bottom + 2 * menu.get_border_width()
+    for item in menu.get_children():
+        if item.get_visible():
+            height += item.get_preferred_height()[1]
+    return height
+
+
+def menu_room(window: Gdk.Window) -> tuple[int, int] | None:
+    """The span, top to bottom, that a menu opened from `window` has to sit in, in the
+    coordinates `Gdk.Window.get_root_coords` gives; None where that cannot be told (#392).
+
+    Under X11 it is the work area of the monitor the window is on. Under Wayland it is
+    the window's own: a client is not told where its window is on the output, and GDK puts
+    every window with no parent at (0, 0), so a monitor's geometry means nothing there:
+    read in `gdk_window_wayland_get_root_coords`, and measured on Weston 13 (#392). A menu
+    that fits inside GCM's window stays inside it, on every compositor. A maximized window
+    fills the output, and then the two are the same.
+    """
+    display = window.get_display()
+    if display.__gtype__.name == "GdkWaylandDisplay":
+        toplevel = window.get_toplevel()
+        low = toplevel.get_root_coords(0, 0)[1]
+        high = low + toplevel.get_height()
+    else:
+        monitor = display.get_monitor_at_window(window)
+        if monitor is None:
+            return None
+        workarea = monitor.get_workarea()
+        low, high = workarea.y, workarea.y + workarea.height
+    return (low, high) if high > low else None
+
+
+def popup_menu_at(
+    menu: Gtk.Menu,
+    event: Gdk.Event | None,
+    rect: Gdk.Rectangle | None = None,
+    window: Gdk.Window | None = None,
+    east: bool = False,
+) -> None:
+    """Open `menu` beside `rect`, a rectangle in `window`, where it stays on the screen
+    (#392). By default `rect` is the click of `event`, one pixel in the window that
+    received it, as `popup_at_pointer` has it.
+
+    Below the rectangle if the menu fits there, else above it, else slid along the room
+    until it fits, as `menuplacement.place_menu` works out from the menu's real height.
+    GTK is asked for that, not left to move the menu itself: under Wayland it only sends
+    flip, slide and resize to the compositor, and Weston's, which WSLg's is built on,
+    applies none of them (read in its source), so a menu opened low in the window ran off
+    the bottom of the screen. The hints stay on for a compositor that does move a menu. A menu taller than the room is not
+    told it may resize in height, so that GTK makes it no taller than the monitor and
+    scrolls it. `east` hangs the menu's right edge from the rectangle's, so that it opens
+    leftwards, from a button at the right end of a strip.
+
+    The window is `event.window`, not the widget's: a terminal has no window of its own,
+    so its `get_window()` is its parent's, and measured, its menu then opened 6 pixels
+    from the pointer. For the server tree, a tab's label and the Mounted list the two
+    coincide, measured: the tree's bin window, where its cell areas are, stays where the
+    tree's own window is as it scrolls, with its header hidden as GCM has it.
+    Without `popup_at_rect` the menu is opened by the older call.
+    """
+    if not hasattr(menu, "popup_at_rect"):
+        stamp = getattr(event, "time", None)
+        menu.popup(
+            None,
+            None,
+            None,
+            None,
+            getattr(event, "button", 0),
+            Gtk.get_current_event_time() if stamp is None else stamp,
+        )
+        return
+    if window is None:
+        window = event.window
+    if rect is None:
+        rect = Gdk.Rectangle()
+        rect.x = int(event.x)
+        rect.y = int(event.y)
+        rect.width = 1
+        rect.height = 1
+    placement = menuplacement.Placement(below=True, shift=0, scrolls=False)
+    room = menu_room(window)
+    if room is not None:
+        top = window.get_root_coords(rect.x, rect.y)[1]
+        placement = menuplacement.place_menu(top, top + rect.height, menu_height(menu), *room)
+    if east:
+        south, north = Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST
+    else:
+        south, north = Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST
+    rect_anchor, menu_anchor = (south, north) if placement.below else (north, south)
+    hints = Gdk.AnchorHints.FLIP | Gdk.AnchorHints.SLIDE | Gdk.AnchorHints.RESIZE_X
+    if not placement.scrolls:
+        hints |= Gdk.AnchorHints.RESIZE_Y
+    # Set at each opening: a menu is opened again, and the last placement must not stay.
+    menu.set_property("anchor-hints", hints)
+    menu.set_property("rect-anchor-dy", placement.shift)
+    menu.popup_at_rect(window, rect, rect_anchor, menu_anchor, event)
+
+
 def scroll_notebook_page(notebook, page):
     """Put `page` inside a scroller, keeping its place and tab in `notebook`.
 
@@ -2637,42 +2750,7 @@ class Wmain(GladeComponent):
                 self.popupMenu.mnuSplitH.set_visible(not in_window)
                 self.popupMenu.mnuSplitV.set_visible(not in_window)
                 self.popupMenu.terminal = widget
-                # Use popup_at_rect with manual position calculation for proper placement
-                if hasattr(self.popupMenu, "popup_at_rect"):
-                    # Create a rectangle at the click position
-                    rect = Gdk.Rectangle()
-                    rect.x = int(event.x)
-                    rect.y = int(event.y)
-                    rect.width = 1
-                    rect.height = 1
-
-                    window = widget.get_window()
-
-                    # Calculate position to determine if we need to flip
-                    display = widget.get_display()
-                    monitor = display.get_monitor_at_window(window)
-                    workarea = monitor.get_workarea()
-                    abs_x, abs_y = window.get_root_coords(rect.x, rect.y)
-
-                    # Get menu size - use estimate since actual size isn't known until shown
-                    menu_height = 250
-
-                    # Determine gravity based on available space
-                    margin = 50
-                    if abs_y + menu_height + margin > workarea.y + workarea.height:
-                        # Not enough space below - position menu above
-                        rect_anchor = Gdk.Gravity.NORTH_WEST
-                        menu_anchor = Gdk.Gravity.SOUTH_WEST
-                    else:
-                        # Enough space below - position menu below
-                        rect_anchor = Gdk.Gravity.SOUTH_WEST
-                        menu_anchor = Gdk.Gravity.NORTH_WEST
-
-                    # Popup at rect with calculated gravity
-                    self.popupMenu.popup_at_rect(window, rect, rect_anchor, menu_anchor, event)
-                else:
-                    # Fallback for older GTK
-                    self.popupMenu.popup(None, None, None, None, event.button, event.time)
+                popup_menu_at(self.popupMenu, event)
 
             # enable/disable split menu
             nb = widget.get_parent().get_parent()
@@ -3091,15 +3169,13 @@ class Wmain(GladeComponent):
 
     def show_console_menu(self, button, menu, event):
         self.build_console_menu(menu)
-        if hasattr(menu, "popup_at_widget"):
-            # East, not west: the button sits at the right end of the tab strip, so a
-            # menu whose left edge starts there runs off the screen -- measured 800px
-            # off with a full-width window. Anchoring the menu's right edge to the
-            # button's makes it open leftwards, which is correct by construction rather
-            # than relying on GTK sliding it back, which does not always happen.
-            menu.popup_at_widget(button, Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST, event)
-        else:
-            menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
+        # East, not west: the button sits at the right end of the tab strip, so a
+        # menu whose left edge starts there runs off the screen -- measured 800px
+        # off with a full-width window. Anchoring the menu's right edge to the
+        # button's makes it open leftwards, which is correct by construction rather
+        # than relying on GTK sliding it back, which does not always happen. Below
+        # the button, or above it where the list is too tall for the room below (#392).
+        popup_menu_at(menu, event, button.get_allocation(), button.get_window(), east=True)
 
     def search_box(self):
         """The search box of the window in use: the main window's, in its toolbar, or a
@@ -6107,7 +6183,7 @@ class Wmain(GladeComponent):
         menu.mnuOpenSftp.set_sensitive(folder is not None and self.mounted_host(folder) is not None)
         menu.mnuUnmount.set_sensitive(folder is not None)
         menu.mnuUnmountAll.set_sensitive(bool(getattr(self, "listed_mounts", None)))
-        menu.popup_at_pointer(event)
+        popup_menu_at(menu, event)
         return True
 
     def on_treeMounts_row_activated(self, widget, path, _column):
@@ -7126,50 +7202,11 @@ class Wmain(GladeComponent):
                 self.popupMenuFolder.mnuDel.show()
                 self.treeServers.grab_focus()
                 self.treeServers.set_cursor(path, col, 0)
-            # Use popup_at_rect with manual position calculation for proper placement
-            if hasattr(self.popupMenuFolder, "popup_at_rect"):
-                # Get the cell rectangle for proper positioning
-                if pthinfo is not None:
-                    path, col, cellx, celly = pthinfo
-                    rect = self.treeServers.get_cell_area(path, col)
-                else:
-                    rect = Gdk.Rectangle()
-                    rect.x = int(event.x)
-                    rect.y = int(event.y)
-                    rect.width = 1
-                    rect.height = 1
-
-                window = self.treeServers.get_window()
-
-                # Calculate position to determine if we need to flip
-                display = self.treeServers.get_display()
-                monitor = display.get_monitor_at_window(window)
-                workarea = monitor.get_workarea()
-                abs_x, abs_y = window.get_root_coords(rect.x, rect.y)
-
-                # Get menu size - use estimate since actual size isn't known until shown
-                # Using 250px is a reasonable estimate for typical context menus
-                menu_height = 250
-
-                # Determine gravity based on available space
-                margin = 50  # Increased margin for better clearance
-                menu_bottom = abs_y + rect.height + menu_height
-                workarea_bottom = workarea.y + workarea.height
-
-                if menu_bottom + margin > workarea_bottom:
-                    # Not enough space below - position menu above
-                    rect_anchor = Gdk.Gravity.NORTH_WEST
-                    menu_anchor = Gdk.Gravity.SOUTH_WEST
-                else:
-                    # Enough space below - position menu below
-                    rect_anchor = Gdk.Gravity.SOUTH_WEST
-                    menu_anchor = Gdk.Gravity.NORTH_WEST
-
-                # Popup at rect with calculated gravity
-                self.popupMenuFolder.popup_at_rect(window, rect, rect_anchor, menu_anchor, event)
-            else:
-                # Fallback for older GTK
-                self.popupMenuFolder.popup(None, None, None, None, event.button, event.time)
+            # Beside the row's cell, read once the cursor has scrolled the row into view, in
+            # the tree's bin window, which is where the click was. The blank space below the
+            # rows has no cell: there it is the click.
+            rect = self.treeServers.get_cell_area(*pthinfo[:2]) if pthinfo is not None else None
+            popup_menu_at(self.popupMenuFolder, event, rect)
             return True
         else:
             return (
@@ -10184,43 +10221,7 @@ class NotebookTabLabel(Gtk.HBox):
     def popupmenu(self, widget, event, label):
         if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
             self.prepare_menu()
-
-            # Use popup_at_rect with manual position calculation for proper placement
-            if hasattr(self.popup, "popup_at_rect"):
-                # Create a rectangle at the click position
-                rect = Gdk.Rectangle()
-                rect.x = int(event.x)
-                rect.y = int(event.y)
-                rect.width = 1
-                rect.height = 1
-
-                window = widget.get_window()
-
-                # Calculate position to determine if we need to flip
-                display = widget.get_display()
-                monitor = display.get_monitor_at_window(window)
-                workarea = monitor.get_workarea()
-                abs_x, abs_y = window.get_root_coords(rect.x, rect.y)
-
-                # Get menu size - use estimate since actual size isn't known until shown
-                menu_height = 250
-
-                # Determine gravity based on available space
-                margin = 50
-                if abs_y + menu_height + margin > workarea.y + workarea.height:
-                    # Not enough space below - position menu above
-                    rect_anchor = Gdk.Gravity.NORTH_WEST
-                    menu_anchor = Gdk.Gravity.SOUTH_WEST
-                else:
-                    # Enough space below - position menu below
-                    rect_anchor = Gdk.Gravity.SOUTH_WEST
-                    menu_anchor = Gdk.Gravity.NORTH_WEST
-
-                # Popup at rect with calculated gravity
-                self.popup.popup_at_rect(window, rect, rect_anchor, menu_anchor, event)
-            else:
-                # Fallback for older GTK
-                self.popup.popup(None, None, None, None, event.button, event.time)
+            popup_menu_at(self.popup, event)
             return True
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 2:
             if (

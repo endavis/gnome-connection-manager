@@ -78,6 +78,17 @@ the git log.
   keeps its name. Session logs are where they were.
 
 ### Fixed
+- Under WSLg, the server tree's right-click menu on a host or a folder, opened low on the
+  screen, ran off its bottom edge, and so could the terminal's menu, a tab's, the Mounted
+  tab's and the list of open consoles behind the ▾ button. GCM now measures the menu and
+  puts it below the click, or above it where it does not fit below, or slides it up or
+  down over the click where it fits on neither side. A list of consoles taller than the
+  screen starts at the top of it and scrolls. The terminal's menu also opens at the
+  pointer, not a few pixels from it. This is so on every Wayland desktop: where the
+  desktop moves menus itself, a menu that fits inside GCM's window now stays inside it, so
+  in a window smaller than the screen it may open above the click or slide up where it
+  used to hang below the window. X11 already kept menus on the screen, and still does. The
+  menu bar's menus are not changed.
 - Under the `C` or `C.UTF-8` locale, with no locale set, or in a language GCM has no
   translation for, GCM showed its Spanish source text: Agregar, Editar and Eliminar on the
   toolbar, Separador de Palabras and Tamaño del buffer in Preferences, mixed with English

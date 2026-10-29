@@ -1388,15 +1388,13 @@ class Sensitive:
 
 
 class MountsMenu:
-    """The Mounted tab's Gtk.Menu, as a right-click opens it."""
+    """The Mounted tab's Gtk.Menu, as a right-click opens it: with `popup_menu_at`, which
+    with_mounted_tab stands in for, so `opened` has each event it was opened for."""
 
     def __init__(self):
         self.mnuOpenFolder, self.mnuOpenSftp = Sensitive(), Sensitive()
         self.mnuUnmount, self.mnuUnmountAll = Sensitive(), Sensitive()
         self.opened: list = []
-
-    def popup_at_pointer(self, event):
-        self.opened.append(event)
 
     def offered(self):
         """Whether each of Open Folder, Open over SFTP, Unmount and Unmount All can be
@@ -1432,7 +1430,6 @@ def test_the_mounted_tab_fakes_match_real_gtk():
         (Notebook, Gtk.Notebook, ("get_nth_page", "get_current_page", "set_current_page")),
         (TabLabel, Gtk.Label, ("set_text",)),
         (Sensitive, Gtk.MenuItem, ("set_sensitive",)),
-        (MountsMenu, Gtk.Menu, ("popup_at_pointer",)),
         (Divider, Gtk.Paned, ("get_handle_window", "get_position")),
     ):
         for name in names:
@@ -1451,6 +1448,12 @@ def with_mounted_tab(app_module, monkeypatch, hosts, *lines):
     wmain.lblMountsTab = TabLabel()
     wmain.popupMenuMounts = MountsMenu()
     wmain.mount_menu_folder = None
+    # Where the menu goes is popup_menu_at's, tested in test_menuplacement.py: here it opens.
+    monkeypatch.setattr(
+        app_module,
+        "popup_menu_at",
+        lambda menu, event, rect=None, window=None, east=False: menu.opened.append(event),
+    )
     return wmain
 
 

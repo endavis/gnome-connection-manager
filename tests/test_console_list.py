@@ -590,6 +590,12 @@ class FakeButton:
     def set_tooltip_text(self, text):
         self.tooltip = text
 
+    def get_window(self):
+        return BUTTON_WINDOW
+
+    def get_allocation(self):
+        return BUTTON_ALLOCATION
+
     def connect(self, signal, callback, *args):
         self.handlers.append((signal, callback, args))
 
@@ -617,6 +623,12 @@ class FakeEvent:
     def __init__(self, kind="button-press", button=1):
         self.type = kind
         self.button = button
+
+
+# What the button gives for the rectangle its menu opens from: the window it is drawn in,
+# and where in that window it is.
+BUTTON_WINDOW = object()
+BUTTON_ALLOCATION = object()
 
 
 @pytest.fixture
@@ -661,33 +673,34 @@ def test_the_button_is_not_installed_twice(button_env):
     assert notebook.get_action_widget("end") is first
 
 
-GRAVITY = types.SimpleNamespace(
-    SOUTH_WEST="south-west",
-    NORTH_WEST="north-west",
-    SOUTH_EAST="south-east",
-    NORTH_EAST="north-east",
-)
-
-
-def click_button(button_env, monkeypatch, wmain, notebook, keyboard=False):
-    """Open the dropdown and report (menu, widget_anchor, menu_anchor, event)."""
-    button = wmain.install_console_button(notebook)
-    popped = []
-    monkeypatch.setattr(
-        button_env.Gtk, "get_current_event", lambda: "keyboard-event", raising=False
-    )
-    monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
+def opening(button_env, monkeypatch, popped):
+    """popup_menu_at recording what it is handed, as (menu, event, rect, window, east), and
+    the event types the button tells a press by. Where the menu goes is tested with it, in
+    test_menuplacement.py; here it is what the button hands it."""
     monkeypatch.setattr(
         button_env.Gdk,
         "EventType",
         types.SimpleNamespace(BUTTON_PRESS="button-press"),
         raising=False,
     )
-    FakeMenu.popup_at_widget = lambda self, _w, ra, ma, e: popped.append((self, ra, ma, e))
-    try:
-        button.click() if keyboard else button.press()
-    finally:
-        del FakeMenu.popup_at_widget
+    monkeypatch.setattr(
+        button_env,
+        "popup_menu_at",
+        lambda menu, event, rect=None, window=None, east=False: popped.append(
+            (menu, event, rect, window, east)
+        ),
+    )
+
+
+def click_button(button_env, monkeypatch, wmain, notebook, keyboard=False):
+    """Open the dropdown and report (menu, event, rect, window, east)."""
+    button = wmain.install_console_button(notebook)
+    popped: list[tuple] = []
+    monkeypatch.setattr(
+        button_env.Gtk, "get_current_event", lambda: "keyboard-event", raising=False
+    )
+    opening(button_env, monkeypatch, popped)
+    button.click() if keyboard else button.press()
     assert popped, "the button never popped its menu"
     return popped[0]
 
@@ -697,26 +710,25 @@ def test_clicking_the_button_fills_its_menu(button_env, monkeypatch):
     notebook = FakeNotebook([FakeTabLabel("a"), FakeTabLabel("b")])
     wmain = make_wmain(button_env, FakePaned(notebook))
 
-    menu, _widget_anchor, _menu_anchor, _event = click_button(
-        button_env, monkeypatch, wmain, notebook
-    )
+    menu, *_rest = click_button(button_env, monkeypatch, wmain, notebook)
 
     assert [item.markup for item in menu.items] == ["a", "b"]
 
 
-def test_the_menu_opens_leftwards_from_the_button(button_env, monkeypatch):
-    """The button is at the right end of the strip, so a west-anchored menu runs off
-    the screen -- measured ~800px off before this. Anchoring east opens it inwards."""
+def test_the_menu_opens_from_the_button_and_leftwards(button_env, monkeypatch):
+    """The button is at the right end of the strip, so a menu whose left edge starts there
+    runs off the screen -- measured ~800px off before this. Hanging the menu's right edge
+    from the button's, east, opens it inwards. The rectangle is the button's allocation
+    in the window it is drawn in, which is what popup_at_widget made of it."""
     monkeypatch.setattr(button_env, "shortcuts", {})
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
 
-    _menu, widget_anchor, menu_anchor, _event = click_button(
-        button_env, monkeypatch, wmain, notebook
-    )
+    _menu, _event, rect, window, east = click_button(button_env, monkeypatch, wmain, notebook)
 
-    assert widget_anchor == GRAVITY.SOUTH_EAST
-    assert menu_anchor == GRAVITY.NORTH_EAST
+    assert east is True
+    assert rect is BUTTON_ALLOCATION
+    assert window is BUTTON_WINDOW
 
 
 def test_the_menu_opens_on_the_press_with_that_event(button_env, monkeypatch):
@@ -729,7 +741,7 @@ def test_the_menu_opens_on_the_press_with_that_event(button_env, monkeypatch):
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
 
-    _menu, _wa, _ma, event = click_button(button_env, monkeypatch, wmain, notebook)
+    _menu, event, *_rest = click_button(button_env, monkeypatch, wmain, notebook)
 
     assert isinstance(event, FakeEvent)
     assert event.type == "button-press"
@@ -740,18 +752,9 @@ def test_the_press_is_consumed_so_the_button_does_not_also_click(button_env, mon
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
     button = wmain.install_console_button(notebook)
-    monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
-    monkeypatch.setattr(
-        button_env.Gdk,
-        "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"),
-        raising=False,
-    )
-    FakeMenu.popup_at_widget = lambda *_a: None
-    try:
-        assert button.press() is True
-    finally:
-        del FakeMenu.popup_at_widget
+    opening(button_env, monkeypatch, [])
+
+    assert button.press() is True
 
 
 def test_a_right_press_is_left_alone(button_env, monkeypatch):
@@ -760,18 +763,10 @@ def test_a_right_press_is_left_alone(button_env, monkeypatch):
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
     button = wmain.install_console_button(notebook)
-    monkeypatch.setattr(
-        button_env.Gdk,
-        "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"),
-        raising=False,
-    )
-    popped = []
-    FakeMenu.popup_at_widget = lambda self, *_a: popped.append(self)
-    try:
-        assert button.press(FakeEvent(button=3)) is False
-    finally:
-        del FakeMenu.popup_at_widget
+    popped: list[tuple] = []
+    opening(button_env, monkeypatch, popped)
+
+    assert button.press(FakeEvent(button=3)) is False
 
     assert not popped
 
@@ -782,7 +777,7 @@ def test_the_keyboard_still_opens_the_menu(button_env, monkeypatch):
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
 
-    menu, _wa, _ma, event = click_button(button_env, monkeypatch, wmain, notebook, keyboard=True)
+    menu, event, *_rest = click_button(button_env, monkeypatch, wmain, notebook, keyboard=True)
 
     assert [item.markup for item in menu.items] == ["a"]
     assert event == "keyboard-event"
@@ -794,21 +789,12 @@ def test_the_menu_is_attached_to_the_window_like_the_others(button_env, monkeypa
     notebook = FakeNotebook([FakeTabLabel("a")])
     wmain = make_wmain(button_env, FakePaned(notebook))
     wmain.install_console_button(notebook)
-    monkeypatch.setattr(button_env.Gdk, "Gravity", GRAVITY, raising=False)
-    monkeypatch.setattr(
-        button_env.Gdk,
-        "EventType",
-        types.SimpleNamespace(BUTTON_PRESS="button-press"),
-        raising=False,
-    )
-    popped = []
-    FakeMenu.popup_at_widget = lambda self, *_a: popped.append(self)
-    try:
-        notebook.get_action_widget("end").press()
-    finally:
-        del FakeMenu.popup_at_widget
+    popped: list[tuple] = []
+    opening(button_env, monkeypatch, popped)
 
-    assert popped[0].attached_to is wmain.window
+    notebook.get_action_widget("end").press()
+
+    assert popped[0][0].attached_to is wmain.window
 
 
 class FakeMenuBar:

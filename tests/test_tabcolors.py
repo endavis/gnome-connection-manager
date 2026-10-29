@@ -469,6 +469,7 @@ def test_the_tree_menu_offers_a_tab_colour_for_a_folders_row_alone(app_module):
     clicked: list[bool | None] = []
     wmain.treeServers = types.SimpleNamespace(
         get_path_at_pos=lambda x, y: None if clicked[-1] is None else ("path", "column", 0, 0),
+        get_cell_area=lambda path, column: None,
         get_selection=lambda: types.SimpleNamespace(unselect_all=lambda: None),
         grab_focus=lambda: None,
         set_cursor=lambda *_args: None,

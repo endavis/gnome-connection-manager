@@ -39,6 +39,7 @@ gnome-connection-manager/
 │           ├── folders.py        # The folder tree hosts are filed under
 │           ├── hosts.py          # The host record, read from and written to gcm.conf
 │           ├── logpaths.py       # Session log names and layout, and tab labels
+│           ├── menuplacement.py  # Where a pop-up menu goes so that it stays on the screen
 │           ├── osc52.py          # OSC 52 clipboard writes found in a byte stream
 │           ├── placeholders.py   # A host's values filled into a command
 │           ├── remotefiles.py    # A host's files: its sftp:// address, sshfs mounts
