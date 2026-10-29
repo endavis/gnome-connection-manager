@@ -1162,8 +1162,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   - A translation keeps its msgid's placeholders by name, its underscores, its markup,
     its newlines and its tabs.
   - In the menu bar and in the application menu, listed in the test's `MENUS`, each
-    label's access key is its own, in every catalog but English. English's `_Hosts` and
-    `_Help` share one. Korean writes a key as GNOME's Korean does, `파일(_F)`.
+    label's access key is its own, in every catalog. English gives `_Hosts` as `H_osts`,
+    since `_Help` has H: measured with real input, two labels with one key opened their
+    menus by turns (#382). Korean writes a key as GNOME's Korean does, `파일(_F)`.
   - The test reads `_()` in either quote, since five messages sit in single quotes inside
     f-strings. It reads a glade text as GtkBuilder looks it up, edge spaces included.
     Measured with a catalog holding both forms of a label that ends in a space,
