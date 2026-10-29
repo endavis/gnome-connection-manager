@@ -746,8 +746,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
-  `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, fr, it, ko, pl, pt, ru. English has
+  `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, es, fr, it, ko, pl, pt, ru. English has
   none: the msgids are English (ADR-0003, #390), so a locale with no catalog shows them.
+  `lang/es_ES.po` is the Spanish one (#391), and its language `es` serves every Spanish locale.
 - `docs/` – see [Documentation](#documentation).
 - `gnome-connection-manager.desktop`, `Makefile`, `dodo.py`, `pyproject.toml`.
 - `install.sh` – the one-line installer (#294), served from `main` and piped to bash. It
@@ -958,6 +959,16 @@ Practices below have each caught real bugs in this repo. They are worth the time
   check had before #369, the registry's open-in-browser scenario exited during its request
   on every run, measured, and is the one that died of SIGSEGV at exit on CI (#316).
   `test_no_scenario_runs_the_check` fails on a scenario script that leaves it on.
+- **CI fails on any skipped test.** Its `Run tests` step greps the pytest log for a skip and
+  exits 1: everything a test needs is installed there, so a skip means the environment is
+  wrong. A test that needs a locale therefore builds it, as
+  `test_gcm_shows_spanish_where_it_reads_the_catalog` does, with `localedef --no-archive
+  -i es_CL -f UTF-8 -c <folder>/es_CL.UTF-8` and `LOCPATH=<folder>`. Measured, that needs no
+  root and takes 0.7 s, and the runner image lists the `locales` package it reads.
+- **A new catalog's `.mo` is added with `git add -f`.** `.gitignore` ignores
+  `/lang/*/LC_MESSAGES/*.mo`, yet the seven older catalogs' are tracked, and neither CI nor
+  `install.sh` compiles one. Left untracked, it gives no translation to anyone who installs
+  from git, and `test_every_compiled_catalog_matches_its_source` fails on CI.
 - **Test fakes must mirror the real widget API.** `tests/conftest.py` stubs all of `gi`, so a
   fake can define methods the real class lacks and nothing complains — this caused #30
   (`select_none()` on `Vte.Terminal`) and #41 (`set_attention()` on `Gtk.Label`). Several
@@ -1154,8 +1165,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   (`lang/de/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
   the directory it writes into. It uses `msgfmt` where that exists and `tools/build_mo.py`
   otherwise, and fails rather than reporting success when it finds nothing to compile.
-  Add a locale by copying an existing `.po` and updating its headers. Nothing else names a
-  language: the Makefile's `translate` and `doit translate` both compile every `.po` under `lang/`.
+  Add a locale by copying an existing `.po` and updating its headers, and add its `.mo` with
+  `git add -f` (see Testing). Nothing else names a language: the Makefile's `translate` and
+  `doit translate` both compile every `.po` under `lang/`.
 - The msgids are English (ADR-0003, #390): a msgid is the text an English reader sees, and
   English has no catalog. A locale GCM has no catalog for -- `C`, `C.UTF-8`, a language it
   lacks -- shows the msgids, from Python's `gettext` and from glibc, which translates the
@@ -1166,8 +1178,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   the Python messages in German, the glade texts as their msgids. Rewording
   an English message re-keys it: change the msgid in the code or the glade file and in
   every catalog, or its translations are lost, and the entry left behind fails
-  `test_no_catalog_keeps_an_entry_nothing_uses`. GCM was written in Spanish; a Spanish
-  catalog is #391.
+  `test_no_catalog_keeps_an_entry_nothing_uses`. GCM was written in Spanish, and
+  `lang/es_ES.po` is that Spanish, corrected, with the messages written since (#391).
   - `test_no_message_is_spanish` keeps every msgid in use English. It is a heuristic --
     accents, function words and the words the Spanish msgids used -- so a Spanish word it
     does not know passes, and review is the rest of it.
@@ -1175,6 +1187,50 @@ Practices below have each caught real bugs in this repo. They are worth the time
     no locale set, and under `C.UTF-8` and `en_US.UTF-8`, each with and without
     `LANGUAGE=nl`, and reads every text the main window, Preferences and the dialog Add
     Host opens draw.
+- The Spanish catalog is `lang/es_ES.po` (#391). Its language is `es`, which `es_ES`,
+  `es_MX` and `es_CL` all read: measured with GTK drawing the windows under each, an `es_*`
+  locale with no catalog of its own finds `es`. 159 of its messages are the original
+  author's Spanish, from the msgids #390 rewrote, and 180 were written in #391; the
+  catalog's header says so.
+  - The older text stands where it is correct Spanish. It changed for orthography
+    (`Archivo no válido`, `solo` without a tilde), an opening `¿`, sentence case, a GNOME
+    term where it borrowed English (`búfer`, `registro`, `ratón`, `contraseña`, `activar`),
+    one word for one concept, and meaning that follows the English msgid. Kept on purpose:
+    `host`; the author's Latin American `agregar`, `ingrese` and `presione`, where GNOME's
+    Spain-leaning Spanish says `añadir`, `introduzca` and `pulse`; `fragmento` for a
+    snippet, as GNOME's `recorte` reads as clippings beside Copy and Paste; `por defecto`,
+    `Atajo`, `Fuente`, `Limpiar` and `Reiniciar y limpiar`; `Eliminar` for both Remove and
+    Delete; and `administrador` for a manager, where GNOME's Spanish says `gestor`. `Usted`
+    for sentences, the infinitive for commands, menu items and checkboxes. A word is checked
+    against GNOME's Spanish by unpacking Ubuntu's `language-pack-gnome-es-base`
+    (`apt-get download`, then `dpkg-deb -x`) and reading the catalogs in its
+    `locale-langpack/es/LC_MESSAGES/*.mo` with `gettext`.
+  - A positional `{}` keeps the English order: the code fills them in that order, and only a
+    reader can tell a swapped pair, as the mount messages risk. A message the code builds
+    from two or three msgids, such as `There are` and `open consoles, exit anyway?`, is read
+    assembled, not as fragments. The English edge stays: a colon, a trailing space, an
+    ellipsis. The Backspace and Delete combos keep their tabs and bracketed text.
+  - `SAME_IN_SPANISH` in `tests/test_i18n.py` lists the messages spelled alike in both
+    languages (`Host`, `SSH`, `General` and the rest). `test_no_spanish_message_is_left_in_english`
+    fails on any other translation that reads as its msgid, bar case and access key, which
+    every check above passes and which shows English; `test_the_list_of_messages_spelled_alike_in_spanish_is_true`
+    fails on an entry since translated. A correct Spanish word that equals an English msgid
+    goes on the list with its reason beside it, not a worse word in its place.
+  - A question opens with `¿`, which `test_every_spanish_question_opens_with_an_inverted_mark`
+    holds the catalog to. The code closes three with ` [name]?`, so their translations open
+    and do not close: `Delete folder`, `Do you really want to remove host` and `Do you
+    really want to remove all hosts in group`. `Close console` is a fourth, and is a menu
+    label too, so it cannot open with one; the question needs a msgid of its own, which
+    changes `app.py` and every catalog, and is left for a follow-up.
+  - `test_gcm_shows_spanish_where_it_reads_the_catalog` starts GCM and reads every text the
+    main window, Preferences and the host dialog draw, under `LANG=en_US.UTF-8
+    LANGUAGE=es`, the stand-in #359 measured, and under `LANG=es_CL.UTF-8`, a real Spanish
+    locale. To measure by hand use either: under `C.UTF-8` glibc ignores `LANGUAGE`. Each
+    case builds its locale in the test's folder with `localedef --no-archive` and
+    `LOCPATH`, since a machine may have neither generated and CI fails a skipped test. Both
+    scenarios leave out GTK's stock buttons, the `gtk-add` and `gtk-delete` of the host
+    dialog's port forwarding page, whose text is GTK's own catalog's and stays English on a
+    machine without GTK's Spanish.
 - Every message GCM shows is translated in every catalog, and `tests/test_i18n.py` holds
   each to it (#359). A message added to the code or the glade comes with its translation
   in every catalog. An empty `msgstr` shows the English msgid, which is how each catalog

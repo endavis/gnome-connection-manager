@@ -1,0 +1,1035 @@
+# Spanish translation of Gnome Connection Manager.
+# The Spanish of the 159 messages GCM was first written in is the original author's, Renzo
+# Bertuzzi L.'s, kept where it is correct Spanish and says what the English says, and
+# corrected where it is not. The other 180 were translated in #391.
+# This file is distributed under the same license as the Gnome Connection Manager package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gnome-connection-manager\n"
+"Report-Msgid-Bugs-To: https://github.com/endavis/gnome-connection-manager/issues\n"
+"PO-Revision-Date: 2026-10-29 17:38+0000\n"
+"Last-Translator: Claude <noreply@anthropic.com>\n"
+"Language-Team: Spanish\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+
+msgid "Copy"
+msgstr "Copiar"
+
+msgid "Paste"
+msgstr "Pegar"
+
+msgid "Select all"
+msgstr "Seleccionar todo"
+
+msgid "Save buffer to file"
+msgstr "Guardar búfer en archivo"
+
+msgid "Close console"
+msgstr "Cerrar consola"
+
+msgid "Connect"
+msgstr "Conectar"
+
+msgid "Edit"
+msgstr "Editar"
+
+msgid "Remove"
+msgstr "Eliminar"
+
+msgid "Expand all"
+msgstr "Expandir todo"
+
+msgid "Collapse all"
+msgstr "Contraer todo"
+
+msgid "Error connecting to server"
+msgstr "Error al conectar con el servidor"
+
+msgid "Invalid entry in configuration file"
+msgstr "Entrada no válida en el archivo de configuración"
+
+msgid "Save as"
+msgstr "Guardar como"
+
+msgid "Can't open file for writing"
+msgstr "No se puede abrir el archivo para escritura"
+
+msgid "Open"
+msgstr "Abrir"
+
+msgid "There are"
+msgstr "Hay"
+
+msgid "open consoles, exit anyway?"
+msgstr "consolas abiertas, ¿confirma que desea salir?"
+
+msgid "Import Servers"
+msgstr "Importar servidores"
+
+msgid "Enter password"
+msgstr "Ingrese la contraseña"
+
+msgid "Invalid password"
+msgstr "Contraseña no válida"
+
+msgid "Server list will be overwritten, continue?"
+msgstr "Se sobrescribirá la lista de servidores, ¿desea continuar?"
+
+msgid "Invalid file"
+msgstr "Archivo no válido"
+
+msgid "Export Servers"
+msgstr "Exportar servidores"
+
+msgid "Do you really want to remove host"
+msgstr "¿Confirma que desea eliminar el host"
+
+msgid "Do you really want to remove all hosts in group"
+msgstr "¿Confirma que desea eliminar todos los hosts del grupo"
+
+msgid "search..."
+msgstr "buscar..."
+
+msgid "Local"
+msgstr "Local"
+
+msgid "Host"
+msgstr "Host"
+
+msgid "Remote"
+msgstr "Remoto"
+
+msgid "Fields group, name and host are required"
+msgstr "Los campos grupo, nombre y host son obligatorios"
+
+msgid "Invalid port"
+msgstr "Puerto no válido"
+
+msgid "Host name"
+msgstr "El nombre del host"
+
+msgid "already exists for group"
+msgstr "ya existe para el grupo"
+
+msgid "Error saving host. Description"
+msgstr "Error al guardar el host. Descripción"
+
+msgid "Enter remote host"
+msgstr "Debe ingresar el host remoto"
+
+msgid "Local port already assigned"
+msgstr "El puerto local ya está asignado"
+
+msgid "Word separator"
+msgstr "Separador de palabras"
+
+msgid "Buffer size"
+msgstr "Tamaño del búfer"
+
+msgid "Transparency"
+msgstr "Transparencia"
+
+msgid "Paste on right click"
+msgstr "Pegar con botón derecho"
+
+msgid "Confirm on close console"
+msgstr "Confirmar al cerrar una consola"
+
+msgid "Confirm on exit"
+msgstr "Confirmar al salir"
+
+msgid "Action"
+msgstr "Acción"
+
+msgid "Shortcut"
+msgstr "Atajo"
+
+msgid "Select background color"
+msgstr "Seleccione el color de fondo"
+
+msgid "Select foreground color"
+msgstr "Seleccione el color del texto"
+
+msgid "Open local console"
+msgstr "Abrir consola local"
+
+msgid "Add"
+msgstr "Agregar"
+
+msgid "Add new host"
+msgstr "Agregar nuevo host"
+
+msgid "Shortcuts"
+msgstr "Atajos"
+
+msgid "Background color:"
+msgstr "Color del fondo:"
+
+msgid "Foreground color:"
+msgstr "Color del texto:"
+
+msgid "Colors"
+msgstr "Colores"
+
+msgid "Commands"
+msgstr "Comandos"
+
+msgid "Standard Commands"
+msgstr "Comandos predefinidos"
+
+msgid "Connect to selected host or all hosts in selected group"
+msgstr "Conectar al host seleccionado o a todos los hosts del grupo seleccionado"
+
+msgid "Edit Host"
+msgstr "Editar host"
+
+msgid "Edit hosts properties"
+msgstr "Editar propiedades del host seleccionado"
+
+msgid "Remove selected host"
+msgstr "Eliminar host seleccionado"
+
+msgid "Send commands after login"
+msgstr "Enviar comandos al iniciar sesión"
+
+msgid "General"
+msgstr "General"
+
+msgid "Group"
+msgstr "Grupo"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "Password"
+msgstr "Contraseña"
+
+msgid "Properties"
+msgstr "Propiedades"
+
+msgid "Port"
+msgstr "Puerto"
+
+msgid "Local Port"
+msgstr "Puerto local"
+
+msgid "Remote Port"
+msgstr "Puerto remoto"
+
+msgid "Split console horizontally"
+msgstr "Separar consola horizontalmente"
+
+msgid "Split console vertically"
+msgstr "Separar consola verticalmente"
+
+msgid "Type"
+msgstr "Tipo"
+
+msgid "Port forwarding"
+msgstr "Redirección de puertos"
+
+msgid "Unsplit all consoles"
+msgstr "Unir todas las consolas"
+
+msgid "Default colors"
+msgstr "Usar colores por defecto"
+
+msgid "User"
+msgstr "Usuario"
+
+msgid "Check updates"
+msgstr "Comprobar actualizaciones"
+
+msgid "Rename tab"
+msgstr "Renombrar pestaña"
+
+msgid "Enter new name"
+msgstr "Ingrese nuevo nombre"
+
+msgid "Copy Address"
+msgstr "Copiar dirección"
+
+msgid "Keep-Alive"
+msgstr "Mantener conexión activa"
+
+msgid "Seconds between keep-alive packets"
+msgstr "Intervalo en segundos para enviar paquetes keep-alive"
+
+msgid "Reset console"
+msgstr "Reiniciar consola"
+
+msgid "Reset and Clear console"
+msgstr "Reiniciar y limpiar consola"
+
+msgid "Hide donate button"
+msgstr "Ocultar el botón de donación"
+
+msgid "Select font"
+msgstr "Seleccione la fuente"
+
+msgid "Leave blank for passwordless/public key authentication"
+msgstr "Dejar en blanco para autenticación sin contraseña o con clave pública"
+
+msgid "X11 Forwarding"
+msgstr "Redirigir X11"
+
+msgid "Use default fixed width font"
+msgstr "Usar fuente de ancho fijo por defecto"
+
+msgid "Font:"
+msgstr "Fuente:"
+
+msgid "Reconnect to host"
+msgstr "Reconectar al host"
+
+msgid "Clone console"
+msgstr "Clonar consola"
+
+msgid "No open consoles"
+msgstr "No hay consolas abiertas"
+
+msgid "Copy selection to clipboard"
+msgstr "Copiar selección al portapapeles"
+
+msgid "Send commands to several hosts at the same time"
+msgstr "Enviar comandos a varios hosts al mismo tiempo"
+
+msgid "Cluster"
+msgstr "Clúster"
+
+msgid "Select consoles to use:"
+msgstr "Seleccione las consolas a utilizar:"
+
+msgid "Clear selection"
+msgstr "Limpiar selección"
+
+msgid "Invert selection"
+msgstr "Invertir selección"
+
+msgid "Enter text to send to hosts: "
+msgstr "Ingrese el texto a enviar a los hosts: "
+
+msgid "Activate"
+msgstr "Activar"
+
+msgid "Copy and Paste"
+msgstr "Copiar y pegar"
+
+msgid "To create subgroups use format group1/group2/group3"
+msgstr "Usar el formato grupo1/grupo2/grupo3 para crear subgrupos"
+
+msgid "Enable logging"
+msgstr "Activar registro"
+
+msgid "Add Host"
+msgstr "Agregar host"
+
+msgid "Duplicate Host"
+msgstr "Duplicar host"
+
+msgid "Can't open log file for writing"
+msgstr "No se puede abrir el archivo de registro para escritura"
+
+msgid "Logs path"
+msgstr "Ruta de registros"
+
+msgid "Private key"
+msgstr "Clave privada"
+
+msgid "Agent Forwarding"
+msgstr "Redirigir agente"
+
+msgid "Enable Logging"
+msgstr "Activar registro"
+
+msgid "Remote Host"
+msgstr "Host remoto"
+
+msgid "Description"
+msgstr "Descripción"
+
+msgid "Dynamic"
+msgstr "Dinámico"
+
+msgid "Create dynamic port forwarding"
+msgstr "Crear redirección dinámica de puertos"
+
+msgid "<span size='smaller'>Use ##D=milliseconds to insert a delay.\nEg: ##D=1000</span>"
+msgstr "<span size='smaller'>Usar ##D=milisegundos para insertar un retardo.\nEj: ##D=1000</span>"
+
+msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN for history</span>"
+msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN para recorrer el historial</span>"
+
+msgid "Never"
+msgstr "Nunca"
+
+msgid "Always"
+msgstr "Siempre"
+
+msgid "Only on clean exit"
+msgstr "Solo al terminar correctamente"
+
+msgid "Compression"
+msgstr "Compresión"
+
+msgid "Compression level: \nblank: default compression\n1: min\n9: max"
+msgstr "Nivel de compresión: \nen blanco: compresión por defecto\n1: mín.\n9: máx."
+
+msgid "Extra arguments"
+msgstr "Argumentos adicionales"
+
+msgid "Extra arguments to pass to command line"
+msgstr "Argumentos adicionales para pasar a la línea de comandos"
+
+msgid "Key sequences"
+msgstr "Secuencias de teclas"
+
+msgid "Backspace:"
+msgstr "Retroceso:"
+
+msgid "Delete:"
+msgstr "Supr.:"
+
+msgid "Copy all"
+msgstr "Copiar todo"
+
+msgid "Open local console on startup"
+msgstr "Abrir consola local al inicio"
+
+msgid "About"
+msgstr "Acerca de"
+
+msgid "Refresh"
+msgstr "Actualizar"
+
+msgid "Appending to existing log file"
+msgstr "Anexando al archivo de registro existente"
+
+msgid "Buffer"
+msgstr "Búfer"
+
+msgid "Search"
+msgstr "Buscar"
+
+msgid "Audible bell"
+msgstr "Campana audible"
+
+msgid "Close"
+msgstr "Cerrar"
+
+msgid "Clone"
+msgstr "Clonar"
+
+msgid "Close Console"
+msgstr "Cerrar consola"
+
+msgid "Collapse All Groups"
+msgstr "Contraer todos los grupos"
+
+msgid "Editor command"
+msgstr "Comando del editor"
+
+msgid "Confirm on close console with middle click"
+msgstr "Confirmar al cerrar una consola con el botón central del ratón"
+
+msgid "Confirm pasting more than N bytes (0 disables)"
+msgstr "Confirmar al pegar más de N bytes (0 para desactivar)"
+
+msgid "Confirm pasting more than N lines (0 disables)"
+msgstr "Confirmar al pegar más de N líneas (0 para desactivar)"
+
+msgid "Console"
+msgstr "Consola"
+
+msgid "Copy screen if there is no selection"
+msgstr "Copiar pantalla si no hay selección"
+
+msgid "Copy selection"
+msgstr "Copiar selección"
+
+msgid "Copy & Paste"
+msgstr "Copiar y pegar"
+
+msgid "Copy All"
+msgstr "Copiar todo"
+
+msgid "Delete Host"
+msgstr "Eliminar host"
+
+msgid "Disable alternating stripes in hosts window"
+msgstr "Desactivar franjas alternas en la ventana de hosts"
+
+msgid "Expand All Groups"
+msgstr "Expandir todos los grupos"
+
+msgid "Export Hosts"
+msgstr "Exportar hosts"
+
+msgid "End of previous session log"
+msgstr "Fin del registro de sesión anterior"
+
+msgid "Find"
+msgstr "Buscar"
+
+msgid "Find Next"
+msgstr "Buscar siguiente"
+
+msgid "Find Previous"
+msgstr "Buscar anterior"
+
+msgid "Fullscreen"
+msgstr "Pantalla completa"
+
+msgid "Import Hosts"
+msgstr "Importar hosts"
+
+msgid "The session requires attention"
+msgstr "La sesión requiere atención"
+
+msgid "Log Session"
+msgstr "Registrar sesión"
+
+msgid "Log local console sessions"
+msgstr "Registrar sesiones de la consola local"
+
+msgid "Mark tab when the bell rings"
+msgstr "Marcar pestaña al recibir la campana"
+
+msgid "Mark tab when output stops for N seconds (0 disables)"
+msgstr "Marcar pestaña cuando la salida se detiene durante N segundos (0 para desactivar)"
+
+msgid "Mark tab when its session ends"
+msgstr "Marcar pestaña cuando termina la sesión"
+
+msgid "Show the program title in the tab"
+msgstr "Mostrar el título del programa en la pestaña"
+
+msgid "New Local Console"
+msgstr "Consola local nueva"
+
+msgid "Next Console"
+msgstr "Consola siguiente"
+
+msgid "Cannot open the editor"
+msgstr "No se puede abrir el editor"
+
+msgid "Normal Size"
+msgstr "Tamaño normal"
+
+msgid "Notify when a console needs attention"
+msgstr "Notificar cuando una consola requiere atención"
+
+msgid "Paste as One Line"
+msgstr "Pegar en una línea"
+
+msgid "Paste as one line"
+msgstr "Pegar en una línea"
+
+msgid "Paste {lines} lines ({bytes} bytes)?"
+msgstr "¿Pegar {lines} líneas ({bytes} bytes)?"
+
+msgid "Preferences"
+msgstr "Preferencias"
+
+msgid "Previous Console"
+msgstr "Consola anterior"
+
+msgid "Quit"
+msgstr "Salir"
+
+msgid "Strip the trailing newline when pasting"
+msgstr "Quitar el salto de línea final al pegar"
+
+msgid "Reconnect"
+msgstr "Reconectar"
+
+msgid "Circle around tabs when going to the previous/next tab"
+msgstr "Pasar de la última pestaña a la primera y viceversa"
+
+msgid "Rename"
+msgstr "Renombrar"
+
+msgid "Reset"
+msgstr "Reiniciar"
+
+msgid "Reset and Clear"
+msgstr "Reiniciar y limpiar"
+
+msgid "Invalid log path"
+msgstr "Ruta de registro no válida"
+
+msgid "Save Buffer"
+msgstr "Guardar búfer"
+
+msgid "Select All"
+msgstr "Seleccionar todo"
+
+msgid "Show Panel"
+msgstr "Mostrar panel"
+
+msgid "Show Toolbar"
+msgstr "Mostrar barra de herramientas"
+
+msgid "Split H"
+msgstr "Separar H"
+
+msgid "Split Horizontal"
+msgstr "Separar horizontalmente"
+
+msgid "Split V"
+msgstr "Separar V"
+
+msgid "Split Vertical"
+msgstr "Separar verticalmente"
+
+msgid "TERM"
+msgstr "TERM"
+
+msgid "Title"
+msgstr "Título"
+
+msgid "Dynamic title"
+msgstr "Título dinámico"
+
+msgid "Unsplit"
+msgstr "Unir"
+
+msgid "View buffer"
+msgstr "Ver búfer"
+
+msgid "View Buffer"
+msgstr "Ver búfer"
+
+msgid "Zoom In"
+msgstr "Ampliar"
+
+msgid "Zoom Out"
+msgstr "Reducir"
+
+msgid "_About"
+msgstr "_Acerca de"
+
+msgid "_Edit"
+msgstr "_Editar"
+
+msgid "_File"
+msgstr "_Archivo"
+
+msgid "_Help"
+msgstr "A_yuda"
+
+msgid "H_osts"
+msgstr "_Hosts"
+
+msgid "_Preferences"
+msgstr "_Preferencias"
+
+msgid "_Quit"
+msgstr "_Salir"
+
+msgid "_Servers"
+msgstr "_Servidores"
+
+msgid "_Terminal"
+msgstr "_Terminal"
+
+msgid "_View"
+msgstr "_Ver"
+
+msgid "Let applications write to the clipboard (OSC 52)"
+msgstr "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
+
+msgid "Record the raw session (includes escape sequences)"
+msgstr "Grabar la sesión en crudo (incluye secuencias de escape)"
+
+msgid "A simple ssh connection manager for gnome"
+msgstr "Un administrador de conexiones ssh sencillo para GNOME"
+
+msgid "ASCII Backspace \t[Ctrl+H 0x08]"
+msgstr "ASCII Retroceso \t[Ctrl+H 0x08]"
+
+msgid "ASCII Delete    \t[Ctrl+? 0x7F]"
+msgstr "ASCII Supr.     \t[Ctrl+? 0x7F]"
+
+msgid "Automatic"
+msgstr "Automático"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Delete Sequence \t[@7]"
+msgstr "Secuencia de Supr. \t[@7]"
+
+msgid "Gnome Connection Manager"
+msgstr "Gnome Connection Manager"
+
+msgid "OK"
+msgstr "Aceptar"
+
+msgid "Project's Homepage"
+msgstr "Sitio web del proyecto"
+
+msgid "TTY Erase"
+msgstr "Borrado TTY"
+
+msgid "This is gnome-connection-manager, written and maintained by\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
+msgstr "Este es gnome-connection-manager, escrito y mantenido por\nCopyright © 2012 Renzo Bertuzzi L. <kuthulu@gmail.com> - Chile"
+
+msgid "List open consoles"
+msgstr "Mostrar las consolas abiertas"
+
+msgid "Open Consoles"
+msgstr "Consolas abiertas"
+
+msgid "Pane {}"
+msgstr "Panel {}"
+
+msgid "Save transcript"
+msgstr "Guardar transcripción"
+
+msgid "This session has no recording. Turn on “Record the raw session” in Preferences and open a new session."
+msgstr "Esta sesión no tiene grabación. Active «Grabar la sesión en crudo» en Preferencias y abra una sesión nueva."
+
+msgid "Rebuilding transcript"
+msgstr "Reconstruyendo transcripción"
+
+msgid "Save Transcript"
+msgstr "Guardar transcripción"
+
+msgid "This recording has no text in it yet"
+msgstr "Esta grabación todavía no contiene texto"
+
+msgid "Error importing hosts"
+msgstr "Error al importar hosts"
+
+msgid "Error exporting hosts"
+msgstr "Error al exportar hosts"
+
+msgid "New Folder"
+msgstr "Carpeta nueva"
+
+msgid "Rename Folder"
+msgstr "Renombrar carpeta"
+
+msgid "Sort by Name"
+msgstr "Ordenar por nombre"
+
+msgid "A folder name cannot contain /"
+msgstr "El nombre de una carpeta no puede contener /"
+
+msgid "Delete folder"
+msgstr "¿Eliminar la carpeta"
+
+msgid "GCM could not create its configuration directory, so it has not started."
+msgstr "GCM no pudo crear su directorio de configuración, así que no se inició."
+
+msgid "GCM could not read its configuration file, so it has not started."
+msgstr "GCM no pudo leer su archivo de configuración, así que no se inició."
+
+msgid "Nothing has been changed. Correct the file, or move it aside to start with an empty configuration."
+msgstr "No se cambió nada. Corrija el archivo o muévalo a otro lugar para empezar con una configuración vacía."
+
+msgid "Some settings in gcm.conf could not be read, so each is at its default."
+msgstr "No se pudieron leer algunos ajustes de gcm.conf, así que cada uno tiene su valor por defecto."
+
+msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
+msgstr "GCM deja estas líneas como están hasta que usted cambie el ajuste en Preferencias. Para corregir una en el propio archivo, edítelo con GCM cerrado."
+
+msgid "expects true or false"
+msgstr "espera true o false"
+
+msgid "expects a whole number"
+msgstr "espera un número entero"
+
+msgid "Neither xfreerdp3 nor xfreerdp was found. Install FreeRDP to open RDP hosts."
+msgstr "No se encontró xfreerdp3 ni xfreerdp. Instale FreeRDP para abrir hosts RDP."
+
+msgid "xdg-open was not found. Install xdg-utils to open web hosts."
+msgstr "No se encontró xdg-open. Instale xdg-utils para abrir hosts web."
+
+msgid "Could not open"
+msgstr "No se pudo abrir"
+
+msgid "exited with status"
+msgstr "terminó con el estado"
+
+msgid "Neither gtk-vnc's GObject bindings nor a VNC viewer was found. Install either to open VNC hosts."
+msgstr "No se encontraron los enlaces GObject de gtk-vnc ni un visor VNC. Instale cualquiera de los dos para abrir hosts VNC."
+
+msgid "Connecting to"
+msgstr "Conectando con"
+
+msgid "Disconnected"
+msgstr "Desconectado"
+
+msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
+msgstr "Se desconectó antes de mostrar el escritorio, sin dar ningún motivo. gtk-vnc se desconecta así cuando no admite ninguno de los tipos de seguridad del servidor."
+
+msgid "Hide input"
+msgstr "Ocultar entrada"
+
+msgid "Mask what you type, for a password, and keep it out of the history"
+msgstr "Ocultar lo que se escribe, para una contraseña, y no guardarlo en el historial"
+
+msgid "Run on this computer before connecting:"
+msgstr "Ejecutar en este equipo antes de conectar:"
+
+msgid "Run on this computer after disconnecting:"
+msgstr "Ejecutar en este equipo después de desconectar:"
+
+msgid "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. Connecting waits for the first command, and goes ahead only when it succeeds.</span>"
+msgstr "<span size='smaller'>{name}, {address}, {port}, {user}, {group}, {folder} y {type} son los valores del host, cada uno entrecomillado para el shell. La conexión espera al primer comando y continúa solo si este tiene éxito.</span>"
+
+msgid "Could not run"
+msgstr "No se pudo ejecutar"
+
+msgid "The command before connecting to"
+msgstr "El comando previo a la conexión con"
+
+msgid "The command after disconnecting from"
+msgstr "El comando posterior a la desconexión de"
+
+msgid "Reconnect a dropped session N times (0 disables)"
+msgstr "Reconectar una sesión interrumpida N veces (0 para desactivar)"
+
+msgid "Reconnecting in {seconds} s, attempt {attempt} of {attempts}. Press a key to stop."
+msgstr "Reconectando en {seconds} s, intento {attempt} de {attempts}. Presione una tecla para detener."
+
+msgid "Reconnecting stopped."
+msgstr "Se detuvo la reconexión."
+
+msgid "Snippets"
+msgstr "Fragmentos"
+
+msgid "Find Snippet…"
+msgstr "Buscar fragmento…"
+
+msgid "Name or text"
+msgstr "Nombre o texto"
+
+msgid "New snippet"
+msgstr "Fragmento nuevo"
+
+msgid "Folder"
+msgstr "Carpeta"
+
+msgid "Key"
+msgstr "Tecla"
+
+msgid "Text"
+msgstr "Texto"
+
+msgid "Delete"
+msgstr "Eliminar"
+
+msgid "Its first line"
+msgstr "Su primera línea"
+
+msgid "Press the key that sends it"
+msgstr "Presione la tecla que lo envía"
+
+msgid "Backspace leaves it without a key"
+msgstr "Retroceso lo deja sin tecla"
+
+msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the values of the host of the tab it is sent to. {?Label} asks for a value as it is sent."
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder} y {type} son los valores del host de la pestaña a la que se envía. {?Label} pide un valor al enviarlo."
+
+msgid "Send a snippet to each console selected, with its own host's values"
+msgstr "Enviar un fragmento a cada consola seleccionada, con los valores de su propio host"
+
+msgid "Command"
+msgstr "Comando"
+
+msgid "Command line"
+msgstr "Línea de comandos"
+
+msgid "{name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, each quoted for the shell. {password} is its password, given to the command as GCM_PASSWORD in its environment, never on a command line. It runs through sh, from your home folder."
+msgstr "{name}, {address}, {port}, {user}, {group}, {folder} y {type} son los valores del host, cada uno entrecomillado para el shell. {password} es su contraseña, que se entrega al comando como GCM_PASSWORD en su entorno, nunca en una línea de comandos. Se ejecuta mediante sh, desde su carpeta personal."
+
+msgid "A command host needs a command, on its Command line tab."
+msgstr "Un host de tipo comando necesita un comando en su pestaña Línea de comandos."
+
+msgid "Move to New Window"
+msgstr "Mover a una ventana nueva"
+
+msgid "Move to Main Window"
+msgstr "Mover a la ventana principal"
+
+msgid "Window {}"
+msgstr "Ventana {}"
+
+msgid "Open in File Manager"
+msgstr "Abrir en el administrador de archivos"
+
+msgid "Mount with SSHFS"
+msgstr "Montar con SSHFS"
+
+msgid "Unmount SSHFS"
+msgstr "Desmontar SSHFS"
+
+msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin, or mount the host with SSHFS."
+msgstr "No se encontró ningún administrador de archivos para abrir {}. Instale uno, como Archivos (nautilus), Nemo, Thunar o Dolphin, o monte el host con SSHFS."
+
+msgid "Something else is mounted at {}: {}"
+msgstr "Hay algo más montado en {}: {}"
+
+msgid "Mounting a host needs sshfs, which is not installed."
+msgstr "Para montar un host se necesita sshfs, que no está instalado."
+
+msgid "Could not mount {} at {}: {}"
+msgstr "No se pudo montar {} en {}: {}"
+
+msgid "Mounted {} at {}."
+msgstr "Se montó {} en {}."
+
+msgid "Unmounted {} from {}."
+msgstr "Se desmontó {} de {}."
+
+msgid "Unmounting needs fusermount, which is not installed."
+msgstr "Para desmontar se necesita fusermount, que no está instalado."
+
+msgid "Could not unmount {}: {}"
+msgstr "No se pudo desmontar {}: {}"
+
+msgid "{} is mounted at {} already."
+msgstr "{} ya está montado en {}."
+
+msgid "{} is not mounted at {}."
+msgstr "{} no está montado en {}."
+
+msgid "its user begins with -, which ssh would read as an option."
+msgstr "su usuario comienza con -, que ssh leería como una opción."
+
+msgid "Mounted"
+msgstr "Montados"
+
+msgid "Unmount All"
+msgstr "Desmontar todo"
+
+msgid "Unmount {} from {}"
+msgstr "Desmontar {} de {}"
+
+msgid "Nothing is mounted"
+msgstr "No hay nada montado"
+
+msgid "Mounted at {}"
+msgstr "Montado en {}"
+
+msgid "Servers"
+msgstr "Servidores"
+
+msgid "Mounted ({})"
+msgstr "Montados ({})"
+
+msgid "Open Folder"
+msgstr "Abrir carpeta"
+
+msgid "Open over SFTP"
+msgstr "Abrir por SFTP"
+
+msgid "Unmount"
+msgstr "Desmontar"
+
+msgid "No file manager was found to open {}. Install one, such as Files (nautilus), Nemo, Thunar or Dolphin."
+msgstr "No se encontró ningún administrador de archivos para abrir {}. Instale uno, como Archivos (nautilus), Nemo, Thunar o Dolphin."
+
+msgid "SSH"
+msgstr "SSH"
+
+msgid "Terminal"
+msgstr "Terminal"
+
+msgid "RDP"
+msgstr "RDP"
+
+msgid "Display"
+msgstr "Pantalla"
+
+msgid "In a window"
+msgstr "En una ventana"
+
+msgid "Full screen"
+msgstr "Pantalla completa"
+
+msgid "Full screen on all monitors"
+msgstr "Pantalla completa en todos los monitores"
+
+msgid "Resize with the window"
+msgstr "Redimensionar con la ventana"
+
+msgid "Size"
+msgstr "Tamaño"
+
+msgid "Desktop scale"
+msgstr "Escala del escritorio"
+
+msgid "Size is a width and height, such as 1920x1080, or a share of the screen, such as 80%, and applies in a window. Desktop scale draws the remote desktop's text and icons larger, as a percentage from 100 to 500. Left empty, FreeRDP and the server choose."
+msgstr "El tamaño es un ancho y un alto, como 1920x1080, o un porcentaje de la pantalla, como 80%, y se aplica en una ventana. La escala del escritorio hace que el texto y los iconos del escritorio remoto se vean más grandes; se expresa como un porcentaje entre 100 y 500. Si se deja vacío, FreeRDP y el servidor eligen."
+
+msgid "The size is a width and height from 200 to 32766, such as 1920x1080, or a share of the screen from 1% to 100%, such as 80%."
+msgstr "El tamaño es un ancho y un alto de 200 a 32766, como 1920x1080, o un porcentaje de la pantalla de 1% a 100%, como 80%."
+
+msgid "The desktop scale is a percentage from 100 to 500, such as 150."
+msgstr "La escala del escritorio es un porcentaje de 100 a 500, como 150."
+
+msgid "RDP client"
+msgstr "Cliente RDP"
+
+msgid "FreeRDP"
+msgstr "FreeRDP"
+
+msgid "Windows Remote Desktop"
+msgstr "Escritorio remoto de Windows"
+
+msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
+msgstr "Escritorio remoto de Windows pide la contraseña por sí mismo y usa la opción Pantalla de un host y un tamaño en píxeles. Sus propios ajustes deciden el resto."
+
+msgid "GCM {new} is available. You are running {current}."
+msgstr "GCM {new} está disponible. Está usando la versión {current}."
+
+msgid "How to install it: {url}"
+msgstr "Cómo instalarlo: {url}"
+
+msgid "Some hosts had the name of another host in their folder, so GCM renamed them."
+msgstr "Algunos hosts tenían el mismo nombre que otro host de su carpeta, así que GCM les cambió el nombre."
+
+msgid "A renamed host's session logs go in a folder of its new name from now on. To give it another name, edit the host."
+msgstr "Los registros de sesión de un host renombrado se guardan desde ahora en una carpeta con su nuevo nombre. Para darle otro nombre, edite el host."
+
+msgid "Tab name"
+msgstr "Nombre de la pestaña"
+
+msgid "What a host's tab is called. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's, {folder} being the folder it is in and {group} the whole path. Anything else is kept as written."
+msgstr "El nombre de la pestaña de un host. {name}, {address}, {port}, {user}, {group}, {folder} y {type} son los valores del host; {folder} es la carpeta en la que está y {group} la ruta completa. Cualquier otro texto se deja tal como está escrito."
+
+msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
+msgstr "El nombre de las pestañas de este host, que se usa tal cual, sin carpetas delante. {name}, {address}, {port}, {user}, {group}, {folder} y {type} son los valores del host. Si se deja vacío, las nombra el ajuste Nombre de la pestaña de Preferencias."
+
+msgid "Tab color"
+msgstr "Color de la pestaña"
+
+msgid "A stripe of this color across the top of the host's tabs. Unticked, the tabs take the color of the nearest folder above the host that has one, which a folder's menu gives it with Tab Color."
+msgstr "Una franja de este color a lo largo de la parte superior de las pestañas del host. Sin marcar, las pestañas toman el color de la carpeta más cercana por encima del host que tenga uno, color que se asigna a una carpeta con «Color de la pestaña» en su menú."
+
+msgid "Select the tab color"
+msgstr "Seleccione el color de la pestaña"
+
+msgid "Tab Color"
+msgstr "Color de la pestaña"
+
+msgid "No Color"
+msgstr "Sin color"
+
+msgid "In its tab"
+msgstr "En su pestaña"
+
+msgid "Windows Remote Desktop shows the desktop in a window of its own."
+msgstr "Escritorio remoto de Windows muestra el escritorio en una ventana propia."
+
+msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
+msgstr "GCM no se está ejecutando en X11, así que FreeRDP muestra el escritorio en una ventana propia."

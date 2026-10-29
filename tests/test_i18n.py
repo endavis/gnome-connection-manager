@@ -627,6 +627,10 @@ def model_labels(model, found):
 LABELLED = (Gtk.Button, Gtk.MenuItem, Gtk.Expander, Gtk.Frame, Gtk.ToolButton)
 
 def texts(widget, found):
+    # A stock button's text is GTK's, from its own catalog, which a machine without GTK's Spanish
+    # draws in English: Add and Delete here, measured (#391). Not a text of GCM's to translate.
+    if isinstance(widget, Gtk.Button) and widget.props.use_stock:
+        return found
     if isinstance(widget, Gtk.Window) and widget.get_title():
         found.add(widget.get_title())
     if isinstance(widget, Gtk.Label):
@@ -736,3 +740,211 @@ def test_gcm_shows_english_where_it_reads_no_catalog(lang, language):
     assert {"Add", "Edit", "Remove", "Add new host"} <= set(windows["Gnome Connection Manager"])
     assert {"Word separator", "Buffer size", "Logs path"} <= set(windows["Preferences"])
     assert {"Name", "Port", "Private key"} <= set(windows["Edit Host"])
+
+
+# -- the Spanish catalog (#391) --
+
+ES_PO = PO_DIR / "es_ES.po"
+# The messages whose Spanish is the English text, bar case and the access key's place: names
+# of programs and protocols, and words the two languages spell alike. `H_osts` is `_Hosts`
+# here, the word being the same. A translation that reads as its msgid and is not listed was
+# left in English, which passes every check above and shows English to a Spanish reader.
+SAME_IN_SPANISH = frozenset(
+    {
+        "FreeRDP",
+        "General",
+        "Gnome Connection Manager",
+        "H_osts",
+        "Host",
+        "Local",
+        "RDP",
+        "SSH",
+        "TERM",
+        "Terminal",
+        "_Terminal",
+    }
+)
+
+
+def left_in_english(msgid: str, msgstr: str) -> bool:
+    """Whether a translation is its msgid: the same words, bar case and the access key."""
+    return without_access_key(msgstr).casefold() == without_access_key(msgid).casefold()
+
+
+@pytest.mark.parametrize(
+    ("msgid", "msgstr", "left"),
+    [
+        pytest.param("Cancel", "Cancel", True, id="same"),
+        pytest.param("Keep-Alive", "Keep-alive", True, id="case"),
+        pytest.param("_Edit", "E_dit", True, id="access-key"),
+        pytest.param("Cancel", "Cancelar", False, id="translated"),
+        pytest.param("Copy", "Copiar", False, id="translated-2"),
+    ],
+)
+def test_a_translation_left_as_the_english_is_caught(msgid: str, msgstr: str, left: bool) -> None:
+    assert left_in_english(msgid, msgstr) is left
+
+
+def test_no_spanish_message_is_left_in_english() -> None:
+    """The other checks pass a `msgstr` that is its own msgid, and GCM shows English there."""
+    entries = catalog_entries(ES_PO)
+    left = sorted(
+        msgid
+        for msgid, msgstr in entries.items()
+        if msgid and msgstr and msgid not in _NOT_A_TRANSLATION
+        if left_in_english(msgid, msgstr) and msgid not in SAME_IN_SPANISH
+    )
+
+    assert not left, f"es_ES.po leaves these in English: {[m[:50] for m in left]}"
+
+
+def test_the_list_of_messages_spelled_alike_in_spanish_is_true() -> None:
+    """So a message since translated is taken off the list, not excused for ever."""
+    entries = catalog_entries(ES_PO)
+    used = translatable_strings() | glade_strings()
+    stale = sorted(
+        msgid
+        for msgid in SAME_IN_SPANISH
+        if msgid not in used or not left_in_english(msgid, entries.get(msgid, ""))
+    )
+
+    assert not stale, f"these are translated, or no longer used: {stale}"
+
+
+# Questions the code finishes with a `?` of its own, after a name: "{} [{}]?". Their Spanish
+# opens the question, and the code closes it.
+ASKED_WITH_A_MARK_ADDED = (
+    "Delete folder",
+    "Do you really want to remove all hosts in group",
+    "Do you really want to remove host",
+)
+
+
+def unopened_question(msgid: str, msgstr: str) -> bool:
+    """Whether a Spanish question lacks its `¿`: a msgid that ends in `?`, or one the code
+    puts a `?` after. A `?` elsewhere, as in `Ctrl+?` or `{?Label}`, is no question."""
+    if msgid in ASKED_WITH_A_MARK_ADDED:
+        return not msgstr.startswith("¿")
+    return msgid.endswith("?") and "¿" not in msgstr
+
+
+@pytest.mark.parametrize(
+    ("msgid", "msgstr", "unopened"),
+    [
+        pytest.param("Paste {lines} lines?", "¿Pegar {lines} líneas?", False, id="opened"),
+        pytest.param("Paste {lines} lines?", "Pegar {lines} líneas?", True, id="not-opened"),
+        pytest.param("open consoles, exit anyway?", "consolas, ¿salir?", False, id="mid-sentence"),
+        pytest.param(
+            "Do you really want to remove host", "¿Eliminar el host", False, id="code-adds-the-mark"
+        ),
+        pytest.param(
+            "Do you really want to remove host", "Eliminar el host", True, id="code-adds-not-opened"
+        ),
+        pytest.param(
+            "ASCII Delete \t[Ctrl+? 0x7F]",
+            "ASCII Supr. \t[Ctrl+? 0x7F]",
+            False,
+            id="not-a-question",
+        ),
+    ],
+)
+def test_an_unopened_question_is_caught(msgid: str, msgstr: str, unopened: bool) -> None:
+    assert unopened_question(msgid, msgstr) is unopened
+
+
+def test_every_spanish_question_opens_with_an_inverted_mark() -> None:
+    """The old text asked five questions without one (#391)."""
+    unopened = sorted(
+        msgid[:50]
+        for msgid, msgstr in catalog_entries(ES_PO).items()
+        if msgstr and unopened_question(msgid, msgstr)
+    )
+
+    assert not unopened, f"es_ES.po asks these without ¿: {unopened}"
+
+
+# -- GCM shows Spanish where it reads the catalog (#391) --
+
+
+def build_private_locale(name: str, folder: Path) -> bool:
+    """Build the locale `name`, `es_CL.UTF-8`, in `folder`, for glibc to find through LOCPATH.
+
+    Measured: `localedef --no-archive -i es_CL -f UTF-8 -c <folder>/es_CL.UTF-8` needs no
+    root and takes under a second, where the locale's source is installed (`locales`).
+    """
+    source, _, charset = name.partition(".")
+    subprocess.run(
+        ["localedef", "--no-archive", "-i", source, "-f", charset, "-c", str(folder / name)],
+        capture_output=True,
+        check=False,
+    )
+    return (folder / name).is_dir()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for real windows",
+)
+@pytest.mark.parametrize(
+    ("lang", "language"),
+    [
+        pytest.param("en_US.UTF-8", "es", id="en_US.UTF-8-LANGUAGE=es"),
+        pytest.param("es_CL.UTF-8", "", id="es_CL.UTF-8"),
+    ],
+)
+def test_gcm_shows_spanish_where_it_reads_the_catalog(lang, language, tmp_path):
+    """The main window, Preferences and the host dialog draw the Spanish catalog, in the
+    Python messages and in the glade file's texts alike (#391).
+
+    `en_US.UTF-8` with `LANGUAGE=es` is the stand-in #359 measured; `es_CL.UTF-8` is a real
+    Spanish locale, the original author's, which has no catalog of its own and so reads `es`.
+    Under `C.UTF-8` glibc ignores LANGUAGE, which is why neither case uses it.
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _SCRUBBED | {"LOCPATH"} and not key.startswith("LC_")
+    }
+    # Both locales are built in the test's folder, so that no case needs one generated on the
+    # machine: a developer's may lack either, and CI turns a skip into a failure.
+    if not build_private_locale(lang, tmp_path):
+        pytest.skip(f"localedef cannot build {lang} here")
+    environment["LOCPATH"] = str(tmp_path)
+    environment["LANG"] = lang
+    if language:
+        environment["LANGUAGE"] = language
+
+    result = subprocess.run(
+        [sys.executable, "-c", _ENGLISH_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        env=environment,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert glib_complaints(result.stderr) == [], result.stderr[-2000:]
+    shown = json.loads(result.stdout.strip().splitlines()[-1])
+    assert shown["locale_ok"], f"{lang} could not be set"
+    entries = catalog_entries(ES_PO)
+    windows = shown["windows"]
+    drawn = {text for texts in windows.values() for text in texts} | set(shown["menus"])
+
+    # The texts that are still an English msgid: untranslated, or hard-coded in English.
+    english = {without_access_key(m) for m in translatable_strings() | glade_strings()}
+    excused = {without_access_key(m) for m in SAME_IN_SPANISH}
+    left = sorted(t for t in drawn if without_access_key(t) in english - excused)
+    assert not left, f"{lang}: these are still English: {left}"
+    # Spanish, not merely not English: one title and one label from each half.
+    assert {"Gnome Connection Manager", entries["Preferences"], entries["Edit Host"]} <= set(
+        windows
+    )
+    assert {entries[m] for m in ("Add", "Edit", "Remove")} <= set(
+        windows["Gnome Connection Manager"]
+    )
+    assert {entries[m] for m in ("Word separator", "Buffer size", "Logs path")} <= set(
+        windows[entries["Preferences"]]
+    )
