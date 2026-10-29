@@ -1577,7 +1577,7 @@ msgid "_Help"
 msgstr "_Help"
 
 msgid "_Hosts"
-msgstr "_Hosts"
+msgstr "H_osts"
 
 msgid "_Preferences"
 msgstr "_Preferences"

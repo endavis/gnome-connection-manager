@@ -433,11 +433,13 @@ def test_every_label_with_an_access_key_is_in_a_listed_menu():
     assert keyed == listed
 
 
-@pytest.mark.parametrize(
-    "po", [po for po in CATALOGS if po.name != EN_PO.name], ids=lambda po: po.stem
-)
+@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
 def test_each_menu_gives_its_labels_keys_of_their_own(po):
-    """Not English, the source, which gives _Hosts and _Help the same key."""
+    """Two labels in one menu with one key open their menus by turns (#382).
+
+    Measured with real input, Alt+H opened Hosts and Help alternately while English gave
+    both H.
+    """
     entries = catalog_entries(po)
     for menu, labels in MENUS.items():
         keys = {label: access_key(entries.get(label) or label) for label in labels}

@@ -124,6 +124,9 @@ the git log.
   guides say **Preferences**. In French, Italian, Korean, Polish, Brazilian Portuguese and
   Russian they named it otherwise than the menu items too. The window and the button now
   say **Preferences**, in each language as its menu items do.
+- In English, the menu bar's **Hosts** and **Help** shared the access key H, so `Alt+H`
+  opened one and then the other by turns. **Hosts** is now `H_osts`, with O for its access
+  key as in German and Korean, so `Alt+O` opens it and `Alt+H` opens **Help**.
 
 ## [2.1.1] - 2026-10-24
 
