@@ -433,8 +433,9 @@ Opened by right-click, or by Ctrl+right-click while right-click pastes (the defa
 ## 10. Internationalization
 
 ### Supported Locales
-- English (en_US)
+- English (the source language, with no catalog)
 - German (de_DE)
+- Spanish (es_ES)
 - French (fr_FR)
 - Italian (it_IT)
 - Korean (ko_KO)

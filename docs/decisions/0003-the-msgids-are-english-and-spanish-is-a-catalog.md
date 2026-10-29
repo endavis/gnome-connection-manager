@@ -85,8 +85,12 @@ msgid either way.
 - No msgid may be Spanish, and `test_no_message_is_spanish` keeps that. It is a heuristic:
   accents, function words and the words the old msgids used. A Spanish word it does not know
   passes, so a review is the rest of it.
-- A Spanish user sees English until the Spanish catalog (#391) is in. It is to merge before
-  the next release.
+- A Spanish user reads `lang/es_ES.po` (#391). Of its messages, 159 are the original
+  author's Spanish from the old msgids, corrected, and 180 were written for it. Its
+  language `es` serves `es_ES`, `es_MX` and `es_CL` alike, which was measured, so no code
+  names a Spanish locale. `test_gcm_shows_spanish_where_it_reads_the_catalog` starts GCM
+  under `en_US.UTF-8` with `LANGUAGE=es` and under `es_CL.UTF-8`, and reads what the same
+  windows draw.
 - Seven catalogs show every message as they did, bar the merges. The PR lists those choices
   with the check that found them.
 
