@@ -212,6 +212,13 @@ Configuration is in `pyproject.toml`.
 - Use snake_case for Python functions
 - Type hints are encouraged but optional during migration
 
+### Messages and translations
+
+Write a message in English: the text in `_("...")` and in the glade file is the msgid, and a
+locale with no catalog shows it ([ADR-0003](decisions/0003-the-msgids-are-english-and-spanish-is-a-catalog.md)).
+A new message, or one reworded, needs its entry in every `lang/*.po`, and `doit test` fails
+until each has it. `doit translate` compiles them.
+
 ## Project Configuration
 
 All configuration lives in `pyproject.toml`:

@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 import configparser
 import fnmatch
-import gettext
 import inspect
 import logging
 import re
@@ -146,22 +145,12 @@ def _options(app_module):
     }
 
 
-def _english(app_module):
-    """The compiled English catalog the application loads, as the refusal tests in
-    test_transcript.py read it, so a stale catalog fails here too."""
-    return gettext.translation(
-        app_module.domain_name,
-        localedir=Path(app_module.__file__).parents[2] / "lang",
-        languages=["en"],
-    )
-
-
 def _preference_labels(app_module):
-    """Each conf attribute Preferences has a control for, mapped to its English label."""
+    """Each conf attribute Preferences has a control for, mapped to its label: the msgid,
+    which is the English text (#390)."""
     source = inspect.getsource(app_module.Wconfig.new)
-    english = _english(app_module)
     pairs = re.findall(r'_\(\s*"([^"]+)"\s*\),\s*"conf\.(\w+)"', source)
-    return {attr: english.gettext(msgid) for msgid, attr in pairs}
+    return {attr: msgid for msgid, attr in pairs}
 
 
 def _parsed(kind, value):
@@ -317,19 +306,6 @@ def test_an_example_given_with_its_defaults_shows_the_defaults(app_module):
                 assert _parsed(kind, value) == default, f"{heading}: {key} defaults to {default}"
                 checked += 1
     assert checked, "no example is given with its defaults; drop this test or the phrase"
-
-
-def test_the_guide_gives_labels_as_english_draws_them(app_module):
-    """The guide named the View buffer item by its Spanish msgid, "Ver buffer" (#172). A
-    bold phrase that is a msgid with a different English translation is the source
-    string, not what an English reader sees."""
-    english = _english(app_module)
-    source_strings = []
-    for phrase in re.findall(r"\*\*(.+?)\*\*", DOC.read_text(), re.S):
-        for part in re.split(r"\s*→\s*", " ".join(phrase.split())):
-            if english.gettext(part) != part:
-                source_strings.append(f"{part!r} is drawn as {english.gettext(part)!r}")
-    assert not source_strings, source_strings
 
 
 # How the guide spells each modifier the handler could test for.

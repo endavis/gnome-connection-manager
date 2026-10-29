@@ -1,20 +1,28 @@
-"""Every user-visible string must have a catalog entry.
+"""Every user-visible string is English, and has an entry in every catalog.
 
-The msgids in this project are Spanish, so a string with no entry does not fall back
-to English -- it shows Spanish to everyone. That is how the buffer viewer shipped with
-untranslated buttons, and how 80 other strings had drifted before it.
+The msgids are English (ADR-0003, #390), so a locale GCM has no catalog for -- `C`,
+`C.UTF-8`, a language it lacks -- shows them as they are, in the Python messages and in the
+glade file's texts alike. That holds only while no msgid is Spanish, which is what
+`test_no_message_is_spanish` keeps. A message with no entry in a catalog shows in English
+there, and is untranslated: that is what the other tests here keep out.
 """
 
 from __future__ import annotations
 
 import ast
 import gettext
+import json
+import os
 import re
 import string
+import subprocess
+import sys
 from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
+
+from tests.test_connections import glib_complaints
 
 REPO = Path(__file__).resolve().parents[1]
 APP = REPO / "src" / "gnome_connection_manager" / "app.py"
@@ -22,27 +30,51 @@ APP = REPO / "src" / "gnome_connection_manager" / "app.py"
 # N_ where it is defined, and app.py translates them where it shows them (#228).
 SOURCES = (APP, REPO / "src" / "gnome_connection_manager" / "utils" / "connections.py")
 PO_DIR = REPO / "lang"
-EN_PO = PO_DIR / "en_US.po"
-EN_MO = PO_DIR / "en" / "LC_MESSAGES" / "gcm-lang.mo"
 
 # A literal in either quote. Five messages sit in single quotes inside f-strings, such as
-# f"{_('Archivo invalido')}: {e}", and a pattern that took double quotes alone never saw
+# f"{_('Invalid file')}: {e}", and a pattern that took double quotes alone never saw
 # them: measured, it found 265 messages where an AST walk of the sources finds 270 (#359).
 _GETTEXT_CALL = re.compile(r"""_\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*\)""")
 
-# Whether a msgid is Spanish, and so needs an English translation before it is shown
-# to an English user. Accents alone do not answer that: "Permitir que las aplicaciones
-# escriban en el portapapeles (OSC 52)" carries none, so it reached the preferences
-# dialog untranslated with these checks passing (#90). The glade half of this file had
-# already learned the same lesson on "para historial" and "Ingrese el texto...".
-#
-# Function words settle it, but only ones that are not also ordinary English: `no`,
+# Whether a msgid is Spanish. The msgids were Spanish until #390, and a Spanish one shows
+# to everyone whose locale has no catalog, `C` and `C.UTF-8` among them. Accents alone do
+# not answer that: "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"
+# carried none, so it reached the preferences dialog untranslated with these checks passing
+# (#90). Function words settle it, but only ones that are not also ordinary English: `no`,
 # `con`, `sin`, `de`, `un` and `al` all appear in English UI text, and including `no`
-# flagged "No open consoles". Measured over the strings in app.py, the list below
-# leaves all 38 translated Spanish msgids alone and still catches the one from #90.
+# flagged "No open consoles".
+#
+# That caught fewer than half of the Spanish msgids #390 replaced: "Agregar", "Puerto Local"
+# and "Siempre" carry no accent and no function word. The longer list is the words of those
+# msgids that no English msgid uses, of four letters or more and not English words
+# themselves (`active`, `anterior`, `central`, `final`, `mouse` and `todo` are), and with it
+# all but two were caught: "Hay" and "Ver buffer", made of shorter words. A Spanish word in
+# neither list still passes, so review is the rest of this guard.
 _SPANISH = re.compile(
     r"[áéíóúñü¿¡]"
-    r"|\b(el|los|las|una|del|para|por|que|su|desde|hasta|todos|esta|este)\b",
+    r"|\b(el|los|las|una|del|para|por|que|su|desde|hasta|todos|esta|este"
+    r"|abiertas|abra|abrir|acción|activar|actualizaciones|actualizar|agente|agregar"
+    r"|alternas|ancho|anexar|aplicaciones|archivo|asignado|atajo|atajos|atencion|atención"
+    r"|autenticación|blanco|botón|buscar|campana|campos|cerrar|clave|clonar|colores"
+    r"|comando|comandos|como|compresión|comprobar|conectar|configuracion|confirma"
+    r"|confirmar|consola|consolas|contiene|continuar|contraer|copiar|crear|crudo|cuando"
+    r"|debe|defecto|dejar|derecho|desactiva|descripcion|descripción|desea|deshabilitar"
+    r"|detiene|dinámica|dinámico|direccion|donar|duplicar|editar|eliminar|entrada|enviar"
+    r"|errores|escriban|escritura|existe|existente|expandir|exportar|fijo|fondo"
+    r"|formato|franjas|fuente|grabación|grabar|grupo|guardar|habilitar|historial"
+    r"|horizontalmente|importar|incluye|ingresar|ingrese|iniciar|inicio|intervalo"
+    r"|introducir|invalida|invalido|invertir|limpiar|lista|llegar|línea|líneas|marcar"
+    r"|milisegundos|mismo|mostrar|nivel|nombre|notificar|nueva|nuevo|nunca|obligatorios"
+    r"|ocultar|opciones|palabras|pantalla|paquetes|parámetros|pasar|pegar|permitir"
+    r"|pestaña|portapapeles|predefinidos|preferencias|primer|privada|programa|propiedades"
+    r"|puede|puerto|puertos|quitar|recibir|reconectar|reconstruyendo|redirección|redirigir"
+    r"|registro|reiniciar|remoto|renombrar|requiere|ruta|salida|salir|salto|secuencias"
+    r"|segundos|seleccionado|seleccionar|seleccione|selección|separador|separar|sequencias"
+    r"|servidor|servidores|sesion|sesión|siempre|sobreescribirá|subgrupos|sólo|tamaño"
+    r"|teclas|termina|texto|tiempo|tiene|tipo|todas|todavía|transcripción"
+    r"|transparencia|título|túnel|unir|usar|usuario|utilizar|varios|ventana|verticalmente"
+    r"|último"
+    r")\b",
     re.I,
 )
 _MSGID = re.compile(r'^msgid "(.*)"$', re.M)
@@ -122,8 +154,8 @@ def test_a_message_is_read_as_python_reads_it():
 
 def test_a_single_quoted_message_is_found():
     """As inside an f-string, where the other quote is taken."""
-    source = """f"{_('Hay')} {count} {_('consolas abiertas, confirma que desea salir?')}" _('')"""
-    assert gettext_calls(source) == {"Hay", "consolas abiertas, confirma que desea salir?"}
+    source = """f"{_('There are')} {count} {_('open consoles, exit anyway?')}" _('')"""
+    assert gettext_calls(source) == {"There are", "open consoles, exit anyway?"}
 
 
 def test_a_message_with_an_escape_matches_its_catalog_entry(tmp_path):
@@ -133,17 +165,58 @@ def test_a_message_with_an_escape_matches_its_catalog_entry(tmp_path):
     assert gettext_calls(r'_("one\ntwo")') <= catalog_msgids(po)
 
 
-def test_every_string_has_an_english_translation():
-    catalog = gettext.GNUTranslations(EN_MO.open("rb"))
+def spanish_marks(msgid):
+    """What marks a msgid as Spanish: its accents, its function words and its words."""
+    return [match.group(0) for match in _SPANISH.finditer(msgid)]
 
-    untranslated = sorted(
-        s for s in translatable_strings() if catalog.gettext(s) == s and _SPANISH.search(s)
-    )
 
-    assert not untranslated, (
-        "these show Spanish text to an English user; add them to lang/en_US.po "
-        f"and rebuild: {untranslated}"
-    )
+def test_no_message_is_spanish():
+    """A Spanish msgid shows as it is wherever GCM reads no catalog (#390).
+
+    Under `C` or `C.UTF-8`, with no locale set, and in a language GCM has no catalog for,
+    both Python's gettext and glibc, which translates the glade file's texts, give back
+    the msgid. So a msgid is the text everyone with no catalog reads, and it is English.
+    """
+    spanish = {
+        msgid: spanish_marks(msgid)
+        for msgid in sorted(translatable_strings() | glade_strings())
+        if spanish_marks(msgid)
+    }
+
+    assert not spanish, f"these msgids are Spanish; write them in English: {spanish}"
+
+
+@pytest.mark.parametrize(
+    "msgid",
+    [
+        "Agregar",
+        "Puerto Local",
+        "Ruta de logs",
+        "Copiar y Pegar",
+        "Siempre",
+        "Configuración",
+        "Permitir que las aplicaciones escriban en el portapapeles (OSC 52)",
+    ],
+)
+def test_a_spanish_message_is_caught(msgid):
+    """Guards the guard: the first four carry no accent and no function word."""
+    assert spanish_marks(msgid)
+
+
+@pytest.mark.parametrize(
+    "msgid",
+    [
+        "Add",
+        "Local Port",
+        "Logs path",
+        "Copy and Paste",
+        "Always",
+        "No open consoles",
+        "Let applications write to the clipboard (OSC 52)",
+    ],
+)
+def test_an_english_message_is_not_caught(msgid):
+    assert not spanish_marks(msgid)
 
 
 def test_every_string_appears_in_every_catalog():
@@ -156,47 +229,6 @@ def test_every_string_appears_in_every_catalog():
             missing[po.name] = sorted(absent)[:5]
 
     assert not missing, f"msgids missing from catalogs: {missing}"
-
-
-def assert_mo_matches_po(strings, label):
-    """Every translation the .po states must be the one the .mo returns.
-
-    Checking `gettext(s)` for truthiness does not work: gettext returns the msgid when
-    there is no entry, so a missing translation looks like a present one. Both staleness
-    checks here were vacuous until this compared the two files directly.
-    """
-    catalog = gettext.GNUTranslations(EN_MO.open("rb"))
-    entries = catalog_entries(EN_PO)
-
-    stale = sorted(s for s in strings if entries.get(s) and catalog.gettext(s) != entries[s])
-
-    assert not stale, (
-        f"lang/en/LC_MESSAGES/gcm-lang.mo is behind lang/en_US.po for {label}: "
-        f"{[x[:60] for x in stale]}"
-    )
-
-
-def test_the_compiled_catalog_is_not_stale():
-    """.mo is what the application loads; editing .po alone changes nothing at runtime."""
-    assert_mo_matches_po(translatable_strings(), "source strings")
-
-
-@pytest.mark.parametrize(
-    ("msgid", "expected"),
-    [
-        ("Copiar selección", "Copy selection"),
-        ("Actualizar", "Refresh"),
-        ("Cerrar", "Close"),
-        ("Buscar", "Search"),
-        ("Ver buffer", "View buffer"),
-        ("Consola", "Console"),
-    ],
-)
-def test_buffer_viewer_strings_are_translated(msgid, expected):
-    """The reported bug: these rendered as Spanish in an English UI."""
-    catalog = gettext.GNUTranslations(EN_MO.open("rb"))
-
-    assert catalog.gettext(msgid) == expected
 
 
 def catalog_entries(po):
@@ -218,17 +250,6 @@ def catalog_entries(po):
     if msgid is not None:
         entries[msgid] = msgstr
     return entries
-
-
-def test_the_english_source_catalog_has_no_blank_translations():
-    """The .mo is what loads, so a blanked .po hides until the next rebuild."""
-    entries = catalog_entries(EN_PO)
-
-    blank = sorted(
-        s for s in translatable_strings() if _SPANISH.search(s) and not entries.get(s, "")
-    )
-
-    assert not blank, f"lang/en_US.po has no translation for: {blank}"
 
 
 # -- the glade file carries half the UI text (#80) ---------------------------
@@ -279,22 +300,6 @@ def test_glade_string_extraction_finds_a_realistic_number():
     assert len(glade_strings()) > 50
 
 
-def test_every_glade_string_has_an_english_translation():
-    """Four of these rendered as Spanish because nothing checked the glade file.
-
-    Compared against the catalog rather than guessed at by language: the first attempt
-    used an accent heuristic and missed all four, because "para historial" and
-    "Ingrese el texto..." contain no accented characters.
-    """
-    catalog = catalog_entries(EN_PO)
-
-    untranslated = sorted(s for s in glade_strings() if not catalog.get(s))
-
-    assert not untranslated, (
-        f"glade strings with no English translation: {[s[:60] for s in untranslated]}"
-    )
-
-
 def test_every_glade_string_appears_in_every_catalog():
     strings = glade_strings()
     missing = {}
@@ -304,11 +309,6 @@ def test_every_glade_string_appears_in_every_catalog():
             missing[po.name] = sorted(s[:50] for s in absent)[:5]
 
     assert not missing, f"glade msgids missing from catalogs: {missing}"
-
-
-def test_the_compiled_catalog_covers_the_glade_strings():
-    """The .mo is what GtkBuilder reads; editing .po alone changes nothing at runtime."""
-    assert_mo_matches_po(glade_strings(), "glade strings")
 
 
 # -- every catalog translates every message, keeping what the code relies on (#359) --
@@ -326,9 +326,9 @@ def compiled(po):
 
 @pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
 def test_every_message_is_translated_in_every_catalog(po):
-    """A message a catalog leaves untranslated shows in English, or in Spanish.
+    """A message a catalog leaves untranslated shows in English there.
 
-    Each of the seven other catalogs left about 200 so, until #359 translated them, and a
+    Each of the seven catalogs left about 200 so, until #359 translated them, and a
     message added since has to come with its translations.
     """
     entries = catalog_entries(po)
@@ -384,7 +384,7 @@ def test_a_faithful_translation_passes():
     assert (
         form_problems("Could not mount {} at {}: {}", "Не удалось смонтировать {} в {}: {}") == []
     )
-    assert form_problems("_Hosts", "H_osts") == []
+    assert form_problems("_Help", "H_ilfe") == []
 
 
 @pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
@@ -407,10 +407,10 @@ def test_every_translation_keeps_what_the_code_relies_on(po):
 
 # The labels that carry an access key, by the menu each is in: _build_menus gives the menu
 # bar its submenus and the application menu its three items, and install_menubar adds
-# _Hosts before Help. Two labels in one menu with one key are reached only by pressing it
+# H_osts before Help. Two labels in one menu with one key are reached only by pressing it
 # again, so each translation gives each label a key of its own (#359).
 MENUS = {
-    "menu bar": ("_File", "_Edit", "_View", "_Terminal", "_Servers", "_Hosts", "_Help"),
+    "menu bar": ("_File", "_Edit", "_View", "_Terminal", "_Servers", "H_osts", "_Help"),
     "application menu": ("_Preferences", "_About", "_Quit"),
 }
 # Names that hold an underscore and are no access key, kept as written in every catalog.
@@ -433,26 +433,32 @@ def test_every_label_with_an_access_key_is_in_a_listed_menu():
     assert keyed == listed
 
 
-@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
+# English has no catalog: its labels are the msgids, so `None` stands for English here, where
+# a test is about what each language shows.
+LANGUAGES = [None, *CATALOGS]
+
+
+def language_name(po):
+    return "English" if po is None else po.name
+
+
+@pytest.mark.parametrize("po", LANGUAGES, ids=lambda po: "msgids" if po is None else po.stem)
 def test_each_menu_gives_its_labels_keys_of_their_own(po):
     """Two labels in one menu with one key open their menus by turns (#382).
 
     Measured with real input, Alt+H opened Hosts and Help alternately while English gave
-    both H.
+    both H. English is the msgids themselves, `H_osts` and `_Help`.
     """
-    entries = catalog_entries(po)
+    entries = {} if po is None else catalog_entries(po)
     for menu, labels in MENUS.items():
         keys = {label: access_key(entries.get(label) or label) for label in labels}
 
-        assert len(set(keys.values())) == len(keys), f"{po.name}, the {menu}: {keys}"
+        assert len(set(keys.values())) == len(keys), f"{language_name(po)}, the {menu}: {keys}"
 
 
 @pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
 def test_every_compiled_catalog_matches_its_source(po):
-    """GCM loads the .mo, so a .po changed and not compiled changes nothing.
-
-    Only English's was compared before, so another language's could fall behind unseen.
-    """
+    """GCM loads the .mo, so a .po changed and not compiled changes nothing."""
     with compiled(po).open("rb") as handle:
         catalog = gettext.GNUTranslations(handle)
     stale = sorted(
@@ -528,8 +534,8 @@ def test_the_texts_that_name_preferences_are_found() -> None:
     assert {prop.get("translatable") for _, prop in found} == {"yes"}
 
 
-@pytest.mark.parametrize("po", CATALOGS, ids=lambda po: po.stem)
-def test_the_preferences_window_is_named_as_its_menu_items_are(po: Path) -> None:
+@pytest.mark.parametrize("po", LANGUAGES, ids=lambda po: "msgids" if po is None else po.stem)
+def test_the_preferences_window_is_named_as_its_menu_items_are(po: Path | None) -> None:
     """The window's title and its toolbar button's tooltip say what the menu items say.
 
     Each as it reads in the catalog, the menu items without their access keys. The title
@@ -537,7 +543,7 @@ def test_the_preferences_window_is_named_as_its_menu_items_are(po: Path) -> None
     of the seven other catalogs gave otherwise than the menu items. Only German agreed
     (#383).
     """
-    entries: dict[str, str] = catalog_entries(po)
+    entries: dict[str, str] = {} if po is None else catalog_entries(po)
 
     def shown(msgid: str) -> str:
         # What gettext gives: the msgid itself, where the catalog has no translation.
@@ -546,9 +552,10 @@ def test_the_preferences_window_is_named_as_its_menu_items_are(po: Path) -> None
     menu_items = {label: without_access_key(shown(label)) for label in preferences_menu_labels()}
     named = {what: shown(prop.text or "") for what, prop in preferences_properties()}
 
-    assert len(set(menu_items.values())) == 1, f"{po.name}: its menu items differ: {menu_items}"
+    where = language_name(po)
+    assert len(set(menu_items.values())) == 1, f"{where}: its menu items differ: {menu_items}"
     assert set(named.values()) == set(menu_items.values()), (
-        f"{po.name}: the menu items say {menu_items}, but the window and its button say {named}"
+        f"{where}: the menu items say {menu_items}, but the window and its button say {named}"
     )
 
 
@@ -564,3 +571,168 @@ def test_no_catalog_keeps_an_entry_nothing_uses(po: Path) -> None:
     unused = sorted(catalog_msgids(po) - used)
 
     assert not unused, f"{po.name} keeps entries nothing uses: {[s[:60] for s in unused]}"
+
+
+# -- GCM shows English where it reads no catalog (#390) --
+
+# GCM started as it starts itself, `register` and then `activate`, with Preferences and the
+# dialog Add Host opens brought up through their actions. It prints, as JSON on its last
+# line, every text the windows draw: labels, buttons, menu items, tooltips, tab names and
+# titles. It runs in a clean interpreter, as conftest stubs gi for the whole session.
+_ENGLISH_SCRIPT = r'''
+"""Start GCM as it starts itself, open Preferences and the Add Host dialog through their
+actions, and print every text the windows draw as JSON (the last line of stdout)."""
+import json, locale, os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ.pop("XDG_CONFIG_HOME", None)
+os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+try:
+    locale.setlocale(locale.LC_ALL, "")
+    locale_ok = True
+except locale.Error:
+    locale_ok = False
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gio, Gtk
+from gnome_connection_manager import app
+
+app.conf.CHECK_UPDATES = False
+app.conf.STARTUP_LOCAL = False
+application = app.GcmApplication()
+assert application.register(None)
+application.activate()
+
+def pump(seconds=0.5):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+pump(1.0)
+application.activate_action("preferences", None)
+pump(1.0)
+application.activate_action("add-host", None)
+pump(1.0)
+
+def model_labels(model, found):
+    for i in range(model.get_n_items()):
+        label = model.get_item_attribute_value(i, "label", None)
+        if label is not None:
+            found.append(label.get_string())
+        for name in (Gio.MENU_LINK_SECTION, Gio.MENU_LINK_SUBMENU):
+            child = model.get_item_link(i, name)
+            if child is not None:
+                model_labels(child, found)
+    return found
+
+LABELLED = (Gtk.Button, Gtk.MenuItem, Gtk.Expander, Gtk.Frame, Gtk.ToolButton)
+
+def texts(widget, found):
+    if isinstance(widget, Gtk.Window) and widget.get_title():
+        found.add(widget.get_title())
+    if isinstance(widget, Gtk.Label):
+        found.add(widget.get_text())
+    elif isinstance(widget, LABELLED) and widget.get_label():
+        found.add(widget.get_label())
+    if isinstance(widget, Gtk.Entry) and widget.get_placeholder_text():
+        found.add(widget.get_placeholder_text())
+    tip = widget.get_tooltip_text()
+    if tip:
+        found.add(tip)
+    if isinstance(widget, Gtk.Notebook):
+        for i in range(widget.get_n_pages()):
+            tab = widget.get_tab_label(widget.get_nth_page(i))
+            if tab is not None:
+                texts(tab, found)
+    if isinstance(widget, Gtk.MenuItem) and widget.get_submenu() is not None:
+        texts(widget.get_submenu(), found)
+    if isinstance(widget, Gtk.Bin) and widget.get_child() is not None:
+        texts(widget.get_child(), found)
+    if isinstance(widget, Gtk.Container):
+        for child in widget.get_children():
+            texts(child, found)
+    return found
+
+windows = {}
+for window in Gtk.Window.list_toplevels():
+    if window.get_visible():
+        windows[window.get_title() or window.get_name()] = sorted(texts(window, set()))
+menus = model_labels(application.get_menubar(), [])
+print(json.dumps({"locale_ok": locale_ok, "windows": windows, "menus": sorted(set(menus))}, ensure_ascii=False))
+sys.stdout.flush()
+os._exit(0)
+'''
+
+
+_SCRUBBED = {"LANG", "LANGUAGE", "GCM_DATA_DIR", "GCM_GLADE_DIR", "GCM_SCRIPTS_DIR"}
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for real windows",
+)
+@pytest.mark.parametrize(
+    ("lang", "language"),
+    [
+        pytest.param("", "", id="no-LANG"),
+        pytest.param("C.UTF-8", "", id="C.UTF-8"),
+        pytest.param("C.UTF-8", "nl", id="C.UTF-8-LANGUAGE=nl"),
+        pytest.param("en_US.UTF-8", "", id="en_US.UTF-8"),
+        pytest.param("en_US.UTF-8", "nl", id="en_US.UTF-8-LANGUAGE=nl"),
+    ],
+)
+def test_gcm_shows_english_where_it_reads_no_catalog(lang, language):
+    """With no locale set, under `C.UTF-8` and in a language GCM has no catalog for, GCM drew
+    its Spanish msgids (#390).
+
+    Measured on 9c8504c: the main window, Preferences and the host dialog each drew many of
+    their texts so, and `LANG=en_US.UTF-8` alone drew none. Python's gettext stops at `C`,
+    and glibc, which translates the glade file's texts, ignores `LANGUAGE` while
+    `LC_MESSAGES` is `C` or `C.UTF-8`, so neither half reads a catalog there. English has no
+    catalog now, so the `en_US.UTF-8` cases are the English locale that had one before.
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    # The developer's own LANG, LANGUAGE and LC_* would decide the locale the case sets, or
+    # leaves unset. GCM_DATA_DIR, which a GCM tab's shell carries, would have the scenario
+    # read another checkout's glade file from a worktree.
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _SCRUBBED and not key.startswith("LC_")
+    }
+    if lang:
+        environment["LANG"] = lang
+    if language:
+        environment["LANGUAGE"] = language
+
+    result = subprocess.run(
+        [sys.executable, "-c", _ENGLISH_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        env=environment,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    # PyGObject prints what a signal handler raises, and carries on, so the scenario still
+    # exits 0; and the criticals GLib reported are held out as the registry scenarios hold
+    # them out. Measured on this change: all five cases print one line on stderr, "System
+    # doesn't support transparency", which is neither.
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert glib_complaints(result.stderr) == [], result.stderr[-2000:]
+    shown = json.loads(result.stdout.strip().splitlines()[-1])
+    windows = shown["windows"]
+    spanish = {
+        title: marked
+        for title, texts in windows.items()
+        if (marked := [text for text in texts if spanish_marks(text)])
+    }
+
+    where = f"LANG={lang or '<unset>'} (set: {shown['locale_ok']}) LANGUAGE={language or '<unset>'}"
+    assert not spanish, f"{where}: these are Spanish: {spanish}"
+    # English, not merely not Spanish: the texts the bug showed as Agregar, Separador de
+    # Palabras and Editar Host.
+    assert {"Gnome Connection Manager", "Preferences", "Edit Host"} <= set(windows)
+    assert {"Add", "Edit", "Remove", "Add new host"} <= set(windows["Gnome Connection Manager"])
+    assert {"Word separator", "Buffer size", "Logs path"} <= set(windows["Preferences"])
+    assert {"Name", "Port", "Private key"} <= set(windows["Edit Host"])

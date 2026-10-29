@@ -7,7 +7,6 @@ The numbers quoted here were measured by replaying real recordings -- made throu
 
 from __future__ import annotations
 
-import gettext
 import inspect
 import json
 import os
@@ -1199,12 +1198,13 @@ def test_saving_a_transcript_refuses_a_session_that_was_never_recorded(app_modul
 
 
 def refusal_and_checkbox(app_module):
-    """The refusal's msgid, and the label Preferences draws for the recording checkbox."""
+    """The refusal's msgid, and the label Preferences draws for the recording checkbox. Each
+    msgid is the English text (#390)."""
     source = inspect.getsource(app_module.Wmain.save_session_transcript)
     # \s* around the literal, matching the i18n guard in test_i18n.py: the formatter is
     # free to wrap a long msgbox call across lines, and a pattern that only matched
     # `_("...")` on one line silently stopped seeing this message when it did.
-    message = [s for s in re.findall(r'_\(\s*"([^"]+)"\s*\)', source) if "grabación" in s]
+    message = [s for s in re.findall(r'_\(\s*"([^"]+)"\s*\)', source) if "has no recording" in s]
     prefs = inspect.getsource(app_module.Wconfig.new)
     label = re.findall(r'_\(\s*"([^"]+)"\s*\),\s*"conf\.RAW_SESSION_LOG"', prefs)
     assert message, "the refusal must be a translatable string"
@@ -1225,24 +1225,9 @@ def test_the_refusal_says_what_to_do_about_it(app_module):
     message, label = refusal_and_checkbox(app_module)
 
     assert label.split(" (")[0] in message, "name the checkbox as Preferences draws it"
-    assert "Preferencias" in message, "say where it is"
+    assert "Preferences" in message, "say where it is"
     assert "gcm.conf" not in message, "an edit there while GCM runs never takes effect"
-    assert "nueva" in message, "say that it takes a new session"
-
-
-def test_the_refusal_names_the_checkbox_in_english_too(app_module):
-    """An English reader sees the translations, which have to agree with each other too.
-    Read from the compiled catalog the application loads, so a stale one fails here."""
-    message, label = refusal_and_checkbox(app_module)
-    english = gettext.translation(
-        app_module.domain_name,
-        localedir=Path(app_module.__file__).parents[2] / "lang",
-        languages=["en"],
-    )
-
-    assert english.gettext(label).split(" (")[0] in english.gettext(message)
-    assert "Preferences" in english.gettext(message)
-    assert "gcm.conf" not in english.gettext(message)
+    assert "new session" in message, "say that it takes a new session"
 
 
 def test_an_empty_recording_says_so_instead_of_doing_nothing(app_module, monkeypatch, tmp_path):
