@@ -19,6 +19,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 <!-- BEGIN:tag=gcm-dev -->
 - [ADR-0001: A stable id on every host record](decisions/0001-a-stable-id-on-every-host-record.md) - Why each saved host carries a random id, and what that makes possible
 - [ADR-0002: Folders are records, not a path string](decisions/0002-folders-are-records-not-a-path-string.md) - Why the folder tree is stored as records keyed by id, with group kept as a derived path
+- [ADR-0003: The msgids are English, and Spanish is a catalog](decisions/0003-the-msgids-are-english-and-spanish-is-a-catalog.md) - Why GCM's messages are written in English, and why that is what a locale with no catalog needs
 - [Connection Manager - Feature Specification](SPEC.md) - A statement of behaviour, written as a spec for a Qt 6 port that is not being built
 - [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
@@ -44,6 +45,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 <!-- BEGIN:audience=contributors -->
 - [ADR-0001: A stable id on every host record](decisions/0001-a-stable-id-on-every-host-record.md) - Why each saved host carries a random id, and what that makes possible
 - [ADR-0002: Folders are records, not a path string](decisions/0002-folders-are-records-not-a-path-string.md) - Why the folder tree is stored as records keyed by id, with group kept as a derived path
+- [ADR-0003: The msgids are English, and Spanish is a catalog](decisions/0003-the-msgids-are-english-and-spanish-is-a-catalog.md) - Why GCM's messages are written in English, and why that is what a locale with no catalog needs
 - [ADR-9001: Use uv for package management](decisions/9001-use-uv-for-package-management.md) - Use uv for dependency management, virtual environments and package installation
 - [ADR-9002: Use doit for task automation](decisions/9002-use-doit-for-task-automation.md) - Use doit as the task runner for testing, linting, building and other routine operations
 - [ADR-9003: Use ruff for linting and formatting](decisions/9003-use-ruff-for-linting-and-formatting.md) - Use ruff as the one tool for linting and formatting, in place of flake8, black and isort
@@ -122,6 +124,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 <!-- BEGIN:all -->
 - [ADR-0001: A stable id on every host record](decisions/0001-a-stable-id-on-every-host-record.md) - Why each saved host carries a random id, and what that makes possible
 - [ADR-0002: Folders are records, not a path string](decisions/0002-folders-are-records-not-a-path-string.md) - Why the folder tree is stored as records keyed by id, with group kept as a derived path
+- [ADR-0003: The msgids are English, and Spanish is a catalog](decisions/0003-the-msgids-are-english-and-spanish-is-a-catalog.md) - Why GCM's messages are written in English, and why that is what a locale with no catalog needs
 - [ADR-9001: Use uv for package management](decisions/9001-use-uv-for-package-management.md) - Use uv for dependency management, virtual environments and package installation
 - [ADR-9002: Use doit for task automation](decisions/9002-use-doit-for-task-automation.md) - Use doit as the task runner for testing, linting, building and other routine operations
 - [ADR-9003: Use ruff for linting and formatting](decisions/9003-use-ruff-for-linting-and-formatting.md) - Use ruff as the one tool for linting and formatting, in place of flake8, black and isort

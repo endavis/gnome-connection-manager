@@ -267,8 +267,9 @@ ignore_names = [
 # Codespell - spelling
 [tool.codespell]
 skip = "tmp,.venv,.git,*.lock,*.pyc,__pycache__,lang,*.mo,*.po,data"
-# The UI strings are Spanish, and so are the fixtures that assert on them. Each of these
-# is a correctly spelled Spanish word that happens to look like an English typo.
+# The Spanish the guard in tests/test_i18n.py names, and the comments in app.py that are
+# still Spanish. Each of these is a correctly spelled Spanish word that happens to look like
+# an English typo.
 ignore-words-list = "comando,comandos,controles,direccion,historial,requiere,ser,sesion,varios,nd,pres"
 
 # Pytest - Testing framework

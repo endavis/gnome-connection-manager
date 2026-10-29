@@ -48,10 +48,11 @@ def test_translate_produces_a_catalog_that_really_loads(lang_tree):
     """A file of the right name is not the point; gettext has to be able to read it."""
     _compile_catalogs(lang_tree)
 
-    with (lang_tree / "en/LC_MESSAGES/gcm-lang.mo").open("rb") as handle:
+    with (lang_tree / "de/LC_MESSAGES/gcm-lang.mo").open("rb") as handle:
         catalog = gettext.GNUTranslations(handle)
 
-    assert catalog.gettext("Ver buffer") == "View buffer"
+    # The msgid is English, so a catalog that read shows something else for it.
+    assert catalog.gettext("View buffer") not in ("", "View buffer")
 
 
 def test_translate_fails_rather_than_reporting_success_over_nothing(tmp_path, capsys):

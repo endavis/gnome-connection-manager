@@ -588,9 +588,7 @@ def test_deleting_a_folder_removes_its_hosts_and_every_folder_below(monkeypatch,
     assert wmain.treeModel.shape() == [("home", ["nas"]), ("ops", [])]
     assert [h.name for hs in app_module.groups.values() for h in hs] == ["nas"]
     assert asked == [
-        "{} [ops/prod]?".format(
-            app_module._("Confirma que desea eliminar todos los hosts del grupo")
-        )
+        "{} [ops/prod]?".format(app_module._("Do you really want to remove all hosts in group"))
     ]
     assert wmain.writes == 1
 

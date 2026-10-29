@@ -97,7 +97,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
                 <property name="halign">start</property>
-                <property name="label" translatable="yes">Seleccione las consolas a utilizar:</property>
+                <property name="label" translatable="yes">Select consoles to use:</property>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -177,7 +177,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                                     <property name="can-focus">False</property>
                                     <property name="xpad">0</property>
                                     <property name="ypad">0</property>
-                                    <property name="label" translatable="yes">Seleccionar todo</property>
+                                    <property name="label" translatable="yes">Select all</property>
                                     <property name="use-underline">True</property>
                                     <property name="xalign">0.5</property>
                                     <property name="yalign">0.5</property>
@@ -238,7 +238,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                                     <property name="can-focus">False</property>
                                     <property name="xpad">0</property>
                                     <property name="ypad">0</property>
-                                    <property name="label" translatable="yes">Limpiar selección</property>
+                                    <property name="label" translatable="yes">Clear selection</property>
                                     <property name="use-underline">True</property>
                                     <property name="xalign">0.5</property>
                                     <property name="yalign">0.5</property>
@@ -299,7 +299,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                                     <property name="can-focus">False</property>
                                     <property name="xpad">0</property>
                                     <property name="ypad">0</property>
-                                    <property name="label" translatable="yes">Invertir selección</property>
+                                    <property name="label" translatable="yes">Invert selection</property>
                                     <property name="use-underline">True</property>
                                     <property name="xalign">0.5</property>
                                     <property name="yalign">0.5</property>
@@ -353,7 +353,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
                 <property name="halign">start</property>
-                <property name="label" translatable="yes">Ingrese el texto a enviar a las consolas: </property>
+                <property name="label" translatable="yes">Enter text to send to hosts: </property>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -402,7 +402,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                 <property name="can-focus">False</property>
                 <property name="xpad">0</property>
                 <property name="ypad">0</property>
-                <property name="label" translatable="yes">&lt;span size="smaller"&gt;CTRL+UP/CTRL+DOWN para historial&lt;/span&gt;</property>
+                <property name="label" translatable="yes">&lt;span size="smaller"&gt;CTRL+UP/CTRL+DOWN for history&lt;/span&gt;</property>
                 <property name="use-markup">True</property>
                 <property name="xalign">0.019999999552965164</property>
                 <property name="yalign">0.5</property>
@@ -699,7 +699,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="can-focus">False</property>
                     <property name="xpad">0</property>
                     <property name="ypad">0</property>
-                    <property name="label" translatable="yes">Color del fondo:</property>
+                    <property name="label" translatable="yes">Background color:</property>
                     <property name="xalign">0</property>
                     <property name="yalign">0.5</property>
                   </object>
@@ -716,7 +716,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="can-focus">False</property>
                     <property name="xpad">0</property>
                     <property name="ypad">0</property>
-                    <property name="label" translatable="yes">Color del texto:</property>
+                    <property name="label" translatable="yes">Foreground color:</property>
                     <property name="xalign">0</property>
                     <property name="yalign">0.5</property>
                   </object>
@@ -732,7 +732,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
-                    <property name="title" translatable="yes">Seleccione el color de fondo</property>
+                    <property name="title" translatable="yes">Select background color</property>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
@@ -748,7 +748,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
-                    <property name="title" translatable="yes">Seleccione el color del texto</property>
+                    <property name="title" translatable="yes">Select foreground color</property>
                   </object>
                   <packing>
                     <property name="left-attach">1</property>
@@ -761,7 +761,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                 </child>
                 <child>
                   <object class="GtkCheckButton" id="chkDefaultColors1">
-                    <property name="label" translatable="yes">Usar colores por defecto</property>
+                    <property name="label" translatable="yes">Default colors</property>
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
@@ -778,7 +778,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                 </child>
                 <child>
                   <object class="GtkCheckButton" id="chkDefaultFont">
-                    <property name="label" translatable="yes">Usar fuente de ancho fijo por defecto</property>
+                    <property name="label" translatable="yes">Use default fixed width font</property>
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
@@ -802,7 +802,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="can-focus">False</property>
                     <property name="xpad">0</property>
                     <property name="ypad">0</property>
-                    <property name="label" translatable="yes">Fuente:</property>
+                    <property name="label" translatable="yes">Font:</property>
                     <property name="xalign">0</property>
                     <property name="yalign">0.5</property>
                   </object>
@@ -857,7 +857,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Colores</property>
+                <property name="label" translatable="yes">Colors</property>
               </object>
               <packing>
                 <property name="position">1</property>
@@ -885,7 +885,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                             <property name="can-focus">False</property>
                             <property name="xpad">0</property>
                             <property name="ypad">0</property>
-                            <property name="label" translatable="yes">Comandos Predefinidos</property>
+                            <property name="label" translatable="yes">Standard Commands</property>
                             <property name="xalign">0.5</property>
                             <property name="yalign">0.5</property>
                           </object>
@@ -924,7 +924,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Atajos</property>
+                <property name="label" translatable="yes">Shortcuts</property>
               </object>
               <packing>
                 <property name="position">2</property>
@@ -943,7 +943,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
   </object>
   <object class="GtkDialog" id="wHost">
     <property name="can-focus">False</property>
-    <property name="title" translatable="yes">Editar Host</property>
+    <property name="title" translatable="yes">Edit Host</property>
     <property name="modal">True</property>
     <property name="type-hint">dialog</property>
     <child internal-child="vbox">
@@ -1006,7 +1006,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Grupo</property>
+                    <property name="label" translatable="yes">Group</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1018,7 +1018,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Nombre</property>
+                    <property name="label" translatable="yes">Name</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1042,7 +1042,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Descripción</property>
+                    <property name="label" translatable="yes">Description</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1066,7 +1066,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Tipo</property>
+                    <property name="label" translatable="yes">Type</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1078,7 +1078,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Puerto</property>
+                    <property name="label" translatable="yes">Port</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1090,7 +1090,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Usuario</property>
+                    <property name="label" translatable="yes">User</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1113,7 +1113,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   <object class="GtkComboBoxText" id="cmbGroup">
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
-                    <property name="tooltip-text" translatable="yes">Usar formato grupo1/grupo2/grupo3 para crear subgrupos</property>
+                    <property name="tooltip-text" translatable="yes">To create subgroups use format group1/group2/group3</property>
                     <property name="margin-start">10</property>
                     <property name="hexpand">True</property>
                     <property name="has-entry">True</property>
@@ -1244,7 +1244,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   <object class="GtkEntry" id="txtPassword">
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
-                    <property name="tooltip-text" translatable="yes">Dejar en blanco para autenticación sin password/public key</property>
+                    <property name="tooltip-text" translatable="yes">Leave blank for passwordless/public key authentication</property>
                     <property name="margin-start">10</property>
                     <property name="visibility">False</property>
                     <property name="invisible-char">●</property>
@@ -1259,7 +1259,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Opciones extra</property>
+                    <property name="label" translatable="yes">Extra arguments</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1270,7 +1270,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                   <object class="GtkEntry" id="txtExtraParams">
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
-                    <property name="tooltip-text" translatable="yes">Parámetros extra a pasar a la línea de comandos</property>
+                    <property name="tooltip-text" translatable="yes">Extra arguments to pass to command line</property>
                     <property name="margin-start">10</property>
                   </object>
                   <packing>
@@ -1284,7 +1284,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Propiedades</property>
+                <property name="label" translatable="yes">Properties</property>
               </object>
               <packing>
                 <property name="tab-fill">False</property>
@@ -1302,7 +1302,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Clave Privada</property>
+                    <property name="label" translatable="yes">Private key</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1371,7 +1371,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Redirigir X11</property>
+                    <property name="label" translatable="yes">X11 Forwarding</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1383,7 +1383,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">Redirigir Agente</property>
+                    <property name="label" translatable="yes">Agent Forwarding</property>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
@@ -1392,7 +1392,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                 </child>
                 <child>
                   <object class="GtkCheckButton" id="chkCompression">
-                    <property name="label" translatable="yes">Compresión</property>
+                    <property name="label" translatable="yes">Compression</property>
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
@@ -1410,7 +1410,7 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="sensitive">False</property>
                     <property name="can-focus">True</property>
-                    <property name="tooltip-text" translatable="yes">Intervalo en segundos para enviar paquetes keep-alive</property>
+                    <property name="tooltip-text" translatable="yes">Seconds between keep-alive packets</property>
                     <property name="margin-start">10</property>
                   </object>
                   <packing>
@@ -1451,8 +1451,8 @@ Copyright © 2012 Renzo Bertuzzi L. &lt;kuthulu@gmail.com&gt; - Chile</property>
                     <property name="visible">True</property>
                     <property name="sensitive">False</property>
                     <property name="can-focus">True</property>
-                    <property name="tooltip-text" translatable="yes">Nivel de compresión: 
-blanco: por defecto
+                    <property name="tooltip-text" translatable="yes">Compression level: 
+blank: default compression
 1: min
 9: max</property>
                     <property name="margin-start">10</property>
@@ -1495,11 +1495,11 @@ blanco: por defecto
                         <property name="can-focus">False</property>
                         <child>
                           <object class="GtkCheckButton" id="chkDynamic">
-                            <property name="label" translatable="yes">Dinámico</property>
+                            <property name="label" translatable="yes">Dynamic</property>
                             <property name="visible">True</property>
                             <property name="can-focus">True</property>
                             <property name="receives-default">False</property>
-                            <property name="tooltip-text" translatable="yes">Crear redirección dinámica de puertos</property>
+                            <property name="tooltip-text" translatable="yes">Create dynamic port forwarding</property>
                             <property name="draw-indicator">True</property>
                             <signal name="toggled" handler="on_chkDynamic_toggled" swapped="no"/>
                           </object>
@@ -1513,7 +1513,7 @@ blanco: por defecto
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
                             <property name="halign">start</property>
-                            <property name="label" translatable="yes">Puerto Local</property>
+                            <property name="label" translatable="yes">Local Port</property>
                           </object>
                           <packing>
                             <property name="left-attach">0</property>
@@ -1525,7 +1525,7 @@ blanco: por defecto
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
                             <property name="halign">start</property>
-                            <property name="label" translatable="yes">Host Remoto</property>
+                            <property name="label" translatable="yes">Remote Host</property>
                           </object>
                           <packing>
                             <property name="left-attach">0</property>
@@ -1537,7 +1537,7 @@ blanco: por defecto
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
                             <property name="halign">start</property>
-                            <property name="label" translatable="yes">Puerto Remoto</property>
+                            <property name="label" translatable="yes">Remote Port</property>
                           </object>
                           <packing>
                             <property name="left-attach">0</property>
@@ -1708,7 +1708,7 @@ blanco: por defecto
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Túnel</property>
+                <property name="label" translatable="yes">Port forwarding</property>
               </object>
               <packing>
                 <property name="position">2</property>
@@ -1722,7 +1722,7 @@ blanco: por defecto
                 <property name="can-focus">False</property>
                 <child>
                   <object class="GtkCheckButton" id="chkCommands">
-                    <property name="label" translatable="yes">Enviar comandos al iniciar sesión</property>
+                    <property name="label" translatable="yes">Send commands after login</property>
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
                     <property name="receives-default">False</property>
@@ -1739,8 +1739,8 @@ blanco: por defecto
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">start</property>
-                    <property name="label" translatable="yes">&lt;span size='smaller'&gt;Usar ##D=milisegundos para introducir un delay.
-Ej: ##D=1000&lt;/span&gt;</property>
+                    <property name="label" translatable="yes">&lt;span size='smaller'&gt;Use ##D=milliseconds to insert a delay.
+Eg: ##D=1000&lt;/span&gt;</property>
                     <property name="use-markup">True</property>
                   </object>
                   <packing>
@@ -1839,7 +1839,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="label" translatable="yes">Comandos</property>
+                <property name="label" translatable="yes">Commands</property>
               </object>
               <packing>
                 <property name="position">3</property>
@@ -1862,7 +1862,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="halign">start</property>
-                        <property name="label" translatable="yes">Habilitar Log</property>
+                        <property name="label" translatable="yes">Enable Logging</property>
                       </object>
                       <packing>
                         <property name="left-attach">0</property>
@@ -1932,7 +1932,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                     <property name="orientation">vertical</property>
                     <child>
                       <object class="GtkCheckButton" id="chkDefaultColors">
-                        <property name="label" translatable="yes">Usar colores por defecto</property>
+                        <property name="label" translatable="yes">Default colors</property>
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="receives-default">False</property>
@@ -1956,7 +1956,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
                             <property name="halign">start</property>
-                            <property name="label" translatable="yes">Color del texto:</property>
+                            <property name="label" translatable="yes">Foreground color:</property>
                           </object>
                           <packing>
                             <property name="left-attach">0</property>
@@ -1968,7 +1968,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
                             <property name="halign">start</property>
-                            <property name="label" translatable="yes">Color del fondo:</property>
+                            <property name="label" translatable="yes">Background color:</property>
                           </object>
                           <packing>
                             <property name="left-attach">0</property>
@@ -1981,7 +1981,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                             <property name="can-focus">True</property>
                             <property name="receives-default">True</property>
                             <property name="margin-start">10</property>
-                            <property name="title" translatable="yes">Seleccione el color del texto</property>
+                            <property name="title" translatable="yes">Select foreground color</property>
                             <signal name="color-set" handler="on_btnFColor_clicked" swapped="no"/>
                           </object>
                           <packing>
@@ -1995,7 +1995,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                             <property name="can-focus">True</property>
                             <property name="receives-default">True</property>
                             <property name="margin-start">10</property>
-                            <property name="title" translatable="yes">Seleccione el color de fondo</property>
+                            <property name="title" translatable="yes">Select background color</property>
                             <signal name="color-set" handler="on_btnBColor_clicked" swapped="no"/>
                           </object>
                           <packing>
@@ -2040,7 +2040,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="halign">start</property>
-                        <property name="label" translatable="yes">Sequencias de Teclas:</property>
+                        <property name="label" translatable="yes">Key sequences</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -2176,7 +2176,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Abrir consola local</property>
+                <property name="tooltip-text" translatable="yes">Open local console</property>
                 <property name="is-important">True</property>
                 <property name="label" translatable="yes">Local</property>
                 <property name="use-underline">True</property>
@@ -2192,9 +2192,9 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Conectar a host seleccionado o a todos los host del grupo</property>
+                <property name="tooltip-text" translatable="yes">Connect to selected host or all hosts in selected group</property>
                 <property name="is-important">True</property>
-                <property name="label" translatable="yes">Conectar</property>
+                <property name="label" translatable="yes">Connect</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-network</property>
                 <property name="action-name">app.connect</property>
@@ -2208,9 +2208,9 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Agregar nuevo host</property>
+                <property name="tooltip-text" translatable="yes">Add new host</property>
                 <property name="is-important">True</property>
-                <property name="label" translatable="yes">Agregar</property>
+                <property name="label" translatable="yes">Add</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-add</property>
                 <property name="action-name">app.add-host</property>
@@ -2224,9 +2224,9 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Editar propiedades de host seleccionado</property>
+                <property name="tooltip-text" translatable="yes">Edit hosts properties</property>
                 <property name="is-important">True</property>
-                <property name="label" translatable="yes">Editar</property>
+                <property name="label" translatable="yes">Edit</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-edit</property>
                 <property name="action-name">app.edit-host</property>
@@ -2240,9 +2240,9 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Eliminar host seleccionado</property>
+                <property name="tooltip-text" translatable="yes">Remove selected host</property>
                 <property name="is-important">True</property>
-                <property name="label" translatable="yes">Eliminar</property>
+                <property name="label" translatable="yes">Remove</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-delete</property>
                 <property name="action-name">app.delete</property>
@@ -2266,7 +2266,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Separar consola horizontalmente</property>
+                <property name="tooltip-text" translatable="yes">Split console horizontally</property>
                 <property name="label" translatable="yes">__glade_unnamed_28</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-goto-last</property>
@@ -2281,7 +2281,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Separar consola verticalmente</property>
+                <property name="tooltip-text" translatable="yes">Split console vertically</property>
                 <property name="label" translatable="yes">__glade_unnamed_29</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-goto-bottom</property>
@@ -2296,7 +2296,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Unir todas las consolas</property>
+                <property name="tooltip-text" translatable="yes">Unsplit all consoles</property>
                 <property name="label" translatable="yes">__glade_unnamed_30</property>
                 <property name="use-underline">True</property>
                 <property name="stock-id">gtk-fullscreen</property>
@@ -2402,7 +2402,7 @@ Ej: ##D=1000&lt;/span&gt;</property>
               <object class="GtkToolButton">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
-                <property name="tooltip-text" translatable="yes">Enviar comandos a varios hosts al mismo tiempo</property>
+                <property name="tooltip-text" translatable="yes">Send commands to several hosts at the same time</property>
                 <property name="is-important">True</property>
                 <property name="label" translatable="yes">Cluster</property>
                 <property name="use-underline">True</property>

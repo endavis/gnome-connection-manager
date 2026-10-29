@@ -60,6 +60,9 @@ the git log.
   says why. **In a window** stays the default.
 
 ### Changed
+- For translators: GCM's messages are English now, so a message's msgid is its English text,
+  and English has no catalog of its own. Catalogs keep their translations under the new
+  msgids.
 - Two hosts of one name in two folders opened two tabs that read the same, and so did the
   window title, the open-console list and the cluster window. A tab now shows as much of
   its host's folder as tells the two apart, in front of the name: `infrafoundry/ansible`
@@ -69,6 +72,14 @@ the git log.
   keeps its name. Session logs are where they were.
 
 ### Fixed
+- Under the `C` or `C.UTF-8` locale, with no locale set, or in a language GCM has no
+  translation for, GCM showed its Spanish source text: Agregar, Editar and Eliminar on the
+  toolbar, Separador de Palabras and Tamaño del buffer in Preferences, mixed with English
+  wherever a newer message was written in it. Its messages are English now, so it shows
+  English there. Every language GCM is translated into reads as it did, except eight
+  messages that some languages translated two ways in different places, and that now read
+  the same everywhere: Add Host, Connect, Copy, Copy Address, Duplicate Host, Edit Host,
+  No open consoles and Paste.
 - GCM in German, French, Italian, Korean, Polish, Brazilian Portuguese or Russian left
   about 200 of its messages untranslated: 34 to 38 of them showed in Spanish, GCM's
   original language, and the rest in English. They included most of the menu bar, much of

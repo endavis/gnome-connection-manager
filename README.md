@@ -230,7 +230,9 @@ Preferences control, and says what GCM does with a file it cannot read.
 
 ### Language
 
-GCM uses the system locale by default. To override:
+GCM uses the system locale by default, and shows English wherever it has no translation for
+it: under the `C` and `C.UTF-8` locales, and in a language it is not translated into. To
+override:
 
 ```bash
 LANG=en_US.UTF-8 gnome-connection-manager

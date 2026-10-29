@@ -380,7 +380,7 @@ host.term = ""
 edit = app.Whost()
 edit.init("g", host)
 settle()
-check("Edit Host", edit, "wHost", _("Propiedades"))
+check("Edit Host", edit, "wHost", _("Properties"))
 
 print("TABS-OK")
 """

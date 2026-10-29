@@ -1506,7 +1506,7 @@ def read_config_option(cp, section, option, kind, default):
     if unread:
         logger.error(
             "%s: [%s] %s: %s",
-            _("Entrada invalida en archivo de configuracion"),
+            _("Invalid entry in configuration file"),
             section,
             option,
             unread.reason,
@@ -1633,7 +1633,7 @@ def paste_needs_confirmation(text: str) -> bool:
 def paste_preview(text: str, max_lines: int = 10, max_width: int = 80) -> str:
     """Render the confirmation prompt: a size summary plus the head of the content."""
     lines = text.splitlines()
-    summary: str = _("Pegar {lines} líneas ({bytes} bytes)?").format(
+    summary: str = _("Paste {lines} lines ({bytes} bytes)?").format(
         lines=len(lines), bytes=len(text.encode("utf-8", "replace"))
     )
     shown = []
@@ -2475,7 +2475,7 @@ class Wmain(GladeComponent):
             screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-        self.get_widget("txtSearch").set_placeholder_text(_("buscar..."))
+        self.get_widget("txtSearch").set_placeholder_text(_("search..."))
 
         if conf.STARTUP_LOCAL:
             self.addTab(self.nbConsole, "local")
@@ -2821,7 +2821,7 @@ class Wmain(GladeComponent):
         if model is None or box is None:
             return
         self.menubar = Gtk.MenuBar.new_from_model(model)
-        hosts_item = Gtk.MenuItem(label=_("_Hosts"))
+        hosts_item = Gtk.MenuItem(label=_("H_osts"))
         hosts_item.set_use_underline(True)
         hosts_item.set_submenu(self.menuServers)
         # before Help, which the model appends last
@@ -3283,7 +3283,7 @@ class Wmain(GladeComponent):
 
         self.search = {}
         text = self.search_box().get_text()
-        if text == "" or text == _("buscar..."):
+        if text == "" or text == _("search..."):
             terminal.search_set_regex(None, 0)
             terminal.match_remove_all()
             return True
@@ -3391,8 +3391,8 @@ class Wmain(GladeComponent):
         elif item == "R":  # RENAME TAB
             tab = self.get_context_tab_label()
             text = inputbox(
-                _("Renombrar consola"),
-                _("Ingrese nuevo nombre"),
+                _("Rename tab"),
+                _("Enter new name"),
                 tab.get_text().strip(),
                 parent=self.window,
             )
@@ -3465,47 +3465,47 @@ class Wmain(GladeComponent):
     def createMenu(self):
         self.popupMenu = Gtk.Menu()
         self.popupMenu.connect("hide", self.on_context_menu_hide)
-        self.popupMenu.mnuCopy = menuItem = Gtk.MenuItem(label=_("Copiar"))
+        self.popupMenu.mnuCopy = menuItem = Gtk.MenuItem(label=_("Copy"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy")
         menuItem.show()
 
-        self.popupMenu.mnuPaste = menuItem = Gtk.MenuItem(label=_("Pegar"))
+        self.popupMenu.mnuPaste = menuItem = Gtk.MenuItem(label=_("Paste"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.paste")
         menuItem.show()
 
-        self.popupMenu.mnuPasteSingleLine = menuItem = Gtk.MenuItem(label=_("Pegar en una línea"))
+        self.popupMenu.mnuPasteSingleLine = menuItem = Gtk.MenuItem(label=_("Paste as one line"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.paste-single-line")
         menuItem.show()
 
-        self.popupMenu.mnuCopyPaste = menuItem = Gtk.MenuItem(label=_("Copiar y Pegar"))
+        self.popupMenu.mnuCopyPaste = menuItem = Gtk.MenuItem(label=_("Copy and Paste"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy-paste")
         menuItem.show()
 
-        self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Seleccionar todo"))
+        self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Select all"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.select-all")
         menuItem.show()
 
-        self.popupMenu.mnuCopyAll = menuItem = Gtk.MenuItem(label=_("Copiar todo"))
+        self.popupMenu.mnuCopyAll = menuItem = Gtk.MenuItem(label=_("Copy all"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.copy-all")
         menuItem.show()
 
-        self.popupMenu.mnuViewBuffer = menuItem = Gtk.MenuItem(label=_("Ver buffer"))
+        self.popupMenu.mnuViewBuffer = menuItem = Gtk.MenuItem(label=_("View buffer"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.view-buffer")
         menuItem.show()
 
-        self.popupMenu.mnuTranscript = menuItem = Gtk.MenuItem(label=_("Guardar transcripción"))
+        self.popupMenu.mnuTranscript = menuItem = Gtk.MenuItem(label=_("Save transcript"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.save-transcript")
         menuItem.show()
 
-        self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Guardar buffer en archivo"))
+        self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Save buffer to file"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.save-buffer")
         menuItem.show()
@@ -3524,27 +3524,27 @@ class Wmain(GladeComponent):
         self.popupMenu.append(menuItem)
         menuItem.show()
 
-        self.popupMenu.mnuReset = menuItem = Gtk.MenuItem(label=_("Reiniciar consola"))
+        self.popupMenu.mnuReset = menuItem = Gtk.MenuItem(label=_("Reset console"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.console-reset")
         menuItem.show()
 
-        self.popupMenu.mnuClear = menuItem = Gtk.MenuItem(label=_("Reiniciar y Limpiar consola"))
+        self.popupMenu.mnuClear = menuItem = Gtk.MenuItem(label=_("Reset and Clear console"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.console-reset-clear")
         menuItem.show()
 
-        self.popupMenu.mnuClone = menuItem = Gtk.MenuItem(label=_("Clonar consola"))
+        self.popupMenu.mnuClone = menuItem = Gtk.MenuItem(label=_("Clone console"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.console-clone")
         menuItem.show()
 
-        self.popupMenu.mnuLog = menuItem = Gtk.CheckMenuItem(label=_("Habilitar log"))
+        self.popupMenu.mnuLog = menuItem = Gtk.CheckMenuItem(label=_("Enable logging"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.console-log")
         menuItem.show()
 
-        self.popupMenu.mnuClose = menuItem = Gtk.MenuItem(label=_("Cerrar consola"))
+        self.popupMenu.mnuClose = menuItem = Gtk.MenuItem(label=_("Close console"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.console-close")
         menuItem.show()
@@ -3566,12 +3566,12 @@ class Wmain(GladeComponent):
         self.popupMenuFolder = Gtk.Menu()
         self.popupMenuFolder.connect("hide", self.clear_context_tree_path)
 
-        self.popupMenuFolder.mnuConnect = menuItem = Gtk.MenuItem(label=_("Conectar"))
+        self.popupMenuFolder.mnuConnect = menuItem = Gtk.MenuItem(label=_("Connect"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.connect")
         menuItem.show()
 
-        self.popupMenuFolder.mnuCopyAddress = menuItem = Gtk.MenuItem(label=_("Copiar Direccion"))
+        self.popupMenuFolder.mnuCopyAddress = menuItem = Gtk.MenuItem(label=_("Copy Address"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.copy-address")
         menuItem.show()
@@ -3593,7 +3593,7 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.unmount-files")
         menuItem.show()
 
-        self.popupMenuFolder.mnuAdd = menuItem = Gtk.MenuItem(label=_("Agregar Host"))
+        self.popupMenuFolder.mnuAdd = menuItem = Gtk.MenuItem(label=_("Add Host"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.add-host")
         menuItem.show()
@@ -3603,7 +3603,7 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.new-folder")
         menuItem.show()
 
-        self.popupMenuFolder.mnuEdit = menuItem = Gtk.MenuItem(label=_("Editar"))
+        self.popupMenuFolder.mnuEdit = menuItem = Gtk.MenuItem(label=_("Edit"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.edit-host")
         menuItem.show()
@@ -3624,12 +3624,12 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.sort-folder")
         menuItem.show()
 
-        self.popupMenuFolder.mnuDel = menuItem = Gtk.MenuItem(label=_("Eliminar"))
+        self.popupMenuFolder.mnuDel = menuItem = Gtk.MenuItem(label=_("Remove"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.delete")
         menuItem.show()
 
-        self.popupMenuFolder.mnuDup = menuItem = Gtk.MenuItem(label=_("Duplicar Host"))
+        self.popupMenuFolder.mnuDup = menuItem = Gtk.MenuItem(label=_("Duplicate Host"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.duplicate-host")
         menuItem.show()
@@ -3638,12 +3638,12 @@ class Wmain(GladeComponent):
         self.popupMenuFolder.append(menuItem)
         menuItem.show()
 
-        self.popupMenuFolder.mnuExpand = menuItem = Gtk.MenuItem(label=_("Expandir todo"))
+        self.popupMenuFolder.mnuExpand = menuItem = Gtk.MenuItem(label=_("Expand all"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.expand-groups")
         menuItem.show()
 
-        self.popupMenuFolder.mnuCollapse = menuItem = Gtk.MenuItem(label=_("Contraer todo"))
+        self.popupMenuFolder.mnuCollapse = menuItem = Gtk.MenuItem(label=_("Collapse all"))
         self.popupMenuFolder.append(menuItem)
         menuItem.set_action_name("app.collapse-groups")
         menuItem.show()
@@ -3652,32 +3652,32 @@ class Wmain(GladeComponent):
         self.popupMenuTab = Gtk.Menu()
         self.popupMenuTab.connect("hide", self.on_context_menu_hide)
 
-        self.popupMenuTab.mnuRename = menuItem = Gtk.MenuItem(label=_("Renombrar consola"))
+        self.popupMenuTab.mnuRename = menuItem = Gtk.MenuItem(label=_("Rename tab"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.console-rename")
         menuItem.show()
 
-        self.popupMenuTab.mnuReset = menuItem = Gtk.MenuItem(label=_("Reiniciar consola"))
+        self.popupMenuTab.mnuReset = menuItem = Gtk.MenuItem(label=_("Reset console"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.console-reset")
         menuItem.show()
 
-        self.popupMenuTab.mnuClear = menuItem = Gtk.MenuItem(label=_("Reiniciar y Limpiar consola"))
+        self.popupMenuTab.mnuClear = menuItem = Gtk.MenuItem(label=_("Reset and Clear console"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.console-reset-clear")
         menuItem.show()
 
-        self.popupMenuTab.mnuReopen = menuItem = Gtk.MenuItem(label=_("Reconectar al host"))
+        self.popupMenuTab.mnuReopen = menuItem = Gtk.MenuItem(label=_("Reconnect to host"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.console-reconnect")
         # menuItem.show()
 
-        self.popupMenuTab.mnuClone = menuItem = Gtk.MenuItem(label=_("Clonar consola"))
+        self.popupMenuTab.mnuClone = menuItem = Gtk.MenuItem(label=_("Clone console"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.console-clone")
         menuItem.show()
 
-        self.popupMenuTab.mnuLog = menuItem = Gtk.CheckMenuItem(label=_("Habilitar log"))
+        self.popupMenuTab.mnuLog = menuItem = Gtk.CheckMenuItem(label=_("Enable logging"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.console-log")
         menuItem.show()
@@ -3685,7 +3685,7 @@ class Wmain(GladeComponent):
         # Next to the log switch, because that is what it reads back. The action needs
         # no tab-specific wiring: right-clicking a tab sets the context terminal from
         # that tab, and the action asks for the target terminal, which prefers it.
-        self.popupMenuTab.mnuTranscript = menuItem = Gtk.MenuItem(label=_("Guardar transcripción"))
+        self.popupMenuTab.mnuTranscript = menuItem = Gtk.MenuItem(label=_("Save transcript"))
         self.popupMenuTab.append(menuItem)
         menuItem.set_action_name("app.save-transcript")
         menuItem.show()
@@ -3860,7 +3860,7 @@ class Wmain(GladeComponent):
             subprocess.Popen(command)
         except OSError:
             logger.exception("Could not run the editor command %r", command)
-            msgbox("{}\n{}".format(_("No se puede abrir el editor"), " ".join(command)))
+            msgbox("{}\n{}".format(_("Cannot open the editor"), " ".join(command)))
             return False
         return True
 
@@ -4135,7 +4135,7 @@ class Wmain(GladeComponent):
             filename = session_file_for(terminal, ".log")
             if filename is None:
                 logger.error("Refusing to write a log outside %s for host %r", log_dir, title)
-                msgbox("{}\n{}".format(_("Ruta de log invalida"), log_dir))
+                msgbox("{}\n{}".format(_("Invalid log path"), log_dir))
                 terminal.disconnect(terminal.log_handler_id)
                 del terminal.log_handler_id
                 return False
@@ -4145,10 +4145,8 @@ class Wmain(GladeComponent):
                 # created it, empty, to reserve it (#202). When the recording chose, there is
                 # no log yet. Only a log with something in it is an earlier session's.
                 if Path(filename).exists() and Path(filename).stat().st_size:
-                    msgbox("{}\n{}".format(_("Anexar el archivo de log existente"), filename))
-                    prepend = "\n\n===== {} =====\n\n".format(
-                        _("Fin del registro de sesión anterior")
-                    )
+                    msgbox("{}\n{}".format(_("Appending to existing log file"), filename))
+                    prepend = "\n\n===== {} =====\n\n".format(_("End of previous session log"))
                 # Deliberately not a context manager: the handle lives as long as the
                 # terminal and is closed when the session ends.
                 terminal.log = Path(filename).open("a", 1)  # noqa: SIM115
@@ -4162,11 +4160,7 @@ class Wmain(GladeComponent):
                 )
             except Exception:
                 logger.exception("Unable to open log file")
-                msgbox(
-                    "{}\n{}".format(
-                        _("No se puede abrir el archivo de log para escritura"), filename
-                    )
-                )
+                msgbox("{}\n{}".format(_("Can't open log file for writing"), filename))
                 terminal.disconnect(terminal.log_handler_id)
                 del terminal.log_handler_id
                 return False
@@ -4359,7 +4353,7 @@ class Wmain(GladeComponent):
             self.run_before_command(v, lambda: self.start_session(v))
         except Exception:
             logger.exception("Error connecting to host")
-            msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
+            msgbox("{}: {}".format(_("Error connecting to server"), sys.exc_info()[1]))
 
     def start_session(self, terminal, commands=True):
         """Spawn the terminal's session: its command, or a local shell for a host without.
@@ -4489,7 +4483,7 @@ class Wmain(GladeComponent):
                 then()
             except Exception:
                 logger.exception("Error connecting to host")
-                msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
+                msgbox("{}: {}".format(_("Error connecting to server"), sys.exc_info()[1]))
         return False
 
     def run_before_in_background(self, host, then):
@@ -4514,7 +4508,7 @@ class Wmain(GladeComponent):
                 then()
             except Exception:
                 logger.exception("Error connecting to host")
-                msgbox("{}: {}".format(_("Error al conectar con servidor"), sys.exc_info()[1]))
+                msgbox("{}: {}".format(_("Error connecting to server"), sys.exc_info()[1]))
 
         run_in_background(local_command(host, host.before_command), exited)
 
@@ -4815,7 +4809,7 @@ class Wmain(GladeComponent):
                 groups[host.group].append(host)
                 read.append(host)
             except (configparser.Error, ValueError, AttributeError) as e:
-                logger.error("%s: %s", _("Entrada invalida en archivo de configuracion"), e)
+                logger.error("%s: %s", _("Invalid entry in configuration file"), e)
 
         # Only now is the whole list known, so only now can a repeated id be seen. A
         # record with no id of its own already has one by this point -- Host mints it.
@@ -5219,7 +5213,7 @@ class Wmain(GladeComponent):
         application = self.wMain.get_application()
         if application is None:
             return
-        notification = Gio.Notification.new(_("La sesion requiere atencion"))
+        notification = Gio.Notification.new(_("The session requires attention"))
         notification.set_body(label.get_text().strip())
         # One id for every trigger, so a newer notification replaces an older one.
         application.send_notification("gcm-bell", notification)
@@ -5655,7 +5649,7 @@ class Wmain(GladeComponent):
     def save_text_to_file(self, text, parent=None, name=None, folder=None):
         """Ask for a filename and write text to it. Shared by Save Buffer and the viewer."""
         dlg = Gtk.FileChooserDialog(
-            title=_("Guardar como"),
+            title=_("Save as"),
             parent=parent or self.wMain,
             action=Gtk.FileChooserAction.SAVE,
         )
@@ -5678,7 +5672,7 @@ class Wmain(GladeComponent):
                 saved = True
             except (OSError, PermissionError) as e:
                 dlg.destroy()
-                msgbox(f"{_('No se puede abrir archivo para escritura')}: {filename} - {e}")
+                msgbox(f"{_("Can't open file for writing")}: {filename} - {e}")
                 return False
         dlg.destroy()
         return saved
@@ -5710,12 +5704,12 @@ class Wmain(GladeComponent):
             # quoted argument, so a concatenated msgid silently escapes the check.
             msgbox(
                 _(
-                    "Esta sesión no tiene grabación. Active «Grabar la sesión en crudo» en Preferencias y abra una sesión nueva."
+                    "This session has no recording. Turn on “Record the raw session” in Preferences and open a new session."
                 ),
                 self.wMain,
             )
             return None
-        dialog = Gtk.Dialog(title=_("Reconstruyendo transcripción"), parent=self.wMain, modal=True)
+        dialog = Gtk.Dialog(title=_("Rebuilding transcript"), parent=self.wMain, modal=True)
         dialog.set_icon_from_file(ICON_PATH)
         dialog.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         bar = Gtk.ProgressBar()
@@ -5737,7 +5731,7 @@ class Wmain(GladeComponent):
                 # Closing the dialog and doing nothing else reads as the feature being
                 # broken. A recording with nothing in it yet is the ordinary case right
                 # after a session starts.
-                msgbox(_("Esta grabación todavía no contiene texto"), self.wMain)
+                msgbox(_("This recording has no text in it yet"), self.wMain)
                 return
             self.save_text_to_file(
                 text,
@@ -5775,7 +5769,7 @@ class Wmain(GladeComponent):
             return None
         label = self.get_tab_label_for_terminal(terminal)
         name = label.get_text().strip() if label is not None and hasattr(label, "get_text") else ""
-        viewer = BufferViewer(self, terminal, "{} - {}".format(_("Buffer"), name or _("Consola")))
+        viewer = BufferViewer(self, terminal, "{} - {}".format(_("Buffer"), name or _("Console")))
         viewer.show_all()
         return viewer
 
@@ -6364,7 +6358,10 @@ class Wmain(GladeComponent):
             return _("A folder name cannot contain /")
         if error.reason == NAME_TAKEN:
             return "{} [{}] {} [{}]".format(
-                _("El nombre"), name.strip(), _("ya existe para el grupo"), folders.path_for(parent)
+                _("Host name"),
+                name.strip(),
+                _("already exists for group"),
+                folders.path_for(parent),
             )
         return None
 
@@ -6385,7 +6382,7 @@ class Wmain(GladeComponent):
 
     def new_folder(self):
         parent = self.selected_tree_folder()
-        name = inputbox(_("New Folder"), _("Ingrese nuevo nombre"), parent=self.window)
+        name = inputbox(_("New Folder"), _("Enter new name"), parent=self.window)
         if not name or not name.strip():
             return
         created: list = []
@@ -6397,9 +6394,7 @@ class Wmain(GladeComponent):
         if iter_ is None or not self.is_folder_row(iter_):
             return
         folder = folders.folders[self.folder_id_at(iter_)]
-        name = inputbox(
-            _("Rename Folder"), _("Ingrese nuevo nombre"), folder.name, parent=self.window
-        )
+        name = inputbox(_("Rename Folder"), _("Enter new name"), folder.name, parent=self.window)
         if not name or not name.strip() or name.strip() == folder.name:
             return
         if self.apply_folder_edit(lambda: folders.rename(folder.id, name), folder.parent, name):
@@ -6656,9 +6651,7 @@ class Wmain(GladeComponent):
         if (
             conf.CONFIRM_ON_EXIT
             and self.count > 0
-            and msgconfirm(
-                f"{_('Hay')} {self.count} {_('consolas abiertas, confirma que desea salir?')}"
-            )
+            and msgconfirm(f"{_('There are')} {self.count} {_('open consoles, exit anyway?')}")
             != Gtk.ResponseType.OK
         ):
             return True
@@ -6668,11 +6661,11 @@ class Wmain(GladeComponent):
     # -- Wmain.on_importar_servidores1_activate {
     def on_importar_servidores1_activate(self, widget, *args):
         filename = show_open_dialog(
-            parent=self.wMain, title=_("Abrir"), action=Gtk.FileChooserAction.OPEN
+            parent=self.wMain, title=_("Open"), action=Gtk.FileChooserAction.OPEN
         )
         if filename is not None:
             password = inputbox(
-                _("Importar Servidores"), _("Ingrese clave: "), password=True, parent=self.window
+                _("Import Servers"), _("Enter password"), password=True, parent=self.window
             )
             if password is None:
                 return
@@ -6685,11 +6678,11 @@ class Wmain(GladeComponent):
                 # validar el pass
                 s = decrypt(password, cp.get("gcm", "gcm"))
                 if s != password[::-1]:
-                    msgbox(_("Clave invalida"))
+                    msgbox(_("Invalid password"))
                     return
 
                 if (
-                    msgconfirm(_("Se sobreescribirá la lista de servidores, continuar?"))
+                    msgconfirm(_("Server list will be overwritten, continue?"))
                     != Gtk.ResponseType.OK
                 ):
                     return
@@ -6718,7 +6711,7 @@ class Wmain(GladeComponent):
                 ValueError,
                 AttributeError,
             ) as e:
-                msgbox(f"{_('Archivo invalido')}: {e}")
+                msgbox(f"{_('Invalid file')}: {e}")
                 return
 
             # The import replaces the whole list, so these ids only need to be unique
@@ -6743,11 +6736,11 @@ class Wmain(GladeComponent):
     # -- Wmain.on_exportar_servidores1_activate {
     def on_exportar_servidores1_activate(self, widget, *args):
         filename = show_open_dialog(
-            parent=self.wMain, title=_("Guardar como"), action=Gtk.FileChooserAction.SAVE
+            parent=self.wMain, title=_("Save as"), action=Gtk.FileChooserAction.SAVE
         )
         if filename is not None:
             password = inputbox(
-                _("Exportar Servidores"), _("Ingrese clave: "), password=True, parent=self.window
+                _("Export Servers"), _("Enter password"), password=True, parent=self.window
             )
             if password is None:
                 return
@@ -6771,7 +6764,7 @@ class Wmain(GladeComponent):
                     cp.write(f)
                 Path(filename + ".tmp").rename(filename)
             except (OSError, PermissionError) as e:
-                msgbox(f"{_('Archivo invalido')}: {e}")
+                msgbox(f"{_('Invalid file')}: {e}")
 
     # -- Wmain.on_exportar_servidores1_activate }
 
@@ -6885,7 +6878,7 @@ class Wmain(GladeComponent):
                     self.treeServers.get_selection().get_selected()[1], 0
                 )
                 if (
-                    msgconfirm("{} [{}]?".format(_("Confirma que desea eliminar el host"), name))
+                    msgconfirm("{} [{}]?".format(_("Do you really want to remove host"), name))
                     == Gtk.ResponseType.OK
                 ):
                     host = self.treeModel.get_value(
@@ -6899,7 +6892,7 @@ class Wmain(GladeComponent):
                 doomed = folders.subtree(folder_id)
                 has_hosts = any(h.folder in doomed for hs in groups.values() for h in hs)
                 question = (
-                    _("Confirma que desea eliminar todos los hosts del grupo")
+                    _("Do you really want to remove all hosts in group")
                     if has_hosts
                     else _("Delete folder")
                 )
@@ -7025,7 +7018,7 @@ class Wmain(GladeComponent):
                 consoles.append((title, terminal))
 
         if len(consoles) == 0:
-            msgbox(_("No hay consolas abiertas"))
+            msgbox(_("No open consoles"))
             return True
 
         self.wCluster = Wcluster(terms=consoles).get_widget("wCluster")
@@ -7202,7 +7195,7 @@ class Whost(GladeComponent):
         self.treeTunel.append_column(column)
         column = Gtk.TreeViewColumn(_("Host"), Gtk.CellRendererText(), text=1)
         self.treeTunel.append_column(column)
-        column = Gtk.TreeViewColumn(_("Remoto"), Gtk.CellRendererText(), text=2)
+        column = Gtk.TreeViewColumn(_("Remote"), Gtk.CellRendererText(), text=2)
         self.treeTunel.append_column(column)
 
     # -- Whost.new {
@@ -7549,7 +7542,7 @@ class Whost(GladeComponent):
         # Validar datos
         needs_address = kind.remote and not kind.runs_without_address
         if group == "" or name == "" or (host == "" and needs_address):
-            msgbox(_("Los campos grupo, nombre y host son obligatorios"))
+            msgbox(_("Fields group, name and host are required"))
             return
         type_values = self.type_page_values(kind)
         # A greyed setting is checked as if it held its default: only a hand edit gives it
@@ -7566,7 +7559,7 @@ class Whost(GladeComponent):
             return
 
         if not (port and port.isdigit() and 1 <= int(port) <= 65535):
-            msgbox(_("Puerto invalido"))
+            msgbox(_("Invalid port"))
             return
 
         term = self.txtTerm.get_text()
@@ -7623,7 +7616,7 @@ class Whost(GladeComponent):
                     if h.name == name:
                         msgbox(
                             "{} [{}] {} [{}]".format(
-                                _("El nombre"), name, _("ya existe para el grupo"), group
+                                _("Host name"), name, _("already exists for group"), group
                             )
                         )
                         return
@@ -7639,7 +7632,7 @@ class Whost(GladeComponent):
                             if h.name == name:
                                 msgbox(
                                     "{} [{}] {} [{}]".format(
-                                        _("El nombre"), name, _("ya existe para el grupo"), group
+                                        _("Host name"), name, _("already exists for group"), group
                                     )
                                 )
                                 return
@@ -7654,7 +7647,7 @@ class Whost(GladeComponent):
                             if h.name == name:
                                 msgbox(
                                     "{} [{}] {} [{}]".format(
-                                        _("El nombre"), name, _("ya existe para el grupo"), group
+                                        _("Host name"), name, _("already exists for group"), group
                                     )
                                 )
                                 return
@@ -7670,7 +7663,7 @@ class Whost(GladeComponent):
                                 groups[self.oldGroup][index] = host
                                 break
         except (KeyError, ValueError, IndexError) as e:
-            msgbox(f"{_('Error al guardar el host. Descripcion')} [{e}]")
+            msgbox(f"{_('Error saving host. Description')} [{e}]")
 
         global wMain
         wMain.updateTree()
@@ -7771,12 +7764,12 @@ class Whost(GladeComponent):
 
         # Validar datos del tunel
         if host == "":
-            msgbox(_("Debe ingresar host remoto"))
+            msgbox(_("Enter remote host"))
             return
 
         for x in self.treeModel:
             if x[0] == local:
-                msgbox(_("Puerto local ya fue asignado"))
+                msgbox(_("Local port already assigned"))
                 return
 
         self.treeModel.append([local, host, remote, f"{local}:{host}:{remote}"])
@@ -7824,7 +7817,7 @@ class Whost(GladeComponent):
     def on_btnBrowse_clicked(self, widget, *args):
         global wMain
         filename = show_open_dialog(
-            parent=wMain.wMain, title=_("Abrir"), action=Gtk.FileChooserAction.OPEN
+            parent=wMain.wMain, title=_("Open"), action=Gtk.FileChooserAction.OPEN
         )
         if filename is not None:
             self.txtPrivateKey.set_text(filename)
@@ -7899,35 +7892,35 @@ class Wconfig(GladeComponent):
         self.capture_keys = False
 
         self.tblGeneral.rows = 0
-        self.addParam(_("Separador de Palabras"), "conf.WORD_SEPARATORS", str)
-        self.addParam(_("Tamaño del buffer"), "conf.BUFFER_LINES", int, 1, 1000000)
-        self.addParam(_("Transparencia"), "conf.TRANSPARENCY", int, 0, 100)
+        self.addParam(_("Word separator"), "conf.WORD_SEPARATORS", str)
+        self.addParam(_("Buffer size"), "conf.BUFFER_LINES", int, 1, 1000000)
+        self.addParam(_("Transparency"), "conf.TRANSPARENCY", int, 0, 100)
         self.addParam(_("TERM"), "conf.TERM", str)
-        self.addParam(_("Ruta de logs"), "conf.LOG_PATH", str)
-        self.addParam(_("Comando del editor"), "conf.EDITOR_COMMAND", str)
+        self.addParam(_("Logs path"), "conf.LOG_PATH", str)
+        self.addParam(_("Editor command"), "conf.EDITOR_COMMAND", str)
         self.addParam(
-            _("Permitir que las aplicaciones escriban en el portapapeles (OSC 52)"),
+            _("Let applications write to the clipboard (OSC 52)"),
             "conf.OSC52_ENABLED",
             bool,
         )
         self.addParam(
-            _("Grabar la sesión en crudo (incluye secuencias de escape)"),
+            _("Record the raw session (includes escape sequences)"),
             "conf.RAW_SESSION_LOG",
             bool,
         )
-        self.addParam(_("Abrir consola local al inicio"), "conf.STARTUP_LOCAL", bool)
-        self.addParam(_("Log consola local"), "conf.LOG_LOCAL", bool)
-        self.addParam(_("Pegar con botón derecho"), "conf.PASTE_ON_RIGHT_CLICK", bool)
-        self.addParam(_("Copiar selección al portapapeles"), "conf.AUTO_COPY_SELECTION", bool)
-        self.addParam(_("Marcar pestaña al recibir la campana"), "conf.BELL_MARK_TAB", bool)
+        self.addParam(_("Open local console on startup"), "conf.STARTUP_LOCAL", bool)
+        self.addParam(_("Log local console sessions"), "conf.LOG_LOCAL", bool)
+        self.addParam(_("Paste on right click"), "conf.PASTE_ON_RIGHT_CLICK", bool)
+        self.addParam(_("Copy selection to clipboard"), "conf.AUTO_COPY_SELECTION", bool)
+        self.addParam(_("Mark tab when the bell rings"), "conf.BELL_MARK_TAB", bool)
         self.addParam(
-            _("Marcar pestaña cuando la salida se detiene N segundos (0 desactiva)"),
+            _("Mark tab when output stops for N seconds (0 disables)"),
             "conf.QUIET_MARK_SECONDS",
             int,
             0,
             3600,
         )
-        self.addParam(_("Marcar pestaña cuando termina la sesión"), "conf.ENDED_MARK_TAB", bool)
+        self.addParam(_("Mark tab when its session ends"), "conf.ENDED_MARK_TAB", bool)
         self.addParam(
             _("Reconnect a dropped session N times (0 disables)"),
             "conf.RECONNECT_ATTEMPTS",
@@ -7935,54 +7928,54 @@ class Wconfig(GladeComponent):
             0,
             100,
         )
-        self.addParam(_("Notificar cuando una consola requiere atención"), "conf.BELL_NOTIFY", bool)
-        self.addParam(_("Campana audible"), "conf.BELL_AUDIBLE", bool)
+        self.addParam(_("Notify when a console needs attention"), "conf.BELL_NOTIFY", bool)
+        self.addParam(_("Audible bell"), "conf.BELL_AUDIBLE", bool)
         self.addParam(
-            _("Copiar pantalla si no hay selección"), "conf.COPY_SCREEN_IF_NO_SELECTION", bool
+            _("Copy screen if there is no selection"), "conf.COPY_SCREEN_IF_NO_SELECTION", bool
         )
         self.addParam(
-            _("Quitar el salto de línea final al pegar"),
+            _("Strip the trailing newline when pasting"),
             "conf.PASTE_STRIP_TRAILING_NEWLINE",
             bool,
         )
         self.addParam(
-            _("Confirmar al pegar más de N líneas (0 desactiva)"),
+            _("Confirm pasting more than N lines (0 disables)"),
             "conf.PASTE_CONFIRM_LINES",
             int,
             0,
             10000,
         )
         self.addParam(
-            _("Confirmar al pegar más de N bytes (0 desactiva)"),
+            _("Confirm pasting more than N bytes (0 disables)"),
             "conf.PASTE_CONFIRM_BYTES",
             int,
             0,
             10000000,
         )
-        self.addParam(_("Confirmar al cerrar una consola"), "conf.CONFIRM_ON_CLOSE_TAB", bool)
+        self.addParam(_("Confirm on close console"), "conf.CONFIRM_ON_CLOSE_TAB", bool)
         self.addParam(
-            _("Confirmar al cerrar una consola con botón central del mouse"),
+            _("Confirm on close console with middle click"),
             "conf.CONFIRM_ON_CLOSE_TAB_MIDDLE",
             bool,
         )
         self.addParam(
-            _("Reiniciar en el primer/último tab al llegar al final"), "conf.CYCLE_TABS", bool
+            _("Circle around tabs when going to the previous/next tab"), "conf.CYCLE_TABS", bool
         )
         self.addParam(
-            _("Cerrar consola"),
+            _("Close console"),
             "conf.AUTO_CLOSE_TAB",
             list,
-            [_("Nunca"), _("Siempre"), _("Sólo si no hay errores")],
+            [_("Never"), _("Always"), _("Only on clean exit")],
         )
-        self.addParam(_("Confirmar al salir"), "conf.CONFIRM_ON_EXIT", bool)
-        self.addParam(_("Comprobar actualizaciones"), "conf.CHECK_UPDATES", bool)
-        self.addParam(_("Ocultar botón donar"), "conf.HIDE_DONATE", bool)
+        self.addParam(_("Confirm on exit"), "conf.CONFIRM_ON_EXIT", bool)
+        self.addParam(_("Check updates"), "conf.CHECK_UPDATES", bool)
+        self.addParam(_("Hide donate button"), "conf.HIDE_DONATE", bool)
         self.addParam(
-            _("Deshabilitar franjas alternas en la ventana de hosts"),
+            _("Disable alternating stripes in hosts window"),
             "conf.DISABLE_HOSTS_STRIPES",
             bool,
         )
-        self.addParam(_("Título dinámico"), "conf.UPDATE_TITLE", bool)
+        self.addParam(_("Dynamic title"), "conf.UPDATE_TITLE", bool)
         tab_name = self.addParam(_("Tab name"), "conf.TAB_NAME", str)
         tab_name.set_tooltip_text(
             _(
@@ -7990,11 +7983,11 @@ class Wconfig(GladeComponent):
             )
         )
         self.addParam(
-            _("Mostrar el título del programa en la pestaña"),
+            _("Show the program title in the tab"),
             "conf.TAB_TITLE_FROM_TERMINAL",
             bool,
         )
-        self.addParam(_("Título"), "conf.APP_TITLE", str)
+        self.addParam(_("Title"), "conf.APP_TITLE", str)
         # Only where WSL's interop finds Windows' own client (#283). Elsewhere an RDP host
         # opens in FreeRDP whatever the setting says, so there is nothing to choose.
         if connections.windows_rdp() is not None:
@@ -8043,7 +8036,7 @@ class Wconfig(GladeComponent):
         # commandos
         self.treeModel = Gtk.TreeStore(GObject.TYPE_STRING, GObject.TYPE_STRING)
         self.treeCmd.set_model(self.treeModel)
-        column = Gtk.TreeViewColumn(_("Acción"), Gtk.CellRendererText(), text=0)
+        column = Gtk.TreeViewColumn(_("Action"), Gtk.CellRendererText(), text=0)
         column.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
         column.set_expand(True)
         self.treeCmd.append_column(column)
@@ -8052,7 +8045,7 @@ class Wconfig(GladeComponent):
         renderer.set_property("editable", True)
         renderer.connect("edited", self.on_edited, self.treeModel, 1)
         renderer.connect("editing-started", self.on_editing_started, self.treeModel, 1)
-        column = Gtk.TreeViewColumn(_("Atajo"), renderer, text=1)
+        column = Gtk.TreeViewColumn(_("Shortcut"), renderer, text=1)
         column.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
         column.set_expand(False)
         self.treeCmd.append_column(column)
@@ -8524,7 +8517,7 @@ class Wconfig(GladeComponent):
 
     # -- Wconfig.on_btnFont_clicked {
     def on_btnFont_clicked(self, widget, *args):
-        show_font_dialog(self, _("Seleccione la fuente"), self.btnFont)
+        show_font_dialog(self, _("Select font"), self.btnFont)
 
     # -- Wconfig.on_btnFont_clicked }
 
@@ -8574,7 +8567,7 @@ class Wcluster(GladeComponent):
         crt = Gtk.CellRendererToggle()
         crt.set_property("activatable", True)
         crt.connect("toggled", self.on_active_toggled)
-        col = Gtk.TreeViewColumn(_("Activar"), crt, active=0)
+        col = Gtk.TreeViewColumn(_("Activate"), crt, active=0)
         self.treeHosts.append_column(col)
         cell = Gtk.CellRendererText()
         col = Gtk.TreeViewColumn(_("Host"), cell)
@@ -9169,7 +9162,7 @@ class BufferViewer(Gtk.Window):
         self.add(box)
 
         self.search = Gtk.SearchEntry()
-        self.search.set_placeholder_text(_("Buscar"))
+        self.search.set_placeholder_text(_("Search"))
         self.search.connect("search-changed", self.on_search_changed)
         self.search.connect("activate", lambda _w: self.find(forward=True))
         box.pack_start(self.search, False, False, 0)
@@ -9197,15 +9190,15 @@ class BufferViewer(Gtk.Window):
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         for label, handler in (
-            (_("Copiar selección"), self.on_copy_selection),
-            (_("Copiar todo"), self.on_copy_all),
-            (_("Guardar como"), self.on_save_as),
-            (_("Actualizar"), self.on_refresh),
+            (_("Copy selection"), self.on_copy_selection),
+            (_("Copy all"), self.on_copy_all),
+            (_("Save as"), self.on_save_as),
+            (_("Refresh"), self.on_refresh),
         ):
             button = Gtk.Button(label=label)
             button.connect("clicked", handler)
             buttons.pack_start(button, False, False, 0)
-        close = Gtk.Button(label=_("Cerrar"))
+        close = Gtk.Button(label=_("Close"))
         close.connect("clicked", lambda _w: self.destroy())
         buttons.pack_end(close, False, False, 0)
         box.pack_start(buttons, False, False, 0)
@@ -9452,9 +9445,9 @@ class VncPage(Gtk.Box):
     def credential(self, kind):
         """The answer to gtk-vnc's request for `kind`, or None when the user cancels."""
         if kind == GtkVnc.DisplayCredential.PASSWORD:
-            return self.host.password or self.ask(_("Ingrese clave: "), password=True)
+            return self.host.password or self.ask(_("Enter password"), password=True)
         if kind == GtkVnc.DisplayCredential.USERNAME:
-            return self.host.user or self.ask(_("Usuario"))
+            return self.host.user or self.ask(_("User"))
         # CLIENTNAME: the name this client gives the server.
         return "gcm"
 
@@ -10041,7 +10034,7 @@ class NotebookTabLabel(Gtk.HBox):
         if (
             conf.CONFIRM_ON_CLOSE_TAB
             # The label may be cut for the tab strip; the confirmation names the tab (#190).
-            and msgconfirm("{} [{}]?".format(_("Cerrar consola"), self.get_text().strip()))
+            and msgconfirm("{} [{}]?".format(_("Close console"), self.get_text().strip()))
             != Gtk.ResponseType.OK
         ):
             return True
@@ -10232,7 +10225,7 @@ class NotebookTabLabel(Gtk.HBox):
         elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 2:
             if (
                 conf.CONFIRM_ON_CLOSE_TAB_MIDDLE
-                and msgconfirm("{} [{}]?".format(_("Cerrar consola"), self.get_text().strip()))
+                and msgconfirm("{} [{}]?".format(_("Close console"), self.get_text().strip()))
                 != Gtk.ResponseType.OK
             ):
                 return True
@@ -10266,7 +10259,7 @@ class ConsoleWindow(Gtk.Window):
         # Find puts the keyboard here, to search this window's tabs. The main window's
         # search box searches the main window's tab in use, and is out of reach from here.
         self.search_entry = Gtk.Entry()
-        self.search_entry.set_placeholder_text(_("buscar..."))
+        self.search_entry.set_placeholder_text(_("search..."))
         # Before the bar takes the entry, so Escape clears the search before closing it.
         self.search_entry.connect("key-press-event", controller.on_btnSearch_key_press)
         self.search_bar = Gtk.SearchBar()
@@ -10669,7 +10662,7 @@ class GcmApplication(Gtk.Application):
                 self._controller.on_importar_servidores1_activate(None)
             except Exception as exc:
                 logger.exception("Error during import hosts")
-                msgbox("{}: {}".format(_("Error al importar servidores"), exc))
+                msgbox("{}: {}".format(_("Error importing hosts"), exc))
 
     def _on_action_export_hosts(self, action, _param):
         if self._controller is not None:
@@ -10677,7 +10670,7 @@ class GcmApplication(Gtk.Application):
                 self._controller.on_exportar_servidores1_activate(None)
             except Exception as exc:
                 logger.exception("Error during export hosts")
-                msgbox("{}: {}".format(_("Error al exportar servidores"), exc))
+                msgbox("{}: {}".format(_("Error exporting hosts"), exc))
 
     def _on_action_copy(self, action, _param):
         if self._controller is not None:

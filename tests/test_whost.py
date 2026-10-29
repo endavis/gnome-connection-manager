@@ -195,7 +195,7 @@ def test_whost_on_okbutton_validates_port(monkeypatch, app_module):
 
     whost.on_okbutton1_clicked(None)
 
-    assert messages["msg"] == app_module._("Puerto invalido")
+    assert messages["msg"] == app_module._("Invalid port")
     assert app_module.groups["ops"] == []
     assert destroy_stub.destroyed is False
 
@@ -233,7 +233,7 @@ def test_a_local_host_is_saved_without_an_address(monkeypatch, app_module):
 def test_a_remote_host_is_refused_without_an_address(monkeypatch, app_module, ctype):
     saved, messages = save_as(app_module, monkeypatch, ctype, address="")
 
-    assert messages == [app_module._("Los campos grupo, nombre y host son obligatorios")]
+    assert messages == [app_module._("Fields group, name and host are required")]
     assert saved == []
 
 

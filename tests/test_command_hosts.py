@@ -406,7 +406,7 @@ elif scenario == "the-dialog-edits-a-command-host":
     other.cmbGroup.get_children()[0].set_text("Lab")
     other.txtName.set_text("web")
     other.on_okbutton1_clicked(None)
-    assert shown_messages == [app._("Los campos grupo, nombre y host son obligatorios")], shown_messages
+    assert shown_messages == [app._("Fields group, name and host are required")], shown_messages
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")

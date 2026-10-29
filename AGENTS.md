@@ -746,7 +746,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
-  `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, en, fr, it, ko, pl, pt, ru.
+  `<lang>/LC_MESSAGES/gcm-lang.mo`. Locales present: de, fr, it, ko, pl, pt, ru. English has
+  none: the msgids are English (ADR-0003, #390), so a locale with no catalog shows them.
 - `docs/` – see [Documentation](#documentation).
 - `gnome-connection-manager.desktop`, `Makefile`, `dodo.py`, `pyproject.toml`.
 - `install.sh` – the one-line installer (#294), served from `main` and piped to bash. It
@@ -1149,32 +1150,55 @@ Practices below have each caught real bugs in this repo. They are worth the time
   key let go of meanwhile was a GTK critical. A mark flags the window holding the tab,
   which `window_of` gives.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
-  (`lang/en_US.po`); the catalogs the application loads are compiled beside them
-  (`lang/en/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
+  (`lang/de_DE.po`); the catalogs the application loads are compiled beside them
+  (`lang/de/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
   the directory it writes into. It uses `msgfmt` where that exists and `tools/build_mo.py`
   otherwise, and fails rather than reporting success when it finds nothing to compile.
-  Add a locale by copying an existing `.po` and updating its headers; the Makefile still
-  names each language, so add it there too.
+  Add a locale by copying an existing `.po` and updating its headers. Nothing else names a
+  language: the Makefile's `translate` and `doit translate` both compile every `.po` under `lang/`.
+- The msgids are English (ADR-0003, #390): a msgid is the text an English reader sees, and
+  English has no catalog. A locale GCM has no catalog for -- `C`, `C.UTF-8`, a language it
+  lacks -- shows the msgids, from Python's `gettext` and from glibc, which translates the
+  glade file's texts, alike, with no fallback code. Measured with glibc 2.39: glibc ignores
+  `LANGUAGE` while `LC_MESSAGES` is `C` or `C.UTF-8`, and Python's `gettext` stops at `C`,
+  so under `C.UTF-8` neither half reads a catalog, and the Spanish msgids showed. Python's
+  half does read `LANGUAGE=de` there, so `LANG=C.UTF-8 LANGUAGE=de` still mixes the two:
+  the Python messages in German, the glade texts as their msgids. Rewording
+  an English message re-keys it: change the msgid in the code or the glade file and in
+  every catalog, or its translations are lost, and the entry left behind fails
+  `test_no_catalog_keeps_an_entry_nothing_uses`. GCM was written in Spanish; a Spanish
+  catalog is #391.
+  - `test_no_message_is_spanish` keeps every msgid in use English. It is a heuristic --
+    accents, function words and the words the Spanish msgids used -- so a Spanish word it
+    does not know passes, and review is the rest of it.
+  - `test_gcm_shows_english_where_it_reads_no_catalog` starts GCM as it starts itself with
+    no locale set, and under `C.UTF-8` and `en_US.UTF-8`, each with and without
+    `LANGUAGE=nl`, and reads every text the main window, Preferences and the dialog Add
+    Host opens draw.
 - Every message GCM shows is translated in every catalog, and `tests/test_i18n.py` holds
   each to it (#359). A message added to the code or the glade comes with its translation
-  in all eight. An empty `msgstr` shows English, or Spanish for a Spanish msgid, which is
-  how each of the seven other catalogs came to leave about 200 untranslated.
+  in every catalog. An empty `msgstr` shows the English msgid, which is how each catalog
+  came to leave about 200 untranslated.
   - A translation keeps its msgid's placeholders by name, its underscores, its markup,
     its newlines and its tabs.
   - In the menu bar and in the application menu, listed in the test's `MENUS`, each
-    label's access key is its own, in every catalog. English gives `_Hosts` as `H_osts`,
-    since `_Help` has H: measured with real input, two labels with one key opened their
-    menus by turns (#382). Korean writes a key as GNOME's Korean does, `파일(_F)`.
-  - The test reads `_()` in either quote, since five messages sit in single quotes inside
-    f-strings. It reads a glade text as GtkBuilder looks it up, edge spaces included.
+    label's access key is its own, in every catalog and in English, whose labels are the
+    msgids. The menu bar's Hosts is `H_osts`, since `_Help` has H: measured with real input,
+    two labels with one key opened their menus by turns (#382). Korean writes a key as
+    GNOME's Korean does, `파일(_F)`.
+  - The test reads `_()` in either quote, since a message inside an f-string takes the
+    other quote, `f"{_('Invalid file')}: {e}"`, unless it holds an apostrophe, as
+    `_("Can't open file for writing")` does, which Python 3.12 allows in double quotes
+    there. It reads a glade text as GtkBuilder looks it up, edge spaces included.
     Measured with a catalog holding both forms of a label that ends in a space,
     GtkBuilder showed the spaced form's translation.
   - A catalog keeps no entry that nothing uses, bar `translator-credits`, which names its
     translators.
-  - A `msgstr` that is the English text passes msgfmt and the test alike, and shows
-    English. Korean held nine and Polish one, found by asking `gettext` which messages
-    in use come back as the English.
-- Visible strings in Python and glade should be wrapped with `_()` so gettext picks them up.
+  - A `msgstr` that is its own msgid passes msgfmt and the test alike, and shows English.
+    Korean held nine and Polish one, found by asking `gettext` which messages in use come
+    back as their msgids.
+- Visible strings in Python and glade should be wrapped with `_()` so gettext picks them
+  up, and written in English: the text is the msgid.
 
 ## Packaging & Release Flow
 - `uv run make`, `uv run make deb`, `uv run make rpm` use `fpm`: build translations, stage
