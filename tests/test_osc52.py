@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from gnome_connection_manager.utils import childpython
 from gnome_connection_manager.utils.osc52 import (
     MAX_PAYLOAD,
     REPEAT_WINDOW,
@@ -210,9 +211,8 @@ def test_a_selection_that_is_not_ascii_is_ignored():
 def test_relay_command_wraps_the_original_argv(app_module):
     wrapped = app_module.relay_command(["ssh", "host"], "/run/clip.sock")
 
-    assert wrapped[1:] == [
-        "-m",
-        "gnome_connection_manager.relay",
+    assert wrapped == [
+        *childpython.module_command("gnome_connection_manager.relay"),
         "--clipboard-socket",
         "/run/clip.sock",
         "--",
@@ -723,15 +723,16 @@ def spawn_an_ssh_session(app_module, monkeypatch, tmp_path, recording=1):
 
 
 def test_a_relayed_ssh_session_is_spawned_with_a_literal_argv(app_module, monkeypatch, tmp_path):
-    """FILE_AND_ARGV_ZERO would eat the relay's `-m` as the child's argv[0].
+    """FILE_AND_ARGV_ZERO would eat the relay's `-c` as the child's argv[0].
 
-    Python then reads the module name as a script path, relative to the spawn
-    directory, and the session dies with "can't open file '$HOME/...relay'" (#91).
+    Python then reads the bootstrap as a script path, relative to the spawn
+    directory, and the session dies with "can't open file '$HOME/...'" (#91). The first
+    argument after the interpreter was `-m` then, and is `-c` since #415.
     """
     spawned = spawn_an_ssh_session(app_module, monkeypatch, tmp_path)
 
-    assert spawned["flags"] & 2 == 0, "FILE_AND_ARGV_ZERO would swallow the relay's -m"
-    assert spawned["argv"][1] == "-m", "the relay's own argv must survive intact"
+    assert spawned["flags"] & 2 == 0, "FILE_AND_ARGV_ZERO would swallow the relay's -c"
+    assert spawned["argv"][1] == "-c", "the relay's own argv must survive intact"
 
 
 def test_a_relayed_ssh_session_hands_the_relay_an_ordinary_inner_argv(

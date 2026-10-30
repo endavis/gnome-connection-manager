@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from gnome_connection_manager.utils import updates
+from gnome_connection_manager.utils import childpython, updates
 from tests.test_connections import glib_complaints
 
 if TYPE_CHECKING:
@@ -135,10 +135,12 @@ def test_a_failed_request_writes_nothing(monkeypatch, capsysbinary, error):
     assert capsysbinary.readouterr().out == b""
 
 
-def test_the_request_runs_as_gcm_runs_it(tmp_path):
+def test_the_request_runs_as_gcm_runs_it(app_module, monkeypatch, tmp_path):
     answer = tmp_path / "tags.json"
     answer.write_bytes(b'[{"name": "v9.9.9"}]')
-    command = [sys.executable, "-m", "gnome_connection_manager.utils.updates"]
+    # The command Wmain.check_updates builds, bar the URL it asks for (#415).
+    *command, asked = start_check(app_module, monkeypatch).process.argv
+    assert asked == updates.TAGS_URL
 
     found = subprocess.run([*command, answer.as_uri()], capture_output=True, timeout=60)
     missing = subprocess.run(
@@ -232,9 +234,7 @@ def test_the_check_asks_in_a_process_of_its_own(app_module, monkeypatch):
     check = start_check(app_module, monkeypatch)
 
     assert check.process.argv == [
-        sys.executable,
-        "-m",
-        "gnome_connection_manager.utils.updates",
+        *childpython.module_command("gnome_connection_manager.utils.updates"),
         updates.TAGS_URL,
     ]
     # Its answer through a pipe, and anything it says on stderr nowhere.

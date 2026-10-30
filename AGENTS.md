@@ -26,7 +26,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   or raw recording is enabled, sessions are spawned *under this* rather than directly, so it
   sits in the byte path between the child and VTE. It forwards bytes unmodified, watches for
   OSC 52, and can tee the stream to disk. VTE keeps its C read path and a stall here cannot
-  freeze the interface. A change of the tab's size reaches it as SIGWINCH, and
+  freeze the interface. `relay_command` starts it with `childpython.module_command`, not as
+  `python -m` (#415). A change of the tab's size reaches it as SIGWINCH, and
   `on_sigwinch` passes the size on itself. Python retries a `select` a signal
   interrupted once the handler has run (PEP 475), so a size left for the loop reached an
   idle program only when a byte next went through, measured (#319). `relay` makes the
@@ -679,12 +680,42 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original
   author's site, which serves that GCM's 1.2.1, and compared strings, under which 10.0.0
   is less than 9.0.0. Pure but for `main`, the request, which `Wmain.check_updates` runs
-  two seconds after start, while `check-updates` is on, as a process of its own:
-  `sys.executable -m`, as the relay is run (#369). It reads the answer in the main loop
-  through `Gio.Subprocess`, and says nothing on any failure. Not a thread: measured, a GCM
-  quit during the request exited with the thread still inside it, as did the test that
-  crashed at exit in #316. `quit_application`, which Ctrl+Q and closing the window both
-  reach, kills a check still running.
+  two seconds after start, while `check-updates` is on, as a process of its own, started
+  with `childpython.module_command` as the relay is (#369, #415). It reads the answer in the
+  main loop through `Gio.Subprocess`, and says nothing on any failure. Not a thread:
+  measured, a GCM quit during the request exited with the thread still inside it, as did
+  the test that crashed at exit in #316. `quit_application`, which Ctrl+Q and closing the
+  window both reach, kills a check still running.
+- `src/gnome_connection_manager/utils/childpython.py` – how GCM starts its two Python
+  children, the relay and the update check, on the files the running GCM started with
+  (#415). They ran as `sys.executable -m gnome_connection_manager.<module>`, which finds
+  the package only where a fresh interpreter can import it: a checkout's `.venv` has it
+  installed, and the `.deb` installs it under `/usr` (read in the Makefile, not measured).
+  The launcher `install.sh` writes makes it importable in GCM's own process alone, with
+  `sys.path.insert(0, <version>/src)`. Measured on #415 against a real v2.2.0 install, the
+  child exited 1 with `No module named 'gnome_connection_manager'`: no console opened while
+  OSC 52 or raw recording was on, and the update check failed without a word, so no v2.2.0
+  installed so could learn of a newer release. `module_command` gives
+  `[sys.executable, "-c", BOOTSTRAP, <folder>, <module>]`, and the caller appends the
+  module's arguments. `BOOTSTRAP` takes the folder and the module out of `sys.argv`, puts
+  the folder at `sys.path[0]` only if it is not on `sys.path` already, and runs the module
+  with `runpy.run_module(module, run_name="__main__", alter_sys=True)`. So a checkout's
+  `.venv` and the `.deb`, which find the package themselves, import in the order they did,
+  and the module has `-m`'s `__name__` and `__package__` and its own file as `sys.argv[0]`,
+  its arguments after, and its exit status is the child's. `package_root` is the folder
+  above the package, from this file's `__file__`, and is not resolved through symlinks: the
+  child looks for it among its `sys.path` entries as text, and the parent imported the
+  package from one of them. Coming from the running GCM's own files, it keeps a child on
+  that version after an update has moved `current`. No environment variable is set. The
+  launcher exporting `PYTHONPATH` was ruled out: every program in a tab would inherit it,
+  and measured on #415, a checkout's `.venv` then imported the installed copy in place of
+  its own. So was a `.pth` file naming `current/src`: every Python of the user's would see
+  it, and it follows `current`, not the version running. Standard library only.
+  `tests/test_childpython.py` runs GCM's own commands, from `relay_command` and
+  `Wmain.check_updates`, with `-I -S` after the interpreter, so that it finds GCM only
+  where the command says, as `/usr/bin/python3` does under the launcher. Both fail on the
+  `-m` commands with `ModuleNotFoundError`. `tests/test_install.py` checks what `install.sh`
+  installs and starts none of the installed GCM's children, which let this through.
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
   a byte stream, and the decision that a pair of them is one copy (#393). Pure, so it is
   testable without a terminal, a display or a pty: `Osc52Scanner` holds a partial-sequence

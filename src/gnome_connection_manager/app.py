@@ -118,6 +118,7 @@ def bindtextdomain(app_name, locale_dir=None):
 from gnome_connection_manager.utils import (  # noqa: E402
     activity,
     afterlogin,
+    childpython,
     configfile,
     configpaths,
     connections,
@@ -2161,8 +2162,11 @@ def relay_command(args, socket_path=None, raw_path=None):
     `args` untouched, so the default path is exactly what it was before the relay
     existed. Each destination is passed only when its own feature is on, so the relay
     does no work nobody asked for.
+
+    The relay is started on the files this GCM runs from, not as `python -m`, which finds
+    no package under an installed GCM's launcher (#415).
     """
-    command = [sys.executable, "-m", "gnome_connection_manager.relay"]
+    command = childpython.module_command("gnome_connection_manager.relay")
     if socket_path:
         command += ["--clipboard-socket", socket_path]
     if raw_path:
@@ -2264,10 +2268,10 @@ def vte_run(terminal, command, arg=None, environment=None):
         # path when a preference asks for it, so the default carries none of its risk.
         #
         # The relay's own argv is an ordinary one, so asking GLib for FILE_AND_ARGV_ZERO
-        # here makes it swallow `-m` as the child's argv[0] and python then looks for a
-        # script named after the module, in $HOME (#91). Hand the relay a plain argv and
-        # let GLib take ours literally; the relay reproduces the same child argv when it
-        # execs the inner command.
+        # here makes it swallow `-c` as the child's argv[0] and python then looks for a
+        # script named after the bootstrap, in $HOME (#91, when it was `-m` and the module).
+        # Hand the relay a plain argv and let GLib take ours literally; the relay
+        # reproduces the same child argv when it execs the inner command.
         args = relay_command(plain_argv(args, not is_local_shell), socket_path, raw_path)
         flag_spawn = GLib.SpawnFlags.DEFAULT
 
@@ -2700,11 +2704,10 @@ class Wmain(GladeComponent):
     def check_updates(self):
         """Ask this repository for its release tags, and say when one is newer than the
         running GCM (#295). In a process of its own: asked on a thread, a GCM quit during
-        the request exited with the thread still inside it (#369)."""
+        the request exited with the thread still inside it (#369). Started as the relay is,
+        on the files this GCM runs from (#415)."""
         command = [
-            sys.executable,
-            "-m",
-            "gnome_connection_manager.utils.updates",
+            *childpython.module_command("gnome_connection_manager.utils.updates"),
             updates.TAGS_URL,
         ]
         try:
