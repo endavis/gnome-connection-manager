@@ -216,6 +216,8 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
                     # above, rather than with an empty read: measured (#337).
                     break  # pragma: no mutate
                 recorder.write(chunk)
+                # Every write goes, the two of a pair included. Whether they are one copy
+                # is for GCM to say: it re-checks the preference there as well (#393).
                 for selection, data in scanner.feed(chunk):
                     clipboard.send(selection, data)
                 _write_all(sys.stdout.fileno(), chunk)

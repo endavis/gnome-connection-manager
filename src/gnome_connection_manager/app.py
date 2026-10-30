@@ -124,6 +124,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     crypto,
     logpaths,
     menuplacement,
+    osc52,
     placeholders,
     remotefiles,
     tabcolors,
@@ -5703,10 +5704,14 @@ class Wmain(GladeComponent):
         return not (condition & GLib.IO_HUP)
 
     def _apply_clipboard_message(self, line):
-        """Put a relayed OSC 52 payload on the clipboard.
+        """Put a relayed OSC 52 payload on the clipboard, and say whether it did.
 
         Re-checks the preference: a session started while it was on must stop being
         able to write here the moment it is turned off.
+
+        A write of the text just put there is left out. A program can write a copy twice,
+        and the second set follows no input, which Weston ignores. GTK then goes on
+        answering a paste with this text, and a copy made elsewhere does not reach it (#393).
         """
         if not conf.OSC52_ENABLED:
             return False
@@ -5718,6 +5723,15 @@ class Wmain(GladeComponent):
             return False
         text = data.decode("utf-8", "replace")
         if not text:
+            return False
+        # Made on first use, as a terminal's quiet_watch is: a Wmain built without new(),
+        # as tests build one, has none, and one on the class would carry a write from one
+        # window to the next.
+        repeats = getattr(self, "_clipboard_repeats", None)
+        if repeats is None:
+            repeats = self._clipboard_repeats = osc52.RepeatFilter()
+        if repeats.repeated(text, time.monotonic()):
+            logger.debug("Leaving out an OSC 52 write that repeats the one just made")
             return False
         Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
         return True

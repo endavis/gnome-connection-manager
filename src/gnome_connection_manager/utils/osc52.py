@@ -5,8 +5,9 @@ terminal and seeing the clipboard untouched, and by the absence of any "52;" str
 libvte. There is also no API to observe unhandled OSC sequences, so the only way to
 support it is to see the bytes before VTE does.
 
-This module is the pure part of that: it holds no state beyond a partial-sequence
-buffer and does no I/O, so it can be tested without a terminal, a display or a pty.
+This module is the pure part of that. It does no I/O and reads no clock, so it can be
+tested without a terminal, a display or a pty. `Osc52Scanner` holds a partial-sequence
+buffer. `RepeatFilter` is GCM's side of the relay, and holds the last write it let through.
 """
 
 from __future__ import annotations
@@ -27,6 +28,13 @@ MAX_PAYLOAD = 1 << 20
 # (s0-s7) are deliberately ignored: nothing mainstream writes them and each is one more
 # thing a remote host can reach.
 _SELECTIONS = {"c", "p"}
+
+# A write of the text just put on the clipboard, less than this many seconds after it, is
+# the second of a pair and not a new copy (#393). The pairs measured came 3.4 ms apart, or
+# in one read. A second leaves room for a main loop that stalls or a slow link, and is
+# shorter than a person takes to copy elsewhere and then copy again; that last is an
+# estimate, not a measurement.
+REPEAT_WINDOW = 1.0
 
 
 class Osc52Scanner:
@@ -113,3 +121,37 @@ class Osc52Scanner:
             return base64.b64decode(payload, validate=True)
         except (binascii.Error, ValueError):
             return None
+
+
+class RepeatFilter:
+    """Tells the second write of a pair from a new copy (#393).
+
+    A program in a tab can write its copy twice, once for the target "" and once for "c",
+    and the scanner reads both as the clipboard. Set twice, the second set follows no input
+    that GCM received. Weston ignores such a set without a word to GTK, which then goes on
+    answering a paste with GCM's text and not with what was copied elsewhere since. So a
+    write of the text last let through, less than `window` seconds before, is a repeat, and
+    is left out.
+
+    The window runs from the write let through, and a repeat does not renew it. Otherwise a
+    program that wrote one text every 0.6 s would be left out for good, and a copy that is
+    meant to put things right would never get through. The text is the whole key: the
+    scanner reads the pair's "" as "c", so both writes arrive alike, target and all.
+
+    The time is an argument, as `QuietWatch`'s is.
+    """
+
+    def __init__(self, window: float = REPEAT_WINDOW) -> None:
+        self._window = window
+        self._last: tuple[str, float] | None = None
+
+    def repeated(self, text: str, now: float) -> bool:
+        """Whether `text` is what was let through less than the window before `now`.
+
+        Anything else is let through, and is what the next write is compared with.
+        """
+        last = self._last
+        if last is not None and last[0] == text and now - last[1] < self._window:
+            return True
+        self._last = (text, now)
+        return False
