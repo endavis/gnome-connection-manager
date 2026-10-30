@@ -11,6 +11,14 @@ the git log.
 
 ## [Unreleased]
 
+### Fixed
+- Installed with the install line, GCM opened no console while **Let applications write to
+  the clipboard (OSC 52)** or **Record the raw session** was on: each tab printed
+  `No module named 'gnome_connection_manager'` and started no shell. The update check
+  failed the same way, silently, so a v2.2.0 installed so never told of a newer release.
+  GCM now starts both on the files it is running from. Run from a checkout, it worked
+  before and is not changed.
+
 ## [2.2.0] - 2026-10-30
 
 ### Added

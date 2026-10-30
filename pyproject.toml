@@ -325,6 +325,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_activity.py",
     "tests/test_afterlogin.py",
     "tests/test_application.py",
+    "tests/test_childpython.py",
     "tests/test_command_hosts.py",
     "tests/test_commands_after_login.py",
     "tests/test_config.py",
