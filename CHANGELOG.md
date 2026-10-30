@@ -11,6 +11,8 @@ the git log.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-30
+
 ### Fixed
 - Installed with the install line, GCM opened no console while **Let applications write to
   the clipboard (OSC 52)** or **Record the raw session** was on: each tab printed
