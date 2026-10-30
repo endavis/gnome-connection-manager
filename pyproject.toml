@@ -1,6 +1,6 @@
 [project]
 name = "gnome-connection-manager"
-version = "2.1.1"
+version = "2.2.0"
 description = "Tabbed SSH, telnet and local shell manager with RDP, VNC, web and command hosts"
 readme = "README.md"
 requires-python = ">=3.12"
