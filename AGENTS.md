@@ -32,7 +32,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   idle program only when a byte next went through, measured (#319). `relay` makes the
   program's pty itself, with `os.openpty`, and sizes it before it forks. `pty.fork` starts
   the program first, and measured under load, a program that read its size at once then
-  read 0 by 0 (#339).
+  read 0 by 0 (#339). It sends every OSC 52 write it finds, the two of a pair included:
+  whether they are one copy is for GCM to say, in `RepeatFilter` in
+  `src/gnome_connection_manager/utils/osc52.py` (#393).
   `tests/test_osc52.py` runs the relay on a pty that is its controlling terminal, since
   only then does a resize signal it. `tests/test_relay.py` calls `relay()` in pytest's
   own process instead, with a pty or pipes of the test's in place of `sys.stdin` and
@@ -41,6 +43,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   from a timer's SIGALRM, and the resize is a SIGWINCH the test sends itself.
   `held_up_after_fork` holds the relay up once it has started its program, as load does,
   so that what a test finds the program first sees does not hang on the scheduler.
+  `test_a_pair_of_clipboard_writes_sets_the_clipboard_once` sends a pair through it, at
+  once and 3 ms apart, and gives what arrives to the real `Wmain._apply_clipboard_message`
+  with a clipboard that counts its sets (#393). It prints nothing, as `sys.stdout` stays a
+  stand-in until teardown, and holds the clock still only once the relay has returned,
+  since the relay's own limit reads it.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
 - `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which
@@ -679,8 +686,42 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   crashed at exit in #316. `quit_application`, which Ctrl+Q and closing the window both
   reach, kills a check still running.
 - `src/gnome_connection_manager/utils/osc52.py` – extraction of OSC 52 clipboard writes from
-  a byte stream. Pure and stateless apart from a partial-sequence buffer, so it is testable
-  without a terminal, a display or a pty.
+  a byte stream, and the decision that a pair of them is one copy (#393). Pure, so it is
+  testable without a terminal, a display or a pty: `Osc52Scanner` holds a partial-sequence
+  buffer, and `RepeatFilter` the last write GCM let through, with the time an argument as
+  `QuietWatch`'s is. A program in a tab wrote each copy as a pair, the text for the target
+  `''` and again for `c`, and the scanner reads `''` as `c`, so the two reach GCM alike.
+  `Wmain._apply_clipboard_message` asks `RepeatFilter.repeated` and sets the clipboard once
+  for a pair.
+  The mechanism, measured on WSLg 1.0.73.2 (Weston 9.0.0) and posted on #393: GTK 3 makes
+  a new data source for each `set_text`, with the serial of the last input event. Weston's
+  clipboard manager, `libweston/clipboard.c`, keeps a copy of the selection with its serial
+  and sets it back when the selection's source is destroyed. So a second set with no input
+  since carries the serial the selection already has, and `weston_seat_set_selection`
+  ignores it, with no `cancelled`. GTK gives up its claim only on `cancelled` for its own
+  source, so it went on answering a paste with GCM's text, while a copy made in Windows
+  replaced the manager's copy and not GCM's source. The same three pieces are in upstream
+  Weston 13.0.0, read in its source. An echo through Windows, which the issue first
+  suspected, was not it: a single write stayed the selection for nearly 5 s. A pair
+  handled in one go also left Windows an empty string, three runs out of three, as GTK
+  destroyed the first source before it answered the manager's read of it; with the writes
+  3 ms apart it answered, and Windows held the text, two runs out of two.
+  Decided there: `REPEAT_WINDOW` is 1 s, from the last write let through, and a repeat
+  does not renew it, since a program writing one text every 0.6 s would be left out for
+  good and the copy that puts things right must always get through. The key is the decoded
+  text alone. The target is not honoured: xterm reads `''` as the primary selection, and a
+  program that wrote it alone would no longer reach the clipboard, which changes what an
+  existing configuration does. The filter is made on first use, as a terminal's
+  `quiet_watch` is, since tests build a `Wmain` with `object.__new__` and one on the class
+  would carry a write from one to the next. It comes after the preference check, the
+  decode and the empty-text check, so a write refused is never remembered. It is GCM's and
+  not the relay's: the relay is in the byte path and is meant to stay simple, and GCM
+  already re-checks the preference. Not done, and left for a follow-up: two writes of
+  different texts with no input to GCM between them, and a write after a copy made
+  elsewhere while GCM has had no input, each of which can still leave GTK claiming a
+  clipboard that Weston does not hold. Directions to measure there: coalesce a burst to
+  its last write, call `Gtk.Clipboard.clear()` when another client's selection arrives
+  (`owner-change`), and hold a write until GCM has had input.
 - `src/gnome_connection_manager/utils/vtehtml.py` – parses VTE's HTML grid export into styled
   runs for the buffer viewer.
 - `src/gnome_connection_manager/utils/transcript.py` – rebuilds a readable transcript from a

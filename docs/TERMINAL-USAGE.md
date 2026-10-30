@@ -365,6 +365,20 @@ terminal, **including a remote host**:
   remote host must not be able to read your clipboard.
 - **Only the clipboard and primary selections are honoured.** Cut buffers are ignored.
 
+**A copy written twice is set once.** A program can write a copy as two writes of one text,
+one for the empty target and one for `c`, a few milliseconds apart or in one go. GCM reads
+both as the clipboard, and puts the text on it once: a write of the text it has just set,
+less than a second before, is left out. The same text a second or more later is a copy of
+its own, and so is any other text, however soon after.
+
+This matters under WSLg
+([#393](https://github.com/endavis/gnome-connection-manager/issues/393)). Its compositor,
+Weston, ignores a second set of the clipboard that follows no input to GCM, and says
+nothing. GCM then went on pasting the program's text where you had copied something else in
+Windows since. GCM sets a pair once, so there is no second set to ignore. The same can still
+happen with two writes of different texts and no input to GCM between them, and with a
+write that follows a copy made elsewhere while GCM has had no input.
+
 ## Viewing the buffer without the mouse
 
 `Ctrl+Shift+F`, **Edit → View Buffer**, or **View buffer** in [the terminal's

@@ -331,6 +331,58 @@ def test_a_clipboard_write_reaches_gcm_and_the_terminal_both(monkeypatch, fds):
     assert read_all(out_read) == f"\x1b]52;c;{payload}\x07".encode()
 
 
+# The two writes of a pair, as a program in a tab makes them: the text for the target "",
+# then again for "c". Both at once, which the relay reads in one go, or 3 ms apart, as the
+# pairs measured in two reads came (#393).
+PAIRS = {
+    "at once": r"printf '\033]52;;{p}\a\033]52;c;{p}\a'",
+    "3 ms apart": r"printf '\033]52;;{p}\a'; sleep 0.003; printf '\033]52;c;{p}\a'",
+}
+
+
+@pytest.mark.parametrize("how", PAIRS)
+def test_a_pair_of_clipboard_writes_sets_the_clipboard_once(monkeypatch, fds, app_module, how):
+    """From the program's two writes, through the relay and its socket, to GCM's clipboard.
+    The relay sends both: whether a pair is one copy is for GCM to say (#393)."""
+    text = "from OSC 52"
+    payload = base64.b64encode(text.encode()).decode()
+    _, out_write = fds.pipe()
+    with tempfile.TemporaryDirectory() as folder:
+        path = str(Path(folder) / "clip.sock")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+            server.bind(path)
+            server.listen(1)
+            status = run_relay(
+                monkeypatch,
+                ["sh", "-c", PAIRS[how].format(p=payload)],
+                input_of(fds, b""),
+                out_write,
+                clipboard_socket=path,
+            )
+            lines = received(server).splitlines()
+
+    assert status == 0
+    # Both writes reached GCM, as "c" and alike: otherwise one set below proves nothing.
+    assert [json.loads(line) for line in lines] == [{"selection": "c", "data": payload}] * 2
+
+    sets = []
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
+    # Held still only now: the relay's own limit reads the clock while it runs.
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: object(), raising=False)
+    monkeypatch.setattr(
+        app_module.Gtk.Clipboard,
+        "get_default",
+        lambda *_a: SimpleNamespace(set_text=lambda written, _n: sets.append(written)),
+        raising=False,
+    )
+    wmain = object.__new__(app_module.Wmain)
+    for line in lines:
+        wmain._apply_clipboard_message(line)
+
+    assert sets == [text]
+
+
 def test_the_session_is_recorded_with_its_timing(monkeypatch, fds, tmp_path):
     out_read, out_write = fds.pipe()
     raw, timing = tmp_path / "s.raw", tmp_path / "s.timing"

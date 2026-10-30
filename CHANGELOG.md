@@ -78,6 +78,15 @@ the git log.
   keeps its name. Session logs are where they were.
 
 ### Fixed
+- Under WSLg, a GCM with **Let applications write to the clipboard (OSC 52)** on pasted what
+  a program in a tab had last copied, and not what you had copied in Windows since. The
+  program wrote each copy as two writes of one text. WSLg's compositor ignores a second set
+  of the clipboard that follows no input to GCM, and says nothing, so GCM went on answering
+  pastes with its own text. When both writes came together, Windows was also left an empty
+  clipboard. GCM now puts the text on the clipboard once when it is written twice within a
+  second. The same can still happen with two writes of different texts and no input to GCM
+  between them, and with a write after a copy made in Windows while GCM has had no input;
+  neither is changed.
 - Under WSLg, the server tree's right-click menu on a host or a folder, opened low on the
   screen, ran off its bottom edge, and so could the terminal's menu, a tab's, the Mounted
   tab's and the list of open consoles behind the ▾ button. GCM now measures the menu and

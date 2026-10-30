@@ -13,6 +13,7 @@ import inspect
 import json
 import os
 import select
+import socket
 import struct
 import subprocess
 import sys
@@ -23,7 +24,12 @@ from pathlib import Path
 
 import pytest
 
-from gnome_connection_manager.utils.osc52 import MAX_PAYLOAD, Osc52Scanner
+from gnome_connection_manager.utils.osc52 import (
+    MAX_PAYLOAD,
+    REPEAT_WINDOW,
+    Osc52Scanner,
+    RepeatFilter,
+)
 
 
 def sequence(data: bytes, selection: str = "c", terminator: bytes = b"\x07") -> bytes:
@@ -854,3 +860,199 @@ def test_each_resize_reaches_an_idle_program_under_the_relay():
     assert "READY 24x80" in started, started
     assert "WINCH 30x100" in reached[0], reached
     assert "WINCH 40x120" in reached[1], reached
+
+
+# -- a copy written twice is one copy (#393) -------------------------------------
+#
+# A program in a tab writes each copy as a pair: the text for the target "" and again for
+# "c". GCM put both on the clipboard, and the second set follows no input that GCM
+# received, which Weston ignores without a word to GTK. GTK then answered every paste with
+# GCM's text, and a copy made in Windows did not reach it.
+
+
+def test_a_pair_of_writes_of_one_text_reaches_the_scanner_as_two_alike():
+    """The scanner reads "" as "c", so nothing after it can tell the two writes apart.
+    That is why GCM tells a repeat by its text and its time, and not by its target."""
+    stream = sequence(b"copied", selection="") + sequence(b"copied", selection="c")
+
+    assert Osc52Scanner().feed(stream) == [("c", b"copied"), ("c", b"copied")]
+
+
+def test_the_first_write_is_not_a_repeat():
+    assert RepeatFilter().repeated("copied", 100.0) is False
+
+
+@pytest.mark.parametrize(
+    ("gap", "repeat"),
+    [
+        (0.0, True),  # a pair handled in one go
+        (0.0034, True),  # the gap of the pairs measured in two reads
+        (0.5, True),  # a main loop that stalled, or a slow link
+        (1.5, False),  # a person who copies the same text again
+    ],
+)
+def test_a_write_of_the_same_text_is_a_repeat_for_about_a_second(gap, repeat):
+    """The default window, which these times put between 0.5 s and 1.5 s."""
+    repeats = RepeatFilter()
+    repeats.repeated("copied", 100.0)
+
+    assert repeats.repeated("copied", 100.0 + gap) is repeat
+
+
+@pytest.mark.parametrize(("gap", "repeat"), [(1.0, True), (3.0, True), (4.0, False), (9.0, False)])
+def test_a_write_is_a_repeat_until_exactly_one_window_after_the_one_let_through(gap, repeat):
+    """Times that a float holds exactly, so that the edge is the edge: a window of 4 s,
+    from 10 s."""
+    repeats = RepeatFilter(window=4.0)
+    repeats.repeated("copied", 10.0)
+
+    assert repeats.repeated("copied", 10.0 + gap) is repeat
+
+
+def test_a_different_text_is_never_a_repeat():
+    repeats = RepeatFilter()
+    repeats.repeated("one", 100.0)
+
+    assert repeats.repeated("two", 100.0) is False
+
+
+def test_only_the_write_just_before_counts():
+    """A, B, A is three copies. A new write repeats the last one let through, no earlier."""
+    repeats = RepeatFilter()
+
+    assert [repeats.repeated(text, 100.0) for text in "ABA"] == [False, False, False]
+
+
+def test_a_repeat_does_not_renew_the_window():
+    """Let through at 10 s, left out at 12 s, and let through again at 14 s: a window of
+    4 s after the first, not after the repeat. Otherwise a program that wrote one text
+    every 2 s would be left out for good."""
+    repeats = RepeatFilter(window=4.0)
+
+    assert [repeats.repeated("copied", at) for at in (10.0, 12.0, 14.0)] == [False, True, False]
+
+
+def test_the_window_restarts_from_each_write_let_through():
+    repeats = RepeatFilter(window=4.0)
+
+    answers = [repeats.repeated("copied", at) for at in (10.0, 14.0, 16.0, 18.0)]
+
+    assert answers == [False, False, True, False]
+
+
+@pytest.mark.parametrize(("window", "repeat"), [(0.5, False), (2.0, True)])
+def test_the_window_is_the_one_given(window, repeat):
+    """1.5 s after, which the default window of about a second would call a new copy."""
+    repeats = RepeatFilter(window=window)
+    repeats.repeated("copied", 100.0)
+
+    assert repeats.repeated("copied", 101.5) is repeat
+
+
+def test_the_window_is_about_a_second():
+    """Pinned apart from its behaviour, as MAX_PAYLOAD is. Long enough for a pair 3.4 ms
+    apart, a main loop that stalls and a slow link; short of the time a person takes to
+    copy again, which is an estimate and not a measurement."""
+    assert 0.5 <= REPEAT_WINDOW < 1.5
+
+
+class Clipboard:
+    """GCM's clipboard and clock as a test sees them: every set, and the time."""
+
+    def __init__(self, app_module, monkeypatch):
+        self.sets: list[str] = []
+        self.now = 100.0
+        self.wmain = object.__new__(app_module.Wmain)
+        monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
+        monkeypatch.setattr(app_module.time, "monotonic", lambda: self.now)
+        monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: object(), raising=False)
+        monkeypatch.setattr(
+            app_module.Gtk.Clipboard,
+            "get_default",
+            lambda *_a: types.SimpleNamespace(set_text=lambda text, _n: self.sets.append(text)),
+            raising=False,
+        )
+
+    def write(self, text, after=0.0):
+        """What GCM answers to a write of `text`, `after` seconds after the one before."""
+        self.now += after
+        return self.wmain._apply_clipboard_message(_message(text))
+
+
+@pytest.fixture
+def clipboard(app_module, monkeypatch):
+    return Clipboard(app_module, monkeypatch)
+
+
+@pytest.mark.parametrize("gap", [0.0, 0.0034])
+def test_a_pair_of_writes_sets_the_clipboard_once(clipboard, gap):
+    answers = [clipboard.write("copied"), clipboard.write("copied", after=gap)]
+
+    assert answers == [True, False]
+    assert clipboard.sets == ["copied"]
+
+
+def test_two_texts_close_together_are_both_set(clipboard):
+    answers = [clipboard.write("one"), clipboard.write("two", after=0.0034)]
+
+    assert answers == [True, True]
+    assert clipboard.sets == ["one", "two"]
+
+
+def test_the_same_text_a_window_later_is_a_copy_of_its_own(clipboard):
+    clipboard.write("copied")
+    clipboard.write("copied", after=REPEAT_WINDOW)
+
+    assert clipboard.sets == ["copied", "copied"]
+
+
+def test_a_text_written_again_after_another_is_set_again(clipboard):
+    for text in "ABA":
+        clipboard.write(text)
+
+    assert clipboard.sets == ["A", "B", "A"]
+
+
+def test_a_write_refused_for_the_preference_is_not_remembered(app_module, clipboard, monkeypatch):
+    """Otherwise the same text, written once the preference is on, would be left out."""
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 0)
+    assert clipboard.write("copied") is False
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
+
+    assert clipboard.write("copied") is True
+    assert clipboard.sets == ["copied"]
+
+
+@pytest.mark.parametrize("line", [b"not json", b"{}", b'{"data": ""}'])
+def test_a_line_that_sets_nothing_does_not_stand_in_the_way_of_the_next_write(clipboard, line):
+    assert clipboard.wmain._apply_clipboard_message(line) is False
+
+    assert clipboard.write("copied") is True
+    assert clipboard.sets == ["copied"]
+
+
+def test_two_windows_do_not_share_the_last_write(app_module, clipboard):
+    """Tests build a Wmain at a time, and a filter on the class would carry one's last write
+    into the next."""
+    other = object.__new__(app_module.Wmain)
+    clipboard.write("copied")
+
+    assert other._apply_clipboard_message(_message("copied")) is True
+    assert clipboard.sets == ["copied", "copied"]
+
+
+def test_the_two_lines_of_a_pair_read_together_set_the_clipboard_once(
+    app_module, clipboard, monkeypatch
+):
+    """The relay sends a pair's lines back to back, and the socket often gives GCM both in
+    one read."""
+    monkeypatch.setattr(app_module.GLib, "IO_HUP", 16, raising=False)
+    line = _message("copied") + b"\n"
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        theirs.sendall(line + line)
+
+        keep_watching = clipboard.wmain._on_clipboard_data(ours, bytearray(), 0)
+
+    assert keep_watching is True
+    assert clipboard.sets == ["copied"]
