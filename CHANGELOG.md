@@ -11,6 +11,8 @@ the git log.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-30
+
 ### Added
 - Where a tab's host is filed now shows wherever there is room for it. Hover a tab, and
   under its label the tooltip gives the host's folders and name,
