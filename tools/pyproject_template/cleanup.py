@@ -489,7 +489,7 @@ def regenerate_doc_toc(root: Path | None = None, dry_run: bool = False) -> bool:
         Logger.info("Would regenerate docs/TABLE_OF_CONTENTS.md")
         return True
 
-    import subprocess  # nosec B404 - local import for invoking generate_doc_toc.py
+    import subprocess  # nosec B404  # local import for invoking generate_doc_toc.py
 
     result = subprocess.run(
         [sys.executable, str(script)],

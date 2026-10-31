@@ -18,7 +18,7 @@ pytest does not collect it (the filename does not match ``test_*.py``).
 from __future__ import annotations
 
 import fnmatch
-import subprocess  # nosec B404 - subprocess is required to list git-tracked files
+import subprocess  # nosec B404  # subprocess is required to list git-tracked files
 from pathlib import Path
 
 try:
@@ -93,7 +93,7 @@ def committed_markdown_files(root: Path) -> list[Path]:
     Returns:
         Absolute paths, sorted.
     """
-    result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+    result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md"],
         cwd=root,
         capture_output=True,

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import shutil
-import subprocess  # nosec B404 - required to invoke context-mode CLI
+import subprocess  # nosec B404  # required to invoke context-mode CLI
 import sys
 
 EVENT_NAME = "PostToolUse"
@@ -29,11 +29,11 @@ def main() -> int:
 
         try:
             raw = sys.stdin.buffer.read()
-        except Exception:  # nosec B110
+        except Exception:
             return 0
 
         try:
-            result = subprocess.run(  # nosec B603 B607 - shutil.which guard validates path
+            result = subprocess.run(  # nosec B603 B607  # shutil.which guard validates path
                 [CLI_NAME, "hook", "claude-code", EVENT_NAME],
                 input=raw,
                 capture_output=True,
@@ -50,7 +50,7 @@ def main() -> int:
             sys.stderr.buffer.flush()
         return result.returncode
 
-    except Exception:  # nosec B110 - hook must never raise
+    except Exception:  # hook must never raise
         return 0
 
 

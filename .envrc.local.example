@@ -10,7 +10,9 @@
 # export DATABASE_URL=sqlite:///tmp/dev.db
 
 # Override cache locations if needed
-# export UV_CACHE_DIR="$(pwd)/tmp/.uv_cache"
+# uv shares one cache (default ~/.cache/uv). To move it, use an ABSOLUTE path on the
+# same filesystem as your checkouts, so uv can hard-link instead of copy:
+# export UV_CACHE_DIR="/data/cache/uv"
 # export RUFF_CACHE_DIR="$(pwd)/tmp/.ruff_cache"
 # export MYPY_CACHE_DIR="$(pwd)/tmp/.mypy_cache"
 # export COVERAGE_FILE="$(pwd)/tmp/.coverage"

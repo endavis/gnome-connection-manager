@@ -1,7 +1,7 @@
 """Git-related doit tasks."""
 
 import os
-import subprocess  # nosec B404 - subprocess is required for doit tasks
+import subprocess  # nosec B404  # subprocess is required for doit tasks
 import sys
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
@@ -174,11 +174,36 @@ def _worktree_leftovers(worktree: Path) -> list[str]:
     )
     leftovers = []
     for line in status.stdout.splitlines():
-        name = PurePosixPath(line[3:].rstrip("/")).name
-        if line.startswith("!! ") and any(fnmatch(name, p) for p in _REBUILDABLE_IGNORED):
+        entry = line[3:]
+        if line.startswith("!! ") and _is_rebuildable(PurePosixPath(entry.rstrip("/")).name):
+            continue
+        if line.startswith("!! ") and entry.endswith("/"):
+            # git collapses an ignored directory into one entry, so judge it by
+            # what it holds: `tmp/agents/` with only `__pycache__` loses nothing (#1112).
+            leftovers += [f"!! {path}" for path in _unrebuildable_files(worktree, entry)]
             continue
         leftovers.append(line)
     return leftovers
+
+
+def _is_rebuildable(name: str) -> bool:
+    """Whether a file or directory called *name* is one the tooling can rebuild."""
+    return any(fnmatch(name, p) for p in _REBUILDABLE_IGNORED)
+
+
+def _unrebuildable_files(worktree: Path, directory: str) -> list[str]:
+    """Return the files under ignored *directory* that are not rebuildable, worktree-relative.
+
+    A rebuildable directory is not descended into, so nothing under it counts.
+    """
+    found = []
+    for root, dirs, files in os.walk(worktree / directory):
+        relative = PurePosixPath(Path(root).relative_to(worktree).as_posix())
+        # os.walk does not follow a symlinked directory; list it rather than skip it.
+        links = [d for d in dirs if (Path(root) / d).is_symlink()]
+        found += [str(relative / n) for n in files + links if not _is_rebuildable(n)]
+        dirs[:] = [d for d in dirs if d not in links and not _is_rebuildable(d)]
+    return sorted(found)
 
 
 def _branch_tip(branch: str) -> str:
@@ -354,9 +379,9 @@ def task_worktree() -> dict[str, Any]:
         console.print(verbatim(f"Created {path} on {branch}, from origin/main.", "green"))
 
         env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
-        # base.py defaults UV_CACHE_DIR to a relative path. Resolved here, before
-        # uv runs in the worktree, it keeps pointing at this checkout's cache
-        # instead of a new, empty one inside the worktree.
+        # A user-set relative UV_CACHE_DIR is resolved here, before uv runs in the
+        # worktree, so it keeps pointing at this checkout's cache instead of a
+        # new, empty one inside the worktree. Unset, uv uses its shared default.
         if "UV_CACHE_DIR" in env:
             env["UV_CACHE_DIR"] = str(Path(env["UV_CACHE_DIR"]).resolve())
         try:

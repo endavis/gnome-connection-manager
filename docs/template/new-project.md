@@ -88,7 +88,7 @@ After the script completes, you'll need to:
    > reinstall the suite by running:
    > ```bash
    > curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py \
-   >     | python3 - --sync
+   >     | python3 - --sync --yes
    > ```
 
 2. **Add Codecov token** (optional, for coverage reports):
@@ -221,7 +221,7 @@ having to reinstall it.
 To reinstall the template-sync suite later:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync
+curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync --yes
 ```
 
 ### Step 5: Verify Setup

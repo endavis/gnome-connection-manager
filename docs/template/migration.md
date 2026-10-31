@@ -259,7 +259,7 @@ If you would rather not carry it, shed it with `doit template_clean --all` and r
 later when you want to sync:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync
+curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync --yes
 ```
 
 ## Staying Updated

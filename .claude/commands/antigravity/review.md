@@ -4,6 +4,8 @@ Delegate a read-only code review of the current changes to Antigravity CLI (`agy
 
 ## Instructions
 
+Resolve the configured model first: `uv run doit agent_cmd --role=review --host=claude --cli=antigravity`. Its last stdout line is JSON with `mode: cli` and a `command` string. Run that `command` in place of the literal invocation below, replacing `'<prompt>'` with the prompt text from the literal. If the task is unavailable or fails, run the literal below as is; with no config the two are identical. See [Agent roles](../../../docs/development/ai/agent-roles.md).
+
 Use the Bash tool to invoke Antigravity non-interactively. The prompt asks `agy` to use its Antigravity review skill if available, otherwise to follow the equivalent inline workflow. `agy` needs `--add-dir` pointed at the repo root so it loads the workspace (and the shared dangerous-command hook); `--dangerously-skip-permissions` auto-approves routine tools while that hook still hard-blocks unsafe ones.
 
 ```bash

@@ -3,7 +3,7 @@
 import json
 import os
 import re
-import subprocess  # nosec B404 - subprocess is required for doit tasks
+import subprocess  # nosec B404  # subprocess is required for doit tasks
 import sys
 import tempfile
 from datetime import datetime

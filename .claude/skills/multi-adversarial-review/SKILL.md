@@ -37,6 +37,8 @@ stays the source of truth:
 
 A headless Codex host (`codex exec -a never`) can read GitHub through `.codex/rules/gh.rules` but cannot write to it or delegate to another agent CLI — see [Headless Codex host limits](../../../docs/development/ai/cross-agent-delegation.md#headless-codex-host-limits). It cannot run Step 2's delegation to the other listed agents or Step 5's `gh pr comment` headless; Codex hosts this skill interactively instead.
 
+**Configured roles.** Before calling a listed agent, run `uv run doit agent_cmd --role=adversarial_review --host=<host> --cli=<agent>` (`<host>` is the CLI running this skill). Its last stdout line is JSON; for a listed agent `mode` is `cli`, so run its `command` instead of that agent's table row, replacing `'<prompt>'` with the delegated prompt. The configured model and effort apply when that role's configured CLI is this agent. If the task fails, use the table row as is; with no config the two are identical. Your own part never goes through this: Step 0 removed your CLI, and you run in this session. See [Agent roles](../../../docs/development/ai/agent-roles.md).
+
 ## Instructions
 
 ### Step 0: Parse arguments

@@ -49,6 +49,20 @@ timeout = 30
 statusMessage = "Checking file edit"
 
 # =============================================================================
+# SESSION-START HOOK — Template update notice
+# =============================================================================
+# Runs on new and resumed sessions and prints a yellow `systemMessage`; see
+# docs/template/updates.md. Opt out with PYPROJECT_TEMPLATE_UPDATE_CHECK=0.
+[[hooks.SessionStart]]
+matcher = "^(startup|resume)$"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'python3 "$(git rev-parse --show-toplevel)/tools/hooks/ai/template-update-check.py" --host=codex'
+timeout = 5
+statusMessage = "Checking for template updates"
+
+# =============================================================================
 # SHELL ENVIRONMENT POLICY
 # =============================================================================
 [shell_environment_policy]

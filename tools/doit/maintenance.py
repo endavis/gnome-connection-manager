@@ -2,7 +2,7 @@
 
 import os
 import shutil
-import subprocess  # nosec B404 - subprocess is required for doit tasks
+import subprocess  # nosec B404  # subprocess is required for doit tasks
 import sys
 from typing import Any
 
@@ -11,7 +11,15 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from .base import UV_CACHE_DIR, verbatim
+from .base import verbatim
+
+
+def task_default() -> dict[str, Any]:
+    """List all available tasks (runs when no task is given)."""
+    return {
+        "actions": ["uv run doit list"],
+        "verbosity": 2,
+    }
 
 
 def task_cleanup() -> dict[str, Any]:
@@ -114,7 +122,6 @@ def task_update_deps() -> dict[str, Any]:
         print()
         subprocess.run(
             ["uv", "pip", "list", "--outdated"],
-            env={**os.environ, "UV_CACHE_DIR": UV_CACHE_DIR},
             check=False,
         )
 
@@ -127,7 +134,6 @@ def task_update_deps() -> dict[str, Any]:
         # Update dependencies and refresh lockfile
         result = subprocess.run(
             ["uv", "sync", "--all-extras", "--dev", "--upgrade"],
-            env={**os.environ, "UV_CACHE_DIR": UV_CACHE_DIR},
         )
 
         if result.returncode != 0:

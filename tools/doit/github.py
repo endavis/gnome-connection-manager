@@ -12,7 +12,7 @@ import json
 import os
 import random
 import re
-import subprocess  # nosec B404 - subprocess is required for doit tasks
+import subprocess  # nosec B404  # subprocess is required for doit tasks
 import sys
 import tempfile
 import time
@@ -28,7 +28,22 @@ from rich.text import Text
 
 from tools.doit.base import verbatim
 from tools.doit.git import remove_merged_worktree, worktree_for_branch
-from tools.doit.templates import get_issue_template, get_pr_template, get_required_sections
+from tools.doit.templates import (
+    ISSUE_TYPE_TO_FILE,
+    IssueTemplate,
+    get_issue_template,
+    get_pr_template,
+    get_required_sections,
+    parse_issue_template,
+)
+from tools.doit.upstream import (
+    PRIVATE_REPORT_URL,
+    TEMPLATE_REPO,
+    build_footer,
+    is_template_repo_slug,
+    read_recorded_commit,
+    security_match,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console as ConsoleType
@@ -294,7 +309,10 @@ def _parse_markdown_sections(content: str) -> dict[str, str]:
 
 
 def _validate_issue_content(
-    sections: dict[str, str], issue_type: str, console: "ConsoleType"
+    sections: dict[str, str],
+    issue_type: str,
+    console: "ConsoleType",
+    required_sections: list[str] | None = None,
 ) -> bool:
     """Validate that required sections have content.
 
@@ -302,12 +320,14 @@ def _validate_issue_content(
         sections: Parsed markdown sections
         issue_type: Type of issue (feature, bug, refactor, docs, chore)
         console: Rich console for output
+        required_sections: Sections to require; None uses the local template's
 
     Returns:
         True if valid, False otherwise
     """
     # Get required sections dynamically from templates
-    required_sections = get_required_sections(issue_type)
+    if required_sections is None:
+        required_sections = get_required_sections(issue_type)
 
     missing = []
     placeholder_patterns = [
@@ -364,6 +384,103 @@ def _read_body_file(file_path: str, console: "ConsoleType") -> str | None:
         return None
 
 
+def _fetch_upstream_issue_template(issue_type: str, console: "ConsoleType") -> IssueTemplate:
+    """Fetch and parse the template repository's issue template from its ``main``.
+
+    Exits 1 with a clear message when the type is unknown, the fetch fails or the YAML is
+    malformed: nothing is filed unvalidated.
+    """
+    filename = ISSUE_TYPE_TO_FILE.get(issue_type)
+    if filename is None:
+        console.print(
+            verbatim(
+                f"Invalid issue type: {issue_type}. Must be one of: {list(ISSUE_TYPE_TO_FILE)}",
+                "red",
+            )
+        )
+        sys.exit(1)
+    try:
+        result = _run_gh_with_retry(
+            [
+                "gh",
+                "api",
+                "-H",
+                "Accept: application/vnd.github.raw+json",
+                f"repos/{TEMPLATE_REPO}/contents/.github/ISSUE_TEMPLATE/{filename}?ref=main",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        console.print(
+            verbatim(
+                f"Could not fetch the upstream {issue_type} template; nothing was filed.", "red"
+            )
+        )
+        console.print(verbatim(e.stderr or "", "red"))
+        sys.exit(1)
+    try:
+        return parse_issue_template(result.stdout, issue_type)
+    except (yaml.YAMLError, ValueError) as e:
+        console.print(
+            verbatim(
+                f"The upstream {issue_type} template is malformed: {e}; nothing was filed.", "red"
+            )
+        )
+        sys.exit(1)
+
+
+def _refuse_if_template_repo(console: "ConsoleType") -> None:
+    """Exit 1 when ``gh`` would file against the template repository itself, or cannot say."""
+    try:
+        slug = _gh_repo_slug()
+    except subprocess.CalledProcessError:
+        slug = ""
+    if not slug:
+        console.print(
+            "[red]Cannot tell which repository this is, so --upstream is refused. "
+            "Nothing was filed.[/red]"
+        )
+        sys.exit(1)
+    if is_template_repo_slug(slug):
+        console.print(
+            verbatim(
+                f"This is {TEMPLATE_REPO} itself, so there is no upstream. "
+                "Use `doit issue` without --upstream.",
+                "red",
+            )
+        )
+        sys.exit(1)
+
+
+def _refuse_security_content(title: str, body: str, console: "ConsoleType") -> None:
+    """Exit 1 when the title or body reads as a security finding."""
+    term = security_match(title, body)
+    if term is None:
+        return
+    console.print(
+        verbatim(
+            f"Refused: the issue mentions {term!r}, which marks it as a security finding. "
+            "A security finding must never become a public issue. Draft the report to a local "
+            f"file and follow {PRIVATE_REPORT_URL} instead. If this is a false positive, reword "
+            "the issue or file it by hand.",
+            "red",
+        )
+    )
+    sys.exit(1)
+
+
+def _prompt_title(console: "ConsoleType") -> str:
+    """Ask for the issue title; exit 1 when it is empty."""
+    console.print("[cyan]Issue title:[/cyan]")
+    title = input("> ").strip()
+    if not title:
+        console.print("[red]Title is required.[/red]")
+        sys.exit(1)
+    return title
+
+
 def task_issue() -> dict[str, Any]:
     """Create issue from .github/ISSUE_TEMPLATE/<type>.yml (feature/bug/refactor/docs/chore).
 
@@ -378,6 +495,10 @@ def task_issue() -> dict[str, Any]:
         Interactive:  doit issue --type=feature
         From file:    doit issue --type=docs --title="Add guide" --body-file=issue.md
         Direct:       doit issue --type=chore --title="Update CI" --body="## Description\\n..."
+        Upstream:     doit issue --upstream --type=bug --title="bug: x" --body-file=issue.md
+
+    ``--upstream`` files on the template repository, validated against its issue templates; it is
+    refused in the template repository itself and for security-related content.
     """
 
     def create_issue(
@@ -385,6 +506,8 @@ def task_issue() -> dict[str, Any]:
         title: str | None = None,
         body: str | None = None,
         body_file: str | None = None,
+        upstream: bool = False,
+        include_origin: bool = False,
     ) -> None:
         console = Console()
         console.print()
@@ -396,15 +519,22 @@ def task_issue() -> dict[str, Any]:
         )
         console.print()
 
-        # Get template (validates type and retrieves labels/template dynamically)
-        try:
-            issue_template = get_issue_template(type)
-        except ValueError as e:
-            console.print(verbatim(str(e), "red"))
-            sys.exit(1)
-        except FileNotFoundError as e:
-            console.print(verbatim(f"Template error: {e}", "red"))
-            sys.exit(1)
+        origin: str | None = None
+        if upstream:
+            _refuse_if_template_repo(console)
+            if include_origin:
+                origin = _gh_repo_slug()
+            issue_template = _fetch_upstream_issue_template(type, console)
+        else:
+            # Get template (validates type and retrieves labels/template dynamically)
+            try:
+                issue_template = get_issue_template(type)
+            except ValueError as e:
+                console.print(verbatim(str(e), "red"))
+                sys.exit(1)
+            except FileNotFoundError as e:
+                console.print(verbatim(f"Template error: {e}", "red"))
+                sys.exit(1)
 
         labels = issue_template.labels
 
@@ -428,30 +558,45 @@ def task_issue() -> dict[str, Any]:
                 console.print("[yellow]Aborted.[/yellow]")
                 sys.exit(0)
 
+        # Get title if not provided (an upstream issue needs it for the security check)
+        if upstream and not title:
+            title = _prompt_title(console)
+
+        if upstream:
+            _refuse_security_content(title or "", body_content, console)
+
         # Parse and validate
         sections = _parse_markdown_sections(body_content)
-        if not _validate_issue_content(sections, type, console):
+        required = issue_template.required_sections if upstream else None
+        if not _validate_issue_content(sections, type, console, required):
             console.print("[red]Issue content validation failed.[/red]")
             console.print()
-            console.print(f"[yellow]See template: .github/ISSUE_TEMPLATE/{type}.yml[/yellow]")
+            where = (
+                f"{TEMPLATE_REPO} .github/ISSUE_TEMPLATE/{ISSUE_TYPE_TO_FILE[type]}"
+                if upstream
+                else f".github/ISSUE_TEMPLATE/{type}.yml"
+            )
+            console.print(verbatim(f"See template: {where}", "yellow"))
             sys.exit(1)
 
-        # Get title if not provided
         if not title:
-            console.print("[cyan]Issue title:[/cyan]")
-            title = input("> ").strip()
-            if not title:
-                console.print("[red]Title is required.[/red]")
-                sys.exit(1)
+            title = _prompt_title(console)
+
+        create_cmd = ["gh", "issue", "create"]
+        if upstream:
+            body_content = (
+                body_content.rstrip()
+                + "\n\n"
+                + build_footer(read_recorded_commit(Path(__file__).resolve().parents[2]), origin)
+            )
+            create_cmd += ["-R", TEMPLATE_REPO]
 
         # Create the issue
         console.print("\n[cyan]Creating issue...[/cyan]")
         try:
             result = _run_gh_with_retry(
                 [
-                    "gh",
-                    "issue",
-                    "create",
+                    *create_cmd,
                     "--title",
                     title,
                     "--body",
@@ -493,6 +638,20 @@ def task_issue() -> dict[str, Any]:
                 "long": "body-file",
                 "default": None,
                 "help": "Read body from file",
+            },
+            {
+                "name": "upstream",
+                "long": "upstream",
+                "type": bool,
+                "default": False,
+                "help": f"File the issue on {TEMPLATE_REPO} instead of this repository",
+            },
+            {
+                "name": "include_origin",
+                "long": "include-origin",
+                "type": bool,
+                "default": False,
+                "help": "With --upstream, name this repository in the issue footer",
             },
         ],
         "title": title_with_actions,
@@ -1717,7 +1876,7 @@ def _gh_repo_slug() -> str:
     avoiding a hand-rolled parse of ``git remote get-url origin``.
 
     Returns:
-        The ``owner/repo`` slug (for example ``endavis/pyproject-template``).
+        The ``owner/repo`` slug (for example ``octocat/hello-world``).
 
     Raises:
         subprocess.CalledProcessError: If ``gh repo view`` fails.

@@ -7,7 +7,7 @@ Claude's #1 priority is to use tokens efficiently:
 - Keep responses brief and to the point
 - Use local tools (Grep, Read, Edit) as a priority over Task tool
 - Only use the Task tool when necessary
-- Always inform user and ask for consent before starting sub agents, except the ones a skill runs as its own step (implement-issue's Planner and Coder). Invoking the skill is the consent.
+- Always inform user and ask for consent before starting sub agents, except the ones a skill runs as its own step (implement-issue's Planner and Coder, and implement-issues' per-issue agents). Invoking the skill is the consent.
 
 Examples of when to use local tools instead of Task tool:
 - Updating types in function declarations

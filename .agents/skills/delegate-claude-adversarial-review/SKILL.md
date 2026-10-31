@@ -20,6 +20,8 @@ The user may include focus text after the trigger.
 
 ## Instructions
 
+Resolve the configured model first (`<host>` is `codex` or `antigravity`, whichever CLI you are): `uv run doit agent_cmd --role=adversarial_review --host=<host> --cli=claude`. Its last stdout line is JSON with `mode: cli` and a `command` string. Run that `command` in place of the literal invocation below, replacing `'<prompt>'` with the prompt text from the literal. If the task is unavailable or fails, run the literal below as is; with no config the two are identical. See [Agent roles](../../../docs/development/ai/agent-roles.md).
+
 1. Capture any focus text from the user's request.
 2. Run Claude Code non-interactively. Adversarial review challenges direction, not just code details.
 

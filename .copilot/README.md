@@ -18,7 +18,7 @@ All Copilot-host workflow skills live under `.github/skills/<target>-<action>/SK
 Planning and implementation are not part of this matrix — "implement issue N" runs the shared
 `implement-issue` skill instead (see below).
 
-The `multi-*` orchestrators (`/multi-plan`, `/multi-review`, `/multi-adversarial-review`), `/implement-issue`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change` and `/merge-pr` come from `.agents/skills/` (interoperable Codex skill path) and are auto-discovered by Copilot. Verify with `copilot skill list`.
+The `multi-*` orchestrators (`/multi-plan`, `/multi-review`, `/multi-adversarial-review`), `/implement-issue`, `/implement-issues`, `/ghi-status`, `/template-sync`, `/template-migrate`, `/add-dependency`, `/mutation-triage`, `/property-tests`, `/deprecate-api`, `/python-version-bump`, `/security-triage`, `/dead-code-triage`, `/perf-change`, `/report-template-bug` and `/merge-pr` come from `.agents/skills/` (interoperable Codex skill path) and are auto-discovered by Copilot. Verify with `copilot skill list`.
 
 ## Known limitation: delegate-* skill bleed
 
@@ -60,7 +60,7 @@ file structure, and a worked example.
 
 - `.github/skills/<target>-<action>/SKILL.md` — Copilot-host workflow skills: one self-action skill per action, plus one bridge per (target, action) pair. `.github/skills/` is used (instead of `.claude/skills/`) because it's the only Copilot project skill path that Claude does not also read — avoids surfacing duplicate slash commands in Claude.
 - `.agents/skills/` — interoperable Codex skill path, also read by Copilot
-- `.claude/agents/implement-worker.md` — implement-worker subagent definition
+- `.claude/agents/implement-planner.md`, `.claude/agents/implement-worker.md` — implement-issue subagent definitions
 - `.github/hooks/copilot-hooks.json` — dangerous command hook wiring
 - `.github/instructions/README.md` — per-stack instruction file pattern for Copilot
 - `docs/development/ai/slash-commands.md` — full workflow and command reference

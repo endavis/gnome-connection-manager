@@ -41,18 +41,39 @@ Include as much information as possible:
 
 ## Security Update Process
 
+A finding takes one of two tracks, depending on the code it is in.
+
+### The package
+
+This track covers `src/`, the code released to users.
+
 1. **Assessment:** Verify and assess the reported vulnerability
-2. **Fix Development:** Develop and test a fix in a private repository
+2. **Fix Development:** Develop and test a fix in a private repository, such as the security advisory's temporary private fork
 3. **Advisory:** Create a security advisory with details
 4. **Release:** Release a patched version
 5. **Disclosure:** Publicly disclose the vulnerability after users have had time to update
 
+### Development tooling
+
+This track covers `tools/`, the AI agent hooks and the `doit` tasks. That code runs only on a developer's machine. The AI command hook is a guardrail, not a security boundary ([ADR-9019](../docs/decisions/9019-the-dangerous-command-hook-is-a-guardrail-not-a-security-boundary.md)).
+
+1. **Report:** Reproduce the finding, keeping the command and its output, and file it as a private draft security advisory.
+2. **Fix in the open, worded neutrally:** The fix takes the normal Issue → Branch → PR → Merge flow, so CI runs on it. The issue, PR and commit messages describe the change, such as "compare the example to HEAD by content". They never describe the bypass, include reproduction commands or name the advisory.
+3. **Close:** After the merge, close the advisory without publishing it:
+   `gh api -X PATCH repos/{owner}/{repo}/security-advisories/<ghsa_id> -f state=closed`.
+   No CVE is requested.
+
+The fix diff is public between push and merge. That is accepted for development tooling, whose exposure is an agent working in the repository, not users of a release. Temporary private forks would keep it private, but CI does not run in them and a fork PR can be merged only from the advisory page.
+
+Projects created from the template pick up these fixes by syncing with it. The session-start update notice tells them when they are behind ([Update notice at session start](../docs/template/updates.md#update-notice-at-session-start)).
+
 ## Vulnerability Disclosure Policy
 
 - We follow coordinated disclosure
-- Security advisories are published after a fix is released
+- Security advisories for the package are published after a fix is released
+- Security advisories for development tooling are closed after the fix is merged, not published
 - We request a 90-day embargo period for critical vulnerabilities
-- Reporters are credited in security advisories
+- Reporters are credited in published security advisories
 
 ## Security Best Practices
 

@@ -48,7 +48,7 @@ ALLOWLIST_REGEX: re.Pattern[str] = re.compile(
 
 # Marker file template. {ppid} interpolates to os.getppid() at runtime so the
 # marker is scoped per-Claude-Code-session.
-MARKER_FILE_TEMPLATE: str = "/tmp/cbm-mcp-used-{ppid}"  # nosec B108 - well-known path is intentional; operators must be able to touch it from any shell. Configurable via this constant.
+MARKER_FILE_TEMPLATE: str = "/tmp/cbm-mcp-used-{ppid}"  # nosec B108  # well-known path is intentional; operators must be able to touch it from any shell. Configurable via this constant.
 
 # How long the marker stays valid after the last CBM tool call (seconds).
 MARKER_TTL_SECONDS: int = 120

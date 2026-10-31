@@ -23,7 +23,7 @@ Stay in sync with improvements to the pyproject-template.
 > consumer project starts with a clean tree. Reinstall it at any time with:
 > ```bash
 > curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py \
->     | python3 - --sync
+>     | python3 - --sync --yes
 > ```
 > This installs `tools/pyproject_template/` back into your project so you
 > can use `manage.py`, `check_template_updates.py`, and the rest of the
@@ -48,7 +48,7 @@ To pin deliberately — reviewing an update before taking it, or reproducing an 
 `PYPROJECT_TEMPLATE_REF` to a branch, tag or full SHA:
 
 ```bash
-PYPROJECT_TEMPLATE_REF=4ef5b9c... curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync
+PYPROJECT_TEMPLATE_REF=4ef5b9c... curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync --yes
 ```
 
 If `api.github.com` is unreachable or rate-limited, the run **warns and continues** against the
@@ -61,6 +61,59 @@ cannot be pinned, before anything under `tmp/extracted/` changes. An extract of 
 be recorded as a sync point, so continuing would only replace the reviewed extract `sync` needs. It
 uses `GITHUB_TOKEN`, or `gh auth token` when that is unset; if neither is available and the
 unauthenticated limit is spent, run `GITHUB_TOKEN=$(gh auth token) python tools/pyproject_template/manage.py check`.
+
+## Update notice at session start
+
+A project made from the template records the template commit it last synced to in
+`.config/pyproject_template/settings.toml` (`[template].commit`). At the start of an AI CLI session,
+`tools/hooks/ai/template-update-check.py` compares that commit to the head of the template's `main`
+and prints one line when they differ:
+
+```text
+pyproject-template has updates since 1a2b3c4. Run the template-sync skill to review them.
+```
+
+- **Check:** `git ls-remote https://github.com/endavis/pyproject-template refs/heads/main` with a
+  2-second timeout. It does not use the GitHub API, so it has no rate limit.
+- **Cache:** the result is stored in `tmp/template-update-check.json` for 24 hours. A failed check
+  (offline, timeout) is cached too, so an offline machine pays the timeout once a day, not at every
+  start. `doit cleanup` deletes the cache; the cost is one extra `ls-remote`.
+- **Silent** when `settings.toml` is missing or records no commit, when the project is the template
+  repo itself, when the check fails, and when opted out. The hook always exits 0.
+- **Opt out:** set `PYPROJECT_TEMPLATE_UPDATE_CHECK=0` in the environment that launches the CLI.
+- **Limitation:** a project synced to a commit that is not on `main` always shows as behind.
+- **Hosts:** Claude Code, Codex CLI and Antigravity CLI are wired; Copilot CLI runs the Claude hook.
+  Claude Code and Codex run it on new and resumed sessions and show the notice in yellow (plain when
+  `NO_COLOR` is set and non-empty). Copilot CLI drops `systemMessage`, so the Claude output also
+  carries an `additionalContext` line asking the model to relay the notice; Antigravity uses the same
+  relay. A relayed notice is the model's wording and is not coloured. See [Command Blocking - Template Update Notice](../development/ai/command-blocking.md#template-update-notice)
+  for the per-host evidence.
+
+## Reporting a template bug upstream
+
+A bug in a file the template shipped (`tools/doit/`, `tools/hooks/`, AI agent config, skills) is
+fixed upstream, not locally, where the fix drifts and is lost on the next sync. The
+`report-template-bug` skill walks an agent through it: diff the local file against the template at
+the recorded commit (a difference is a local customization, so the bug is the project's own),
+reproduce, check whether a newer template already fixes it, look for a duplicate, then file with:
+
+```bash
+doit issue --upstream --type=bug --title="bug: <subject>" --body-file=issue.md
+```
+
+- **Target:** `endavis/pyproject-template`, fixed. Refused in the template repository itself, and
+  when `gh` cannot say which repository this is.
+- **Validation:** the body is checked against the issue templates on the template's `main`, fetched
+  with `gh api`. If the fetch fails or the YAML is malformed, nothing is filed.
+- **Labels:** the upstream template's labels are passed to `gh issue create`. Whether GitHub applies
+  labels set by a user without triage access on that repository is unverified.
+- **Footer:** the recorded template commit, or "not recorded". The project's name appears only with
+  `--include-origin`, because a project may be private.
+- **Security:** content naming a vulnerability, exploit, bypass, injection and the like is refused,
+  and nothing public is filed. Report it by the template's
+  [security policy](https://github.com/endavis/pyproject-template/security/policy). Private
+  vulnerability reporting was disabled on the template repository when this was written, so the
+  policy page is the pointer, not a report form.
 
 ## When to Update
 

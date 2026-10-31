@@ -394,7 +394,7 @@ def action_create_project(manager: SettingsManager, dry_run: bool, *, yes: bool 
         project_dir = Path.cwd()
         latest = get_template_latest_commit()
         if latest:
-            import subprocess  # nosec B404 - subprocess is required for git operations
+            import subprocess  # nosec B404  # subprocess is required for git operations
 
             new_manager = SettingsManager(root=project_dir)
             new_manager.template_state.commit = latest[0]

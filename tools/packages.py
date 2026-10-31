@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import shlex
-import subprocess  # nosec B404 - reads built packages with dpkg-deb and rpm
+import subprocess  # nosec B404  # reads built packages with dpkg-deb and rpm
 import sys
 from pathlib import Path
 
