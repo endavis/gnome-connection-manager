@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess  # nosec B404 - required to run msgfmt and the app
+import subprocess  # nosec B404  # required to run msgfmt and the app
 import sys
 import tempfile
 from pathlib import Path

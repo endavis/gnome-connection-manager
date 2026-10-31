@@ -26,7 +26,7 @@ from pathlib import Path
 # Marker file template. {ppid} interpolates to os.getppid() at runtime so the
 # marker is scoped per-Claude-Code-session. Must match the constant in
 # cbm-code-discovery-gate.py.
-MARKER_FILE_TEMPLATE: str = "/tmp/cbm-mcp-used-{ppid}"  # nosec B108 - well-known path is intentional; operators must be able to touch it from any shell. Configurable via this constant.
+MARKER_FILE_TEMPLATE: str = "/tmp/cbm-mcp-used-{ppid}"  # nosec B108  # well-known path is intentional; operators must be able to touch it from any shell. Configurable via this constant.
 
 
 def main() -> int:
@@ -40,7 +40,7 @@ def main() -> int:
         marker = Path(MARKER_FILE_TEMPLATE.format(ppid=os.getppid()))
         marker.touch()
 
-    except Exception:  # nosec B110 - hook must never raise
+    except Exception:  # hook must never raise
         return 0
 
     return 0

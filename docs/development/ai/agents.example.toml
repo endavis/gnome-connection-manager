@@ -1,0 +1,35 @@
+# Example agent roles config. Copy it to ~/.config/pyproject-template/agents.toml
+# (or $XDG_CONFIG_HOME/pyproject-template/agents.toml) and keep only the CLIs you subscribe to.
+# Check the result with: uv run doit agent_cmd --check
+# See docs/development/ai/agent-roles.md for every key and how each role resolves.
+#
+# A role you leave out keeps today's invocation. Model names change; list the current ones with
+# `agy models`, `codex debug models` or `copilot help config`. Claude takes the aliases
+# opus, sonnet, haiku and fable.
+
+[roles.plan]
+cli = "claude"
+model = "opus"
+
+[roles.plan_review]
+cli = "agy"
+model = "gemini-4-argon-high"   # agy puts the effort in the model name
+
+[roles.code]
+cli = "claude"
+model = "sonnet"
+
+[roles.review]
+cli = "agy"
+model = "gemini-4-argon-medium"
+
+[roles.adversarial_review]
+cli = "codex"
+model = "gpt-5.6-terra"
+effort = "high"                 # effort works for codex and copilot only
+
+# Copilot instead of Codex for the adversarial review:
+# [roles.adversarial_review]
+# cli = "copilot"
+# model = "gpt-6.1-sol"
+# effort = "high"

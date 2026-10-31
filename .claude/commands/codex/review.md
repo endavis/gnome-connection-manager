@@ -4,6 +4,8 @@ Delegate a read-only code review of the current changes to Codex CLI. Optional f
 
 ## Instructions
 
+Resolve the configured model first: `uv run doit agent_cmd --role=review --host=claude --cli=codex`. Its last stdout line is JSON with `mode: cli` and a `command` string. Run that `command` in place of the literal invocation below, replacing `'<prompt>'` with the prompt text from the literal. If the task is unavailable or fails, run the literal below as is; with no config the two are identical. See [Agent roles](../../../docs/development/ai/agent-roles.md).
+
 Use the Bash tool to invoke Codex non-interactively. The prompt is fully inlined and reads only
 `git`/local files — no `gh` call, so the review needs nothing from `.codex/rules/gh.rules` (#985).
 

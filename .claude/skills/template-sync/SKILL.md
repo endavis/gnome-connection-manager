@@ -92,7 +92,7 @@ Branch before Step 3: `bootstrap.py --sync` overwrites tracked files under
 ### Step 3: Refresh the management suite first
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync
+curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py | python3 - --sync --yes
 ```
 
 **This is not optional and its position is not negotiable.** The drift checker compares your files

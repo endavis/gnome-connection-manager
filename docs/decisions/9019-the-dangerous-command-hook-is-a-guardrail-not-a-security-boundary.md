@@ -36,7 +36,8 @@ it is the reason none of the categories justify unbounded effort.
 **Two layers of scanning, and each stays in its lane:**
 
 - **Precise layer** — the command line proper, plus payloads that are *provably shell*:
-  `bash/sh/zsh/dash -c <payload>`, `eval`, and a heredoc fed to a shell's stdin (`bash <<EOF`).
+  `bash/sh/zsh/dash -c <payload>`, `eval`, a heredoc fed to a shell's stdin (`bash <<EOF`), and the
+  bodies of command substitutions, process substitutions and subshells.
   These are re-scanned by `check_command` with every check, including the position-sensitive ones
   (`check_env_dump`, `check_credential_file_read`).
 - **Crude layer** — a flat `shlex` token scan over the whole command string, matching a pattern in
@@ -132,6 +133,8 @@ and the draft that flipped it to `BLOCK` was wrong.
 - Issue #1037: Copilot and unrecognised edit tools fell through to allow, and the Bash
   env-persistence check needed the literal var name — both closed as coverage gaps in ordinary
   use, not as evasions this ADR puts out of scope
+- Issue #1146: command starts after shell keywords, and substitution and subshell bodies, are
+  provably shell and join the precise layer
 - ADR-9005: the decision to block at the tool level, which this scopes
 
 ## Related Documentation

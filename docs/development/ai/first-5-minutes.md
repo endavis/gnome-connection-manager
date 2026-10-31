@@ -43,10 +43,10 @@ For the rest of this walkthrough assume you have picked issue number `42`.
 
 Say "implement issue 42" in the main conversation — no slash command, just natural language. The shared `implement-issue` skill (`.agents/skills/implement-issue/SKILL.md`, generated for Claude by `doit skills_sync`) takes it from there:
 
-1. It checks out `main`, pulls, and creates a branch whose type is derived from the issue's labels — for example, a `feature` issue becomes `feat/42-add-caching-layer` — or resumes the existing branch if you already have one for this issue.
-2. It decides whether to plan first: the issue carries `needs-adr`, the change touches more than about three files or adds a module, or more than one approach is reasonable. **There is no approval wait** — if it plans, the plan is posted straight to the issue as a comment with the header `## Implementation Plan for #42: <title>`.
-3. It spawns a subagent (Claude's is `implement-worker`) to do the heavy work: re-read `AGENTS.md`, fetch the plan (or use the issue body directly), create files, write tests, and run `doit check`, fixing failures rather than giving up. The main conversation context receives only the subagent's summary.
-4. It runs `doit check` and `doit docs_build` again, commits with `git commit` in the CONTRIBUTING format, pushes, and opens the PR with `doit pr` — `Addresses #42` included. **There is no approval wait here either** — this is the trade for collapsing three commands into one.
+1. It creates a [worktree](../doit-tasks-reference.md#worktree) at `worktrees/<type>/42-…` on a new branch whose type is derived from the issue's labels — for example, a `feature` issue becomes `worktrees/feat/42-add-caching-layer` — and does all the work there. Your main checkout is left as it is, not switched and not pulled. If you are already on a branch for this issue, or a worktree for it exists, it resumes there instead.
+2. It decides whether to plan first: the issue carries `needs-adr`, the change touches more than about three files or adds a module, or more than one approach is reasonable. **There is no approval wait** — if it plans, the plan is posted straight to the issue as a comment with the header `## Implementation Plan for #42: <title>`. A planner subagent writes it, unless the host already posted a findings comment this run and cites it, in which case the host writes it and a review-only pass checks the draft first.
+3. It spawns a subagent (Claude's is `implement-worker`) to do the heavy work: re-read `AGENTS.md`, fetch the plan (or use the issue body directly), create files, write tests, and run only the touched tests, `doit lint` and `doit type_check`, fixing failures rather than giving up. It does not run `doit check`. The main conversation context receives only the subagent's summary.
+4. It runs the single full `doit check` and `doit docs_build`, commits with `git commit` in the CONTRIBUTING format, pushes, and opens the PR with `doit pr` — `Addresses #42` included. **There is no approval wait here either** — this is the trade for collapsing three commands into one.
 5. It watches `gh pr checks` and fixes any failing job other than `require-label` for up to 3 rounds, then stops and reports whatever is still red.
 
 What you'll see at the end (illustrative — yours will look different):
@@ -78,7 +78,7 @@ Review the diff on GitHub. If you have a second agent CLI installed and want ano
 
 ### 5. Merge
 
-Merging is never automated, and `implement-issue` never applies the `ready-to-merge` label or merges for you. Review the PR yourself, wait for CI to go green (`require-label` is the only check expected to stay red), add the `ready-to-merge` label, and merge via `doit pr_merge` (or the GitHub web UI). A PR from a worktree is merged from the main checkout instead: see [When your checkout holds other work](#when-your-checkout-holds-other-work).
+Merging is never automated, and `implement-issue` never applies the `ready-to-merge` label or merges for you. Review the PR yourself, wait for CI to go green (`require-label` is the only check expected to stay red), add the `ready-to-merge` label, and merge from the main checkout with `uv run doit pr_merge --pr=<pr-number> --auto-close` (or the GitHub web UI). The PR comes from the issue's worktree, and `--pr` is needed because `pr_merge` run without it looks up the main checkout's own branch. The merge removes the worktree. See [When your checkout holds other work](#when-your-checkout-holds-other-work).
 
 ### 6. Close the issue
 
@@ -92,7 +92,7 @@ That is the full loop.
 
 ## When your checkout holds other work
 
-Step 3 checks out `main` in the checkout Claude runs in. If yours holds work you want left alone, give the issue its own [worktree](../doit-tasks-reference.md#worktree) before step 3, and start Claude Code there:
+Step 3 already gives each issue its own [worktree](../doit-tasks-reference.md#worktree), so this is the rare manual case: you want to create the worktree yourself, or start the session inside one. Create it before step 3 and start Claude Code there:
 
 ```bash
 doit worktree --branch=feat/42-add-caching-layer
@@ -103,13 +103,17 @@ claude
 
 The worktree is a separate checkout with its own `.venv`, on a new branch from `origin/main`. Name the branch the way `implement-issue` would, `<type>/42-<description>`. Saying "implement issue 42" then finds it is already on a branch for issue 42, skips creating one, and does the work in the worktree. Steps 4 through 6 run there unchanged.
 
-Step 5 changes: merge from the main checkout, and pass the PR number. Without `--pr`, `doit pr_merge` looks up the PR for the main checkout's own branch instead. From the main checkout:
+Merge from the main checkout, and pass the PR number. Without `--pr`, `doit pr_merge` looks up the PR for the main checkout's own branch instead. From the main checkout:
 
 ```bash
 uv run doit pr_merge --pr=<pr-number> --auto-close
 ```
 
 That merges the PR, closes issue 42, removes the worktree and its branch, and fast-forwards the main checkout's `main`. See [`pr_merge`](../doit-tasks-reference.md#pr_merge) for when it keeps them instead.
+
+### Running several issues at once
+
+Say "implement issues A, B and C" in one session. The `implement-issues` skill checks the issues' likely files for overlap, creates a worktree per issue and runs `implement-issue` for each in a background agent (two at a time by default) up to the push, then the orchestrator opens the PRs one at a time, each rebased on `origin/main` first; "check only" stops after the overlap check. The alternative is one session per issue, each from the main checkout, saying "implement issue N" in each. Every session gets its own worktree, so the sessions do not switch branches under each other. Two sessions that change the same file still conflict at merge time, so the second PR to merge needs a rebase; `implement-issues` avoids that by rebasing each branch before its PR is opened.
 
 ## What each step produces
 

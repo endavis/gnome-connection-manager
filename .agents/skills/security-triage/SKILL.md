@@ -1,6 +1,6 @@
 ---
 name: security-triage
-description: Use when `doit check`, `doit security` or `doit audit` reports a bandit or pip-audit finding, or when asked to triage, fix or justify a security scan result. For each bandit finding, fixes the pattern when it can or justifies it with a per-ID `# nosec <ID> - <reason>` — never a bare `# nosec` and never a new `[tool.bandit] skips` entry without asking. For each pip-audit finding, upgrades to a fixed version or assesses reachability, and stops to ask before accepting `--ignore-vuln`. Confirms the security extra is installed and the scanner actually ran before trusting a clean result, then validates with `doit check`.
+description: Use when `doit check`, `doit security` or `doit audit` reports a bandit or pip-audit finding, or when asked to triage, fix or justify a security scan result. For each bandit finding, fixes the pattern when it can or justifies it with a per-ID `# nosec <ID>  # <reason>` — never a bare `# nosec` and never a new `[tool.bandit] skips` entry without asking. For each pip-audit finding, upgrades to a fixed version or assesses reachability, and stops to ask before accepting `--ignore-vuln`. Confirms the security extra is installed and the scanner actually ran before trusting a clean result, then validates with `doit check`.
 ---
 
 # Security Triage
@@ -39,7 +39,7 @@ For each finding bandit reports:
 1. **Fix it**, if the pattern can go: list-form `subprocess` arguments instead of a string with
    `shell=True`, `yaml.safe_load` instead of `yaml.load`, a validated path instead of an unvalidated
    one.
-2. **Justify it**, if the flagged code is safe: add `# nosec <ID> - <reason>`, naming only the test
+2. **Justify it**, if the flagged code is safe: add `# nosec <ID>  # <reason>`, naming only the test
    IDs bandit reported on that line. A per-ID suppression is precise — `# nosec B602` clears only
    B602, and bandit still reports every other test ID on that line. **Never a bare `# nosec`.** It
    silences every finding on the line, not only the one you meant to justify.
@@ -92,8 +92,12 @@ When the task is done, return to the `implement-issue` run, or commit and open a
 
 ## Notes
 
-- Bandit's `# nosec` parser reads every word after the IDs as a candidate test ID and prints a
-  harmless warning for each one that is not — the suppression still applies; keep reasons short
-  regardless.
+- Keep the reason out of the ID list. Bandit reads every word between `nosec` and the next `#` as
+  a candidate test ID, so `# nosec B404 - reason words` prints a `Test in comment` warning per
+  word. A second `#` ends the list: `# nosec B404  # reason words`. Keep reasons short.
+- Remove a `# nosec` when bandit prints `nosec encountered (<ID>), but no failed test`: it
+  suppresses nothing, either because the code no longer matches the test or because the comment is
+  on a different line from the one bandit reports. Move it to that line, or delete it.
+  `tests/test_security_triage_skill.py` fails on this warning.
 - Write scratch files to `tmp/agents/<agent>/` with the issue number in the name, and delete them
   when the task is done.

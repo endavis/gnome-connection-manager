@@ -110,3 +110,7 @@ cost, rather than either giving up after one try or never giving up at all.
 - [ADR-9006](9006-merge-gate-workflow.md) — the merge gate this ADR relies on and does not change
 - [Consumer Notes](../template/consumer-notes.md) — the breaking-change migration for downstream
   projects
+- [ADR-9027](9027-implement-issue-works-in-a-per-issue-worktree.md) — Step 1 now works in a
+  per-issue worktree instead of switching the checkout
+- [ADR-9029](9029-implement-issue-host-plan-and-coder-checking-budget.md) — amends who writes the
+  plan and where validation runs (#1128)

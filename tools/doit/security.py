@@ -31,6 +31,8 @@ def task_security() -> dict[str, Any]:
             )
             + "uv run bandit -c pyproject.toml -r src/ tools/"
             + optional_root_files("bootstrap.py")
+            + " -q -f custom --msg-template "
+            + "'{relpath}:{line}:{col}: {test_id} [{severity}/{confidence}] {msg}'"
         ],
         "title": title_with_actions,
         "verbosity": 0,

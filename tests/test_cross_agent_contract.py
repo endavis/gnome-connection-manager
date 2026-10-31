@@ -143,6 +143,7 @@ SELF_REMOVAL_SENTENCE = (
 HEADLESS_CODEX_HOST_FILES: dict[str, Path] = {
     **MULTI_AGENT_FILES,
     "implement-issue": IMPLEMENT_ISSUE_FILE,
+    "implement-issues": REPO_ROOT / ".agents" / "skills" / "implement-issues" / "SKILL.md",
 }
 
 # The non-interactive invocation each CLI needs, copied verbatim from
@@ -328,6 +329,26 @@ def test_implement_issue_file_carries_its_contract() -> None:
     assert not missing, f"implement-issue skill is missing: {missing}"
 
 
+def test_implement_issue_inline_coding_excludes_behavior_changes() -> None:
+    """Step 4 must not let file count alone qualify a change for inline coding (#1130)."""
+    text = IMPLEMENT_ISSUE_FILE.read_text(encoding="utf-8")
+    for needle in (
+        "only when ALL of these hold",
+        "File count alone never qualifies",
+        "every bug fix with a regression test",
+    ):
+        assert needle in text, f"implement-issue Step 4 is missing {needle!r}"
+    assert "any other change to one or two files" not in text
+
+
+def test_implement_issues_per_issue_prompt_forbids_inline_coding() -> None:
+    """The per-issue prompt must switch Step 4's inline exception off (#1130)."""
+    path = REPO_ROOT / ".agents" / "skills" / "implement-issues" / "SKILL.md"
+    text = path.read_text(encoding="utf-8")
+    needle = "Step 4's inline exception does not apply"
+    assert needle in text, f"implement-issues per-issue prompt is missing {needle!r}"
+
+
 def test_implement_issue_forbids_merge_actions() -> None:
     """implement-issue must say it never applies ready-to-merge, merges, or closes the issue.
 
@@ -352,10 +373,13 @@ def test_implement_issue_briefs_hand_no_gh_command() -> None:
     planner_start = text.index("## Planner brief")
     coder_start = text.index("## Coder brief")
     per_host_start = text.index("## Per-host subagent notes")
-    planner_brief = text[planner_start:coder_start]
+    review_start = text.index("## Plan-review brief")
+    planner_brief = text[planner_start:review_start]
+    review_brief = text[review_start:coder_start]
     coder_brief = text[coder_start:per_host_start]
 
     assert not GH_COMMAND_PATTERN.search(planner_brief), "Planner brief still invokes gh"
+    assert not GH_COMMAND_PATTERN.search(review_brief), "Plan-review brief still invokes gh"
     assert not GH_COMMAND_PATTERN.search(coder_brief), "Coder brief still invokes gh"
 
 
@@ -605,3 +629,44 @@ def test_gh_command_pattern_catches_any_subcommand_but_not_prose() -> None:
         assert GH_COMMAND_PATTERN.search(command), command
     for prose in ("instead of running `gh`.", "rather than calling `gh` itself"):
         assert not GH_COMMAND_PATTERN.search(prose), prose
+
+
+def test_implement_issue_step_6_honours_caller_stop_after_push() -> None:
+    """Step 6 lets an implement-issues per-issue agent stop after the push (#1139)."""
+    text = IMPLEMENT_ISSUE_FILE.read_text(encoding="utf-8")
+    start = text.index("### Step 6:")
+    step6 = text[start : text.index("### Step 7:", start)]
+    assert "says to stop after the\npush, skip `doit pr` and Step 7" in step6
+
+
+def test_agent_cmd_base_commands_match_non_interactive_invocations() -> None:
+    """With no config, `doit agent_cmd` must return today's invocation for every CLI (#1150)."""
+    from tools.doit.agent_cmd import BASE_COMMANDS, build_command
+
+    expected = {
+        ("agy" if k == "antigravity" else k): v for k, v in NON_INTERACTIVE_INVOCATIONS.items()
+    }
+    assert expected == BASE_COMMANDS
+    assert {cli: build_command(cli) for cli in BASE_COMMANDS} == expected
+
+
+@pytest.mark.parametrize("action", sorted(CONTRACT))
+def test_bridge_files_resolve_through_agent_cmd(action: str) -> None:
+    """Every cross-agent bridge file for *action* resolves its model with `doit agent_cmd`."""
+    missing = [
+        f"{source}->{target}/{action}: {path.relative_to(REPO_ROOT)}"
+        for (source, target), path in _bridge_files(action).items()
+        if not path.is_file() or "doit agent_cmd --role=" not in path.read_text(encoding="utf-8")
+    ]
+    assert not missing, f"these bridge files do not call `doit agent_cmd --role=`: {missing}"
+
+
+def test_multi_agent_and_implement_issue_resolve_through_agent_cmd() -> None:
+    """`multi-*` and `implement-issue` resolve roles with `doit agent_cmd --role=`."""
+    files = {**MULTI_AGENT_FILES, "implement-issue": IMPLEMENT_ISSUE_FILE}
+    missing = [
+        name
+        for name, path in files.items()
+        if "doit agent_cmd --role=" not in path.read_text(encoding="utf-8")
+    ]
+    assert not missing, f"these skills do not call `doit agent_cmd --role=`: {missing}"

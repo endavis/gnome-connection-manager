@@ -629,7 +629,7 @@ chore: apply code formatting
         tree.
 
         Consumers who later want the template-sync suite back can re-install
-        it with ``curl -sSL .../bootstrap.py | python3 - --sync``.
+        it with ``curl -sSL .../bootstrap.py | python3 - --sync --yes``.
 
         This method is defensive: any failure is logged as a warning and
         execution continues, so a cleanup failure does not block the user from
@@ -665,7 +665,7 @@ template-only tooling:
 
 To reinstall the template-sync suite later, run:
   curl -sSL https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py \\
-      | python3 - --sync
+      | python3 - --sync --yes
 
 🤖 Generated with setup-repo.py"""
 
@@ -808,7 +808,7 @@ To reinstall the template-sync suite later, run:
             "Template tooling was auto-removed. To reinstall the template-sync "
             "suite later, run: curl -sSL "
             "https://raw.githubusercontent.com/endavis/pyproject-template/main/bootstrap.py "
-            "| python3 - --sync"
+            "| python3 - --sync --yes"
         )
         print()
 

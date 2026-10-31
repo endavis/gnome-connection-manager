@@ -171,6 +171,38 @@ def _yaml_to_editor_markdown(yaml_data: dict) -> tuple[str, list[str]]:
     return "\n".join(lines), required_sections
 
 
+def parse_issue_template(yaml_text: str, issue_type: str) -> IssueTemplate:
+    """Parse issue template YAML text into an IssueTemplate.
+
+    Args:
+        yaml_text: The template file's YAML content
+        issue_type: Used as the name when the template has none
+
+    Returns:
+        IssueTemplate with editor content and metadata
+
+    Raises:
+        ValueError: If the text is not a YAML mapping
+        yaml.YAMLError: If the text is not valid YAML
+    """
+    yaml_data = yaml.safe_load(yaml_text)
+    if not isinstance(yaml_data, dict):
+        raise ValueError("Issue template is not a YAML mapping")
+
+    name = yaml_data.get("name", issue_type)
+    labels_list = yaml_data.get("labels", [])
+    labels = ",".join(labels_list) if isinstance(labels_list, list) else str(labels_list)
+
+    editor_template, required_sections = _yaml_to_editor_markdown(yaml_data)
+
+    return IssueTemplate(
+        name=name,
+        labels=labels,
+        editor_template=editor_template,
+        required_sections=required_sections,
+    )
+
+
 @lru_cache(maxsize=10)
 def get_issue_template(issue_type: str) -> IssueTemplate:
     """Get the issue template for a given type.
@@ -195,22 +227,7 @@ def get_issue_template(issue_type: str) -> IssueTemplate:
     if not template_file.exists():
         raise FileNotFoundError(f"Template file not found: {template_file}")
 
-    yaml_data = _parse_yaml_template(template_file)
-
-    # Extract metadata
-    name = yaml_data.get("name", issue_type)
-    labels_list = yaml_data.get("labels", [])
-    labels = ",".join(labels_list) if isinstance(labels_list, list) else str(labels_list)
-
-    # Convert to editor template
-    editor_template, required_sections = _yaml_to_editor_markdown(yaml_data)
-
-    return IssueTemplate(
-        name=name,
-        labels=labels,
-        editor_template=editor_template,
-        required_sections=required_sections,
-    )
+    return parse_issue_template(template_file.read_text(encoding="utf-8"), issue_type)
 
 
 @lru_cache(maxsize=1)

@@ -93,6 +93,7 @@ that test.
 - Issue #731: `configure.py`/`setup_repo.py` shed tests the spawned project's coverage gate
   depends on (PR #732) — established the membership test recorded above
 - Issue #691: `configure.py` and `cleanup.py` disagree on what is template-owned
+- Issue #1090: `tools/doit/upstream.py` is a second shipped copy of `TEMPLATE_REPO` (the first is the update-check hook, #1086); the template-owned `tests/template/test_utils.py` keeps both equal to `tools/pyproject_template/utils.py`
 
 ## Related Documentation
 - [Template Tooling](../template/tools-reference.md)

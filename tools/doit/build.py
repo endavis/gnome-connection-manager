@@ -3,7 +3,7 @@
 import os
 import platform
 import shutil
-import subprocess  # nosec B404 - subprocess is required to build/install/run the wheel
+import subprocess  # nosec B404  # subprocess is required to build/install/run the wheel
 import sys
 import tempfile
 import tomllib
@@ -128,7 +128,7 @@ def _git(args: list[str], cwd: Path | None = None) -> str:
 
     Raises ``ValueError`` naming the command and its output on a non-zero exit.
     """
-    result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+    result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
         ["git", *args],
         capture_output=True,
         text=True,
@@ -202,7 +202,7 @@ def _check_wheel(dist: str) -> list[str]:
                 _snapshot_source_tree(source_dir)
             except ValueError as exc:
                 return [f"could not snapshot the source tree to build from: {exc}"]
-            build_result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+            build_result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
                 ["uv", "build", "--wheel", "--out-dir", str(dist_dir)],
                 capture_output=True,
                 text=True,
@@ -224,7 +224,7 @@ def _check_wheel(dist: str) -> list[str]:
             )
 
         venv_dir = tmp_dir / "venv"
-        venv_result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+        venv_result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
             ["uv", "venv", str(venv_dir)],
             capture_output=True,
             text=True,
@@ -235,7 +235,7 @@ def _check_wheel(dist: str) -> list[str]:
             return failures
 
         python_path = _venv_python(venv_dir)
-        install_result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+        install_result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
             ["uv", "pip", "install", "--python", str(python_path), str(wheel_path)],
             capture_output=True,
             text=True,
@@ -248,7 +248,7 @@ def _check_wheel(dist: str) -> list[str]:
             )
             return failures
 
-        import_result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+        import_result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
             [
                 str(python_path),
                 "-c",
@@ -288,7 +288,7 @@ def _check_wheel(dist: str) -> list[str]:
             if not script_path.exists():
                 failures.append(f"console script {script!r} was not installed at {script_path}")
                 continue
-            help_result = subprocess.run(  # nosec B603 B607 - fixed argv, no shell
+            help_result = subprocess.run(  # nosec B603 B607  # fixed argv, no shell
                 [str(script_path), "--help"],
                 capture_output=True,
                 text=True,

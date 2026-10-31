@@ -38,7 +38,7 @@ doit <task_name>
 | [Security](#security-tasks) | `security`, `audit`, `licenses`, `sbom` | Security scanning and SBOM |
 | [Documentation](#documentation-tasks) | `docs_serve`, `docs_build`, `docs_deploy`, `docs_toc` | Documentation management |
 | [Dependencies](#dependency-tasks) | `install`, `install_dev`, `update_deps` | Package management |
-| [GitHub Workflow](#github-workflow-tasks) | `issue`, `pr`, `pr_merge`, `adr`, `labels_sync`, `delegation_context`, `env_create`, `env_list`, `publish_setup` | Issue, PR, and environment management |
+| [GitHub Workflow](#github-workflow-tasks) | `issue`, `pr`, `pr_merge`, `adr`, `labels_sync`, `delegation_context`, `agent_cmd`, `env_create`, `env_list`, `publish_setup` | Issue, PR, and environment management |
 | [Release](#release-tasks) | `release`, `release_tag`, `publish` | Version and release management |
 | [Version](#version-tasks) | `bump`, `changelog` | Version bumping and changelog |
 | [Setup](#setup-tasks) | `pre_commit_install`, `completions`, `install_direnv`, `install_jq`, `worktree` | Development environment |
@@ -58,13 +58,14 @@ doit test
 
 **What it does:**
 - Depends on `env_check` first, which warns (without failing) if `uv.lock` has drifted (#1033)
-- Runs `pytest -n auto -v` for parallel test execution
+- Runs `pytest -n auto -q -rfE --tb=short` for parallel test execution with terse failure output: short tracebacks and a failure summary, no line per passing test (#1075)
 - Uses all available CPU cores
 
 **Equivalent command:**
 ```bash
-uv run pytest -n auto -v
+uv run pytest -n auto -q -rfE --tb=short
 ```
+For per-test output, run pytest directly: `uv run pytest -n auto -v`.
 
 ### `coverage`
 
@@ -221,11 +222,11 @@ doit lint
 
 **What it does:**
 - Runs ruff linter on source and test code
-- Reports violations without auto-fixing
+- Reports violations without auto-fixing, one line per violation (`--output-format=concise`, #1075)
 
 **Equivalent command:**
 ```bash
-uv run ruff check src/ tests/ tools/ bootstrap.py examples/
+uv run ruff check --output-format=concise src/ tests/ tools/ bootstrap.py examples/
 ```
 `bootstrap.py` and `examples/` are appended only when present at the repo root.
 
@@ -432,6 +433,7 @@ doit security
 - Scans Python code for security vulnerabilities
 - Uses configuration from `pyproject.toml` `[tool.bandit]`
 - Excludes tests, tmp, and .venv directories
+- Prints one line per finding (`-q -f custom --msg-template ...`, #1075)
 
 **Requires:** the `security` extra, which `doit install_dev` installs
 
@@ -660,6 +662,18 @@ doit issue --type=bug --title="Fix bug" --body-file=issue.md
 - `--title`: Issue title (non-interactive)
 - `--body`: Issue body content (non-interactive)
 - `--body-file`: File containing issue body (non-interactive)
+- `--upstream`: File the issue on the template repository (`endavis/pyproject-template`) instead of
+  this one, for a bug in template-shipped tooling in a project made from it. The body is validated
+  against the upstream issue templates fetched from its `main` (a failed fetch stops with nothing
+  filed), and the upstream template's labels are passed to `gh issue create -R`; whether GitHub
+  applies them for a user without triage access is unverified. A footer records the recorded
+  template commit (`[template].commit`) or "not recorded". Refused in the template repository itself,
+  when the repository cannot be identified, and for content naming a security term (vulnerability,
+  exploit, bypass, injection, ...): a security finding is never filed publicly, so draft it locally
+  and follow the template's security policy. Without `--upstream` the command is unchanged.
+  See [Reporting a template bug upstream](../template/updates.md#reporting-a-template-bug-upstream).
+- `--include-origin`: With `--upstream`, add this repository's `owner/repo` to the footer. Off by
+  default because a project may be private.
 
 ### `pr`
 
@@ -750,7 +764,8 @@ delete the branch. So when a linked worktree has the branch, the task merges wit
 - removes the worktree, if it is under `worktrees/`. It is kept, with the files listed, when it has
   modified or untracked files, which git refuses to remove, or an ignored file that cannot be
   rebuilt, such as `.envrc.local`, which git would delete without asking. `.venv/`, caches and
-  build output are rebuilt, so they do not count
+  build output are rebuilt, so they do not count. An ignored directory such as `tmp/agents/` is
+  judged by the files in it, so one holding only `__pycache__` does not count either
 - deletes the local branch if it still points at the commit the PR merged. A squash merge needs
   `git branch -D`, which would otherwise drop a commit that was never pushed
 - removes the directories under `worktrees/` that the worktree leaves empty
@@ -877,6 +892,32 @@ doit delegation_context --kind=pr --n=42 --out=tmp/agents/claude/multi-review-42
 `tmp/agents/claude/multi-review-123/`), per `AGENTS.md`'s temp-file convention. The orchestrating
 skill that creates the directory deletes it once every delegated agent has returned — this task
 does not clean up after itself.
+
+### `agent_cmd`
+
+Resolve a cross-agent role to a subagent, an inline run, or a ready CLI command, from the
+per-user config. See [Agent Roles and Models](ai/agent-roles.md).
+
+```bash
+doit agent_cmd --role=code --host=claude
+doit agent_cmd --role=review --host=claude --cli=codex
+doit agent_cmd --check
+```
+
+**What it does:**
+- `--role` is one of `plan`, `plan_review`, `code`, `review`, `adversarial_review`; `--host` is
+  the CLI the caller runs in (`claude`, `codex`, `copilot`, `agy` or `antigravity`).
+- Reads `$XDG_CONFIG_HOME/pyproject-template/agents.toml` (else
+  `~/.config/pyproject-template/agents.toml`) and the gitignored
+  `.config/pyproject_template/agents.local.toml`, local over user.
+- Prints one JSON line last on stdout: `{"mode": "subagent"}` (optionally with `model`, and on Codex `effort`),
+  `{"mode": "inline"}`, or `{"mode": "cli", "cli": "...", "command": "..."}`. With no config the
+  command is today's invocation.
+- `--cli` fixes the target CLI; the role's model and effort apply only when its configured CLI
+  matches.
+- `--check` validates each configured model against `agy models`, `codex debug models` and
+  `copilot help config`, and exits 1 on any error. It needs no `--role` or `--host`.
+- Config errors and bad arguments go to stderr with exit code 1.
 
 **Options:**
 - `--kind` (required): `issue` or `pr`.
@@ -1242,7 +1283,8 @@ uv run cz commit
 ### `worktree`
 
 Create a git worktree with its own environment, for working on a branch while the main checkout
-holds other work.
+holds other work. The `implement-issue` skill uses it to give every issue its own worktree
+([ADR-9027](../decisions/9027-implement-issue-works-in-a-per-issue-worktree.md)).
 
 ```bash
 doit worktree --branch=feat/42-add-export
@@ -1291,6 +1333,7 @@ doit cleanup
 - Removes `__pycache__/` directories
 - Removes `tmp/` directory
 - Removes `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`
+- Does not touch the shared uv cache (`~/.cache/uv`)
 
 ### `template_clean`
 

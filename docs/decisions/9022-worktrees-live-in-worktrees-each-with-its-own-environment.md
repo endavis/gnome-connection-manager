@@ -47,9 +47,11 @@ during the #847 trial went wrong three ways (#854):
 as `tmp/agents/` does. It is outside `tmp/` so that `doit cleanup` cannot reach it.
 
 A `doit` task, rather than documented commands, because each failure was a step done by hand and
-done wrong. The task does all three steps. It also resolves a relative `UV_CACHE_DIR` before
-running `uv` inside the worktree, so the worktree shares the main checkout's uv cache instead of
-starting an empty one.
+done wrong. The task does all three steps. Worktrees share one uv cache because the template no
+longer sets `UV_CACHE_DIR` (#1094): uv uses its default cache, and installs hard-link from it. The
+task resolves only a user-set relative `UV_CACHE_DIR` before running `uv` inside the worktree, so
+it keeps pointing at the main checkout's cache instead of starting an empty one. See
+[uv cache](../development/release-and-automation.md#uv-cache).
 
 Removal was a manual step until #863, and the merge made it worse. `gh pr merge --delete-branch`
 checks out `main` in the worktree that has the PR's branch. Git refuses that while `main` is
@@ -82,6 +84,7 @@ branch goes only if it still points at the commit the PR merged.
   checked nothing
 - Issue #847: the stacked-PR trial where the manual worktree procedure failed
 - Issue #860: the rule is anchored to `/worktrees/`, and `.claude/worktrees/` has its own entry
+- Issue #1094: the uv cache moved out of `tmp/` to uv's default so worktrees and projects share it
 - Issue #863: `doit pr_merge` removes the merged PR's worktree and deletes its branch itself
 - Issue #1012: two of the three doc-scanning walkers switched from a hardcoded skip list to
   `.gitignore`-driven discovery, which is what now gives them the `worktrees/` skip
@@ -92,3 +95,5 @@ branch goes only if it still points at the commit the PR merged.
 - [ADR-9026](9026-doc-scanning-tests-honor-sync-excludetoml-and-discover-markdown-via-git.md) —
   the `git ls-files`-based discovery that now provides this skip for two of the three walkers
 - [CONTRIBUTING.md](../../.github/CONTRIBUTING.md) — Development Workflow, step 2
+- [ADR-9027](9027-implement-issue-works-in-a-per-issue-worktree.md) — `implement-issue` now creates
+  a worktree per issue with this task

@@ -651,6 +651,28 @@ BASH_CASES = [
     ("dd if=evil of=.envrc.local", "BLOCK", "dd of= literal"),
     ("echo x > .envrc.@(local)", "BLOCK", "extglob redirect target"),
     ("cp src/* build/", "ALLOW", "star source glob into a directory"),
+    # Patch writers (#1105): forms that need no file on disk
+    ("patch -o .bashrc a b", "BLOCK", "patch -o names a protected file"),
+    ("patch --dry-run -o .envrc.local a b", "BLOCK", "patch --dry-run still writes -o"),
+    ("patch .envrc.local fix.patch", "BLOCK", "patch ORIGFILE is protected"),
+    ("patch -p1", "BLOCK", "patch from stdin is unresolvable"),
+    ("sudo patch -p1 < missing.patch", "BLOCK", "unreadable patch file is unresolvable"),
+    ("xargs patch -p1", "BLOCK", "xargs patch has no patch source"),
+    ("patch -b -z .local -p1 < missing.patch", "BLOCK", "backup suffix is unresolvable"),
+    ("git apply", "BLOCK", "git apply from stdin"),
+    ("git apply --unsafe-paths fix.patch", "BLOCK", "git apply --unsafe-paths"),
+    ("git am --continue", "BLOCK", "git am --continue applies queued patches"),
+    ("git apply --check fix.patch", "ALLOW", "git apply --check writes nothing"),
+    ("git apply --stat fix.patch", "ALLOW", "git apply --stat writes nothing"),
+    ("git am --abort", "ALLOW", "git am --abort applies no patch"),
+    ("patch --dry-run -p1 < x.patch", "ALLOW", "patch --dry-run without -o writes nothing"),
+    ("patch src/a.py fix.patch", "ALLOW", "patch an unprotected ORIGFILE"),
+    ("echo the patch is ready", "ALLOW", "patch word followed by other words"),
+    (
+        "uv version --bump patch",
+        "BLOCK",
+        "accepted over-match: a bare trailing `patch` word reads as patch from stdin",
+    ),
     ("git checkout -- .", "ALLOW", "checkout the index over the root"),
     (
         # The allowlist applies only to the top-level command: a wrapper can
@@ -1639,6 +1661,110 @@ SECRET_EXPOSURE_CASES: list[tuple[str, str, str]] = [
         "BLOCK",
         "marker inside a quote nested in a parameter expansion",
     ),
+    ("if true; then printenv; fi", "BLOCK", "dump after then"),
+    ("if printenv; then :; fi", "BLOCK", "dump as an if condition"),
+    ("while true; do env; done", "BLOCK", "dump after do"),
+    ("if false; then :; else printenv; fi", "BLOCK", "dump after else"),
+    ("if false; then :; elif printenv; then :; fi", "BLOCK", "dump after elif"),
+    ("! printenv", "BLOCK", "dump after negation"),
+    ("{ printenv; }", "BLOCK", "dump in a brace group"),
+    ("time printenv", "BLOCK", "dump after time"),
+    ("(printenv)", "BLOCK", "dump in a subshell"),
+    ("true && (env)", "BLOCK", "dump in a subshell after a separator"),
+    ("x=$(printenv)", "BLOCK", "dump in a command substitution"),
+    ("x=$(env)", "BLOCK", "env dump in a command substitution"),
+    ("x=`printenv`", "BLOCK", "dump in a backtick substitution"),
+    ('echo "$(printenv)"', "BLOCK", "dump in a double-quoted substitution"),
+    ("echo $(printenv PYPI_TOKEN)", "BLOCK", "secret read in a substitution"),
+    ("diff <(printenv) /dev/null", "BLOCK", "dump in a process substitution"),
+    ("x=$(echo $(printenv))", "BLOCK", "dump in a nested substitution"),
+    ("if true; then cat ~/.netrc; fi", "BLOCK", "credential read after then"),
+    ("x=$(cat ~/.netrc)", "BLOCK", "credential read in a substitution"),
+    ("(cat ~/.pypirc)", "BLOCK", "credential read in a subshell"),
+    ("echo then printenv", "ALLOW", "keyword in argument position"),
+    ("echo 'then printenv'", "ALLOW", "quoted keyword text"),
+    ("echo '$(printenv)'", "ALLOW", "single-quoted substitution text"),
+    ("echo '`env`'", "ALLOW", "single-quoted backtick text"),
+    ('echo "\\$(printenv)"', "ALLOW", "escaped substitution text"),
+    ("arr=(printenv)", "ALLOW", "array literal"),
+    ("echo hi # $(printenv)", "ALLOW", "substitution text in a comment"),
+    ("x=$(env VAR=1 make)", "ALLOW", "env invocation in a substitution"),
+    ("if true; then env VAR=1 make; fi", "ALLOW", "env invocation after then"),
+    ("(env -u FOO doit check)", "ALLOW", "env invocation in a subshell"),
+    ("x=$(printenv PATH)", "ALLOW", "non-secret printenv in a substitution"),
+    (
+        "git commit -m \"$(cat <<'EOF'\nnotes on printenv\nEOF\n)\"",
+        "ALLOW",
+        "commit message heredoc in a substitution",
+    ),
+    (
+        "git commit -m \"$(cat <<'EOF'\nnotes on $(printenv)\nEOF\n)\"",
+        "ALLOW",
+        "commit message heredoc whose quoted body mentions a substitution",
+    ),
+    (
+        "git commit -m \"$(cat <<'EOF'\nnotes\nEOF\n)\"; x=$(printenv)",
+        "BLOCK",
+        "substitution after a commit message heredoc",
+    ),
+    (
+        "git commit -m \"$(cat <<'EOF'\nnotes\nEOF\n)\" && echo `env`",
+        "BLOCK",
+        "backtick substitution after a commit message heredoc",
+    ),
+    ("if true; then(printenv); fi", "BLOCK", "subshell glued to then"),
+    ("while true; do(env); done", "BLOCK", "subshell glued to do"),
+    ("if false; then :; else(printenv); fi", "BLOCK", "subshell glued to else"),
+    ("{(printenv); }", "BLOCK", "subshell glued to a brace"),
+    ("!(printenv)", "BLOCK", "subshell glued to a negation"),
+    ("f() { :; }", "ALLOW", "function definition"),
+    ("f(){ :; }", "ALLOW", "function definition without spaces"),
+    ("x+=(printenv)", "ALLOW", "append array literal"),
+    (
+        "echo $(echo $(echo $(echo $(echo $(printenv)))))",
+        "BLOCK",
+        "dump nested deeper than the wrapper depth cap",
+    ),
+    (
+        "echo $(echo `echo $(echo $(echo $(cat ~/.netrc)))`)",
+        "BLOCK",
+        "credential read nested deeper than the wrapper depth cap",
+    ),
+    (
+        "bash -c 'echo $(echo $(echo $(printenv)))'",
+        "BLOCK",
+        "nested substitutions inside a wrapper payload",
+    ),
+    (
+        "cat <<EOF\nvalue: $(printenv)\nEOF",
+        "BLOCK",
+        "substitution in an unquoted heredoc body",
+    ),
+    (
+        "cat > notes.md <<EOF\nvalue: `printenv PYPI_TOKEN`\nEOF",
+        "BLOCK",
+        "backtick substitution in an unquoted heredoc body",
+    ),
+    (
+        "cat <<EOF\nvalue: $(echo $(echo $(echo $(echo $(printenv)))))\nEOF",
+        "BLOCK",
+        "deeply nested substitution in an unquoted heredoc body",
+    ),
+    (
+        "cat <<EOF\nvalue: \\$(printenv)\nEOF",
+        "ALLOW",
+        "escaped substitution in an unquoted heredoc body",
+    ),
+    (
+        "cat <<\\EOF\nvalue: $(printenv)\nEOF",
+        "ALLOW",
+        "backslash-quoted delimiter heredoc body",
+    ),
+    (
+        "cat <<'EOF'\nvalue: `printenv`\nEOF\necho done",
+        "ALLOW",
+        "quoted heredoc body with backticks",
+    ),
 ]
 
 
@@ -1685,6 +1811,11 @@ HEREDOC_BODY_CASES: list[tuple[str, str, str]] = [
         "cat > a.md <<A\nhello\nA\nbash <<B\ncat ~/.netrc\nB",
         "BLOCK",
         "a data heredoc first, then an interpreter one",
+    ),
+    (
+        "cat <<'EOF'\nx=$(printenv)\nEOF",
+        "ALLOW",
+        "substitution text in a quoted heredoc body that only a file receives",
     ),
     # Data consumers: the body is text, so it is not scanned.
     (
@@ -1781,3 +1912,73 @@ def test_heredoc_body(
     """A heredoc an interpreter will execute is scanned; one consumed as text is not."""
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
     assert _outcome_exit_code(hook, monkeypatch, payload) == expected, description
+
+
+# Every character other than ``\n`` that ``str.splitlines()`` breaks a line at.
+# Bash ends a line only at ``\n``, so each stays inside its line (#1102).
+SPLITLINES_ONLY_BREAKS = ["\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"]
+
+
+@pytest.mark.parametrize("char", SPLITLINES_ONLY_BREAKS, ids=lambda c: f"U+{ord(c):04X}")
+def test_heredoc_body_lines_split_only_at_newline(hook: types.ModuleType, char: str) -> None:
+    """A body line holding *char* stays one line, so ``EOF`` after it is not the terminator."""
+    command = f"cat > notes.md <<EOF\nalpha{char}EOF\nEOF\necho done"
+    assert hook._without_heredoc_bodies(command) == "cat > notes.md <<EOF\necho done"
+
+
+@pytest.mark.parametrize("char", SPLITLINES_ONLY_BREAKS, ids=lambda c: f"U+{ord(c):04X}")
+def test_heredoc_payload_lines_split_only_at_newline(hook: types.ModuleType, char: str) -> None:
+    """An executed body line holding *char* is yielded as the one line bash runs."""
+    command = f"bash <<EOF\necho a{char}echo b\nEOF"
+    assert hook._heredoc_payloads(command) == [f"echo a{char}echo b"]
+
+
+@pytest.mark.parametrize("char", SPLITLINES_ONLY_BREAKS, ids=lambda c: f"U+{ord(c):04X}")
+def test_heredocs_body_range_split_only_at_newline(hook: types.ModuleType, char: str) -> None:
+    """Given the command split at ``\\n``, the body is the single line bash reads."""
+    lines = f"cat <<EOF\nalpha{char}EOF\nEOF".split("\n")
+    assert hook._heredocs(lines) == [(0, ["cat"], 1, 2)]
+
+
+@pytest.mark.parametrize("char", SPLITLINES_ONLY_BREAKS, ids=lambda c: f"U+{ord(c):04X}")
+def test_heredoc_delimiter_running_past_the_marker_is_not_stripped(
+    hook: types.ModuleType, monkeypatch: pytest.MonkeyPatch, char: str
+) -> None:
+    """A delimiter word bash reads past the marker regex leaves the rest in the scans."""
+    command = f"cat <<EOF{char}\nbody\nEOF{char}\ncat ~/.netrc"
+    assert hook._heredocs(command.split("\n")) == []
+    assert hook._without_heredoc_bodies(command) == command
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    assert _outcome_exit_code(hook, monkeypatch, payload) == "BLOCK"
+
+
+@pytest.mark.parametrize("delimiter_end", [" ", "\t", "|", "&", ";", "(", ")", "<", ">"])
+def test_heredoc_delimiter_ended_by_a_metacharacter_is_stripped(
+    hook: types.ModuleType, delimiter_end: str
+) -> None:
+    """A blank or metacharacter ends the delimiter word, so the heredoc is still found."""
+    lines = f"cat <<EOF{delimiter_end}x\nbody\nEOF".split("\n")
+    assert hook._heredocs(lines) == [(0, ["cat"], 1, 2)]
+
+
+def test_unterminated_heredoc_is_not_stripped(hook: types.ModuleType) -> None:
+    """With no terminator line, nothing after the marker is dropped from the scans."""
+    command = "cat > notes.md <<EOF\nbody\ncat ~/.netrc"
+    assert hook._heredocs(command.split("\n")) == []
+    assert hook._without_heredoc_bodies(command) == command
+
+
+@pytest.mark.parametrize("char", SPLITLINES_ONLY_BREAKS, ids=lambda c: f"U+{ord(c):04X}")
+def test_heredoc_payload_with_unclear_delimiter_runs_to_the_end(
+    hook: types.ModuleType, monkeypatch: pytest.MonkeyPatch, char: str
+) -> None:
+    """A body run as code is re-scanned to the last line when its delimiter is unclear."""
+    command = f"bash <<EOF{char}\ngit push --force\nEOF{char}"
+    assert hook._heredoc_payloads(command) == ["git push --force", f"EOF{char}"]
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    assert _outcome_exit_code(hook, monkeypatch, payload) == "BLOCK"
+
+
+def test_unterminated_heredoc_payload_runs_to_the_end(hook: types.ModuleType) -> None:
+    """A body run as code with no terminator is re-scanned to the last line."""
+    assert hook._heredoc_payloads("bash <<EOF\ngit push --force") == ["git push --force"]

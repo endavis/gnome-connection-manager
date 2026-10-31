@@ -111,3 +111,6 @@ site/
 .claude/settings.local.json
 # Where `gh` writes its state when HOME is unset.
 .local/
+
+# Per-user agent role overrides (CLI and model names are personal; see docs/development/ai/agent-roles.md)
+/.config/pyproject_template/agents.local.toml

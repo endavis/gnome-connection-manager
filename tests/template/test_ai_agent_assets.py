@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -310,6 +311,21 @@ def test_merge_pr_exists_on_every_wired_surface() -> None:
         assert path.exists(), f"Missing merge-pr file: {path}"
 
 
+def test_implement_issues_exists_on_every_wired_surface() -> None:
+    """`implement-issues` runs several issues in parallel worktrees (#1097).
+
+    Same two-surface layout as `merge-pr`.
+    """
+    paths: list[Path] = []
+    if agent_is_present("claude"):
+        paths.append(REPO_ROOT / ".claude" / "skills" / "implement-issues" / "SKILL.md")
+    if any(agent_is_present(a) for a in ("codex", "antigravity", "copilot")):
+        paths.append(REPO_ROOT / ".agents" / "skills" / "implement-issues" / "SKILL.md")
+
+    for path in paths:
+        assert path.exists(), f"Missing implement-issues file: {path}"
+
+
 def test_retired_self_action_aliases_are_removed() -> None:
     """The old ghissue-plan/implement/close self-action aliases should be gone."""
     removed = [
@@ -578,3 +594,46 @@ def test_multi_orchestrators_recognize_antigravity() -> None:
         content = f.read_text(encoding="utf-8")
         assert "`antigravity`" in content, f"{f} does not list antigravity as an allowed agent"
         assert "agy -p" in content, f"{f} has no agy invocation block"
+
+
+def test_template_update_check_is_wired_for_session_start() -> None:
+    """The template-update notice must be wired on each host probed to fire it (#1086).
+
+    Copilot is deliberately not wired separately: probe showed it runs the Claude-format
+    SessionStart hook in `.claude/settings.json`, so its own entry would print twice.
+    Codex is wired with its own SessionStart block (#1149).
+    """
+    script = "template-update-check.py"
+    assert (REPO_ROOT / "tools" / "hooks" / "ai" / script).exists()
+
+    if agent_is_present("claude"):
+        claude = json.loads((REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        entries = claude["hooks"]["SessionStart"]
+        commands = [h["command"] for e in entries for h in e["hooks"]]
+        assert any(script in c and "--host=claude" in c for c in commands)
+        assert all(e.get("matcher") == "startup|resume" for e in entries if script in str(e))
+
+    if agent_is_present("antigravity"):
+        agy = json.loads((REPO_ROOT / ".agents" / "hooks.json").read_text(encoding="utf-8"))
+        handlers = [h for group in agy.values() for h in group.get("SessionStart", [])]
+        assert any(
+            script in h["command"] and "--host=antigravity" in h["command"] for h in handlers
+        )
+        assert any("$(git rev-parse --show-toplevel)" in h["command"] for h in handlers)
+
+    if agent_is_present("copilot"):
+        copilot = json.loads(
+            (REPO_ROOT / ".github" / "hooks" / "copilot-hooks.json").read_text(encoding="utf-8")
+        )
+        assert "sessionStart" not in copilot.get("hooks", {}), (
+            "Copilot already runs .claude/settings.json SessionStart hooks; a second entry "
+            "would show the notice twice"
+        )
+
+    if agent_is_present("codex"):
+        codex = tomllib.loads((REPO_ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        groups = codex["hooks"]["SessionStart"]
+        wired = [g for g in groups if any(script in h["command"] for h in g["hooks"])]
+        assert wired, "Codex SessionStart must run the template update check"
+        assert all(g["matcher"] == "^(startup|resume)$" for g in wired)
+        assert any("--host=codex" in h["command"] for g in wired for h in g["hooks"])

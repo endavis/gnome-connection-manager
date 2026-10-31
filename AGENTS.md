@@ -917,12 +917,17 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   Antigravity. `.claude/settings.json`, `.agents/hooks.json` and
   `.github/hooks/copilot-hooks.json` register the guard rails in `tools/hooks/ai/`, which
   refuse `gh pr create`/`gh pr merge` in favour of the doit tasks and treat
-  `ready-to-merge` as a label only a person may apply. A workflow skill is written once,
-  in `.agents/skills/<name>/SKILL.md`, and `doit skills_sync` writes Claude's copy under
-  `.claude/skills/`, which is never edited by hand: `tests/template/test_skills_sync.py`
-  fails when the two part. "Implement issue N" runs the `implement-issue` skill, which
-  replaced the per-agent plan and implement commands (#324), and "N is green" runs the
-  `merge-pr` skill (#385). The review and
+  `ready-to-merge` as a label only a person may apply. At a session's start,
+  `tools/hooks/ai/template-update-check.py` says in one line when the template's `main` is
+  no longer the commit that `.config/pyproject_template/settings.toml` records (#420). A
+  workflow skill is written once, in `.agents/skills/<name>/SKILL.md`, and
+  `doit skills_sync` writes Claude's copy under `.claude/skills/`, which is never edited by
+  hand: `tests/template/test_skills_sync.py` fails when the two part. "Implement issue N"
+  runs the `implement-issue` skill, which replaced the per-agent plan and implement
+  commands (#324), and "N is green" runs the `merge-pr` skill (#385). "Implement issues
+  A, B" runs `implement-issues`, each issue in a worktree and a background agent of its
+  own, and `report-template-bug` files a bug in the vendored tooling on the template,
+  through `doit issue --upstream` (#420). The review and
   adversarial-review commands, and the bridges that hand them to another agent, are in
   `.claude/commands/`, `.github/skills/` and `.agents/skills/`. `.claude/rules/` holds
   narrow footgun rules that apply on top of this file, and `.github/instructions/` and
@@ -1510,7 +1515,8 @@ commands once wired (#119).
   `.venv` of its own (ADR-9022). The template's task builds that with `uv sync`, which
   leaves out the system's site packages, so `gi` did not import there (#327). GCM's
   `task_worktree` then builds it again, as CI builds GCM's, so the suite runs there as it
-  does here. Unset the `GCM_*_DIR` variables there too, as Testing says. `doit pr_merge`
+  does here, and `implement-issue` makes every issue's worktree so (ADR-9027). Unset the
+  `GCM_*_DIR` variables there too, as Testing says. `doit pr_merge`
   removes it once merged, but only while everything git ignores there can be rebuilt, as
   the `.venv` and the caches can: any other file keeps it, under `tmp/` too, a body file
   in `tmp/agents/` included. So `.gitignore` ignores `tmp/*` but not the tracked
@@ -1531,16 +1537,22 @@ commands once wired (#119).
   "Missing required sections" for `###`.
 - **Approving work on an issue runs `implement-issue`**, as "implement issue N" does, a
   "yes" to a fix an agent filed as an issue included, and authorizes its commit, push and
-  PR on that issue's branch. A question is not approval. **"N is green" or "merge N" runs
-  `merge-pr`**: consent to merge that PR and to close the issues it fully addresses, never
-  to add `ready-to-merge`. See
+  PR on that issue's branch. A question is not approval. "Implement issues A, B" runs
+  `implement-issues`, with the same authorization for each issue. **"N is green" or
+  "merge N" runs `merge-pr`**: consent to merge that PR and to close the issues it fully
+  addresses, never to add `ready-to-merge`. See
   [Slash Commands and Workflows](docs/development/ai/slash-commands.md#merge-pr-n).
 - **A security review's findings stay private until fixed.** Fix those that belong to the
   change at hand. Never put an unfixed one in a public issue, PR, comment or commit
   message (`.github/SECURITY.md`). Reproduce it and keep the command and its output, then
   file it as a private draft security advisory, one per finding:
   `gh api -X POST repos/{owner}/{repo}/security-advisories --input <file>`. If that is
-  refused, stop and ask, and never fall back to a public issue.
+  refused, stop and ask, and never fall back to a public issue. A finding in the
+  development tooling, `tools/`, is the exception once the repo admin takes it up: its fix
+  goes through an ordinary issue and PR that describe the change, never the bypass, a
+  reproduction or the advisory, and the advisory is closed unpublished after the merge. A
+  finding in `src/` stays private until a release fixes it, as `.github/SECURITY.md`
+  (Security Update Process) sets out.
 
 See `.github/CONTRIBUTING.md` (Development Workflow) for the full account.
 

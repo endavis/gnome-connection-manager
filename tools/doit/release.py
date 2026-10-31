@@ -1,9 +1,8 @@
 """Release-related doit tasks."""
 
 import json
-import os
 import re
-import subprocess  # nosec B404 - subprocess is required for doit tasks
+import subprocess  # nosec B404  # subprocess is required for doit tasks
 import sys
 import tomllib
 from datetime import date
@@ -13,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from doit.tools import title_with_actions
 from rich.console import Console
 
-from .base import UV_CACHE_DIR, run_streamed, verbatim
+from .base import run_streamed, verbatim
 
 if TYPE_CHECKING:
     from rich.console import Console as ConsoleType
@@ -623,7 +622,6 @@ def task_release() -> dict[str, Any]:
                 console.print(f"[dim]Pre-release type: {prerelease}[/dim]")
             result = subprocess.run(
                 get_next_cmd,
-                env={**os.environ, "UV_CACHE_DIR": UV_CACHE_DIR},
                 check=True,
                 capture_output=True,
                 text=True,
@@ -699,7 +697,6 @@ def task_release() -> dict[str, Any]:
             try:
                 run_streamed(
                     ["uv", "run", "cz", "bump", "--files-only", "--yes", next_version],
-                    env={**os.environ, "UV_CACHE_DIR": UV_CACHE_DIR},
                 )
                 run_streamed(["uv", "lock"])
                 version_files = _version_files_from_pyproject()
@@ -730,7 +727,6 @@ def task_release() -> dict[str, Any]:
                 changelog_cmd = ["uv", "run", "cz", "changelog", "--incremental"]
                 run_streamed(
                     changelog_cmd,
-                    env={**os.environ, "UV_CACHE_DIR": UV_CACHE_DIR},
                 )
                 console.print("[green]✓ CHANGELOG.md updated.[/green]")
             except subprocess.CalledProcessError:

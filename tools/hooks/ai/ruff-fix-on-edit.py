@@ -15,7 +15,7 @@ For full documentation, see: docs/development/ai/ruff-fix-hook.md
 
 import json
 import os
-import subprocess  # nosec B404 - required to invoke ruff
+import subprocess  # nosec B404  # required to invoke ruff
 import sys
 from pathlib import Path
 
@@ -51,7 +51,7 @@ def run_ruff(path: Path) -> None:
     Best-effort: every exception is swallowed. This function must never raise.
     """
     try:
-        subprocess.run(  # nosec B603 B607 - trusted ruff invocation
+        subprocess.run(  # nosec B603 B607  # trusted ruff invocation
             [
                 "uv",
                 "run",
@@ -69,11 +69,11 @@ def run_ruff(path: Path) -> None:
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
-    except Exception:  # nosec B110 - hook must never raise; errors would block tool calls
+    except Exception:  # nosec B110  # hook must never raise; errors would block tool calls
         pass
 
     try:
-        subprocess.run(  # nosec B603 B607 - trusted ruff invocation
+        subprocess.run(  # nosec B603 B607  # trusted ruff invocation
             ["uv", "run", "ruff", "format", "--quiet", str(path)],
             capture_output=True,
             timeout=RUFF_TIMEOUT_SECONDS,
@@ -81,7 +81,7 @@ def run_ruff(path: Path) -> None:
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
-    except Exception:  # nosec B110 - hook must never raise; errors would block tool calls
+    except Exception:  # nosec B110  # hook must never raise; errors would block tool calls
         pass
 
 

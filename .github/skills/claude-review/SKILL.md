@@ -15,6 +15,8 @@ Optional focus area can be passed in.
 
 ## Instructions
 
+Resolve the configured model first: `uv run doit agent_cmd --role=review --host=copilot --cli=claude`. Its last stdout line is JSON with `mode: cli` and a `command` string. Run that `command` in place of the literal invocation below, replacing `'<prompt>'` with the prompt text from the literal. If the task is unavailable or fails, run the literal below as is; with no config the two are identical. See [Agent roles](../../../docs/development/ai/agent-roles.md).
+
 1. Run Claude Code non-interactively. Hybrid C: prefer the existing `/claude:review` command if available, otherwise the prompt is fully inlined.
 
    ```bash

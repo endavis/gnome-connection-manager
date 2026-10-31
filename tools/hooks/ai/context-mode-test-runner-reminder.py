@@ -49,7 +49,7 @@ def main() -> int:
         }
         sys.stdout.write(json.dumps(output))
         sys.stdout.flush()
-    except Exception:  # nosec B110
+    except Exception:
         return 0
     return 0
 

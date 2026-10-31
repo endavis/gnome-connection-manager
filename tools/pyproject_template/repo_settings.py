@@ -590,7 +590,7 @@ def sync_labels_from_file(repo_full: str, file: str = DEFAULT_LABELS_FILE) -> bo
         )
         return replicate_labels(repo_full)
 
-    result = subprocess.run(  # nosec B603 B607 - fixed argument list, no shell
+    result = subprocess.run(  # nosec B603 B607  # fixed argument list, no shell
         ["uv", "run", "doit", "labels_sync", f"--file={file}"],
         env={**os.environ, "GH_REPO": repo_full},
         check=False,

@@ -135,10 +135,14 @@ ignore = [
 # calls. Our own tools/doit/gcm.py sits in this tree but passes these rules anyway.
 "tools/doit/*" = ["E741", "F401", "PTH"]
 "tools/pyproject_template/*" = ["E741", "F401", "PTH"]
+# The agent hooks, vendored as tools/doit/ is. Upstream's config does not select TC
+# (flake8-type-checking) either, which template-update-check.py does not pass (#420).
+"tools/hooks/ai/*" = ["TC"]
 # Tests vendored from the template alongside the hooks and workflows they cover (#127).
 # Same reasoning as the tools/ entries above: they are replaced wholesale on a sync, and
-# upstream lints them under a config that does not select TC (flake8-type-checking).
-"tests/test_hook_*.py" = ["TC"]
+# upstream lints them under a config that selects neither TC (flake8-type-checking) nor
+# PTH, which test_hook_template_update_check.py does not pass (#420).
+"tests/test_hook_*.py" = ["TC", "PTH"]
 "tests/test_doc_scan.py" = ["TC"]
 "tests/test_ci_workflow.py" = ["TC"]
 "tests/test_codeql_workflow.py" = ["TC"]

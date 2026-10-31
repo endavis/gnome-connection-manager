@@ -11,7 +11,7 @@ def task_lint() -> dict[str, Any]:
     """Run ruff linting."""
     extras = optional_root_files("bootstrap.py") + optional_root_dirs("examples")
     return {
-        "actions": ["uv run ruff check src/ tests/ tools/" + extras],
+        "actions": ["uv run ruff check --output-format=concise src/ tests/ tools/" + extras],
         "title": title_with_actions,
         "verbosity": 0,
     }

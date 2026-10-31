@@ -2,7 +2,7 @@
 
 import os
 import shlex
-import subprocess  # nosec B404 - subprocess is required to run doit sub-tasks
+import subprocess  # nosec B404  # subprocess is required to run doit sub-tasks
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -14,13 +14,8 @@ from rich.text import Text
 # Configuration
 DOIT_CONFIG = {
     "verbosity": 2,
-    "default_tasks": ["list"],
+    "default_tasks": ["default"],
 }
-
-# Use direnv-managed UV_CACHE_DIR if available, otherwise use tmp/
-# Set in os.environ so subprocesses inherit it (cross-platform compatible)
-UV_CACHE_DIR = os.environ.get("UV_CACHE_DIR", "tmp/.uv_cache")
-os.environ["UV_CACHE_DIR"] = UV_CACHE_DIR
 
 
 def success_message() -> None:
@@ -283,7 +278,7 @@ def run_teed(
 
     buffer: list[str] = []
     # process.stdout is non-None because we asked for subprocess.PIPE.
-    assert process.stdout is not None  # nosec B101 - invariant from Popen args
+    assert process.stdout is not None  # nosec B101  # invariant from Popen args
     try:
         for line in process.stdout:
             buffer.append(line)

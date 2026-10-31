@@ -6,7 +6,7 @@ machinery looks at model IDs. `CLAUDE_CODE_SUBAGENT_MODEL` sat at
 `claude-sonnet-4-6` for two model generations before anyone noticed (#696).
 
 The pin itself is deliberate — `AI_SETUP.md` records it as a cost/quality
-trade-off, with `implement-worker` intentionally not overriding it. So these
+trade-off, with the `implement-issue` planner overriding it by alias. So these
 tests do not forbid pinning. They make a *stale* pin loud.
 
 Two properties are checked:
