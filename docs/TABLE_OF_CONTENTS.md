@@ -27,6 +27,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
 - [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
+- [Tab Names and Colours](design/tabs.md) - What a host's tab is called and the colour it is marked with, in the tab, the server tree and the Hosts menu, and why
 <!-- END:tag=gcm-dev -->
 
 ### Using the project template
@@ -110,6 +111,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Review Focus Areas](development/ai/review-focus-areas.md) - Checklists for the errors, tests, types and comments focus areas available to every review and adversarial-review surface
 - [Ruff Auto-Fix on Edit Hook](development/ai/ruff-fix-hook.md) - PostToolUse hook that runs ruff --fix on edited Python files
 - [Slash Commands and Workflows](development/ai/slash-commands.md) - Reference for the slash commands and dual-agent workflow this project ships with
+- [Tab Names and Colours](design/tabs.md) - What a host's tab is called and the colour it is marked with, in the tab, the server tree and the Hosts menu, and why
 - [Template Tools Reference](template/tools-reference.md) - Complete reference for all template tools in tools/pyproject_template/
 - [Tooling Roles and Architectural Boundaries](development/tooling-roles.md) - What each tool is for, who uses it, and where runtime code ends and dev tooling begins
 <!-- END:audience=contributors -->
@@ -207,6 +209,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Ruff Auto-Fix on Edit Hook](development/ai/ruff-fix-hook.md) - PostToolUse hook that runs ruff --fix on edited Python files
 - [Running GCM on Windows with WSL](WSL-SETUP.md) - Setting GCM up on Ubuntu 24.04 under WSL: installing it with one line, starting it from a Windows shortcut, one SSH agent for consoles, mounts and Nautilus through keychain and D-Bus, SFTP and SSHFS, setting the scale by hand on a high-DPI screen, and the faults that are WSLg's
 - [Slash Commands and Workflows](development/ai/slash-commands.md) - Reference for the slash commands and dual-agent workflow this project ships with
+- [Tab Names and Colours](design/tabs.md) - What a host's tab is called and the colour it is marked with, in the tab, the server tree and the Hosts menu, and why
 - [Template Management](template/manage.md) - Unified interface for creating projects, checking updates, and syncing
 - [Template Tools Reference](template/tools-reference.md) - Complete reference for all template tools in tools/pyproject_template/
 - [Tooling Roles and Architectural Boundaries](development/tooling-roles.md) - What each tool is for, who uses it, and where runtime code ends and dev tooling begins

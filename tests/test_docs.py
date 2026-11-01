@@ -714,6 +714,22 @@ def test_our_docs_do_not_claim_the_templates_audience(path):
     )
 
 
+@pytest.mark.parametrize("path", list(_our_docs()), ids=lambda p: p.name)
+def test_no_line_of_our_docs_starts_with_an_issue_number(path):
+    """Python-Markdown, which builds the site, reads a line that starts `#346 name` as a
+    heading, measured with 3.10.3, where GitHub wants a space after the `#`. Text moved out of
+    AGENTS.md (#430), whose lines are indented, can bring such a line along."""
+    in_code = False
+    starts = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if line.startswith("```"):
+            in_code = not in_code
+        elif not in_code and re.match(r"#\d", line):
+            starts.append(number)
+
+    assert not starts, f"{path.name}: lines {starts} start with #<number>, read as a heading"
+
+
 def _nav_documents():
     """Every .md path named in the mkdocs nav, however deeply nested."""
 
