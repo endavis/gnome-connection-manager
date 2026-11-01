@@ -410,9 +410,20 @@ def test_load_config_refuses_a_key_a_shortcut_already_claims(tmp_path, app_modul
 def test_load_config_refuses_a_key_an_application_accelerator_claims(
     tmp_path, app_module, monkeypatch
 ):
-    loaded = _load_with_keys(tmp_path, app_module, monkeypatch, {"CTRL+Q": "\\n"})
+    """Ctrl+Shift+U is cluster mode, an accelerator a console is never given first."""
+    loaded = _load_with_keys(tmp_path, app_module, monkeypatch, {"CTRL+SHIFT+U": "\\n"})
 
     assert loaded == {}
+
+
+def test_load_config_accepts_a_key_a_console_is_given_first(tmp_path, app_module, monkeypatch):
+    """The console gets Ctrl+Q before the accelerator does, so the sequence is sent there
+    (#419), and so for the rest of the six."""
+    keys = {"CTRL+Q": "\\n", "CTRL+R": "\\x1b[A", "F9": "x", "SHIFT+F9": "y"}
+
+    loaded = _load_with_keys(tmp_path, app_module, monkeypatch, keys)
+
+    assert loaded == {"CTRL+Q": b"\n", "CTRL+R": b"\x1b[A", "F9": b"x", "SHIFT+F9": b"y"}
 
 
 def test_load_config_without_a_keys_section_is_fine(tmp_path, app_module, monkeypatch):
@@ -1193,3 +1204,172 @@ def test_activation_reports_the_renamed_hosts_once(app_module, monkeypatch):
         (application._controller.report_unread_options, ()),
         (application._controller.report_renamed_hosts, (app_module.renamed_hosts,)),
     ]
+
+
+# -- a command without a key, and the keys a console is not taken from (#419) ---------
+
+
+def _bound_commands(app_module):
+    """Each command `shortcuts` binds, by name, with its key."""
+    return {
+        command[0]: key
+        for key, command in app_module.shortcuts.items()
+        if isinstance(command, list)
+    }
+
+
+def test_without_a_shortcuts_section_every_command_has_its_default_key(
+    tmp_path, app_module, monkeypatch
+):
+    monkeypatch.setattr(app_module, "unbound_commands", set())
+    _load_with(tmp_path, app_module, monkeypatch, {"term": "xterm"})
+
+    bound = _bound_commands(app_module)
+    for command, _name, key in app_module.SHORTCUT_DEFAULTS:
+        assert bound[command] == key
+    for number in range(1, 10):
+        assert bound[f"console_{number}"] == f"ALT+{number}"
+    assert app_module.unbound_commands == set()
+
+
+def test_the_new_default_keys_are_on_ctrl_shift_and_leave_a_program_its_ctrl_keys(app_module):
+    """Ctrl+S, F, G, H, N and W are readline's, and reach a console's program (#419)."""
+    defaults = {command: key for command, _name, key in app_module.SHORTCUT_DEFAULTS}
+
+    assert defaults["save"] == "CTRL+SHIFT+S"
+    assert defaults["find"] == "CTRL+SHIFT+L"
+    assert defaults["find_next"] == "CTRL+SHIFT+G"
+    assert defaults["find_back"] == "CTRL+SHIFT+B"
+    assert defaults["console_close"] == "CTRL+SHIFT+W"
+    assert defaults["console_reconnect"] == "CTRL+SHIFT+R"
+    taken = set(defaults.values())
+    for letter in "SFGHNW":
+        assert f"CTRL+{letter}" not in taken
+
+
+def test_a_configuration_that_names_the_old_keys_keeps_them(tmp_path, app_module, monkeypatch):
+    """Every save writes the key of each command, so a gcm.conf GCM has saved names the old
+    ones, and keeps them: only a command with no line takes a new default (#419)."""
+    old = {
+        "save": "CTRL+S",
+        "find": "CTRL+F",
+        "find_next": "CTRL+G",
+        "find_back": "CTRL+H",
+        "console_close": "CTRL+W",
+        "console_reconnect": "CTRL+N",
+    }
+    _load_with_keys(tmp_path, app_module, monkeypatch, None, shortcuts=old)
+
+    assert app_module.shortcuts["CTRL+S"] == app_module._SAVE
+    bound = _bound_commands(app_module)
+    for command, key in old.items():
+        assert bound[command] == key
+    # the new key of a command with a line of its own is not bound
+    for key in ("CTRL+SHIFT+S", "CTRL+SHIFT+L", "CTRL+SHIFT+G", "CTRL+SHIFT+W", "CTRL+SHIFT+R"):
+        assert key not in app_module.shortcuts
+
+
+def test_a_command_with_no_line_takes_its_new_default_beside_one_with_an_old_key(
+    tmp_path, app_module, monkeypatch
+):
+    _load_with_keys(tmp_path, app_module, monkeypatch, None, shortcuts={"save": "CTRL+S"})
+
+    bound = _bound_commands(app_module)
+    assert bound["save"] == "CTRL+S"
+    assert bound["find"] == "CTRL+SHIFT+L"
+    assert bound["console_close"] == "CTRL+SHIFT+W"
+
+
+def test_a_line_with_no_key_leaves_its_command_without_one(tmp_path, app_module, monkeypatch):
+    """`save =` is no key, not no line: it is not read as the default, and not bound to the
+    empty key, where two such commands would be one (#419)."""
+    monkeypatch.setattr(app_module, "unbound_commands", set())
+    _load_with_keys(
+        tmp_path,
+        app_module,
+        monkeypatch,
+        None,
+        shortcuts={"save": "", "console_3": "", "copy": "CTRL+ALT+C"},
+    )
+
+    bound = _bound_commands(app_module)
+    assert "save" not in bound
+    assert "console_3" not in bound
+    assert "" not in app_module.shortcuts
+    for key in ("CTRL+S", "CTRL+SHIFT+S", "ALT+3"):
+        assert key not in app_module.shortcuts, f"{key} is bound, as if the line were not there"
+    assert bound["copy"] == "CTRL+ALT+C"
+    assert bound["console_4"] == "ALT+4"
+    assert app_module.unbound_commands == {"save", "console_3"}
+
+
+def _wmain_that_saves(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 100)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: []
+    wmain.get_collapsed_folder_ids = lambda: []
+    return wmain
+
+
+def test_a_save_writes_the_key_of_every_command(tmp_path, app_module, monkeypatch):
+    """The premise of the new defaults reaching only a configuration with no line for a
+    command: GCM writes each key it holds at every save (#419)."""
+    _load_with(tmp_path, app_module, monkeypatch, {"term": "xterm"})
+    monkeypatch.setattr(app_module, "snippets", [])
+
+    _wmain_that_saves(app_module).writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(tmp_path / "gcm.conf")
+    for command, _name, key in app_module.SHORTCUT_DEFAULTS:
+        assert written.get("shortcuts", command) == key
+    for number in range(1, 10):
+        assert written.get("shortcuts", f"console_{number}") == f"ALT+{number}"
+
+
+def test_two_commands_without_a_key_are_written_and_read_back_without_one(
+    tmp_path, app_module, monkeypatch
+):
+    """Both keep their line, `save =`, though a table keyed by the key holds one at most,
+    and neither is given its default again at the next load (#419)."""
+    _load_with(tmp_path, app_module, monkeypatch, {"term": "xterm"})
+    monkeypatch.setattr(app_module, "snippets", [])
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+C": app_module._COPY})
+    monkeypatch.setattr(app_module, "unbound_commands", {"save", "find", "console_2"})
+
+    _wmain_that_saves(app_module).writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(tmp_path / "gcm.conf")
+    assert written.get("shortcuts", "copy") == "CTRL+SHIFT+C"
+    for command in ("save", "find", "console_2"):
+        assert written.get("shortcuts", command) == ""
+
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "unbound_commands", set())
+    object.__new__(app_module.Wmain).loadConfig()
+
+    bound = _bound_commands(app_module)
+    assert app_module.unbound_commands == {"save", "find", "console_2"}
+    for command in app_module.unbound_commands:
+        assert command not in bound
+    assert "" not in app_module.shortcuts
+    # a command the file did not name, because it was not written, is bound to its default
+    assert bound["copy"] == "CTRL+SHIFT+C"
+    assert bound["paste"] == "CTRL+SHIFT+V"
+
+
+def test_a_command_that_is_bound_is_not_also_written_without_a_key(
+    tmp_path, app_module, monkeypatch
+):
+    _load_with(tmp_path, app_module, monkeypatch, {"term": "xterm"})
+    monkeypatch.setattr(app_module, "snippets", [])
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+C": app_module._COPY})
+    monkeypatch.setattr(app_module, "unbound_commands", {"copy"})
+
+    _wmain_that_saves(app_module).writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(tmp_path / "gcm.conf")
+    assert written.get("shortcuts", "copy") == "CTRL+SHIFT+C"

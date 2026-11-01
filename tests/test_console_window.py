@@ -257,15 +257,15 @@ elif scenario == "a-key-in-a-console-window-acts-on-its-tab":
 
     press(CONTROL, SHIFT, ord("d"))  # Clone
     assert until(lambda: names() == [["A"], ["B", "B"]]), names()
-    press(CONTROL, ord("w"))  # Close console: the clone, which is in use there
+    press(CONTROL, SHIFT, ord("w"))  # Close console: the clone, which is in use there
     assert until(lambda: names() == [["A"], ["B"]]), names()
     press(CONTROL, SHIFT, ord("n"))  # New local console
     assert until(lambda: names() == [["A"], ["B", "local"]]), names()
-    press(CONTROL, ord("w"))
+    press(CONTROL, SHIFT, ord("w"))
     assert until(lambda: names() == [["A"], ["B"]]), names()
 
     # Find searches this window's tab, from a search box of its own.
-    press(CONTROL, ord("f"))
+    press(CONTROL, SHIFT, ord("l"))
     assert window.search_bar.get_search_mode()
     assert window.get_focus() is window.search_entry, window.get_focus()
     window.search_entry.set_text("KEPT")
@@ -299,7 +299,7 @@ elif scenario == "a-key-in-a-console-window-acts-on-its-tab":
 
     # Back in the main window, a key acts on the main window's tab.
     use(w.wMain)
-    press(CONTROL, ord("w"))
+    press(CONTROL, SHIFT, ord("w"))
     assert until(lambda: names() == [[], ["B"]]), names()
     run("B", "echo still-$KEPT", "still-yes")
 

@@ -318,7 +318,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   "Server closed the connection" or "Failed to flush data", by what gtk-vnc was doing;
   and destroying the page closes the connection with no signal. GCM's shortcuts are
   accelerators, which run before the focused widget sees a key, and measured with real
-  input they took Ctrl+W, closing the tab, and Ctrl+F from the desktop. So
+  input they took Ctrl+W, closing the tab, and Ctrl+F from the desktop, which were Close
+  console's and Find's keys then; they are Ctrl+Shift+W and Ctrl+Shift+L now (#419). So
   `Wmain.on_window_key_press` gives a desktop with the keyboard every key first;
   gtk-vnc leaves them once disconnected, and the shortcuts apply again.
   `tests/test_vnc.py` starts Xtigervnc on a display number it picks and retries, since
@@ -632,13 +633,42 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
-  and `captured_key`, what a key pressed in a snippet's key field binds (#240). That one
+  and `captured_key`, what a key pressed in a snippet's key field, or in Preferences'
+  Shortcut column, binds (#240, #419). That one
   asks `MODIFIER_KEY_NAMES` whether a key is a modifier, since GDK's `is_modifier` is
   False for every key under X11, measured with real input (#239).
   Pure — the reserved set is an argument, and `RESERVED_ACCELERATORS` stays in `app.py`
   beside the `do_startup` registrations a test checks it against. `shortcut_to_accel`,
   `apply_menu_accels` and `sync_shortcut_accels` stay too: measurement showed they are
   `Gdk`/`Gtk` calls rather than logic, which is what put the seam here (#140).
+  A key typed into a console belongs to its program, bar what `[shortcuts]` binds (#419),
+  and the defaults take no key a shell reads: `save`, `find`, `find_next`, `find_back`,
+  `console_close` and `console_reconnect` were Ctrl+S, F, G, H, W and N, and are on
+  Ctrl+Shift+S, L, G, B, W and R, where a program cannot tell the key from the
+  Ctrl+letter one: a plain `Vte.Terminal` sends the same byte for both, measured for each
+  of those letters. The six accelerators `do_startup` registers that a program reads too,
+  Ctrl+Q, R and E, F1, F9 and Shift+F9, are `CONSOLE_FIRST_KEYS`, and
+  `RESERVED_ACCELERATORS` holds the four that act wherever the keyboard is. A test
+  checks that the two together are what `do_startup` registers, stateful actions
+  included, which the old check missed. `[keys]` is refused only on the second set.
+  `Wmain.on_window_key_press` gives the first set to the console that has the keyboard
+  before GTK's accelerators run, as it gives every key to a remote desktop (#234):
+  `propagate_key_event` stops before the window, so it does not recurse. Measured with
+  real input on a private Xvfb, the program reads `13 06 07 08 0e 17` for Ctrl+S, F, G,
+  H, N and W, and a program in a console window reads Ctrl+Q, F1 and F9. **A console
+  whose program has ended swallows them**: VTE takes the key and has nobody to give it
+  to, and the accelerator does not run, measured for each of the six with the program
+  killed and the tab left open. So Ctrl+Q does not quit from an ended tab, and **File →
+  Quit** does. Not handled; a check of the terminal's `child_pid` in `on_window_key_press`
+  would pass such a key on.
+  A command without a key is written `<command> =` and read back as none, where a
+  missing line is the default: `bound_key` tells the two apart. `shortcuts` is keyed by
+  key, so two such commands would meet at `""`, as they do in an older GCM, which reads
+  the line as the key `""` and keeps one. They are kept in the module's
+  `unbound_commands` instead, which `writeConfig` writes and `Wconfig` lists with an empty
+  Shortcut through `preference_rows`, and takes back on OK through `kept_bindings`.
+  `tests/test_console_keys.py` runs real GCM and a program that logs the bytes it reads,
+  on a private Xvfb, with keys sent through XTest.
 - `src/gnome_connection_manager/utils/activity.py` – when a console busy out of sight has
   gone quiet (#208). An agent CLI finishing in a tab nobody watches gave no sign: measured
   in a real VTE, only codex of Claude Code, codex, agy and Copilot CLI rings the bell at
@@ -1150,7 +1180,12 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Terminal commands and their default keys live in `SHORTCUT_DEFAULTS`, and
   `TERMINAL_ACTIONS` maps them to application actions. Accelerators are derived
   from the user's config rather than hardcoded — a fixed accelerator shadows the configured
-  key, which is what broke #3 and #15. Tests enforce this.
+  key, which is what broke #3 and #15. Tests enforce this. A default key moves only for a
+  `gcm.conf` with no line for the command: a save writes the key of every command, so one
+  GCM has saved keeps the keys it holds, and a changed default never reaches it (#419). So
+  the six keys that moved there are not marked `BREAKING CHANGE:`, as its plan decided, and
+  the changelog names the lines that take the new keys or keep the old. A command written
+  `<command> =` has no key, and a command with no line has its default.
 - Host attributes include an `id`, a `folder` (the id `group` is derived from), a
   `position` among that folder's children, group/name/description, connection info, tunnels,
   terminal overrides, clipboard/logging flags, colors, command sequences, commands to run on
@@ -1243,7 +1278,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   context terminal, else that tab's terminal, else None. Terminal shortcuts are also
   application accelerators, which run before the focused terminal sees the key, so a key
   reaches the action's handler and not `on_terminal_keypress`. A remote desktop with the
-  keyboard is the exception, and gets the key first (#234). Both menus clear their context
+  keyboard is the exception, and gets the key first (#234), and so does a console for the
+  six keys in `CONSOLE_FIRST_KEYS` (#419). Both menus clear their context
   from an idle callback after `hide`, in `on_context_menu_hide`, and
   `trigger_popup_action` clears it even when the action raises. Measured: GTK hides a menu
   before the chosen item's action runs, and that action reads the context. The tab menu

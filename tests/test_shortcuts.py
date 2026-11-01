@@ -154,3 +154,82 @@ def test_a_key_that_types_text_is_refused(keyval, name):
 )
 def test_any_other_key_is_taken_as_it_is_named(keyval, name, types_text, held):
     assert shortcuts.captured_key(keyval, name, types_text, held) == name
+
+
+# A key typed into a console belongs to its program, except GCM's [shortcuts] (#419).
+
+
+def test_a_console_is_given_the_six_fixed_accelerators_first():
+    """They are fixed in `do_startup`, not in [shortcuts], so nothing can move them: the
+    program in a console gets them, or GCM's accelerator takes them from it."""
+    keys = sorted(shortcuts.CONSOLE_FIRST_KEYS)
+
+    assert keys == ["CTRL+E", "CTRL+Q", "CTRL+R", "F1", "F9", "SHIFT+F9"]
+
+
+@pytest.mark.parametrize(
+    ("value", "default", "expected"),
+    [
+        # a command with no line takes its default
+        (None, "CTRL+S", "CTRL+S"),
+        # `save =` is a command with no key, and not a command with no line
+        ("", "CTRL+S", ""),
+        ("  ", "X", ""),
+        # a key is kept as written, bar the space round it
+        (" CTRL+ALT+S ", "X", "CTRL+ALT+S"),
+        ("CTRL+S", "CTRL+SHIFT+S", "CTRL+S"),
+    ],
+)
+def test_the_key_a_line_binds_is_the_default_only_where_there_is_no_line(value, default, expected):
+    assert shortcuts.bound_key(value, default) == expected
+
+
+def test_preferences_lists_each_command_by_name_with_its_key():
+    rows = shortcuts.preference_rows({"find": "CTRL+SHIFT+L", "copy": "CTRL+SHIFT+C"}, [])
+
+    assert rows == [("copy", "CTRL+SHIFT+C"), ("find", "CTRL+SHIFT+L")]
+
+
+def test_preferences_lists_a_command_without_a_key_with_an_empty_one():
+    rows = shortcuts.preference_rows({"copy": "CTRL+SHIFT+C", "find": "CTRL+SHIFT+L"}, ["save"])
+
+    assert rows == [("copy", "CTRL+SHIFT+C"), ("find", "CTRL+SHIFT+L"), ("save", "")]
+
+
+def test_preferences_lists_two_commands_without_a_key_as_two_rows():
+    """`shortcuts` is keyed by the key, so it holds one of them at most."""
+    rows = shortcuts.preference_rows({}, {"save", "find"})
+
+    assert rows == [("find", ""), ("save", "")]
+
+
+def test_a_command_both_bound_and_unbound_is_listed_once_with_its_key():
+    rows = shortcuts.preference_rows({"save": "CTRL+SHIFT+S"}, ["save"])
+
+    assert rows == [("save", "CTRL+SHIFT+S")]
+
+
+def test_ok_keeps_each_row_with_a_key_as_a_binding():
+    bound, unbound = shortcuts.kept_bindings([["copy", "CTRL+SHIFT+C"], ["find", "CTRL+SHIFT+L"]])
+
+    assert bound == {"CTRL+SHIFT+C": "copy", "CTRL+SHIFT+L": "find"}
+    assert unbound == set()
+
+
+def test_ok_keeps_two_rows_without_a_key_apart():
+    """Both survive, which one table keyed by the key could not do: both would be "" (#419)."""
+    bound, unbound = shortcuts.kept_bindings([["save", ""], ["find", ""], ["copy", "CTRL+C"]])
+
+    assert bound == {"CTRL+C": "copy"}
+    assert unbound == {"save", "find"}
+
+
+def test_ok_skips_a_row_that_names_no_command():
+    assert shortcuts.kept_bindings([["", "F5"], ["", ""]]) == ({}, set())
+
+
+def test_of_two_rows_with_one_key_the_later_keeps_it():
+    bound, unbound = shortcuts.kept_bindings([["copy", "F5"], ["paste", "F5"]])
+
+    assert bound == {"F5": "paste"}
+    assert unbound == set()

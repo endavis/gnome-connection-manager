@@ -270,6 +270,9 @@ def test_no_app_accelerator_collides_with_a_different_terminal_command(app_modul
     """add-host held <Primary>n while [shortcuts] gave CTRL+N to console_reconnect."""
     registered = _registered_accels(app_module, monkeypatch)
     defaults = {key: command for command, _name, key in app_module.SHORTCUT_DEFAULTS}
+    # `save` is not in TERMINAL_ACTIONS, but its default key is the Save Buffer
+    # accelerator, so the key has one meaning and runs one command (#419).
+    one_command = {("save", "save-buffer")}
 
     for action, accels in registered.items():
         for accel in accels or ():
@@ -282,7 +285,9 @@ def test_no_app_accelerator_collides_with_a_different_terminal_command(app_modul
             command = defaults.get(gcm_key)
             if command is None:
                 continue
-            assert app_module.TERMINAL_ACTIONS.get(command) == action, (
+            assert (command, action) in one_command or (
+                app_module.TERMINAL_ACTIONS.get(command) == action
+            ), (
                 f"app.{action} claims {accel}, which [shortcuts] assigns to "
                 f"'{command}' -- the terminal binding can never fire"
             )
@@ -531,11 +536,15 @@ def test_reserved_accelerators_match_what_do_startup_registers(app_module):
 
     Application accelerators are dispatched by GTK before the focused terminal sees the
     key, so a custom binding on one of them would silently never fire -- the failure mode
-    behind #3 and #15.
+    behind #3 and #15. A console is given six of them first (#419), so a custom binding on
+    one of those does fire there, and they are not reserved. The two are, between them,
+    what do_startup registers, the toggles included, and no key is in both.
     """
     source = Path(app_module.__file__).read_text()
     startup = source.split("def do_startup", 1)[1].split("def _create_action", 1)[0]
-    registered = set(re.findall(r'_create_action\([^)]*?\["([^"]+)"\]', startup, re.S))
+    registered = set(
+        re.findall(r'_create_(?:stateful_)?action\([^)]*?\["([^"]+)"\]', startup, re.S)
+    )
 
     as_gcm_keys = {
         accel.replace("<Primary>", "CTRL+")
@@ -544,20 +553,32 @@ def test_reserved_accelerators_match_what_do_startup_registers(app_module):
         .upper()
         for accel in registered
     }
+    reserved = set(app_module.RESERVED_ACCELERATORS)
 
-    assert set(app_module.RESERVED_ACCELERATORS) == as_gcm_keys, (
-        "RESERVED_ACCELERATORS has drifted from the accelerators do_startup registers"
+    assert reserved.isdisjoint(app_module.CONSOLE_FIRST_KEYS)
+    assert reserved | app_module.CONSOLE_FIRST_KEYS == as_gcm_keys, (
+        "RESERVED_ACCELERATORS and CONSOLE_FIRST_KEYS have drifted from the accelerators "
+        "do_startup registers"
     )
 
 
 def test_a_custom_key_on_an_application_accelerator_is_refused(app_module):
     """The terminal handler never runs for these, so the binding would be inert."""
     reserved = set(app_module.RESERVED_ACCELERATORS)
-    assert "CTRL+Q" in reserved, "quit is the clearest example and must be reserved"
+    assert "CTRL+SHIFT+U" in reserved, "cluster mode is an accelerator a console never gets first"
 
-    accepted = app_module.parse_custom_keys({"CTRL+Q": "\\n"}, reserved=reserved)
+    accepted = app_module.parse_custom_keys({"CTRL+SHIFT+U": "\\n"}, reserved=reserved)
 
     assert accepted == {}
+
+
+def test_a_custom_key_on_one_a_console_is_given_first_is_accepted(app_module):
+    """The console gets Ctrl+R before the accelerator does, so a sequence on it is sent (#419)."""
+    reserved = set(app_module.RESERVED_ACCELERATORS)
+
+    accepted = app_module.parse_custom_keys({"CTRL+R": "\\x1b[A", "F9": "\\n"}, reserved=reserved)
+
+    assert accepted == {"CTRL+R": b"\x1b[A", "F9": b"\n"}
 
 
 class KeypressTerminal:

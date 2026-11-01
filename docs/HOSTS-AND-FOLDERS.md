@@ -450,10 +450,11 @@ gtk-vnc closes a connection without saying why when it supports none of the secu
 the server offers, and the line above the desktop then says that. TigerVNC's `RA2` is one
 such type.
 
-While the desktop has the keyboard it gets every key, GCM's shortcuts included, so Ctrl+W
-closes a window on the remote desktop and not the tab. Opening the tab puts the keyboard in
-the desktop, and so does a click in it. Click the tab's label, or anywhere outside the
-desktop, and GCM's shortcuts work again, as they do once the session has ended.
+While the desktop has the keyboard it gets every key, GCM's shortcuts included, so
+Ctrl+Shift+W, which closes a console, goes to the remote desktop and the tab stays open.
+Opening the tab puts the keyboard in the desktop, and so does a click in it. Click the
+tab's label, or anywhere outside the desktop, and GCM's shortcuts work again, as they do
+once the session has ended.
 
 A VNC host sends no commands after login, and its dialog greys them.
 

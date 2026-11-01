@@ -123,6 +123,91 @@ def _guide_sections():
     return list(zip(parts[1::2], parts[2::2], strict=True))
 
 
+def _moved_keys():
+    """The guide's account of the six keys that moved (#419): the table of each command's
+    old and new key, and the three `[shortcuts]` blocks that follow it, which take the new
+    keys, keep the old ones, and leave a command without a key."""
+    body = dict(_guide_sections())["### Keys that moved, and a command with no key"]
+    table = re.findall(r"^\| `(\w+)` \| `([^`]+)` \| `([^`]+)` \|$", body, re.M)
+    blocks = re.findall(r"```ini\n(.*?)```", body, re.S)
+    assert len(table) == 6, table
+    assert len(blocks) == 3, blocks
+    return table, blocks
+
+
+def _lines_of(block):
+    """A `[shortcuts]` block as (command, key) pairs."""
+    header, *lines = block.splitlines()
+    assert header == "[shortcuts]"
+    return [tuple(part.strip() for part in line.split("=", 1)) for line in lines if line.strip()]
+
+
+def _load_config(app_module, monkeypatch, tmp_path, text):
+    config = tmp_path / "gcm.conf"
+    config.write_text(text)
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(config))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "unbound_commands", set())
+    object.__new__(app_module.Wmain).loadConfig()
+
+
+def test_the_table_of_moved_keys_is_the_defaults(app_module):
+    """The table says where each of the six went, and nothing but the code can say if it
+    did. No default is a key the table says a command left, either, so a program in a
+    console reads each of them."""
+    table, _blocks = _moved_keys()
+    defaults = {command: key for command, _token, key in app_module.SHORTCUT_DEFAULTS}
+
+    for command, was, now in table:
+        assert defaults[command] == _canonical(now), f"{command} is on {defaults[command]}"
+        assert _canonical(was) != _canonical(now)
+    assert {_canonical(was) for _command, was, _now in table}.isdisjoint(defaults.values())
+
+
+def test_the_lines_the_guide_gives_for_the_new_keys_take_them(tmp_path, app_module, monkeypatch):
+    """Loaded as they stand through the real loadConfig, as the rebinding example is (#165)."""
+    table, (block, _old, _none) = _moved_keys()
+    tokens = {command: token for command, token, _key in app_module.SHORTCUT_DEFAULTS}
+
+    assert dict(_lines_of(block)) == {command: _canonical(now) for command, _was, now in table}
+    _load_config(app_module, monkeypatch, tmp_path, block)
+
+    for command, key in _lines_of(block):
+        assert app_module.shortcuts.get(key) == tokens[command], f"{command} = {key}"
+    assert app_module.unbound_commands == set()
+
+
+def test_the_lines_the_guide_gives_for_the_old_keys_keep_them(tmp_path, app_module, monkeypatch):
+    """The old keys are named for a gcm.conf that has no line for a command, as one written
+    by hand may not: it takes the new key, and these lines are how it keeps the old."""
+    table, (_new, block, _none) = _moved_keys()
+    tokens = {command: token for command, token, _key in app_module.SHORTCUT_DEFAULTS}
+    defaults = {command: key for command, _token, key in app_module.SHORTCUT_DEFAULTS}
+
+    assert dict(_lines_of(block)) == {command: _canonical(was) for command, was, _now in table}
+    _load_config(app_module, monkeypatch, tmp_path, block)
+
+    for command, key in _lines_of(block):
+        assert app_module.shortcuts.get(key) == tokens[command], f"{command} = {key}"
+        assert app_module.shortcuts.get(defaults[command]) != tokens[command], command
+
+
+def test_the_line_the_guide_gives_for_no_key_leaves_the_command_without_one(
+    tmp_path, app_module, monkeypatch
+):
+    """Nothing after the `=` is no key, and a command with no line at all is its default."""
+    _table, (_new, _old, block) = _moved_keys()
+    [(command, key)] = _lines_of(block)
+    assert key == "", "the guide's example is a line with nothing after the ="
+
+    _load_config(app_module, monkeypatch, tmp_path, block)
+
+    assert app_module.unbound_commands == {command}
+    assert [command] not in app_module.shortcuts.values()
+    assert "" not in app_module.shortcuts
+
+
 def _options_examples(body):
     """Each `[options]` block a section gives: the line leading into it, the block as
     written, and its settings as (key, value) pairs."""
@@ -364,29 +449,63 @@ def test_the_guide_says_how_to_open_the_terminals_menu(app_module, monkeypatch):
     assert not others, f"a right-click menu the guide does not say how to open: {others}"
 
 
-def test_documented_application_accelerators_are_real(app_module):
-    """The second table lists fixed accelerators; each must exist in do_startup."""
+def _registered_accelerators(app_module):
+    """What do_startup registers on the application, spelled as the guide spells it."""
     source = Path(app_module.__file__).read_text()
     startup = source.split("def do_startup", 1)[1].split("def _create_action", 1)[0]
-    registered = set(re.findall(r'_create_action\([^)]*?\["([^"]+)"\]', startup, re.S))
-
-    body = DOC.read_text().split("### Terminal shortcuts versus application accelerators", 1)[1]
-    documented = {
-        _canonical(cells[0])
-        for line in body.splitlines()
-        if len(cells := [c.strip().strip("`") for c in line.strip().strip("|").split("|")]) == 2
-        and cells[0].startswith(("Ctrl+", "F1"))
-    }
-
-    normalised = {
+    registered = set(
+        re.findall(r'_create_(?:stateful_)?action\([^)]*?\["([^"]+)"\]', startup, re.S)
+    )
+    return {
         _canonical(
             a.replace("<Primary>", "Ctrl+").replace("<Shift>", "Shift+").replace("<Alt>", "Alt+")
         )
         for a in registered
     }
 
-    missing = documented - normalised
+
+def _accelerator_tables():
+    """The tables in the guide's section on application accelerators, each as the set of
+    accelerators it lists: the four that act wherever the keyboard is, then the six a
+    console's program is given first (#419)."""
+    heading = "### Terminal shortcuts versus application accelerators"
+    section = DOC.read_text().split(heading, 1)[1].split("\n## ", 1)[0]
+    tables = []
+    for block in re.findall(r"(?:^\|.*\n)+", section, re.M):
+        rows = [
+            [c.strip().strip("`") for c in line.strip("|\n").split("|")]
+            for line in block.splitlines()
+        ]
+        tables.append(
+            {
+                _canonical(row[0])
+                for row in rows
+                if row[0].startswith(("Ctrl+", "F1", "F9", "Shift+"))
+            }
+        )
+    return tables
+
+
+def test_documented_application_accelerators_are_real(app_module):
+    """Each accelerator the guide lists exists in do_startup, and do_startup registers no
+    other, so that a new one cannot go unmentioned."""
+    documented = set().union(*_accelerator_tables())
+    registered = _registered_accelerators(app_module)
+
+    missing = documented - registered
     assert not missing, f"documented accelerators that no action registers: {sorted(missing)}"
+    unmentioned = registered - documented
+    assert not unmentioned, f"accelerators the guide's tables leave out: {sorted(unmentioned)}"
+
+
+def test_the_guide_puts_each_accelerator_in_its_table(app_module):
+    """The first table holds the four that act wherever the keyboard is, and the second the
+    six a console's program is given first. A key in the wrong one tells a reader the wrong
+    thing about where Ctrl+Q works."""
+    always, console_first = _accelerator_tables()
+
+    assert always == {_canonical(key) for key in app_module.RESERVED_ACCELERATORS}
+    assert console_first == {_canonical(key) for key in app_module.CONSOLE_FIRST_KEYS}
 
 
 @pytest.mark.parametrize("guide", [path.name for path in USER_GUIDES])
