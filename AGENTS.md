@@ -381,66 +381,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   background, and emits no hidden menu's own. The real-GTK scenarios read a row's pixels in
   the mark's own box, which Pango measures: on a selected row in Adwaita, the text beside
   it is white, the colour of a patch on a white row.
-- `src/gnome_connection_manager/utils/menuplacement.py` – where a pop-up menu goes so that
-  it stays on the screen (#392). `place_menu` takes the row a menu opens from, the menu's
-  height and the room it has, and gives a `Placement(below, shift, scrolls)`: below the row
-  if the menu fits there, else above it, else on the side with more room, below on a tie,
-  slid along the room until it is inside, which covers the row. It lands inside the room
-  whichever way the row stands to it, and a menu taller than the room starts at the top of
-  it and `scrolls`, only when strictly taller. Pure: the numbers are arguments.
-  `popup_menu_at` in `app.py` supplies them and asks GTK, for all five menus: the server
-  tree's, the terminal's, a tab's, the Mounted tab's and the open-console list. It
-  replaced a guess of 250 pixels and 50 spare in three, and `popup_at_pointer` and
-  `popup_at_widget` in the others. The shift goes to GTK as `rect-anchor-dy`. The
-  `anchor-hints` are set at every opening, as a menu is opened again, and a menu that
-  scrolls is not told it may resize in height, so that GTK makes it no taller than the
-  monitor and scrolls it (read in `gtk_window_guess_default_size` and `gtk_menu_position`;
-  measured, a menu of 30 items opened 1080 tall on a screen of 1080 on X11, and one of
-  1233 opened 1068 tall on Weston 13).
-  X11 hid the bug, as GTK flips and slides a menu itself. Under Wayland GTK sends flip,
-  slide and resize to the compositor as the positioner's constraint adjustment, and reads
-  the result. Weston's libweston-desktop, which WSLg's compositor is built on, ends
-  `weston_desktop_xdg_positioner_get_geometry` in a TODO and returns the geometry
-  unadjusted: read in 9.0.0, in WSLg's `xdg-shell.c`, which is identical to 9.0.0's, and in
-  13.0.0. Measured on a nested Weston 13, a menu from the foot of the tree hung 240 pixels
-  past the screen. Not re-measured on WSLg itself.
-  `menu_height` adds up the natural heights of the items showing, and the menu's padding.
-  A menu is not asked: one that is not showing answers `(0, 0)`, measured, and showing it
-  to ask emits its `hide` when it is hidden again, which clears the click's context. At
-  twice the usual text size on X11 the sum is the popped-up menu's height to the pixel:
-  549 for the server tree's menu on a host, 414 on a folder, 279 on the blank space, 821
-  for the terminal's, 323 for a tab's and 189 for the Mounted tab's. The CSS padding above
-  and below counts, 4 and 4 adding 8 and 7 and 3 adding 10, and so does twice the
-  container's border width. The CSS margin and border, and the deprecated
-  `vertical-padding` style property, each changed in turn, add nothing. GTK sizes a menu
-  already shown by the style it had then: after a provider was added, the popped height
-  stayed 195 where the height worked out from the style context was 198.
-  `menu_room` is the monitor's work area under X11. Under Wayland it is the toplevel's own
-  span: a client is not told where its window is, and GDK puts every window with no
-  parent at (0, 0) -- read in `gdk_window_wayland_get_root_coords`, and measured on Weston
-  13, where a window at output y=505 reported root coordinates (0, 0) -- so a monitor's
-  geometry means nothing. That is so on every Wayland compositor, decided in #392 over
-  limiting it to WSL, which cannot be told reliably: a menu that fits inside GCM's window
-  stays inside it, and in a window smaller than the screen it may now flip or slide
-  within it where a compositor that moves menus let it hang below. Not measured on one.
-  A maximized window fills the output, and X11 is as before.
-  The rectangle is the click in `event.window`, as `popup_at_pointer` has it, and not the
-  widget's `get_window()`. A terminal has no window of its own, so that is its parent's:
-  against the guess, the terminal's menu opened 6 pixels from the pointer, measured. For
-  the server tree, a tab's label and the Mounted list the two coincide, measured: the
-  tree's bin window, where its cell areas are, stays where the tree's own window is as it
-  scrolls, with its header hidden as GCM has it, and a tab label's event box has a window
-  of its own. Not handled, and filed: a menu's width near the right edge (#398), and the
-  menu bar's Hosts submenu, which GTK places itself (#397). No decision record: it is an
-  internal helper, and no setting, file, command line or workflow changes.
-  `tests/test_menuplacement.py` tests `place_menu` with no display, the helpers with
-  fakes, and eight scenarios against real GTK on a display of their own, at twice the usual
-  text size, with real clicks through XTest. Six take the hints from a menu just before it
-  opens, `anchor-hints` 0, which leaves it where GCM asked, as a compositor that moves
-  nothing does. Five of them fail against the guess, and the sixth holds `menu_height` to
-  the height GTK gives each menu. The two `-with-its-hints` scenarios keep GCM's hints, so
-  that what GCM works out is not undone by the flipping and sliding X11 does itself. They
-  are named `against_real_gtk`, which mutmut deselects.
+- `src/gnome_connection_manager/utils/menuplacement.py` – where a pop-up menu goes so that it
+  stays on the screen, as WSLg's Weston moves none (#392). A new pop-up menu opens through
+  `popup_menu_at` in `app.py`, as the other five do. Notes: `docs/design/menus-and-windows.md`.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
   and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
@@ -786,8 +729,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   accept both versions since PR #431.
 - `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
 - `docs/design/` – design notes for an area that spans files, moved out of this file (#430):
-  why each choice was made, what was measured, and what was rejected. A map entry above
-  names its page. Read it before changing that area, and keep it true in the same change.
+  why each choice was made, what was measured, and what was rejected. An entry in this file
+  names each page. Read it before changing that area, and keep it true in the same change.
 - **A new document under `docs/` needs three things**, and `tests/test_docs.py` checks each:
   YAML frontmatter with `title`, `description`, `audience` and `tags` including `gcm`; an
   entry in `mkdocs.yml`'s hand-written `nav`; and `uv run python tools/generate_doc_toc.py`
@@ -1119,42 +1062,9 @@ Practices below have each caught real bugs in this repo. They are worth the time
   maps its entry only on its next frame, so `focus_search` realizes it: unrealized, each
   key let go of meanwhile was a GTK critical. A mark flags the window holding the tab,
   which `window_of` gives.
-- A window GCM opens has a transient parent, bar six (#403). Under Wayland GTK cannot place
-  a window: the compositor does, over the window's transient parent where it has one, and
-  wherever it likes where not. The host dialog, the buffer viewer, Preferences and the mount
-  messages were reported to open at random places on WSLg. `dialog_parent` in `app.py` says
-  which window, and everything asks it: the modal window on top, else the parent the caller
-  names, else the console window in use, else the main window, else none. Modal first, since
-  a window opened over a modal one must sit above it, and a chain is unambiguous where two
-  siblings of one parent are not. `modal_window` is the toplevel of the widget holding
-  `Gtk.grab_get_current()`, kept only while it is visible and of type `TOPLEVEL`. Measured
-  on X11 with GTK 3.24.41: inside `msgbox` it is the message; with the host dialog open it
-  is the host dialog, and with Preferences open it is Preferences; a message shown over the
-  host dialog takes it and gives it back as it closes; with a popup menu showing the grab is
-  the menu, whose window is no toplevel, and with the About dialog, which is not modal, or a
-  console window in use, there is none. A parent a caller names is kept unless a modal
-  window is on top, as the server tree's New Folder, Rename Folder, Tab Color, Import and
-  Export name the main window, where that tree is. A dialog about a console names none, so
-  it opens over `window_in_use`, which `page_in_use` goes by: Save Buffer, the `{?Label}`
-  prompts of a snippet, the transcript's messages and Rename tab. `Whost`, `Wconfig`,
-  `Wcluster` and `Wabout` ask it in place of `wMain.window`, since their keys work in a
-  console window, where they opened over the main window, perhaps on another monitor.
-  `BufferViewer` and `SnippetPicker` call `set_transient_for(dialog_parent())` in their
-  `__init__`. The six with no parent are in `EXEMPT` in `tests/test_dialog_parents.py`, each
-  with its reason: `require_expect`, `require_config_dir` and `require_readable_config`,
-  which run from `main()` before any window exists; `Wmain`, the root; `ConsoleWindow`
-  (#255), a peer of the main window that is moved to another monitor on purpose, where a
-  transient window is kept above its parent and goes with it when the parent is minimized;
-  and the `Gtk.OffscreenWindow` of `TranscriptReplayer.start`, which is never on a screen.
-  `tests/test_dialog_parents.py` holds the rule over `app.py` with `ast`, naming each window
-  built with no `parent=` or `transient_for=` that is a call of `dialog_parent`, and each
-  class of windows with no `__init__` of its own that sets one, and opens the windows
-  against real GTK; `tests/test_dialog_parent_order.py` holds the order. Not measured: where
-  WSLg puts a window that has a parent, and GCM already gave the host dialog and Preferences
-  the main window when they were reported, so it may not be over it either; whether a
-  message shows while its parent is minimized, as a mount's result can now be, where it
-  appeared on its own before. The measurements and the scenarios are X11 with no window
-  manager: they say what GCM asks for, not where a Wayland compositor puts a window.
+- A window GCM opens has a transient parent from `dialog_parent` in `app.py`, bar the six in
+  `EXEMPT` in `tests/test_dialog_parents.py`, which holds the rule (#403): under Wayland the
+  compositor places a window over its parent. Notes: `docs/design/menus-and-windows.md`.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/de_DE.po`); the catalogs the application loads are compiled beside them
   (`lang/de/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating
