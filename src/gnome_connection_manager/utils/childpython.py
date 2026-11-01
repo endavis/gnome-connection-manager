@@ -16,7 +16,9 @@ already, and runs the module as `python -m` would. That works wherever GCM's own
 could import the package, and it keeps both children on that version after an update has
 moved `current`. It sets no environment variable. `PYTHONPATH` set by the launcher would
 reach every program in a tab, and measured, a checkout's `.venv` then imported the
-installed copy of GCM in place of its own.
+installed copy of GCM in place of its own. Nor is there a `.pth` file naming
+`current/src`: every Python of the user's would see it, and it follows `current`, not the
+version running.
 
 Standard library only: nothing here imports GTK.
 """

@@ -16,8 +16,9 @@ takes `{?Label}`, a value asked for as it is sent: `asked` lists them, once each
 
 A command host's command line (#248) takes them too, quoted, and `{password}`, which
 `fill_command` never replaces with the password itself: every user can read a process's
-command line, and only its owner its environment. It becomes a reference to
-PASSWORD_VARIABLE, which the command is given in its environment instead.
+command line, and only its owner its environment, measured: `/proc/<pid>/cmdline` is mode
+444 and `/proc/<pid>/environ` 400. It becomes a reference to PASSWORD_VARIABLE, which the
+command is given in its environment instead.
 """
 
 from __future__ import annotations

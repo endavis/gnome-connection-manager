@@ -319,7 +319,8 @@ RECONNECT_ESTABLISHED = 30
 # Keys that only change what another key types, or lock a mode, so that pressed alone
 # they are not typing: Alt on its way to Alt+Tab, or Shift before a capital. Asked by
 # keyval, since GDK's `is_modifier` cannot tell: measured under X11, it is False for
-# Shift, Control, Alt and Super alike (#239).
+# Shift, Control, Alt and Super alike (#239), and a test that builds its own events can
+# set it to anything.
 MODIFIER_KEYS = frozenset(
     getattr(Gdk, "KEY_" + name)
     for name in (
@@ -4110,7 +4111,8 @@ class Wmain(GladeComponent):
             return False
         kind = connections.for_host(terminal.host)
         tail = session_tail(terminal)
-        # VTE reports the wait status, measured: 65280 for a program that exits 255.
+        # VTE reports the wait status, measured: 65280 for a program that exits 255, and 9
+        # for one killed by SIGKILL.
         code = os.waitstatus_to_exitcode(status)
         if kind.refused(code, tail):
             return False
