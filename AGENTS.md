@@ -33,33 +33,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/placeholders.py` – a host's values filled into a
   command written for it (#238), which the caller quotes; `{password}` is never filled with
   the password (#248). Notes: its docstring, and `app.py`'s `run_before_command`.
-- `src/gnome_connection_manager/utils/snippets.py` – the snippet library (#240): text
-  typed into a console on request, found by name, each a `[snippet <id>]` record, which
-  `configfile.RECORD_PREFIXES` names so that one deleted stays deleted. Snippets
-  replaced custom commands, the `shortcutN`/`commandN` pairs in `[shortcuts]`. `migrate`
-  takes each pair once, and a save writes each snippet with a key back as a pair, for an
-  older GCM to read, which `migrate` knows by its key. The pairs' encoding turned a
-  backslash and an n into a newline, measured, so a snippet's text is a JSON string,
-  which also keeps the space a `cd ` ends with. In `app.py` the list is the global
-  `snippets`, and a snippet with a key is in `shortcuts` under it too, put there after
-  the built-in commands by `bind_snippet_keys`: `on_terminal_keypress` sends it from
-  there, and it keeps a key a built-in command also has, as a custom command did.
-  `fill_snippet_menus` lists them by name, in folders. A menu built from a model reads
-  `_` as a mnemonic, measured, so the menubar's labels go through `menu_label`.
-  `send_snippet` fills in the host's values unquoted, and asks for each `{?Label}` once,
-  before it types anything. `SnippetPicker` finds one by typing, on the `snippets`
-  shortcut, and sends it to the terminal it was opened for. The cluster window's menu is
-  `fill_snippet_menus` given a `send`, and sends to every console ticked through
-  `send_snippet_to`, which asks for a `{?Label}` once for them all. Preferences edits them on a
-  page `Wconfig.build_snippets_page` adds to `nbConfig`, working on copies in
-  `Wconfig.library` that `kept_snippets` turns into the library on OK. Its widgets take
-  no key until the page has been shown: a test must switch to it first, as GTK drops a
-  key sent to a widget not yet realized with a critical, which is why the snippet
-  scenarios fail on a GLib critical. And `addTab` gives a new console the keyboard
-  twice, the second time from a 200 ms timer: a test that moves the keyboard away after
-  opening a tab must wait that out, or the timer takes it back, measured. `focus_again`
-  runs that timer, and gives the keyboard back only while the tab is the one in use, so
-  moving it to another tab or pane is kept (#264).
+- `src/gnome_connection_manager/utils/snippets.py` – the snippet library (#240): text typed
+  into a console on request. A save also writes each snippet with a key as a `[shortcuts]`
+  pair, for an older GCM to read. Notes: its docstrings and those of `app.py`'s snippet code.
 - `src/gnome_connection_manager/utils/connections.py` – one class per kind of host (#228), in
   `CONNECTION_TYPES`: a new type adds a class, not a branch in `app.py`. A test must never reach
   the real `mstsc.exe` or a real browser. Notes: `docs/design/connection-types.md`.
@@ -163,32 +139,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   the time is an argument. `Wmain.on_terminal_contents_changed` feeds it, and `check_quiet`
   polls it on a timer that exists only while a tab is waiting, so an idle console costs
   nothing. It, the bell and a session ending all mark through `request_attention`.
-- `src/gnome_connection_manager/utils/afterlogin.py` – when a host's commands after login
-  are typed, and what becomes of what is typed into its tab before then (#312). They
-  were typed 3 s after the spawn. An SSH host's now go once ssh's own terminal is raw,
-  which it is from the session's start, measured with OpenSSH 9.6 no more than 70 ms
-  before the remote prompt, and the tab's output has paused for `QUIET`, or after
-  `SETTLE` however busy. Under ssh.expect or the relay that terminal is one of theirs,
-  so `find_program` finds ssh among the tab's processes, from the pid `note_child_pid`
-  keeps as the terminal's `child_pid`, and `terminal_state` reads its modes through
-  `/proc/<pid>/fd/0`. Which type is followed so is its `session_program`, `Ssh`'s alone:
-  Telnet, a command host and a local shell keep the fixed waits. `Gate.key` decides each
-  key typed meanwhile. Held, as a copy of its event, which `replay_keys` gives the
-  terminal after the commands, and VTE sends what it would have, measured byte for byte,
-  to a tab not in use too. Or passed: while the login asks something, which
-  `login_asking` reads as text before the cursor on its row, while ssh reads a secret,
-  and for a key with Ctrl. `hold_key` runs last in `on_terminal_keypress`, after the
-  shortcuts and `[keys]`, and passes the keys VTE scrolls for, `vte_keeps`, measured to
-  send nothing. A paste, a snippet and the cluster window write to the terminal without
-  a key event, and are not held: measured, a paste during the login went ahead of the
-  commands. `GIVE_UP` sends them anyway for a session that never goes raw, as
-  `ssh -T`'s, measured at 20 s, and `FIND_WAIT` where ssh is never found. A remote
-  prompt in such a session reads as a question, which restarts `GIVE_UP` for as long as
-  it shows. A fake ssh must enter raw mode with `TCSADRAIN`, as ssh does: Python's
-  `tty.setraw` defaults to `TCSAFLUSH`, which discards what was typed and not yet read,
-  the very thing a test of this is about. `find_program`, and `ended`, which takes a
-  zombie not yet reaped for ended, also serve the end of an RDP tab, which asks FreeRDP
-  to end first (#371).
+- `src/gnome_connection_manager/utils/afterlogin.py` – when a host's commands after login are
+  typed, and what becomes of keys typed before then (#312). A fake ssh in a test enters raw
+  mode with `TCSADRAIN`, as ssh does. Notes: its docstrings, and `app.py`'s `hold_key`.
 - `src/gnome_connection_manager/utils/updates.py` – whether this repository has released a
   newer GCM (#295). `newer_release` compares the `vX.Y.Z` tags GitHub lists at
   `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original

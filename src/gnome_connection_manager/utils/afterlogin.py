@@ -41,6 +41,7 @@ QUIET = 0.3  # seconds the session's output must pause once it has started
 SETTLE = 2.0  # seconds after the session started that the commands go, paused or not
 # Seconds after the spawn, or after the login last asked something, that the commands go
 # anyway: a session without a terminal of its own, as ssh -T starts, never shows its start.
+# There a remote prompt reads as a question, which restarts this for as long as it shows.
 GIVE_UP = 20.0
 # The same, for a program never found, after which the commands go as they always did.
 FIND_WAIT = 3.0

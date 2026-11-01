@@ -898,5 +898,6 @@ def test_snippets_against_real_gtk(scenario):
     assert "OK" in result.stdout
     assert "Traceback" not in result.stderr, result.stderr[-3000:]
     # A key sent to a page not yet shown is dropped with a critical, and passed a test
-    # that expected the key to change nothing.
+    # that expected the key to change nothing. So each scenario shows the Snippets page
+    # before it types there.
     assert glib_complaints(result.stderr) == [], result.stderr[-3000:]
