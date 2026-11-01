@@ -14,8 +14,8 @@ tags:
 Design notes for `src/gnome_connection_manager/utils/osc52.py`, the module, and for the
 clipboard code of `Wmain` in `src/gnome_connection_manager/app.py`: why each choice was made,
 what was measured and with which versions, and what was rejected. The relay that finds the
-writes in a program's output is `src/gnome_connection_manager/relay.py`, which `AGENTS.md`
-describes. These notes were moved here from `AGENTS.md` (#430).
+writes in a program's output is `src/gnome_connection_manager/relay.py`, which
+[Session Logs, Recording and Transcripts](recording.md) describes. These notes were moved here from `AGENTS.md` (#430).
 
 ## The scanner and the pair
 
