@@ -111,6 +111,7 @@ nav:
       - Clipboard and OSC 52: design/clipboard.md
       - Connection types: design/connection-types.md
       - Menus and window placement: design/menus-and-windows.md
+      - Packaging and releases: design/packaging.md
       - Session logs and transcripts: design/recording.md
       - Tab names and colours: design/tabs.md
       - Translations: design/translations.md
