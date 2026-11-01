@@ -912,7 +912,8 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     COLLAPSED_FOLDERS: str | None = ""
     # Folder ids, comma-separated. None until a build that files folders by id has saved:
     # COLLAPSED_FOLDERS holds row positions instead, which an older build still reads --
-    # and would crash on an id, since Gtk.TreePath.new_from_string raises on one.
+    # and would crash on almost any id, as Gtk.TreePath.new_from_string raises TypeError on
+    # a string that is not a path.
     COLLAPSED_FOLDER_IDS: str | None = None
     LEFT_PANEL_WIDTH = 100
     CHECK_UPDATES = True

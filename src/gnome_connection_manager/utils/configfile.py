@@ -50,7 +50,9 @@ HOST_PREFIX = "host "
 
 # Sections a save writes from memory. Host, folder and snippet sections are records,
 # renumbered or re-keyed on every save, so one missing from memory was deleted and must
-# not come back from the file; the others are written in full.
+# not come back from the file; the others are written in full. A section writeConfig adds
+# belongs here, or the next save finds it carried over from the file and add_section
+# refuses it; a new kind of record belongs in RECORD_PREFIXES, or a deleted one comes back.
 WRITTEN_SECTIONS = frozenset({"options", "window", "shortcuts"})
 RECORD_PREFIXES = (HOST_PREFIX, FOLDER_PREFIX, SNIPPET_PREFIX)
 

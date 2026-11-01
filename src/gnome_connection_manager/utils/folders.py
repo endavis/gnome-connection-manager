@@ -402,7 +402,7 @@ class FolderTree:
             cp.set(section, "parent", folder.parent)
             if folder.position is not None:
                 cp.set(section, "position", str(folder.position))
-            # Only when set, as a host's is: an older GCM reads the record and leaves it out
-            # of what it saves (#350).
+            # Only when set, as a host's is: measured with v2.1.1, an older GCM reads the
+            # record and leaves it out of what it saves (#350).
             if folder.tab_color:
                 cp.set(section, "tab-color", folder.tab_color)
