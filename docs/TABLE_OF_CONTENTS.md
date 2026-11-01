@@ -29,6 +29,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
 - [Session Logs, Recording and Transcripts](design/recording.md) - What GCM writes of a session and reads back, and why: the relay a session runs under, the names of a session's files, and the transcript rebuilt from a raw recording
 - [Tab Names and Colours](design/tabs.md) - What a host's tab is called and the colour it is marked with, in the tab, the server tree and the Hosts menu, and why
+- [Translations and the Spanish Catalog](design/translations.md) - Why the msgids are English, what glibc, Python's gettext and GtkBuilder were measured to do, how tests/test_i18n.py reads the catalogs, and the Spanish catalog's style rules
 <!-- END:tag=gcm-dev -->
 
 ### Using the project template
@@ -116,6 +117,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Tab Names and Colours](design/tabs.md) - What a host's tab is called and the colour it is marked with, in the tab, the server tree and the Hosts menu, and why
 - [Template Tools Reference](template/tools-reference.md) - Complete reference for all template tools in tools/pyproject_template/
 - [Tooling Roles and Architectural Boundaries](development/tooling-roles.md) - What each tool is for, who uses it, and where runtime code ends and dev tooling begins
+- [Translations and the Spanish Catalog](design/translations.md) - Why the msgids are English, what glibc, Python's gettext and GtkBuilder were measured to do, how tests/test_i18n.py reads the catalogs, and the Spanish catalog's style rules
 <!-- END:audience=contributors -->
 
 ### For AI Agents
@@ -216,6 +218,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Template Management](template/manage.md) - Unified interface for creating projects, checking updates, and syncing
 - [Template Tools Reference](template/tools-reference.md) - Complete reference for all template tools in tools/pyproject_template/
 - [Tooling Roles and Architectural Boundaries](development/tooling-roles.md) - What each tool is for, who uses it, and where runtime code ends and dev tooling begins
+- [Translations and the Spanish Catalog](design/translations.md) - Why the msgids are English, what glibc, Python's gettext and GtkBuilder were measured to do, how tests/test_i18n.py reads the catalogs, and the Spanish catalog's style rules
 - [Using terminals in GCM](TERMINAL-USAGE.md) - Selection, copy and paste, session recording, OSC 52, the buffer viewer, tab titles, consoles in windows of their own, typing into several consoles at once, tabs that need your attention, sessions that end or drop, font zoom, the shortcut table, snippets, a host's first connection, and what GCM does with a gcm.conf it cannot read
 - [Using This Template](template/index.md) - Overview of using pyproject-template for your Python projects
 <!-- END:all -->
