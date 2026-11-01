@@ -105,7 +105,8 @@ class Server:
 
     def said(self, text):
         with open(self.log) as log:
-            return text in log.read()
+            # TigerVNC 1.13.1 logs "Connections: closed", 1.15.0 "Connections: Closed:".
+            return text.lower() in log.read().lower()
 
     def stop(self):
         self.process.terminate()
@@ -207,7 +208,7 @@ elif scenario == "a-wrong-password-says-why":
     server = Server()
     page, label = open_desk(server, password="wrong")
     assert until(ended(label)), page.status.get_text()
-    assert page.status.get_visible() and page.status.get_text() == "Authentication failure"
+    assert page.status.get_visible() and page.status.get_text().startswith("Authentication fail")
     assert page.get_parent() is w.nbConsole, "a failed login closed the tab"
     server.stop()
 elif scenario == "a-user-name-answers-a-server-that-asks-for-one":
@@ -229,7 +230,7 @@ elif scenario == "a-user-name-answers-a-server-that-asks-for-one":
     server = Server("-SecurityTypes", "TLSPlain", "-PlainUsers", "me")
     page, label = open_desk(server, user="me")
     assert until(ended(label), 20), page.status.get_text()
-    assert page.status.get_text().startswith("Authentication failure"), page.status.get_text()
+    assert page.status.get_text().startswith("Authentication fail"), page.status.get_text()
     assert given == [("username", "me"), ("password", PASSWORD)], given
     asked = []
 
@@ -241,7 +242,7 @@ elif scenario == "a-user-name-answers-a-server-that-asks-for-one":
     given.clear()
     page, label = open_desk(server, user="", password="")
     assert until(ended(label), 20), page.status.get_text()
-    assert page.status.get_text().startswith("Authentication failure"), page.status.get_text()
+    assert page.status.get_text().startswith("Authentication fail"), page.status.get_text()
     assert asked == [False, True], asked  # the user name, then the password
     assert given == [("username", "typed-user"), ("password", "typed-password")], given
     server.stop()
@@ -272,7 +273,9 @@ elif scenario == "a-server-gtk-vnc-cannot-log-in-to":
     page, label = open_desk(server)
     assert until(ended(label)), page.status.get_text()
     text = page.status.get_text()
-    assert text.startswith("Disconnected before the desktop was shown") and "security types" in text, text
+    # gtk-vnc 1.3.1 gives no reason, so GCM says why; gtk-vnc 1.5.0 gives its own.
+    own = text.startswith("Disconnected before the desktop was shown") and "security types" in text
+    assert own or text == "No supported auth types", text
     assert page.get_parent() is w.nbConsole, "the tab closed as if the end were clean"
     server.stop()
 elif scenario == "the-desktop-gets-every-key-while-it-has-the-keyboard":

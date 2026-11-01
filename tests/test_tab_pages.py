@@ -27,6 +27,9 @@ _SCRIPT = r'''
 import os, sys, tempfile, time
 scenario = sys.argv[1]
 os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+# A plain sh reads no startup file. bash on Ubuntu 26.04 sources vte-2.91.sh, which sets the
+# tab's title to user@host:dir at each prompt, and a tab shows the title its program sets.
+os.environ["SHELL"] = "/bin/sh"; os.environ.pop("ENV", None)
 import gi
 gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); gi.require_version("Vte", "2.91")
 from gi.repository import Gtk, Gdk, GLib, Vte
