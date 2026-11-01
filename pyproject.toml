@@ -338,6 +338,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_connections.py",
     "tests/test_console_list.py",
     "tests/test_crypto.py",
+    "tests/test_dialog_parent_order.py",
     "tests/test_encryption.py",
     "tests/test_folders.py",
     "tests/test_host_files.py",
