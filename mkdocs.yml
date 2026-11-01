@@ -104,6 +104,7 @@ nav:
   - Hosts and folders: HOSTS-AND-FOLDERS.md
   - Running on WSL: WSL-SETUP.md
   - Developing: DEVELOPING.md
+  - Developing headless: HEADLESS-DEVELOPMENT.md
   - Project structure: PROJECT_STRUCTURE.md
   - Specification: SPEC.md
   - Decisions:

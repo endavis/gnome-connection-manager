@@ -1090,6 +1090,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   home, a settings store of its own, or a Windows temp folder, and the guide says which
   steps were not run: switching systemd on, and `wsl --install`. A step added to it is
   measured too, or says it was not.
+- `docs/HEADLESS-DEVELOPMENT.md` – contributor-facing, developing on an Ubuntu 26.04 machine
+  with no screen (#428), a VM or an LXC container, each step marked with which it applies to.
+  The LXC path was measured on an unprivileged Proxmox container: it needs `fuse=1`, and the
+  `ssh-keyscan` and `fusermount3` AppArmor profiles in complain mode. The VM path was not
+  tried. The 11 tests that fail on 26.04 with GCM working are #427.
 - `docs/DEVELOPING.md`, `docs/PROJECT_STRUCTURE.md` – development setup and layout.
 - **A new document under `docs/` needs three things**, and `tests/test_docs.py` checks each:
   YAML frontmatter with `title`, `description`, `audience` and `tags` including `gcm`; an
