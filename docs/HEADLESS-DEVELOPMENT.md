@@ -77,13 +77,14 @@ column is what Launchpad lists for `noble`, read on 2026-11-01:
 
 What that means:
 
-- **11 tests fail on 26.04 that pass on CI**, with GCM working in each case. They are five
-  causes, set out in #427: glycin's `bwrap` for SVG icons, uutils coreutils, the wording of
+- **The suite passes on 26.04.** 11 tests failed there at first, with GCM working in each
+  case, for five causes: glycin's `bwrap` for SVG icons, uutils coreutils, the wording of
   TigerVNC 1.15 and gtk-vnc 1.5, the title VTE 0.84's shell script sets, and a menu that takes
-  a click later on GTK 3.24.52. Until #427 is fixed, expect them on any 26.04 machine.
+  a click later on GTK 3.24.52. #427 sets them out, and PR #431 made each test accept both
+  versions.
 - **CI stays the judge.** A PR merges on CI's result on 24.04. A test that fails only on
-  26.04 and is not in #427 points to one of two things: a real problem for GCM on 26.04, or
-  another test tied to 24.04's behaviour.
+  26.04 points to one of two things: a real problem for GCM on 26.04, or another test tied to
+  24.04's behaviour, as #427's were.
 - **uv needs `UV_PYTHON`** (step 5).
 
 ## Setup
@@ -223,14 +224,17 @@ uv run doit check
 - **The first line** printed `3.14.4 84` on the container. If it fails with
   `No module named 'gi'`, `UV_PYTHON` did not reach that shell, or `.venv` predates it
   (step 6).
-- **`doit check`** on the container, after steps 1 to 7: every task but `test` passed, and
-  the tests gave `11 failed, 4951 passed`, none skipped, which are the 11 of #427. The whole
-  check took 2 min 25 s. Before step 3, `doit test` alone gave `12 failed, 4857 passed,
-  1 error`: the two more were the sshd fixture and the sshfs mount. Sort any other failure
-  into one of three kinds:
+- **The tests** on the container, after steps 1 to 7, on `main` at 2cc5407 (after #431):
+  `uv run pytest -n auto -q --no-cov` gave `4962 passed`, none failed or skipped, in
+  2 min 26 s.
+  - Before #431, a full `doit check` passed every task but `test`, whose 11 failures were
+    #427's.
+  - Before step 3, `doit test` alone gave `12 failed, 4857 passed, 1 error`. The extra two
+    were the sshd fixture and the sshfs mount.
+- **A failure** belongs to one of three kinds:
   - **GCM breaks on 26.04.** A user who upgrades will hit it, so file an issue.
   - **A test tied to 24.04.** What the test asserts changed between versions, and GCM still
-    works. Add it to #427, or file an issue for it.
+    works, as in #427. File an issue for it.
   - **Setup.** A package, a variable or a permission is missing. Fix the machine.
 
 ## Working from the machine
@@ -271,8 +275,8 @@ None of these was tried:
 
 ## A 24.04 container instead
 
-An Ubuntu 24.04 container would match CI's versions, and so pass the tests #427 lists. It
-would need no `UV_PYTHON`, since its Python matches the pin. Not tried. As an LXC container it
+An Ubuntu 24.04 container would match CI's versions exactly, which 26.04 no longer needs
+for the suite to pass. It would need no `UV_PYTHON`, since its Python matches the pin. Not tried. As an LXC container it
 needs step 1 for FUSE; whether 24.04's AppArmor profiles need step 3 was not measured.
 
 ## Open questions
