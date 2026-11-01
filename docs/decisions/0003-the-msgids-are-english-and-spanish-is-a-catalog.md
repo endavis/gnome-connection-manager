@@ -103,4 +103,6 @@ msgid either way.
 
 ## Related Documentation
 
-- [AGENTS.md](../../AGENTS.md): translation sources, and the tests that keep the catalogs
+- [AGENTS.md](../../AGENTS.md): translation sources, and the rules every change follows
+- [Translations and the Spanish Catalog](../design/translations.md): what was measured,
+  the tests that keep the catalogs, and the Spanish catalog's style rules
