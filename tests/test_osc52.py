@@ -8,11 +8,14 @@ the positive ones.
 from __future__ import annotations
 
 import base64
+import enum
 import fcntl
 import inspect
 import json
+import logging
 import os
 import select
+import shutil
 import socket
 import struct
 import subprocess
@@ -26,11 +29,21 @@ import pytest
 
 from gnome_connection_manager.utils import childpython
 from gnome_connection_manager.utils.osc52 import (
+    KERNEL_RELEASE_FILE,
     MAX_PAYLOAD,
+    MAX_SETS,
+    REPAIR_GAP,
     REPEAT_WINDOW,
+    WSLG_FOLDER,
+    ClipboardWatch,
     Osc52Scanner,
     RepeatFilter,
+    kernel_release,
+    under_wslg,
+    wslg_folder,
 )
+from tests.test_connections import glib_complaints
+from tests.test_console_window import _private_display
 
 
 def sequence(data: bytes, selection: str = "c", terminator: bytes = b"\x07") -> bytes:
@@ -228,7 +241,22 @@ def _message(text, selection="c"):
     ).encode()
 
 
+# What /proc/sys/kernel/osrelease says on the machine WSLg runs on.
+WSL_KERNEL = "6.18.33.2-microsoft-standard-WSL2"
+
+
+def on_a_wsl_machine(app_module, monkeypatch):
+    """Whatever this machine is, the kernel names Microsoft and the WSLg folder is there.
+
+    A write is watched only where GCM's display is a Wayland one as well (#412). So a test
+    whose display is not says the same on a machine that is not WSL as on one that is: the
+    machine that could change its answer is the one set up."""
+    monkeypatch.setattr(app_module.osc52, "kernel_release", lambda: WSL_KERNEL)
+    monkeypatch.setattr(app_module.osc52, "wslg_folder", lambda: True)
+
+
 def test_a_relayed_write_reaches_the_clipboard(app_module, monkeypatch):
+    on_a_wsl_machine(app_module, monkeypatch)
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
     captured: dict = {}
     monkeypatch.setattr(
@@ -246,6 +274,7 @@ def test_a_relayed_write_reaches_the_clipboard(app_module, monkeypatch):
 
 def test_a_relayed_write_is_refused_when_the_preference_is_off(app_module, monkeypatch):
     """A session started while it was on must lose the ability the moment it is off."""
+    on_a_wsl_machine(app_module, monkeypatch)
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 0)
     calls = []
     monkeypatch.setattr(
@@ -275,6 +304,7 @@ def test_a_relayed_write_is_refused_when_the_preference_is_off(app_module, monke
     ],
 )
 def test_malformed_relay_messages_are_discarded(app_module, monkeypatch, line):
+    on_a_wsl_machine(app_module, monkeypatch)
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
     calls = []
     monkeypatch.setattr(
@@ -957,32 +987,156 @@ def test_the_window_is_about_a_second():
     assert 0.5 <= REPEAT_WINDOW < 1.5
 
 
-class Clipboard:
-    """GCM's clipboard and clock as a test sees them: every set, and the time."""
+class EventType(enum.Enum):
+    """Gdk.EventType as far as GCM's event handler goes: the three it acts on, and some it must
+    not. A real enum, so that no test leans on the stub's Gdk, which gives any name an attribute.
+    `test_the_fakes_offer_only_what_gdk_and_gtk_have` holds each name to the real enum."""
 
-    def __init__(self, app_module, monkeypatch):
+    FOCUS_CHANGE = enum.auto()
+    SELECTION_REQUEST = enum.auto()
+    SELECTION_CLEAR = enum.auto()
+    KEY_PRESS = enum.auto()
+    KEY_RELEASE = enum.auto()
+    BUTTON_PRESS = enum.auto()
+    BUTTON_RELEASE = enum.auto()
+    MOTION_NOTIFY = enum.auto()
+    ENTER_NOTIFY = enum.auto()
+    LEAVE_NOTIFY = enum.auto()
+    SCROLL = enum.auto()
+
+
+def gdk_event(kind, entered=None, selection=None):
+    """A stand-in for a Gdk.Event, with what GCM reads of its kind: `focus_change.in_`, and
+    `selection.selection.name()`.
+
+    Never a real Gdk.Event with its fields written from Python: that killed the interpreter
+    with SIGSEGV, measured. The scenario against real GTK has real ones."""
+    event = types.SimpleNamespace(type=kind)
+    if entered is not None:
+        event.focus_change = types.SimpleNamespace(in_=int(entered))
+    if selection is not None:
+        event.selection = types.SimpleNamespace(
+            selection=types.SimpleNamespace(name=lambda: selection)
+        )
+    return event
+
+
+def bare_display():
+    """What the older tests give for a display: no type at all."""
+    return object()
+
+
+def display_of(kind):
+    """A display of the given GDK type, as far as GCM asks of one: the name of its GType."""
+
+    def display():
+        return types.SimpleNamespace(__gtype__=types.SimpleNamespace(name=kind))
+
+    return display
+
+
+class Clipboard:
+    """GCM's clipboard and clock as a test sees them: every set, and the time.
+
+    The machine is a WSL one whatever it is, and what decides is the display, as it does for
+    GCM, so that a test says the same on any machine. A display of `None` leaves the stub's own.
+
+    `log` is the order of what GTK was given and what the clipboard was set to: the three
+    functions of GDK and GTK that GCM calls for the watch are replaced, `Gdk.EventType` by a
+    real enum, and `installed` holds each handler GCM gave GDK. `deliver` hands an event to the
+    last one, as GDK does, `after` seconds on.
+    """
+
+    def __init__(
+        self,
+        app_module,
+        monkeypatch,
+        caplog,
+        display=bare_display,
+        kernel=WSL_KERNEL,
+        folder=True,
+    ):
         self.sets: list[str] = []
+        self.log: list[tuple] = []
+        self.installed: list = []
         self.now = 100.0
+        self.caplog = caplog
+        # What runs inside Gtk.main_do_event, for a test that has it run a main loop of its own.
+        self.inside_main_do_event = None
         self.wmain = object.__new__(app_module.Wmain)
         monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
         monkeypatch.setattr(app_module.time, "monotonic", lambda: self.now)
-        monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: object(), raising=False)
+        monkeypatch.setattr(app_module.osc52, "kernel_release", lambda: kernel)
+        monkeypatch.setattr(app_module.osc52, "wslg_folder", lambda: folder)
+        if display is not None:
+            monkeypatch.setattr(app_module.Gdk.Display, "get_default", display, raising=False)
         monkeypatch.setattr(
             app_module.Gtk.Clipboard,
             "get_default",
-            lambda *_a: types.SimpleNamespace(set_text=lambda text, _n: self.sets.append(text)),
+            lambda *_a: types.SimpleNamespace(set_text=self._set_text),
             raising=False,
         )
+        monkeypatch.setattr(app_module.Gdk, "EventType", EventType, raising=False)
+        monkeypatch.setattr(
+            app_module.Gdk,
+            "event_handler_set",
+            lambda handler, data=None: self.installed.append(handler),
+            raising=False,
+        )
+        monkeypatch.setattr(app_module.Gtk, "main_do_event", self._main_do_event, raising=False)
+
+    def _set_text(self, text, _length):
+        self.sets.append(text)
+        self.log.append(("set", text))
+
+    def _main_do_event(self, event):
+        self.log.append(("event", event.type))
+        if self.inside_main_do_event is not None:
+            self.inside_main_do_event(event)
 
     def write(self, text, after=0.0):
         """What GCM answers to a write of `text`, `after` seconds after the one before."""
         self.now += after
         return self.wmain._apply_clipboard_message(_message(text))
 
+    def faults(self):
+        """What GCM logged as a fault, which it does where an event must go on regardless."""
+        return [
+            record.getMessage() for record in self.caplog.records if record.levelno >= logging.ERROR
+        ]
+
+    def deliver(self, event, after=0.0, faults=0):
+        """Hand `event` to the handler GCM installed, `after` seconds after the last thing, and
+        say how many faults it logged: none, unless the test expects some."""
+        assert self.installed, "GCM gave GDK no event handler"
+        self.now += after
+        before = len(self.faults())
+        self.installed[-1](event, None)
+        assert len(self.faults()) - before == faults, self.faults()
+
+    def focus(self, entered, after=0.0, faults=0):
+        """The keyboard entering or leaving a GCM window."""
+        self.deliver(gdk_event(EventType.FOCUS_CHANGE, entered=entered), after, faults)
+
+    def request(self, selection="CLIPBOARD", after=0.0):
+        """The compositor asking for the text, which is how a set taken shows."""
+        self.deliver(gdk_event(EventType.SELECTION_REQUEST, selection=selection), after)
+
+    def clear(self, selection="CLIPBOARD", after=0.0):
+        """Another client taking the selection from GCM."""
+        self.deliver(gdk_event(EventType.SELECTION_CLEAR, selection=selection), after)
+
 
 @pytest.fixture
-def clipboard(app_module, monkeypatch):
-    return Clipboard(app_module, monkeypatch)
+def clipboard(app_module, monkeypatch, caplog):
+    """Off WSLg, as the older tests have it: a display with no type, on a WSL machine."""
+    return Clipboard(app_module, monkeypatch, caplog)
+
+
+@pytest.fixture
+def wslg(app_module, monkeypatch, caplog):
+    """Under WSLg: a Wayland display, a kernel that names Microsoft, and the WSLg folder."""
+    return Clipboard(app_module, monkeypatch, caplog, display=display_of("GdkWaylandDisplay"))
 
 
 @pytest.mark.parametrize("gap", [0.0, 0.0034])
@@ -1057,3 +1211,805 @@ def test_the_two_lines_of_a_pair_read_together_set_the_clipboard_once(
 
     assert keep_watching is True
     assert clipboard.sets == ["copied"]
+
+
+# -- a write the compositor ignored is set again (#412, #413) ---------------------------------
+#
+# GTK sets each new data source with the serial of the last input GCM saw, and under WSLg
+# Weston ignores a set whose serial is not newer than the selection's, with no word to GTK. A
+# write that follows a copy made in Windows, or another write, with no input to GCM between,
+# was ignored: Windows kept the older text, and GCM pasted the write. A ClipboardWatch holds
+# the write until the compositor has asked for its text, and GCM sets it again when the
+# keyboard next enters or leaves one of its windows, whose serial is newer.
+#
+# Times are floats a binary fraction holds exactly, so that the edge is the edge: a gap of
+# 0.25 s from 10.0 s.
+
+
+def test_nothing_made_gives_nothing_again():
+    assert ClipboardWatch().again(10.0) is None
+
+
+def test_hearing_with_nothing_made_is_harmless():
+    watch = ClipboardWatch()
+    watch.heard()
+
+    assert watch.again(10.0) is None
+
+
+@pytest.mark.parametrize(
+    ("later", "text"),
+    [(10.0, None), (10.2, None), (10.25, "copied"), (10.5, "copied"), (60.0, "copied")],
+)
+def test_a_write_is_given_again_from_exactly_one_gap_after_the_set(later, text):
+    watch = ClipboardWatch()
+    watch.made("copied", 10.0)
+
+    assert watch.again(later) == text
+
+
+def test_a_write_refused_for_the_gap_is_still_held():
+    watch = ClipboardWatch()
+    watch.made("copied", 10.0)
+
+    assert [watch.again(10.0), watch.again(10.2)] == [None, None]
+    assert watch.again(10.25) == "copied"
+
+
+def test_a_set_given_starts_the_gap_again_and_counts_with_the_first():
+    """Made at 10.0, given at 10.25 and 10.5: three sets, and none at 10.75 although a gap has
+    passed since the last. Nor at 10.25 a second time, which is no time since the set it gave."""
+    watch = ClipboardWatch()
+    watch.made("copied", 10.0)
+
+    answers = [watch.again(at) for at in (10.25, 10.25, 10.5, 10.75, 99.0)]
+
+    assert answers == ["copied", None, "copied", None, None]
+
+
+def test_the_count_alone_stops_the_repairs():
+    """A gap far past each time, so that nothing but the count can refuse."""
+    watch = ClipboardWatch()
+    watch.made("copied", 10.0)
+
+    assert [watch.again(at) for at in (20.0, 30.0, 40.0, 50.0)] == ["copied", "copied", None, None]
+
+
+def test_a_write_heard_is_not_given_again():
+    watch = ClipboardWatch()
+    watch.made("copied", 10.0)
+    watch.heard()
+
+    assert watch.again(20.0) is None
+
+
+def test_a_write_heard_after_a_set_given_is_not_given_again():
+    watch = ClipboardWatch()
+    watch.made("copied", 10.0)
+    assert watch.again(20.0) == "copied"
+    watch.heard()
+
+    assert watch.again(30.0) is None
+
+
+def test_a_newer_write_replaces_the_one_held_and_starts_the_count_and_the_gap_again():
+    watch = ClipboardWatch()
+    watch.made("old", 10.0)
+    assert [watch.again(at) for at in (20.0, 30.0, 40.0)] == ["old", "old", None]
+
+    watch.made("new", 50.0)
+
+    assert watch.again(50.125) is None
+    assert [watch.again(at) for at in (60.0, 70.0, 80.0)] == ["new", "new", None]
+
+
+def test_a_write_made_after_one_was_heard_is_held():
+    watch = ClipboardWatch()
+    watch.made("one", 10.0)
+    watch.heard()
+    watch.made("two", 20.0)
+
+    assert watch.again(30.0) == "two"
+
+
+@pytest.mark.parametrize(("max_sets", "given"), [(1, 0), (2, 1), (3, 2), (5, 4)])
+def test_the_sets_are_counted_with_the_first_included(max_sets, given):
+    watch = ClipboardWatch(max_sets=max_sets)
+    watch.made("copied", 10.0)
+
+    answers = [watch.again(10.0 + step) for step in range(1, 11)]
+
+    assert answers == ["copied"] * given + [None] * (10 - given)
+
+
+@pytest.mark.parametrize(
+    ("gap", "at", "text"), [(4.0, 13.0, None), (4.0, 14.0, "copied"), (0.0, 10.0, "copied")]
+)
+def test_the_gap_is_the_one_given(gap, at, text):
+    watch = ClipboardWatch(gap=gap)
+    watch.made("copied", 10.0)
+
+    assert watch.again(at) == text
+
+
+def test_the_limits_are_the_ones_the_repair_was_measured_with():
+    """Pinned apart from their behaviour, as REPEAT_WINDOW is. Three sets, the write's and two
+    repairs, where the prototype's first repair was always taken. The gap is about five times
+    the longest wait measured from a set to the compositor's request for its text, 52.9 ms:
+    a margin, and not a measured threshold."""
+    assert MAX_SETS == 3
+    assert REPAIR_GAP == 0.25
+
+
+@pytest.mark.parametrize(
+    ("display", "kernel", "folder", "wslg"),
+    [
+        ("GdkWaylandDisplay", "6.18.33.2-microsoft-standard-WSL2", True, True),
+        ("GdkWaylandDisplay", "4.4.0-19041-Microsoft", True, True),
+        ("GdkWaylandDisplay", "6.8.0-generic", True, False),
+        ("GdkWaylandDisplay", "", True, False),
+        ("GdkWaylandDisplay", "6.18.33.2-microsoft-standard-WSL2", False, False),
+        ("GdkX11Display", "6.18.33.2-microsoft-standard-WSL2", True, False),
+        ("GdkBroadwayDisplay", "6.18.33.2-microsoft-standard-WSL2", True, False),
+        ("", "6.18.33.2-microsoft-standard-WSL2", True, False),
+        ("gdkwaylanddisplay", "6.18.33.2-microsoft-standard-WSL2", True, False),
+        ("GdkWaylandDisplay2", "6.18.33.2-microsoft-standard-WSL2", True, False),
+    ],
+)
+def test_wslg_is_a_wayland_display_on_a_kernel_that_names_microsoft_with_the_folder(
+    display, kernel, folder, wslg
+):
+    """All three, and the display's type exactly: the compositor measured is WSLg's Weston."""
+    assert under_wslg(display, kernel, folder) is wslg
+
+
+def test_the_kernel_release_is_what_uname_gives():
+    assert kernel_release() == os.uname().release
+
+
+def test_a_kernel_release_file_is_read_without_the_newline_proc_ends_it_with(tmp_path):
+    release = tmp_path / "osrelease"
+    release.write_text(WSL_KERNEL + "\n")
+
+    assert kernel_release(release) == WSL_KERNEL
+    assert kernel_release(str(release)) == WSL_KERNEL
+
+
+def test_a_kernel_release_that_cannot_be_read_is_empty(tmp_path):
+    unreadable = tmp_path / "bytes"
+    unreadable.write_bytes(b"\xff\xfe\xfa")
+
+    assert kernel_release(tmp_path / "missing") == ""
+    assert kernel_release(tmp_path) == ""  # a folder, which cannot be read as a file
+    assert kernel_release(unreadable) == ""  # not text
+
+
+def test_the_wslg_folder_is_a_folder_that_is_there(tmp_path):
+    a_file = tmp_path / "wslg"
+    a_file.write_text("")
+
+    assert wslg_folder(tmp_path) is True
+    assert wslg_folder(str(tmp_path)) is True
+    assert wslg_folder(tmp_path / "missing") is False
+    assert wslg_folder(a_file) is False
+
+
+def test_a_path_the_system_refuses_is_not_the_wslg_folder():
+    """A name too long for the file system: an error from the stat, not a missing path."""
+    assert wslg_folder("/" + "a" * 5000) is False
+
+
+def test_the_defaults_name_the_places_linux_and_wsl_keep_these_in():
+    assert KERNEL_RELEASE_FILE == "/proc/sys/kernel/osrelease"
+    assert WSLG_FOLDER == "/mnt/wslg"
+    assert wslg_folder() is Path(WSLG_FOLDER).is_dir()
+
+
+# -- GCM sets such a write again ---------------------------------------------------------------
+
+
+def test_the_fakes_offer_only_what_gdk_and_gtk_have():
+    """The stub's Gdk gives any name an attribute, so a fake can offer what GDK lacks, as
+    #30 and #41 did. This is the real one, not the stub."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gdk", "3.0")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gdk, Gtk
+
+    for name in EventType.__members__:
+        assert hasattr(Gdk.EventType, name), name
+    assert hasattr(Gdk, "event_handler_set")
+    assert hasattr(Gtk, "main_do_event")
+    for owner, name in [
+        (Gdk.Event, "type"),
+        (Gdk.Event, "focus_change"),
+        (Gdk.EventFocus, "in_"),
+        (Gdk.Event, "selection"),
+        (Gdk.EventSelection, "selection"),
+        (Gdk.Atom, "name"),
+    ]:
+        assert hasattr(owner, name), (owner, name)
+    assert Gdk.SELECTION_CLIPBOARD.name() == "CLIPBOARD"
+
+
+@pytest.mark.parametrize(
+    "machine",
+    [
+        pytest.param({"display": bare_display}, id="a display with no type"),
+        pytest.param({"display": None}, id="the stub's own display"),
+        pytest.param({"display": display_of("GdkX11Display")}, id="an X11 display"),
+        pytest.param(
+            {"display": display_of("GdkWaylandDisplay"), "kernel": "6.8.0-generic"},
+            id="Wayland on a kernel that is not WSL's",
+        ),
+        pytest.param(
+            {"display": display_of("GdkWaylandDisplay"), "folder": False},
+            id="Wayland on a WSL kernel without the WSLg folder",
+        ),
+    ],
+)
+def test_off_wslg_a_write_is_set_once_and_nothing_is_watched(
+    app_module, monkeypatch, caplog, machine
+):
+    clipboard = Clipboard(app_module, monkeypatch, caplog, **machine)
+
+    answers = [clipboard.write("one"), clipboard.write("two", after=2.0)]
+
+    assert answers == [True, True]
+    assert clipboard.sets == ["one", "two"]
+    assert clipboard.wmain.clipboard_watch() is None
+    assert clipboard.installed == []
+    # And an event that reached GCM anyway is nothing to it.
+    clipboard.now += 2.0
+    clipboard.wmain.follow_clipboard(gdk_event(EventType.FOCUS_CHANGE, entered=True))
+    assert clipboard.sets == ["one", "two"]
+
+
+def test_under_wslg_a_write_is_set_at_once_and_watched(wslg):
+    assert wslg.write("from the tab") is True
+
+    assert wslg.sets == ["from the tab"]
+    # It was the write that gave GDK the handler, and not the call below.
+    assert wslg.installed == [wslg.wmain.watch_gdk_event]
+    assert wslg.wmain.clipboard_watch() is not None
+
+
+def test_gdk_is_given_gcms_handler_once_however_many_writes_follow(wslg):
+    for text in ("one", "two", "three"):
+        wslg.write(text, after=2.0)
+
+    assert wslg.installed == [wslg.wmain.watch_gdk_event]
+
+
+@pytest.mark.parametrize("display", [bare_display, display_of("GdkWaylandDisplay")])
+def test_the_machine_is_asked_once_whatever_the_answer(app_module, monkeypatch, caplog, display):
+    """Off WSLg too, or every write would read the kernel and look for the folder again."""
+    clipboard = Clipboard(app_module, monkeypatch, caplog, display=display)
+    asked = []
+    monkeypatch.setattr(app_module.osc52, "kernel_release", lambda: asked.append("k") or WSL_KERNEL)
+    monkeypatch.setattr(app_module.osc52, "wslg_folder", lambda: asked.append("f") or True)
+
+    for text in ("one", "two", "three"):
+        clipboard.write(text, after=2.0)
+
+    assert asked == ["k", "f"]
+
+
+def test_two_windows_do_not_share_a_watch(app_module, wslg):
+    """A Wmain built without new() has nothing of its own, and one on the class would carry a
+    write from one window to the next."""
+    other = object.__new__(app_module.Wmain)
+    wslg.write("copied")
+
+    assert other.clipboard_watch() is not wslg.wmain.clipboard_watch()
+
+
+def test_a_fault_in_giving_gdk_the_handler_leaves_the_write_set(
+    app_module, wslg, monkeypatch, caplog
+):
+    attempts = []
+
+    def refuse(handler, data=None):
+        attempts.append(handler)
+        raise RuntimeError("GDK would not take it")
+
+    monkeypatch.setattr(app_module.Gdk, "event_handler_set", refuse, raising=False)
+
+    answers = [wslg.write("one"), wslg.write("two", after=2.0)]
+
+    assert answers == [True, True]
+    assert wslg.sets == ["one", "two"]
+    assert wslg.wmain.clipboard_watch() is None
+    assert len(attempts) == 1  # once, and not again at the next write
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == [
+        "Could not watch GDK's events; an ignored OSC 52 write stays so"
+    ]
+
+
+def test_a_write_the_compositor_never_asked_for_is_set_again_when_the_keyboard_leaves(wslg):
+    """#412: a copy in Windows with no input to GCM since, then the tab writes. Weston ignores
+    the set, nothing asks for the text, and the next time the keyboard leaves GCM it is set
+    again, with a serial newer than the copy's. GTK has handled the event first."""
+    text = "from the tab"
+    wslg.write(text)
+
+    wslg.focus(False, after=2.0)
+
+    assert wslg.sets == [text, text]
+    assert wslg.log == [("set", text), ("event", EventType.FOCUS_CHANGE), ("set", text)]
+    # This time the compositor takes it and asks for the text, and the next change of window
+    # sets nothing: the control for the one above, which set on the same events.
+    wslg.request(after=0.0625)
+    wslg.focus(True, after=1.0)
+    assert wslg.sets == [text, text]
+
+
+def test_a_second_write_of_another_text_with_no_input_between_is_set_again(wslg):
+    """#413: the first is taken and asked for, the second 2 s later is ignored."""
+    wslg.write("first")
+    wslg.request(after=0.0625)
+    wslg.write("second", after=2.0)
+
+    wslg.focus(True, after=1.0)
+
+    assert wslg.sets == ["first", "second", "second"]
+
+
+def test_a_second_write_of_the_same_text_more_than_a_window_later_is_set_again(wslg):
+    """#413: RepeatFilter lets it through, being 2 s after the first, and Weston ignores it."""
+    wslg.write("copied")
+    wslg.request(after=0.0625)
+    assert wslg.write("copied", after=2.0) is True
+
+    wslg.focus(False, after=1.0)
+
+    assert wslg.sets == ["copied", "copied", "copied"]
+
+
+@pytest.mark.parametrize("entered", [True, False])
+def test_the_keyboard_entering_or_leaving_a_window_sets_the_write_again(wslg, entered):
+    wslg.write("copied")
+
+    wslg.focus(entered, after=1.0)
+
+    assert wslg.sets == ["copied", "copied"]
+
+
+@pytest.mark.parametrize(
+    ("heard", "sets"),
+    [
+        pytest.param("request", 1, id="the compositor asked for the text"),
+        pytest.param("clear", 1, id="another client took the clipboard"),
+        pytest.param(None, MAX_SETS, id="nothing heard, the control"),
+    ],
+)
+def test_a_write_is_set_again_until_it_is_asked_for_or_the_claim_ends(wslg, heard, sets):
+    """Three changes of window, 1 s apart. A write nobody asked for is set again at each until
+    the count stops it; one whose set was taken, or whose claim ended, is not."""
+    wslg.write("copied")
+    if heard:
+        getattr(wslg, heard)(after=0.0625)
+
+    for entered in (True, False, True):
+        wslg.focus(entered, after=1.0)
+
+    assert len(wslg.sets) == sets
+
+
+@pytest.mark.parametrize(
+    ("kind", "selection", "forgets"),
+    [
+        ("request", "CLIPBOARD", True),
+        ("clear", "CLIPBOARD", True),
+        ("request", "PRIMARY", False),
+        ("clear", "PRIMARY", False),
+        ("request", "SECONDARY", False),
+        ("clear", "SECONDARY", False),
+    ],
+)
+def test_only_the_clipboard_selection_ends_the_watch(wslg, kind, selection, forgets):
+    wslg.write("copied")
+
+    getattr(wslg, kind)(selection, after=0.0625)
+    wslg.focus(True, after=1.0)
+
+    assert wslg.sets == (["copied"] if forgets else ["copied", "copied"])
+
+
+def test_a_write_unheard_is_set_at_most_the_limit_in_all(wslg):
+    wslg.write("copied")
+
+    for step in range(12):
+        wslg.focus(step % 2 == 0, after=1.0)
+
+    assert len(wslg.sets) == MAX_SETS
+
+
+def test_two_changes_of_window_at_the_same_instant_set_once(wslg):
+    wslg.write("copied")
+
+    wslg.focus(False, after=2.0)
+    wslg.focus(True)  # the other window's, as the keyboard moves between two of GCM's
+
+    assert wslg.sets == ["copied", "copied"]
+
+
+def test_a_change_of_window_one_gap_after_a_repair_sets_again(wslg):
+    wslg.write("copied")
+    wslg.focus(False, after=2.0)
+
+    wslg.focus(True, after=REPAIR_GAP)
+
+    assert wslg.sets == ["copied"] * 3
+
+
+def test_the_gap_runs_from_the_write_too(wslg):
+    """A write applied between two events GDK read together takes the serial of an `enter` or
+    `leave` it has not handed out yet, and a repair at that event would set with the same."""
+    wslg.write("copied")
+
+    wslg.focus(False, after=0.125)
+    assert wslg.sets == ["copied"]
+
+    wslg.focus(True, after=0.125)
+    assert wslg.sets == ["copied", "copied"]
+
+
+@pytest.mark.parametrize("gap", [0.0, 0.0034])
+def test_a_pair_of_writes_is_set_once_and_set_again_once(wslg, gap):
+    """The pair #393 measured, at once and 3 ms apart: one set, and one more if nobody asks."""
+    assert [wslg.write("copied"), wslg.write("copied", after=gap)] == [True, False]
+
+    wslg.focus(False, after=1.0)
+
+    assert wslg.sets == ["copied", "copied"]
+
+
+def test_a_pair_of_writes_is_remembered_once(wslg):
+    """The second of a pair is left out, and with it any claim on the watch: it must not start
+    the gap from the second, 0.125 s after the first."""
+    assert [wslg.write("copied"), wslg.write("copied", after=0.125)] == [True, False]
+
+    wslg.focus(False, after=0.125)  # a whole gap after the first, short of one after the second
+
+    assert wslg.sets == ["copied", "copied"]
+
+
+@pytest.mark.parametrize(
+    "refused",
+    [
+        pytest.param(b"not json", id="a message that is not one"),
+        pytest.param(b'{"data": ""}', id="an empty text"),
+    ],
+)
+def test_a_write_that_sets_nothing_is_not_held(wslg, refused):
+    wslg.write("copied")
+    wslg.request(after=0.0625)
+
+    assert wslg.wmain._apply_clipboard_message(refused) is False
+    wslg.focus(True, after=1.0)
+
+    assert wslg.sets == ["copied"]
+
+
+def test_a_write_refused_for_the_preference_is_not_held(app_module, wslg, monkeypatch):
+    wslg.write("copied")
+    wslg.request(after=0.0625)
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 0)
+    assert wslg.write("other", after=1.0) is False
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
+
+    wslg.focus(True, after=1.0)
+
+    assert wslg.sets == ["copied"]
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        EventType.KEY_PRESS,
+        EventType.KEY_RELEASE,
+        EventType.BUTTON_PRESS,
+        EventType.BUTTON_RELEASE,
+        EventType.MOTION_NOTIFY,
+        EventType.ENTER_NOTIFY,
+        EventType.LEAVE_NOTIFY,
+        EventType.SCROLL,
+    ],
+)
+def test_an_event_that_is_no_change_of_the_keyboards_window_sets_nothing(wslg, kind):
+    """A copy GCM makes at a key or a click is set first, with its serial and taken, and a
+    repair at the same event would destroy that source and set the older text with the same
+    serial. So only a change of window repairs: reasoned from the mechanism, not run."""
+    wslg.write("copied")
+
+    wslg.deliver(gdk_event(kind), after=1.0)
+
+    assert wslg.sets == ["copied"]
+    assert wslg.log[-1] == ("event", kind)  # and GTK was given it
+    wslg.focus(True, after=1.0)  # the control: the change of window sets
+    assert wslg.sets == ["copied", "copied"]
+
+
+def test_every_event_goes_to_gtk_before_the_watch_looks_at_it(wslg):
+    wslg.write("copied")
+
+    wslg.focus(True, after=1.0)
+    wslg.request(after=1.0)
+
+    assert wslg.log == [
+        ("set", "copied"),
+        ("event", EventType.FOCUS_CHANGE),
+        ("set", "copied"),
+        ("event", EventType.SELECTION_REQUEST),
+    ]
+
+
+def test_an_event_goes_on_when_the_clipboard_raises(app_module, wslg, monkeypatch, caplog):
+    wslg.write("copied")
+
+    def refuse(*_args):
+        raise RuntimeError("no clipboard")
+
+    with monkeypatch.context() as broken:
+        broken.setattr(app_module.Gtk.Clipboard, "get_default", refuse, raising=False)
+        wslg.focus(True, after=1.0, faults=1)
+    assert wslg.log[-1] == ("event", EventType.FOCUS_CHANGE)
+    assert wslg.faults() == ["Could not follow the clipboard at an event"]
+
+    wslg.focus(False, after=1.0)  # and the next event is handled as any
+    assert wslg.sets == ["copied", "copied"]
+
+
+def test_an_event_goes_on_when_the_watch_raises(wslg, monkeypatch):
+    wslg.write("copied")
+
+    def refuse(_now):
+        raise RuntimeError("the watch is broken")
+
+    monkeypatch.setattr(wslg.wmain.clipboard_watch(), "again", refuse)
+
+    wslg.focus(True, after=1.0, faults=1)
+
+    assert wslg.log[-1] == ("event", EventType.FOCUS_CHANGE)
+    assert wslg.sets == ["copied"]
+
+
+def test_a_nested_main_loop_handing_in_an_event_leaves_the_sets_as_they_were(wslg):
+    """dialog.run() runs a main loop of its own inside the handling of the key that opened it,
+    and the keyboard moving to the dialog reaches GCM's handler from there. The watch runs
+    after Gtk.main_do_event returns, so that is safe: GTK is given each event in the order it
+    came, and the one change of window sets the write once."""
+    wslg.write("copied")
+    key = gdk_event(EventType.KEY_PRESS)
+    dialog_takes_the_keyboard = gdk_event(EventType.FOCUS_CHANGE, entered=False)
+    handed_in: list = []
+
+    def run_a_main_loop(event):
+        if event is key:
+            handed_in.append(event)
+            wslg.installed[-1](dialog_takes_the_keyboard, None)
+
+    wslg.inside_main_do_event = run_a_main_loop
+
+    wslg.deliver(key, after=1.0)
+
+    assert handed_in == [key]
+    assert wslg.log == [
+        ("set", "copied"),
+        ("event", EventType.KEY_PRESS),
+        ("event", EventType.FOCUS_CHANGE),
+        ("set", "copied"),
+    ]
+
+
+def test_with_the_preference_off_the_write_is_forgotten(app_module, wslg, monkeypatch):
+    """A session started while it was on must stop writing the moment it is off, and a write
+    not set again then is not set again once it is on either, until a new write comes."""
+    wslg.write("copied")
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 0)
+    wslg.focus(False, after=1.0)
+    monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
+
+    wslg.focus(True, after=1.0)
+
+    assert wslg.sets == ["copied"]
+    wslg.write("new", after=1.0)
+    wslg.focus(False, after=1.0)  # the control: a new write is held, and set again
+    assert wslg.sets == ["copied", "new", "new"]
+
+
+# -- and against real GTK ----------------------------------------------------------------------
+#
+# GCM as GCM starts, on an Xvfb of its own, with real events: a second program pasting raises a
+# SELECTION_REQUEST, a second program taking the clipboard raises a SELECTION_CLEAR, and
+# Gdk.Window.focus on a second window raises the FOCUS_CHANGEs of the keyboard leaving one and
+# entering the other. Measured on a private Xvfb with no window manager. The display is X11, so
+# the scenario forces the answer the WSLg predicate gives, and then leaves it: the same moves
+# must set nothing where it is not WSLg.
+
+REPO = Path(__file__).resolve().parents[1]
+
+_REAL_GTK_SCRIPT = r"""
+import base64, faulthandler, json, os, subprocess, sys, tempfile, time
+faulthandler.dump_traceback_later(100, exit=True)
+mode = sys.argv[1]
+os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gdk, Gtk
+from gnome_connection_manager import app
+from gnome_connection_manager.utils import osc52
+
+app.conf.CHECK_UPDATES = False
+app.conf.STARTUP_LOCAL = False
+app.conf.OSC52_ENABLED = 1
+repairs = mode == "under-wslg"
+if repairs:
+    # Called through the module, so that the patch reaches GCM.
+    osc52.under_wslg = lambda *_args: True
+
+# Every set of the clipboard, by the real method. The first thing checked is that this is hit.
+sets = []
+real_set_text = Gtk.Clipboard.set_text
+def recorded(self, text, length=-1):
+    sets.append(text)
+    return real_set_text(self, text, length)
+Gtk.Clipboard.set_text = recorded
+
+application = app.GcmApplication()
+assert application.register(None)
+application.activate()
+w = application._controller
+main = w.wMain
+main.move(0, 0)
+main.resize(800, 600)
+
+def pump(seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+def until(condition, seconds=10):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and not condition():
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+    return condition()
+
+# A second window to move the keyboard to. Its focus-in-event runs after the window's own, which
+# is what sets has_toplevel_focus, and it can only run if GCM gave the event to GTK.
+other = Gtk.Window(title="the other window")
+other.set_default_size(300, 200)
+entered = []
+def focus_in(_widget, _event):
+    entered.append(other.has_toplevel_focus())
+    return False
+other.connect_after("focus-in-event", focus_in)
+other.show_all()
+pump(0.5)
+assert main.has_toplevel_focus(), "GCM's window has not got the keyboard"
+
+def write(text):
+    message = {"selection": "c", "data": base64.b64encode(text.encode()).decode()}
+    assert w._apply_clipboard_message(json.dumps(message).encode()) is True
+
+def move_keyboard():
+    # To the other window, or back: GDK reports the window it leaves and the window it enters.
+    target = other if main.has_toplevel_focus() else main
+    target.get_window().focus(Gdk.CURRENT_TIME)
+    assert until(target.has_toplevel_focus), "the keyboard did not move"
+    pump(0.4)
+
+def run_aside(program):
+    # Another program on the same display, while GCM's main loop runs: it pastes, or copies.
+    child = subprocess.Popen(
+        [sys.executable, "-I", "-c", program],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert until(lambda: child.poll() is not None, 30), "the other program did not end"
+    out, err = child.communicate()
+    assert child.returncode == 0, err
+    return out.strip()
+
+READER = '''
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gtk
+print(Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_text())
+'''
+THIEF = '''
+import gi, time
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gtk
+Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text("taken by another program", -1)
+end = time.monotonic() + 0.3
+while time.monotonic() < end:
+    Gtk.main_iteration_do(False)
+    time.sleep(0.01)
+'''
+
+def expect(label, mark, again):
+    # What was set since `mark`: the write's text once more where GCM sets it again, else nothing.
+    assert sets[mark:] == again, (label, sets)
+
+# 1. A write nobody asks for, and the keyboard leaving 0.4 s on: set again where WSLg.
+write("one")
+assert sets == ["one"], "the write did not reach the real set_text: " + repr(sets)
+pump(0.4)
+mark = len(sets)
+move_keyboard()
+expect("the keyboard moved", mark, ["one"] if repairs else [])
+assert entered == [True], "GTK was not given the focus change: " + repr(entered)
+
+# 2. A write that another program pastes: the request is heard, and nothing is set again.
+write("two")
+pump(0.4)
+assert run_aside(READER) == "two", "the paste did not get the write"
+pump(0.4)
+mark = len(sets)
+move_keyboard()
+expect("after a paste", mark, [])
+
+# 3. The control for 2 and 4: a fresh write that nobody pastes or takes is set again.
+write("three")
+pump(0.4)
+mark = len(sets)
+move_keyboard()
+expect("the control, nothing heard", mark, ["three"] if repairs else [])
+
+# 4. A write whose claim another program ends by taking the clipboard: nothing is set again.
+write("four")
+pump(0.4)
+run_aside(THIEF)
+pump(0.4)
+mark = len(sets)
+move_keyboard()
+expect("after another program took the clipboard", mark, [])
+
+assert (w.clipboard_watch() is not None) == repairs, w.clipboard_watch()
+main.destroy()
+print("OK")
+"""
+
+
+def run_real_gtk_scenario(mode, display):
+    """Run the scenario for `mode` on `display`; fail on what it raised or GLib complained of."""
+    environment = dict(os.environ, DISPLAY=display, GDK_BACKEND="x11")
+    for name in ("WAYLAND_DISPLAY", "GDK_SCALE", "GDK_DPI_SCALE", "XDG_CONFIG_HOME"):
+        environment.pop(name, None)
+    # A GCM started from another's tab inherits where that one found its files, and a
+    # worktree's would then run the main checkout's.
+    for name in ("GCM_DATA_DIR", "GCM_GLADE_DIR", "GCM_SCRIPTS_DIR"):
+        environment.pop(name, None)
+    result = subprocess.run(
+        [sys.executable, "-c", _REAL_GTK_SCRIPT, mode],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        env=environment,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-3000:]
+    assert "OK" in result.stdout
+    # PyGObject prints what a signal handler raises, and carries on; so does GCM's own handler,
+    # which logs a fault and goes on with the next event.
+    assert "Traceback" not in result.stderr, result.stderr[-3000:]
+    assert glib_complaints(result.stderr) == []
+
+
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
+@pytest.mark.parametrize("mode", ["under-wslg", "on-x11"])
+def test_a_write_the_compositor_ignored_is_set_again_against_real_gtk(mode):
+    """Real events on a display of its own: the keyboard moves between two windows, another
+    program pastes, another program takes the clipboard. Where it is not WSLg, the same moves
+    set nothing."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    process, display = _private_display()
+    try:
+        run_real_gtk_scenario(mode, display)
+    finally:
+        process.terminate()
+        process.wait()

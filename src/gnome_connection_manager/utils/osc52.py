@@ -5,15 +5,19 @@ terminal and seeing the clipboard untouched, and by the absence of any "52;" str
 libvte. There is also no API to observe unhandled OSC sequences, so the only way to
 support it is to see the bytes before VTE does.
 
-This module is the pure part of that. It does no I/O and reads no clock, so it can be
-tested without a terminal, a display or a pty. `Osc52Scanner` holds a partial-sequence
-buffer. `RepeatFilter` is GCM's side of the relay, and holds the last write it let through.
+This module is the pure part of that. It reads no clock, and does no I/O bar `kernel_release`
+and `wslg_folder`, which look at the two places that say a system is WSLg, so it can be tested
+without a terminal, a display or a pty. `Osc52Scanner` holds a partial-sequence buffer.
+`RepeatFilter` is GCM's side of the relay, and holds the last write it let through.
+`ClipboardWatch` holds the last write GCM set until the compositor has asked for its text, so
+that GCM can set it again, and `under_wslg` says where that applies (#412, #413).
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+from pathlib import Path
 
 # ESC ] 52 ; <selection> ; <payload> (BEL | ESC \)
 _INTRODUCER = b"\x1b]52;"
@@ -35,6 +39,28 @@ _SELECTIONS = {"c", "p"}
 # shorter than a person takes to copy elsewhere and then copy again; that last is an
 # estimate, not a measurement.
 REPEAT_WINDOW = 1.0
+
+# A write that Weston ignored is set again at a change of the keyboard's window, and at most
+# this many sets are made of one write, the first included (#412, #413). A bound on the
+# repairs, not a measured figure: the prototype's repairs were taken at the first.
+MAX_SETS = 3
+
+# Seconds that must pass after a set, a write's or a repair's, before the next repair. Not a
+# measured threshold: about five times the longest wait measured from a set to the
+# compositor's request for its text, 52.9 ms. Two reasons for it, inferred and neither seen.
+# The keyboard moving between two GCM windows gives two FOCUS_CHANGEs back to back, and if
+# they were read together both would set with the serial GDK read last, so the second set
+# would be ignored, as in #413. And GDK reads a batch of Wayland events, which advances its
+# serial, and hands the events out one at a time, so a write applied in between takes the
+# serial of an `enter` or `leave` not yet handed out, and a repair at that event would set
+# with the same serial.
+REPAIR_GAP = 0.25
+
+# What says that GCM is under WSLg: a Wayland display, a kernel that names Microsoft, and the
+# folder WSLg mounts (#412, #413).
+WAYLAND_DISPLAY_TYPE = "GdkWaylandDisplay"
+KERNEL_RELEASE_FILE = "/proc/sys/kernel/osrelease"
+WSLG_FOLDER = "/mnt/wslg"
 
 
 class Osc52Scanner:
@@ -154,4 +180,99 @@ class RepeatFilter:
         if last is not None and last[0] == text and now - last[1] < self._window:
             return True
         self._last = (text, now)
+        return False
+
+
+class ClipboardWatch:
+    """The last write GCM set on the clipboard, until the compositor has asked for it (#412, #413).
+
+    Under WSLg, Weston ignores a set of the clipboard whose serial is not newer than the
+    selection's, equal included, and sends no `cancelled`. GTK sets each new data source with
+    the serial of the last input GCM saw, so a write that follows a copy made in Windows, or
+    follows another write, with no input to GCM between, was ignored. GTK then claimed a
+    clipboard that Weston did not hold, and went on answering a paste with the write while
+    Windows held the older text. GCM cannot make a serial of its own.
+
+    A set Weston takes is followed by a request for the text, which GDK hands GCM as a
+    SELECTION_REQUEST for the clipboard. Measured on WSLg 1.0.73.2 (Weston 9.0.0), of 22 sets
+    the 13 Weston took each got exactly one, 0.1 to 5.4 ms after the first `send`, which came
+    8.5 to 48.4 ms after the set; the 9 it ignored got none. Each of 25 `enter` and `leave`
+    events was followed by exactly one FOCUS_CHANGE, the last within 0.675 ms, and the first
+    after a copy made in Windows carried a serial newer than the copy's. So `again` gives the
+    write at a change of the keyboard's window if it has not been heard (`heard`, called at
+    that request, or at a SELECTION_CLEAR for the clipboard, which ends the claim).
+
+    Not at a key or a click: GTK handles the event first, and a copy GCM makes at that key
+    or click is set with its serial and taken, where a repair at the same event would destroy
+    that source and set the older text with the same serial, which Weston ignores. That is
+    reasoned from the mechanism and from #393's pair, not run.
+
+    One mechanism ends the repairs, the count: `again` gives nothing once `max_sets` sets of
+    the write were made, the first included, and nothing within `gap` seconds of the last
+    set, a write's or a repair's. A newer write replaces the one held and starts the count
+    again. The time is an argument, as `RepeatFilter`'s is.
+    """
+
+    def __init__(self, max_sets: int = MAX_SETS, gap: float = REPAIR_GAP) -> None:
+        self._max_sets = max_sets
+        self._gap = gap
+        # The text, the sets made of it, and the time of the last.
+        self._held: tuple[str, int, float] | None = None
+
+    def made(self, text: str, now: float) -> None:
+        """Hold `text`, which GCM has just set at `now`: one set made."""
+        self._held = (text, 1, now)
+
+    def heard(self) -> None:
+        """Forget the write: the compositor asked for it, or the claim ended."""
+        self._held = None
+
+    def again(self, now: float) -> str | None:
+        """The text to set again at a change of the keyboard's window at `now`, or None.
+
+        None with nothing held, then once `max_sets` sets were made, then less than `gap`
+        seconds after the last. The write stays held in each case. A text given counts as a
+        set, made at `now`.
+        """
+        held = self._held
+        if held is None:
+            return None
+        text, sets, last = held
+        if sets >= self._max_sets:
+            return None
+        if now - last < self._gap:
+            return None
+        self._held = (text, sets + 1, now)
+        return text
+
+
+def under_wslg(display_type: str, kernel_release: str, wslg_folder: bool) -> bool:
+    """Whether GCM runs under WSLg, whose Weston is the compositor measured (#412, #413).
+
+    A Wayland display, `GdkWaylandDisplay` exactly; a kernel release that names Microsoft,
+    in any case, as `6.18.33.2-microsoft-standard-WSL2` and `4.4.0-19041-Microsoft` do; and
+    the folder WSLg mounts. All three, since a miss costs nothing and a false hit costs a
+    set again at changes of the keyboard's window (#392 records that WSL cannot be told
+    reliably).
+    """
+    return (
+        display_type == WAYLAND_DISPLAY_TYPE
+        and "microsoft" in kernel_release.lower()
+        and wslg_folder
+    )
+
+
+def kernel_release(path: str | Path = KERNEL_RELEASE_FILE) -> str:
+    """The kernel's release, as `uname -r` gives it: stripped, or "" where it cannot be read."""
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def wslg_folder(path: str | Path = WSLG_FOLDER) -> bool:
+    """Whether the folder WSLg mounts is there. A file of that name is not it."""
+    try:
+        return Path(path).is_dir()
+    except OSError:
         return False

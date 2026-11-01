@@ -375,9 +375,42 @@ This matters under WSLg
 ([#393](https://github.com/endavis/gnome-connection-manager/issues/393)). Its compositor,
 Weston, ignores a second set of the clipboard that follows no input to GCM, and says
 nothing. GCM then went on pasting the program's text where you had copied something else in
-Windows since. GCM sets a pair once, so there is no second set to ignore. The same can still
-happen with two writes of different texts and no input to GCM between them, and with a
-write that follows a copy made elsewhere while GCM has had no input.
+Windows since. GCM sets a pair once, so there is no second set to ignore.
+
+**A write Weston ignored is set again**
+([#412](https://github.com/endavis/gnome-connection-manager/issues/412),
+[#413](https://github.com/endavis/gnome-connection-manager/issues/413)). Weston ignores the
+same way a write that follows a copy you made in Windows with no input to GCM since, a write
+of another text with no input since the one before it, and a write of the same text more than
+a second after it. Windows then keeps the older text while GCM pastes the program's, and GCM
+goes on pasting it after you copy again in Windows. A write is still set at once. Under WSLg
+GCM also sees whether Weston asked for its text, which it does when it takes a set. If it
+has not by the time the keyboard next enters or leaves one of GCM's windows, GCM sets the
+text again. That set is newer than a copy made in Windows before it, and Weston took it each
+time it was measured. So a copy a program writes after you copied in Windows, or after its
+own earlier copy, reaches Windows when the keyboard next enters or leaves GCM's window. In
+the runs measured, Windows had it when it was read 2 s after that; a shorter time was not
+tried. Switching to a Windows application and back is such a change. That was measured from
+a script that forced a native Windows window to the foreground and then GCM's window back:
+GCM was given the keyboard's leave, and then its enter. A click was not measured.
+
+GCM takes the desktop to be WSLg when its display is a Wayland one, the kernel names
+Microsoft and the folder `/mnt/wslg` is there. A write is set again at most twice, and not
+within a quarter of a second of the last set. Elsewhere a write is set once, as it was
+before: only WSLg's compositor was measured. Its limits:
+
+- **A copy you make in Windows after a write Weston ignored, and before the keyboard next
+  changes window, is replaced by the write at that change.** Before, Windows kept your later
+  copy and GCM pasted the program's text. Now both paste the program's text.
+- **Until that change, a program that reads Windows' clipboard without the keyboard moving
+  gets the older text.** `powershell.exe Get-Clipboard` and `win32yank.exe -o`, run in a GCM
+  tab, are two. GCM's paste and such a program agree again at the next change of window.
+- **A write that comes while GCM is not in use, after a copy in Windows, reaches Windows when
+  the keyboard comes back to GCM, not before.** Pasting in Windows meanwhile gives your copy.
+- **A change of window within a quarter of a second of an ignored write is skipped,** and the
+  next one sets the write.
+- **Two writes of different texts less than about 50 milliseconds apart** might leave the
+  second without a set again. That has not been seen.
 
 ## Viewing the buffer without the mouse
 

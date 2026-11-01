@@ -5821,6 +5821,11 @@ class Wmain(GladeComponent):
         A write of the text just put there is left out. A program can write a copy twice,
         and the second set follows no input, which Weston ignores. GTK then goes on
         answering a paste with this text, and a copy made elsewhere does not reach it (#393).
+
+        Under WSLg the write is also handed to the watch, which sets it again when the keyboard
+        next enters or leaves a GCM window, unless the compositor has asked for its text by
+        then. The same ignored set follows a copy made in Windows with no input to GCM since,
+        or an earlier write (#412, #413).
         """
         if not conf.OSC52_ENABLED:
             return False
@@ -5843,7 +5848,94 @@ class Wmain(GladeComponent):
             logger.debug("Leaving out an OSC 52 write that repeats the one just made")
             return False
         Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
+        watch = self.clipboard_watch()
+        if watch is not None:
+            watch.made(text, time.monotonic())
         return True
+
+    def clipboard_watch(self) -> osc52.ClipboardWatch | None:
+        """The watch that sets an OSC 52 write again if the compositor ignored it, or None.
+
+        Under WSLg only (#412, #413): a Wayland display, a kernel release that names
+        Microsoft, and the folder WSLg mounts. Every measurement behind the watch is WSLg's
+        Weston; elsewhere GCM does what it did, and nothing is claimed of other desktops.
+
+        Decided once, at the first write, with a flag of its own: None cannot tell "not decided"
+        from "decided: not here", and off WSLg this would decide again at every write. Kept per
+        window, as a terminal's quiet_watch is, since a Wmain built with `object.__new__`, as
+        tests build one, has no attributes of its own, and a class's would carry one test's
+        write into the next.
+
+        Where it applies, this installs `watch_gdk_event` as GDK's event handler, once. A
+        fault in doing so is logged and leaves no watch, so that nothing can raise into
+        `_apply_clipboard_message` after the text was set.
+        """
+        if getattr(self, "_clipboard_watch_decided", False):
+            return self._clipboard_watch
+        self._clipboard_watch_decided = True
+        self._clipboard_watch: osc52.ClipboardWatch | None = None
+        # No display, or one that is no GObject, as tests give, has no type: "" is not a
+        # Wayland display's. The stub's display answers with another stub, not a string.
+        display_type = getattr(getattr(Gdk.Display.get_default(), "__gtype__", None), "name", "")
+        if not isinstance(display_type, str):
+            return None
+        if not osc52.under_wslg(display_type, osc52.kernel_release(), osc52.wslg_folder()):
+            return None
+        try:
+            Gdk.event_handler_set(self.watch_gdk_event, None)
+        except Exception:
+            logger.exception("Could not watch GDK's events; an ignored OSC 52 write stays so")
+            return None
+        self._clipboard_watch = osc52.ClipboardWatch()
+        return self._clipboard_watch
+
+    def watch_gdk_event(self, event: Gdk.Event, _data: object = None) -> None:
+        """GDK's event handler under WSLg: GTK first, then the watch.
+
+        `clipboard_watch` installs it. GCM owns GDK's event handler from then on, and a later
+        hook has to chain through here.
+
+        Every event goes to `Gtk.main_do_event` before the watch looks at it, as GDK's own
+        default would do with no handler, so the watch can neither hold an event back nor see it
+        before GTK has acted on it: a copy GCM makes at a key or a click is set first. A fault
+        in the watch is logged and the next event goes on. `dialog.run()` runs a main loop of its
+        own, which enters here again, and that is safe because the watch runs after
+        `Gtk.main_do_event` returns.
+        """
+        Gtk.main_do_event(event)
+        try:
+            self.follow_clipboard(event)
+        except Exception:
+            logger.exception("Could not follow the clipboard at an event")
+
+    def follow_clipboard(self, event: Gdk.Event) -> None:
+        """Tell the watch of an event that bears on the write it holds (#412, #413).
+
+        A FOCUS_CHANGE, in or out, is the keyboard entering or leaving a GCM window: the
+        write is set again if the watch gives it. A SELECTION_REQUEST or a SELECTION_CLEAR for
+        the clipboard is the compositor asking for the text, or the claim ending, and the watch
+        forgets the write. Any other event does nothing, a key or a click included: GTK has
+        handled it already, and a repair there could destroy the source of a copy GCM made at
+        that event.
+
+        With the preference off the watch forgets the write, as a session started while it was
+        on must stop writing the moment it is off, as `_apply_clipboard_message` stops it.
+        """
+        watch = getattr(self, "_clipboard_watch", None)
+        if watch is None:
+            return
+        kinds = Gdk.EventType
+        if event.type == kinds.FOCUS_CHANGE:
+            if not conf.OSC52_ENABLED:
+                watch.heard()
+                return
+            text = watch.again(time.monotonic())
+            if text is not None:
+                logger.debug("Setting an OSC 52 write again: the compositor did not ask for it")
+                Gtk.Clipboard.get_default(Gdk.Display.get_default()).set_text(text, -1)
+        elif event.type in (kinds.SELECTION_REQUEST, kinds.SELECTION_CLEAR):
+            if event.selection.selection.name() == "CLIPBOARD":
+                watch.heard()
 
     def save_text_to_file(self, text, parent=None, name=None, folder=None):
         """Ask for a filename and write text to it. Shared by Save Buffer and the viewer."""
