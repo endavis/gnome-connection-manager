@@ -10,9 +10,9 @@ tests/test_commands_after_login.py.
 from __future__ import annotations
 
 import os
-import shutil
 import signal
 import subprocess
+import sys
 import termios
 import threading
 import time
@@ -160,13 +160,17 @@ def test_find_program_finds_the_nearest_among_real_processes(tmp_path):
     starts: a ProxyJump's ssh is the session's ssh's child."""
     for folder in ("near", "deep"):
         (tmp_path / folder).mkdir()
-        (tmp_path / folder / "ssh").symlink_to(shutil.which("sleep"))
+        # Python, not sleep: uutils' coreutils, Ubuntu 26.04's, is one binary that refuses
+        # to run under a name other than its utilities'. Python run through a link keeps
+        # the link's path as argv[0] and its name as comm, as ssh's own would be.
+        (tmp_path / folder / "ssh").symlink_to(sys._base_executable)
+    sleeping = "-c 'import time; time.sleep(30)'"
     deep = tmp_path / "deep.sh"
-    deep.write_text(f"#!/bin/sh\n{tmp_path / 'deep' / 'ssh'} 30\n")
+    deep.write_text(f"#!/bin/sh\n{tmp_path / 'deep' / 'ssh'} {sleeping}\n")
     deep.chmod(0o755)
     near = tmp_path / "near" / "ssh"
     root = subprocess.Popen(
-        ["sh", "-c", f"{deep} & read go; {near} 30 & wait"],
+        ["sh", "-c", f"{deep} & read go; {near} {sleeping} & wait"],
         stdin=subprocess.PIPE,
         start_new_session=True,
     )

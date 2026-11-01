@@ -1831,7 +1831,10 @@ if scenario == "the-tree-menu":
         click(1, *widget_point(servers))
         submenu = servers.get_submenu()
         assert until(submenu.get_visible), "the Servers menu did not open"
-        pump(0.3)
+        # GTK 3.24.52 ignores a click on the menu's item for a time after it opens, though
+        # the item is sensitive, mapped and under the pointer: measured, a wait of 0.3 s
+        # left the menu open and 0.5 s did not. 1 s is twice that, for a slower machine.
+        pump(1.0)
         click(1, *widget_point(labelled(submenu, text)))
         assert until(lambda: not submenu.get_visible()), "the Servers menu stayed open"
         pump(0.3)
@@ -2650,11 +2653,19 @@ def test_open_in_file_manager_against_real_gio(tmp_path, default, on_path, expec
     nothing.mkdir()
     scratch = tmp_path / "scenario"
     scratch.mkdir()
+    # gdk-pixbuf on Ubuntu 26.04 decodes an SVG through glycin, which starts `bwrap` by name,
+    # and GTK aborts on an icon it cannot load. So that program alone is on PATH beside the
+    # fakes, and no file manager of the system's.
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    bwrap = shutil.which("bwrap")
+    if bwrap:
+        (sandbox / "bwrap").symlink_to(bwrap)
 
     run_scenario(
         "file-manager",
         scratch,
-        PATH=str(bin_dir),
+        PATH=os.pathsep.join([str(bin_dir), str(sandbox)]),
         XDG_DATA_HOME=str(nothing),
         XDG_DATA_DIRS=os.pathsep.join([str(tmp_path / "share"), *without_applications(tmp_path)]),
         XDG_CONFIG_DIRS=str(nothing),
