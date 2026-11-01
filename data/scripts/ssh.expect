@@ -1,4 +1,8 @@
 #!/usr/bin/expect
+# GCM runs a host under this script only when it has a stored password, and a Telnet or RDP
+# host only when it has a user too; the others run ssh, telnet or FreeRDP directly. The
+# password comes in GCM_PASSWORD, from expect_environment in utils/connections.py, and the
+# script's exit status becomes the tab's.
 
 log_user 0
 # Keys typed into the tab wait for the program, whose own terminal shows them once they
@@ -18,11 +22,12 @@ if { [info exists env(GCM_PASSWORD)] } {
 
 
 #capturar redimension de tamaño de pantalla y pasarlo al proceso ssh hijo
-# Before the spawn too, as a new tab settles its size then: expect gives the program the
-# size its own terminal had when expect started, or when stty last read it, measured.
-# Until the spawn there is no program's terminal to set, and naming it then is an error.
-# A change before the trap is set is lost until the WINCH sent as a session is handed
-# over.
+# Before the spawn too, as a new tab settles its size then: measured in GCM, the trap is set
+# within 60 ms of addTab, and a new tab's size changed at about 0.2 s and 0.4 s. And expect
+# gives the program the size its own terminal had when expect started, or when stty last
+# read it, measured. Until the spawn there is no program's terminal to set, and naming it
+# then is a Tcl error, which shows in the tab. A change before the trap is set is lost
+# until the WINCH sent as a session is handed over.
 trap {
  set rows [stty rows]
  set cols [stty columns]
@@ -55,6 +60,8 @@ if { $connection == "telnet" } {
 } else {
     # Not -1, which waited for ever. Each second without a pattern matched, the block
     # below looks at what ssh is doing, as it may never ask for the password (#313).
+    # expect's timeout is whole seconds, measured: 0.25 times out at once, and output that
+    # matches nothing does not restart it.
     set timeout 1
     set cmd "/usr/bin/ssh"
     set reg "assword:"
@@ -81,7 +88,8 @@ eval spawn $cmd [ lrange $argv 1 [expr {$argc - 1}] ]
 # them, since ssh and login turn echo off first. log_user was 0 until the spawn only so
 # that spawn does not echo its command line. It used to stay 0 through the block below,
 # so only what a pattern printed ever showed: a connection that failed left an empty tab
-# (#212), and a new host key was trusted out of sight (#214).
+# (#212), and a new host key was trusted out of sight (#214). Printing from each branch
+# instead loses what follows the match.
 log_user 1
 
 # The host key question is the user's to answer, as it is for a host without a stored
@@ -90,9 +98,12 @@ log_user 1
 # waits, only during interact, so the question hands the terminal over until Enter and
 # then goes on to the password prompt; an answer ssh refuses is asked again, and comes
 # back here. Enter is \r, or \n if it was typed before interact left cooked mode.
-# -nobuffer passes it on with what came before it; without that, interact holds the
-# Enter back, and dropped an answer typed ahead of it. interact also returns when ssh
-# ends, at Ctrl+C for one, having closed the spawn id, so the block must not go on then.
+# -nobuffer passes it on with what came before it, so the action sends no Enter of its own,
+# which ssh would read as an empty password; without -nobuffer, interact holds the Enter
+# back, and dropped an answer typed ahead of it. interact also returns when ssh ends, at
+# Ctrl+C for one, having closed the spawn id, so the block must not go on then: an
+# exp_continue fails there with a Tcl traceback in the tab. Each of these was measured, and
+# each is a test.
 #
 # ssh need not ask for the password at all. It tries public keys first, and logs in with
 # one the server accepts, and it can ask something the script does not answer, such as a
@@ -106,7 +117,8 @@ log_user 1
 #
 # FreeRDP's certificate question is handed over the same way. FreeRDP 3 asks for a
 # domain before the password, and gets an empty one: a domain goes in the user field as
-# DOMAIN\user, and then it does not ask. FreeRDP 2 asks for the password only.
+# DOMAIN\user, and then it does not ask. FreeRDP 2 asks for the password only. FreeRDP has
+# an expect block of its own, so that its Domain: pattern never meets an ssh banner.
 if { $connection == "rdp" } {
     expect {
           -re {Domain: *$} { send "\n"; exp_continue; }
@@ -147,8 +159,9 @@ if { $connection == "rdp" } {
 }
 
 # Every way out comes here, so the tab gets the status its program exited with, which
-# Close console decides on (#210). One killed by a signal exited with none, and exp_wait
-# gives 0 for it, a clean exit: report it as a shell does, 128 and the signal's number.
+# Close console decides on (#210): an early exit reports 0, a clean exit, as the host key
+# failure once did. One killed by a signal exited with none, and exp_wait gives 0 for it,
+# a clean exit: report it as a shell does, 128 and the signal's number.
 set ret [exp_wait]
 if { [lindex $ret 4] == "CHILDKILLED" } {
     if { [catch { exec kill -l [lindex $ret 5] } number] } { set number 0 }
