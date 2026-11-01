@@ -27,6 +27,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
 - [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
+- [Packaging, the Installer and Releases](design/packaging.md) - Why the .deb and the .rpm declare what they do and run no script, how install.sh installs and updates GCM, and what a release is, with what was measured of each
 - [Session Logs, Recording and Transcripts](design/recording.md) - What GCM writes of a session and reads back, and why: the relay a session runs under, the names of a session's files, and the transcript rebuilt from a raw recording
 - [Tab Names and Colours](design/tabs.md) - What a host's tab is called and the colour it is marked with, in the tab, the server tree and the Hosts menu, and why
 - [Translations and the Spanish Catalog](design/translations.md) - Why the msgids are English, what glibc, Python's gettext and GtkBuilder were measured to do, how tests/test_i18n.py reads the catalogs, and the Spanish catalog's style rules
@@ -107,6 +108,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [LSP Tool and Diagnostic Noise](development/ai/lsp-tool.md) - What the LSP tool gives an AI agent, why pyright diagnostics arrive stale, and the two opt-outs agents can flip on themselves
 - [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
 - [Optional Extensions](development/extensions.md) - Additional tools and extensions for testing, security, and more
+- [Packaging, the Installer and Releases](design/packaging.md) - Why the .deb and the .rpm declare what they do and run no script, how install.sh installs and updates GCM, and what a release is, with what was measured of each
 - [Per-Stack Rule Files](development/ai/rule-files.md) - How to author, load and mirror the short self-check rule files in .claude/rules/
 - [Python Project Coding Standards](development/coding-standards.md) - Guidelines for exceptions, typing, structure, testing, and documentation
 - [Release Automation & Security](development/release-and-automation.md) - Automated versioning, release management, and security tooling
@@ -206,6 +208,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Migration Guide](template/migration.md) - Migrate existing Python projects to use this template
 - [New Project Setup](template/new-project.md) - Create a new Python project from this template
 - [Optional Extensions](development/extensions.md) - Additional tools and extensions for testing, security, and more
+- [Packaging, the Installer and Releases](design/packaging.md) - Why the .deb and the .rpm declare what they do and run no script, how install.sh installs and updates GCM, and what a release is, with what was measured of each
 - [Per-Stack Rule Files](development/ai/rule-files.md) - How to author, load and mirror the short self-check rule files in .claude/rules/
 - [Python Project Coding Standards](development/coding-standards.md) - Guidelines for exceptions, typing, structure, testing, and documentation
 - [Release Automation & Security](development/release-and-automation.md) - Automated versioning, release management, and security tooling
