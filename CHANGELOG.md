@@ -11,6 +11,39 @@ the git log.
 
 ## [Unreleased]
 
+### Changed
+- A key typed into a console now belongs to its program, bar GCM's own shortcuts, and the
+  defaults no longer take a Ctrl+letter key a shell reads. Six commands moved to
+  Ctrl+Shift, where a program cannot tell the key from the Ctrl+letter one: `save` from
+  `Ctrl+S` to `Ctrl+Shift+S`, `find` from `Ctrl+F` to `Ctrl+Shift+L`, `find_next` from
+  `Ctrl+G` to `Ctrl+Shift+G`, `find_back` from `Ctrl+H` to `Ctrl+Shift+B`, `console_close`
+  from `Ctrl+W` to `Ctrl+Shift+W` and `console_reconnect` from `Ctrl+N` to `Ctrl+Shift+R`.
+  With the new keys, the program in a console gets the old six. A `gcm.conf` that GCM has
+  saved keeps the keys it holds, as a save writes the key of every command, and nothing is
+  moved for you; one with no line for a command takes the new key. To take the new keys, or
+  to keep the old ones, see *Keys that moved, and a command with no key* in the terminal
+  guide.
+- `Ctrl+Q`, `Ctrl+R`, `Ctrl+E`, `F1`, `F9` and `Shift+F9` go to the program in a console
+  and act as before anywhere else, in the server tree or the search box. `Ctrl+Q` no longer
+  quits GCM from inside a console, nor does `F9` hide the panel there: **File → Quit**,
+  **Servers → Refresh**, **Servers → Edit Host**, **Help → About**, **View → Show Panel**
+  and **View → Show Toolbar** reach each from anywhere. A console whose program has ended
+  takes these keys too, so use the menu there. `Ctrl+Shift+H`, `Ctrl+,`, `Ctrl+Shift+U` and
+  `Ctrl+Shift+S` still act wherever the keyboard is.
+- A custom sequence in `[keys]` on `Ctrl+Q`, `Ctrl+R`, `Ctrl+E`, `F1`, `F9` or `Shift+F9`
+  is sent in a console. The first four were refused, with a line in the log, and the last
+  two were accepted and never sent, as the accelerator took the key first.
+
+### Fixed
+- In the **Shortcut** column of Preferences, `Backspace` and `Delete` leave a command
+  without a key, where `Backspace` bound the key BackSpace. The command is written as
+  `save =` and stays without a key across a restart; a command with no line at all takes
+  its default, as before. An older GCM reads the line as the key `""`, which no key
+  matches, but keeps only one of several commands left so.
+- A letter, or another key that types a character, is not bound in the **Shortcut** column
+  without Ctrl, Alt or Super, since bound alone it would be taken from every console, and
+  `Enter`, `Tab` and `Escape` work in the column as they do elsewhere.
+
 ## [2.2.1] - 2026-10-30
 
 ### Fixed

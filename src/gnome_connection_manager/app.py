@@ -154,10 +154,14 @@ from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     truncate_tab_label,
 )
 from gnome_connection_manager.utils.shortcuts import (  # noqa: E402
+    CONSOLE_FIRST_KEYS,
     FONT_SCALE_STEP,
+    bound_key,
     captured_key,
     clamp_font_scale,
+    kept_bindings,
     parse_custom_keys,
+    preference_rows,
 )
 
 # check Terminal version
@@ -457,18 +461,28 @@ _VIEW_BUFFER = ["view_buffer"]
 _SNIPPETS = ["snippets"]
 
 # Terminal commands and their default keys, owned by [shortcuts] in gcm.conf.
+#
+# A key typed into a console belongs to its program, except these (#419). Six of them were
+# Ctrl+letter keys that readline binds, and are on Ctrl+Shift now. A program cannot tell
+# Ctrl+Shift+letter from Ctrl+letter, so it loses nothing it would have had. Save is on
+# GCM's own Save Buffer accelerator, Ctrl+Shift+S, so that the key has one meaning. Find
+# Next and Close Console are on G and W, where GNOME Terminal has find next and close tab.
+# Find is on L, for look up, as Ctrl+Shift+F is View Buffer; Find Previous is on B, for
+# back, as Ctrl+Shift+H is Add Host; Reconnect is on R, as Ctrl+Shift+N is New Local
+# Console. Only a gcm.conf with no line for a command gets its new key: every save writes
+# each key it holds.
 SHORTCUT_DEFAULTS = (
     ("copy", _COPY, "CTRL+SHIFT+C"),
     ("paste", _PASTE, "CTRL+SHIFT+V"),
     ("copy_all", _COPY_ALL, "CTRL+SHIFT+A"),
-    ("save", _SAVE, "CTRL+S"),
-    ("find", _FIND, "CTRL+F"),
-    ("find_next", _FIND_NEXT, "CTRL+G"),
-    ("find_back", _FIND_BACK, "CTRL+H"),
+    ("save", _SAVE, "CTRL+SHIFT+S"),
+    ("find", _FIND, "CTRL+SHIFT+L"),
+    ("find_next", _FIND_NEXT, "CTRL+SHIFT+G"),
+    ("find_back", _FIND_BACK, "CTRL+SHIFT+B"),
     ("console_previous", _CONSOLE_PREV, "CTRL+SHIFT+TAB"),
     ("console_next", _CONSOLE_NEXT, "CTRL+TAB"),
-    ("console_close", _CONSOLE_CLOSE, "CTRL+W"),
-    ("console_reconnect", _CONSOLE_RECONNECT, "CTRL+N"),
+    ("console_close", _CONSOLE_CLOSE, "CTRL+SHIFT+W"),
+    ("console_reconnect", _CONSOLE_RECONNECT, "CTRL+SHIFT+R"),
     ("console_window", _CONSOLE_WINDOW, "CTRL+SHIFT+M"),
     ("connect", _CONNECT, "CTRL+RETURN"),
     ("reset", _CLEAR, "CTRL+SHIFT+K"),
@@ -482,17 +496,15 @@ SHORTCUT_DEFAULTS = (
     ("snippets", _SNIPPETS, "CTRL+SHIFT+P"),
 )
 
-# Accelerators GCM registers on the window itself. GTK dispatches these before the
-# focused terminal sees the key, so a custom sequence bound to one of them would never
-# fire -- silently, which is how #3 and #15 presented. A test keeps this in step with
-# what do_startup actually registers.
+# Accelerators GCM registers on the window itself, and a console never gets first. GTK
+# dispatches these before the focused terminal sees the key, so a custom sequence bound to
+# one of them would never fire -- silently, which is how #3 and #15 presented. The rest
+# of what do_startup registers is CONSOLE_FIRST_KEYS, which a console is given before
+# they run (#419), so a custom sequence on one of those fires there. A test keeps the two
+# in step with what do_startup actually registers.
 RESERVED_ACCELERATORS = (
-    "CTRL+Q",
     "CTRL+SHIFT+H",
-    "CTRL+E",
-    "CTRL+R",
     "CTRL+COMMA",
-    "F1",
     "CTRL+SHIFT+U",
     "CTRL+SHIFT+S",
 )
@@ -658,6 +670,10 @@ groups: dict = {}
 # else reads; sync_folders() re-derives it from these after every change.
 folders = FolderTree()
 shortcuts: dict = {}
+# The commands left without a key, which `shortcuts`, keyed by the key, cannot hold: two
+# of them would share the key "" (#419). A save writes each as `<command> =`, and a load
+# reads that line as no key, where no line at all is the command's default.
+unbound_commands: set = set()
 # The snippet library (#240). One with a key is in `shortcuts` too, under its key, which
 # is how the key sends it, as a custom command's did.
 snippets: list = []
@@ -3230,15 +3246,25 @@ class Wmain(GladeComponent):
             self.last_notebook = widget
 
     def on_window_key_press(self, window, event):
-        """Give a remote desktop that has the keyboard every key, GCM's shortcuts too (#234).
+        """Give what has the keyboard a key before GCM's accelerators do, where it needs it.
 
         GCM's shortcuts are accelerators, which GTK runs before the focused widget sees
-        the key, and they take keys a desktop's programs need. Measured with real input,
+        the key, and they take keys a program needs. A remote desktop that has the
+        keyboard gets every key, GCM's shortcuts too (#234): measured with real input,
         Ctrl+W closed a VNC tab and Ctrl+F never reached the desktop. So the desktop gets
-        a key first, and GCM only one gtk-vnc leaves. With the keyboard anywhere else,
-        GCM's shortcuts apply.
+        a key first, and GCM only one gtk-vnc leaves.
+
+        A console gets the fixed accelerators in CONSOLE_FIRST_KEYS first (#419), as a key
+        typed into a console belongs to its program, except GCM's [shortcuts], which
+        `on_terminal_keypress` runs. One the terminal does not handle goes on to the
+        accelerator. With the keyboard anywhere else, GCM's shortcuts apply. A console whose
+        program has ended handles all six and does nothing with them, measured, so none
+        acts there and the menus are the way to each.
         """
-        if GtkVnc is not None and isinstance(window.get_focus(), GtkVnc.Display):
+        focus = window.get_focus()
+        if GtkVnc is not None and isinstance(focus, GtkVnc.Display):
+            return window.propagate_key_event(event)
+        if isinstance(focus, Vte.Terminal) and get_key_name(event) in CONSOLE_FIRST_KEYS:
             return window.propagate_key_event(event)
         return False
 
@@ -4746,11 +4772,29 @@ class Wmain(GladeComponent):
                 return True
         return False
 
-    def add_shortcut(self, cp, scuts, command, name, default):
+    def add_shortcut(
+        self,
+        cp: configparser.RawConfigParser,
+        scuts: dict,
+        command: str,
+        name: list[str],
+        default: str,
+        unbound: set[str],
+    ) -> None:
+        """Bind `command`, as `name`, in `scuts` to the key gcm.conf gives it, else to `default`.
+
+        A line with nothing after the `=` gives it no key: it goes in `unbound` instead,
+        for `scuts`, keyed by the key, could not hold two such commands (#419).
+        """
         try:
-            scuts[cp.get("shortcuts", command)] = name
+            value: str | None = cp.get("shortcuts", command)
         except (configparser.NoSectionError, configparser.NoOptionError):
-            scuts[default] = name
+            value = None
+        key = bound_key(value, default)
+        if key:
+            scuts[key] = name
+        else:
+            unbound.add(command)
 
     def report_unread_options(self):
         """Say which [options] values in gcm.conf could not be read (#173).
@@ -4846,23 +4890,24 @@ class Wmain(GladeComponent):
 
         # setup shortcuts
         scuts: dict = {}
+        unbound: set[str] = set()
         for command, name, default in SHORTCUT_DEFAULTS:
-            self.add_shortcut(cp, scuts, command, name, default)
+            self.add_shortcut(cp, scuts, command, name, default, unbound)
 
         # shortcuts para cambiar consola1-consola9
         for x in range(1, 10):
-            try:
-                scuts[cp.get("shortcuts", f"console_{x}")] = globals()[f"_CONSOLE_{x}"]
-            except (configparser.NoSectionError, configparser.NoOptionError):
-                scuts[f"ALT+{x}"] = globals()[f"_CONSOLE_{x}"]
+            self.add_shortcut(
+                cp, scuts, f"console_{x}", globals()[f"_CONSOLE_{x}"], f"ALT+{x}", unbound
+            )
         # Custom commands are snippets now, taken from [shortcuts] once (#240).
         global snippets
         snippets = snippetlib.load(cp)
         snippets += snippetlib.migrate(cp, snippets)
         snippetlib.drop_repeated_keys(snippets)
         bind_snippet_keys(scuts, snippets)
-        global shortcuts
+        global shortcuts, unbound_commands
         shortcuts = scuts
+        unbound_commands = unbound
 
         global custom_keys
         try:
@@ -5194,6 +5239,11 @@ class Wmain(GladeComponent):
                 cp.set("shortcuts", f"shortcut{i}", s)
                 cp.set("shortcuts", f"command{i}", snippetlib.legacy_encode(shortcuts[s].text))
                 i = i + 1
+        # A command without a key as `<command> =`, which a load reads as no key, where no
+        # line at all is its default (#419).
+        for command in sorted(unbound_commands):
+            if not cp.has_option("shortcuts", command):
+                cp.set("shortcuts", command, "")
         snippetlib.save(cp, snippets)
 
         # main() has made it already; this is for every other way in. A write into a
@@ -8104,9 +8154,15 @@ class Wconfig(GladeComponent):
         column.set_expand(False)
         self.treeCmd.append_column(column)
 
-        commands = [item for item in shortcuts.items() if isinstance(item[1], list)]
-        for key, command in sorted(commands, key=lambda item: item[1][0]):
-            self.treeModel.append(None, [command[0], key])
+        # Each command with its key, and a command without one with an empty key to give it
+        # (#419). Only the commands: a snippet with a key is not one.
+        bound = {
+            command[0]: key
+            for key, command in shortcuts.items()
+            if isinstance(command, list) and command
+        }
+        for command, key in preference_rows(bound, unbound_commands):
+            self.treeModel.append(None, [command, key])
 
         self.build_snippets_page()
 
@@ -8512,16 +8568,16 @@ class Wconfig(GladeComponent):
         else:
             conf.FONT = ""
 
-        # Guardar shortcuts
-        scuts: dict = {}
-        for x in self.treeModel:
-            if x[0] != "" and x[1] != "":
-                scuts[x[1]] = [x[0]]
+        # Guardar shortcuts. A command left without a key stays without one, and is kept
+        # apart from the rest since `shortcuts` is keyed by the key (#419).
+        keys, unbound = kept_bindings(self.treeModel)
+        scuts: dict = {key: [command] for key, command in keys.items()}
         global snippets
         snippets = self.kept_snippets()
         bind_snippet_keys(scuts, snippets)
-        global shortcuts
+        global shortcuts, unbound_commands
         shortcuts = scuts
+        unbound_commands = unbound
         sync_shortcut_accels()
 
         # Boton donate
@@ -8576,16 +8632,36 @@ class Wconfig(GladeComponent):
     # -- Wconfig.on_btnFont_clicked }
 
     # -- Wconfig.on_treeCommands_key_press_event {
-    def on_treeCommands_key_press_event(self, widget, event, *args):
-        if (
-            self.capture_keys
-            and len(args) == 3
-            and (event.keyval != Gdk.KEY_Return or event.state != 0)
+    def on_treeCommands_key_press_event(
+        self, widget: Gtk.Entry, event: Gdk.EventKey, *args: object
+    ) -> bool:
+        """Take the key pressed as the command's key, as `captured_key` decides (#419).
+
+        Backspace or Delete clears it, where it bound Backspace. True for every key it takes,
+        so that the entry does not act on it as well: Delete removed the D of the name it
+        had just written, measured. Enter, Tab and Escape, with nothing held, are the cell
+        editor's own to commit, move on and cancel, so they are left to it.
+        """
+        if not (self.capture_keys and len(args) == 3):
+            return False
+        held = event.state & (
+            Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.MOD1_MASK | Gdk.ModifierType.SUPER_MASK
+        )
+        name = Gdk.keyval_name(event.keyval) or ""
+        if not held and name in (
+            "Return",
+            "KP_Enter",
+            "ISO_Enter",
+            "Tab",
+            "ISO_Left_Tab",
+            "Escape",
         ):
-            model, rownum, colnum = args
-            key = get_key_name(event)
-            if key not in ["RETURN", "KP_ENTER"]:
-                widget.set_text(get_key_name(event))
+            return False
+        types_text = Gdk.keyval_to_unicode(event.keyval) != 0
+        key = captured_key(name, get_key_name(event), types_text, bool(held))
+        if key is not None:
+            widget.set_text(key)
+        return True
 
     # -- Wconfig.on_treeCommands_key_press_event }
 

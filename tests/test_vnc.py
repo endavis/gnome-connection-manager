@@ -121,12 +121,15 @@ def open_desk(server, password=PASSWORD, user=""):
 def ended(label):
     return lambda: not label.is_active
 
-def press(keyval, window=None):
+def press(keyval, window=None, shift=False):
     """Ctrl and a key, pressed and let go, through a window as a key typed is: the main
-    window, unless another is given."""
+    window, unless another is given. With Shift held too, `keyval` is the capital, as GDK
+    gives it: Gdk.KEY_W."""
     keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
     keyboard = Gdk.Display.get_default().get_default_seat().get_keyboard()
     held = Gdk.ModifierType.CONTROL_MASK
+    if shift:
+        held |= Gdk.ModifierType.SHIFT_MASK
     for kind, value, state in ((Gdk.EventType.KEY_PRESS, Gdk.KEY_Control_L, 0),
                                (Gdk.EventType.KEY_PRESS, keyval, held),
                                (Gdk.EventType.KEY_RELEASE, keyval, held),
@@ -290,14 +293,14 @@ elif scenario == "the-desktop-gets-every-key-while-it-has-the-keyboard":
     page, label = open_desk(server)
     assert until(lambda: page.initialized), page.status.get_text()
     assert w.wMain.get_focus() is page.display
-    # Ctrl+W is GCM's Close console and Ctrl+Tab its Next console. With the keyboard in
-    # the desktop, the desktop gets both.
+    # Ctrl+Shift+W is GCM's Close console and Ctrl+Tab its Next console. With the keyboard
+    # in the desktop, the desktop gets both.
     showing = w.nbConsole.get_current_page()
-    press(Gdk.KEY_w)
+    press(Gdk.KEY_W, shift=True)
     press(Gdk.KEY_Tab)
     assert until(lambda: "Tab control" in remote()), remote()
-    assert "w control" in remote(), remote()
-    assert page.get_parent() is w.nbConsole, "Ctrl+W closed the tab instead"
+    assert "W control" in remote(), remote()
+    assert page.get_parent() is w.nbConsole, "Ctrl+Shift+W closed the tab instead"
     assert w.nbConsole.get_current_page() == showing, "Ctrl+Tab switched tabs instead"
     # With the keyboard on the notebook, as clicking a tab's label leaves it, they are
     # GCM's. The notebook has a Ctrl+Tab of its own, which GCM's comes before.
@@ -308,10 +311,10 @@ elif scenario == "the-desktop-gets-every-key-while-it-has-the-keyboard":
     w.nbConsole.set_current_page(w.nbConsole.page_num(page))
     w.nbConsole.grab_focus()
     pump(0.2)
-    press(Gdk.KEY_w)
-    assert page.get_parent() is None, "Ctrl+W left the tab open"
+    press(Gdk.KEY_W, shift=True)
+    assert page.get_parent() is None, "Ctrl+Shift+W left the tab open"
     pump(0.5)
-    assert remote().count("w control") == 1 and remote().count("Tab control") == 1, remote()
+    assert remote().count("W control") == 1 and remote().count("Tab control") == 1, remote()
     # Once the session has ended gtk-vnc leaves the keys, and they are GCM's again.
     page, label = open_desk(server)
     assert until(lambda: page.initialized), page.status.get_text()
@@ -319,14 +322,14 @@ elif scenario == "the-desktop-gets-every-key-while-it-has-the-keyboard":
     server.stop()
     assert until(ended(label)), page.status.get_text()
     assert w.wMain.get_focus() is page.display
-    press(Gdk.KEY_w)
-    assert page.get_parent() is None, "Ctrl+W did nothing in a tab that had ended"
-    # Only a desktop gets a key first: in a terminal, Ctrl+W is still GCM's.
+    press(Gdk.KEY_W, shift=True)
+    assert page.get_parent() is None, "Ctrl+Shift+W did nothing in a tab that had ended"
+    # Only a desktop gets a key first: in a terminal, Ctrl+Shift+W is still GCM's.
     shell = w.nbConsole.get_nth_page(w.nbConsole.get_n_pages() - 1)
     w.wMain.set_focus(app.page_terminal(shell))
     pump(0.2)
-    press(Gdk.KEY_w)
-    assert shell.get_parent() is None, "Ctrl+W in a terminal left its tab open"
+    press(Gdk.KEY_W, shift=True)
+    assert shell.get_parent() is None, "Ctrl+Shift+W in a terminal left its tab open"
 elif scenario == "the-desktop-moves-with-its-tab":
     server = Server()
     w.addTab(w.nbConsole, app.Host("", "shell"))
@@ -358,7 +361,7 @@ elif scenario == "the-desktop-moves-to-a-window-of-its-own":
     screen = dict(os.environ, DISPLAY=server.display)
     subprocess.run(["xsetroot", "-solid", "#00ff00"], env=screen, check=True)
     assert until(lambda: on_screen(page.display) == (0, 255, 0)), on_screen(page.display)
-    # With the keyboard in the desktop there, the desktop gets Ctrl+W, not GCM.
+    # With the keyboard in the desktop there, the desktop gets Ctrl+Shift+W, not GCM.
     helper = os.path.join(os.getcwd(), "tests", "helpers", "remote_key_logger.py")
     logger = subprocess.Popen([sys.executable, helper], env=screen, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, text=True, preexec_fn=dies_with_us)
@@ -371,9 +374,9 @@ elif scenario == "the-desktop-moves-to-a-window-of-its-own":
         return typed
 
     assert until(lambda: window.get_focus() is page.display), window.get_focus()
-    press(Gdk.KEY_w, window)
-    assert until(lambda: "w control" in remote()), remote()
-    assert w.console_window_of(page.get_parent()) is window, "Ctrl+W closed the tab instead"
+    press(Gdk.KEY_W, window, shift=True)
+    assert until(lambda: "W control" in remote()), remote()
+    assert w.console_window_of(page.get_parent()) is window, "Ctrl+Shift+W closed the tab instead"
     logger.terminate()
     logger.wait()
     # And back, still connected.

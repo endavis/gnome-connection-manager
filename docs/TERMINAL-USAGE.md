@@ -572,9 +572,10 @@ in it. It has no splits, so Split is not offered there. Its title is its tab's, 
 not **Dynamic title** is set, since it has nothing else to show.
 
 A shortcut pressed in a console window acts on its tab, never on the main window's.
-`Ctrl+F` opens a search box at the top of the window, for its own tabs, and `F11` makes it
-fill the screen. A tab there that [needs your attention](#when-a-tab-needs-your-attention)
-flags this window in the taskbar, not the main one.
+**Find** (`Ctrl+Shift+L` by default) opens a search box at the top of the window, for its
+own tabs, and `F11` makes it fill the screen. A tab there that [needs your
+attention](#when-a-tab-needs-your-attention) flags this window in the taskbar, not the main
+one.
 
 To bring a console back:
 
@@ -589,9 +590,10 @@ A console window closes itself once its last tab has left, however it left.
 The [open-console list](#finding-a-console-among-many) shows consoles in console windows
 too, under the headings Window 1, Window 2 and so on. The
 [cluster window](#typing-into-several-consoles-at-once) lists them, and Preferences applies
-to them as it does to the rest. Quitting GCM, by `Ctrl+Q` or by closing the main window,
-ends every session in every window. Closing the main window asks first when **Confirm on
-exit** is set, and counts the consoles in every window.
+to them as it does to the rest. Quitting GCM, by **File → Quit**, by `Ctrl+Q` with the
+keyboard outside a console, or by closing the main window, ends every session in every
+window. Closing the main window asks first when **Confirm on exit** is set, and counts the
+consoles in every window.
 
 ## Typing into several consoles at once
 
@@ -817,21 +819,27 @@ only, for the reason described above.
 ## Keyboard shortcuts
 
 Every shortcut below is user-configurable under `[shortcuts]` in `gcm.conf`, or
-through the shortcut editor in Preferences.
+through the shortcut editor on the **Shortcuts** tab of Preferences.
+
+A key typed into a console belongs to its program, except the keys below. With these
+defaults GCM takes no Ctrl+letter key from the program in a console: `Ctrl+S` and `Ctrl+F`
+reach it, and so do `Ctrl+E`, `Ctrl+R` and `Ctrl+Q`, which are GCM's own commands, acting
+when the keyboard is anywhere else (see [Terminal shortcuts versus application
+accelerators](#terminal-shortcuts-versus-application-accelerators)).
 
 | Default | Command | Also in a menu |
 |---|---|---|
 | `Ctrl+Shift+C` | `copy` | yes |
 | `Ctrl+Shift+V` | `paste` | yes |
 | `Ctrl+Shift+A` | `copy_all` | yes |
-| `Ctrl+S` | `save` | no |
-| `Ctrl+F` | `find` | yes |
-| `Ctrl+G` | `find_next` | yes |
-| `Ctrl+H` | `find_back` | yes |
+| `Ctrl+Shift+S` | `save` | no |
+| `Ctrl+Shift+L` | `find` | yes |
+| `Ctrl+Shift+G` | `find_next` | yes |
+| `Ctrl+Shift+B` | `find_back` | yes |
 | `Ctrl+Tab` | `console_next` | yes |
 | `Ctrl+Shift+Tab` | `console_previous` | yes |
-| `Ctrl+W` | `console_close` | yes |
-| `Ctrl+N` | `console_reconnect` | yes |
+| `Ctrl+Shift+W` | `console_close` | yes |
+| `Ctrl+Shift+R` | `console_reconnect` | yes |
 | `Ctrl+Shift+M` | `console_window` | yes |
 | `Ctrl+Return` | `connect` | yes |
 | `Ctrl+Shift+K` | `reset` | yes |
@@ -850,7 +858,7 @@ right:
 
 ```ini
 [shortcuts]
-copy_all = CTRL+SHIFT+B
+copy_all = CTRL+SHIFT+Y
 ```
 
 GCM writes `[shortcuts]` from what it holds in memory every time it saves, and closing the
@@ -861,6 +869,68 @@ If a shortcut appears to do nothing, check whether your desktop or OS claims tha
 combination first — a global hotkey is consumed before GCM ever sees the key, and
 `Ctrl+Shift+<letter>` combinations are a common source of this. Rebinding to a free
 combination is the fix.
+
+### Keys that moved, and a command with no key
+
+Six commands had Ctrl+letter keys that a shell reads, and took them from the program in
+the console: `Ctrl+S` opened Save as, and never reached it. They are on Ctrl+Shift now,
+where a program cannot tell the key from the Ctrl+letter one, so it loses nothing it would
+have had:
+
+| Command | Was | Is now |
+|---|---|---|
+| `save` | `Ctrl+S` | `Ctrl+Shift+S` |
+| `find` | `Ctrl+F` | `Ctrl+Shift+L` |
+| `find_next` | `Ctrl+G` | `Ctrl+Shift+G` |
+| `find_back` | `Ctrl+H` | `Ctrl+Shift+B` |
+| `console_close` | `Ctrl+W` | `Ctrl+Shift+W` |
+| `console_reconnect` | `Ctrl+N` | `Ctrl+Shift+R` |
+
+Only a `gcm.conf` with no line for a command takes its new key. GCM writes the key of every
+command each time it saves, so a configuration it has saved keeps the keys it has, and
+nothing is moved for you. To take the new keys, set each on the **Shortcuts** tab of
+Preferences, or give `[shortcuts]` these lines, with GCM closed:
+
+```ini
+[shortcuts]
+save = CTRL+SHIFT+S
+find = CTRL+SHIFT+L
+find_next = CTRL+SHIFT+G
+find_back = CTRL+SHIFT+B
+console_close = CTRL+SHIFT+W
+console_reconnect = CTRL+SHIFT+R
+```
+
+To keep the old keys in a `gcm.conf` that does not name them, as one written by hand may
+not, name them the same way:
+
+```ini
+[shortcuts]
+save = CTRL+S
+find = CTRL+F
+find_next = CTRL+G
+find_back = CTRL+H
+console_close = CTRL+W
+console_reconnect = CTRL+N
+```
+
+A command given one of those takes the key from the program in a console again.
+
+To leave a command without a key, edit its **Shortcut** on the Shortcuts tab of
+Preferences: press `Backspace` or `Delete`, then `Enter`, and choose OK. A key that types a
+character, such as a letter, needs Ctrl, Alt or Super with it there, as for a [snippet's
+key](#snippets), since bound alone it would be taken from every console. `Enter`, `Tab` and
+`Escape` keep their usual jobs there. The command is written with nothing after the `=`:
+
+```ini
+[shortcuts]
+save =
+```
+
+A line with nothing after the `=` leaves the command without a key, and stays so across a
+restart. A command with no line at all takes its default, so the line is how a command
+stays without one. `Ctrl+Shift+S` is also the fixed accelerator of **File → Save Buffer**,
+so it opens Save Buffer whether `save` has that key, another, or none.
 
 ### Sending a custom sequence for a key
 
@@ -887,10 +957,14 @@ the same way, and comments are dropped.
 Which sequence an application wants varies, so there is no useful default — `\n` is the
 common choice for "newline rather than submit", but check what yours expects.
 
-A combination already used by a shortcut or by an application accelerator is **refused**,
-with a line in the log saying so. Those keys never reach the terminal, so a binding on one
-would appear to do nothing. A shortcut also wins if you later rebind one onto a key that
-had a custom sequence.
+A combination already used by a shortcut, or by one of the four [application accelerators
+that act wherever the keyboard
+is](#terminal-shortcuts-versus-application-accelerators), is **refused**, with a line in
+the log saying so. Those keys never reach the terminal, so a binding on one would appear to
+do nothing. A sequence on one of the six keys a console is given first, `Ctrl+Q` and the
+rest, is sent in a console, and the key acts as it does everywhere else with the keyboard
+outside one. A shortcut also wins if you later rebind one onto a key that had a custom
+sequence.
 
 ### Terminal shortcuts versus application accelerators
 
@@ -900,22 +974,38 @@ value. Rebinding a command therefore moves its menu accelerator too, and the two
 disagree.
 
 A few application-level commands carry fixed accelerators that are not part of
-`[shortcuts]`, because they are not terminal commands:
+`[shortcuts]`, because they are not terminal commands. Four of them act wherever the
+keyboard is:
 
 | Accelerator | Command |
 |---|---|
-| `Ctrl+Q` | Quit |
-| `Ctrl+R` | Refresh host list |
-| `Ctrl+E` | Edit host |
 | `Ctrl+Shift+H` | Add host |
 | `Ctrl+,` | Preferences |
 | `Ctrl+Shift+U` | Cluster mode |
 | `Ctrl+Shift+S` | Save buffer |
-| `F1` | About |
 
-Avoid rebinding a terminal shortcut onto one of these. Window accelerators are dispatched
-before the focused terminal sees the key, so the application command would win and the
-terminal binding would never fire.
+The other six are keys a program reads. With the keyboard in a console they go to its
+program, and the command waits for the keyboard to be somewhere else, in the server tree
+or in the search box. A menu reaches each from anywhere:
+
+| Accelerator | Command | Menu |
+|---|---|---|
+| `Ctrl+Q` | Quit | **File → Quit** |
+| `Ctrl+R` | Refresh host list | **Servers → Refresh** |
+| `Ctrl+E` | Edit host | **Servers → Edit Host** |
+| `F1` | About | **Help → About** |
+| `F9` | Show or hide the server panel | **View → Show Panel** |
+| `Shift+F9` | Show or hide the toolbar | **View → Show Toolbar** |
+
+So `Ctrl+Q` quits GCM with the keyboard in the server tree, not in a console, where it is
+the program's: use **File → Quit** there. The same holds for a console whose program has
+ended, which takes these keys and has no program to give them to. With the panel hidden and
+the keyboard in a console, `F9` no longer shows it again: **View → Show Panel** does.
+
+Avoid rebinding a terminal shortcut onto one of the first four. Window accelerators are
+dispatched before the focused terminal sees the key, so the application command would win
+and the terminal binding would never fire. Onto one of the six, the terminal shortcut acts
+with the keyboard in a console, and the application command with it anywhere else.
 
 ## Snippets
 

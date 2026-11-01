@@ -462,3 +462,204 @@ def test_of_two_snippets_with_one_key_the_later_keeps_it(app_module):
     first, second = kept(app_module, library)
 
     assert (first.key, second.key) == ("", "F8")
+
+
+# -- the Shortcut column: a key to clear, and a key cleared stays cleared (#419) -----------
+
+
+def click_ok(app_module, monkeypatch, rows):
+    """Press OK in Preferences with `rows` in its list of commands, and nothing else."""
+    wconfig, _destroy_stub = make_wconfig(app_module)
+    wconfig.tblGeneral = []
+    wconfig.treeModel = rows
+    wmain_stub = WmainStub(DonateButton())
+    wmain_stub.conf = app_module.conf
+    monkeypatch.setattr(app_module, "wMain", wmain_stub, raising=False)
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "unbound_commands", set())
+    monkeypatch.setattr(app_module, "snippets", [])
+    wconfig.library = []
+
+    wconfig.on_okbutton1_clicked(None)
+
+
+def test_ok_keeps_a_command_without_a_key_without_one(monkeypatch, app_module):
+    """The row is empty, where the row used to be dropped and the command came back on its
+    default at the next start: OK now keeps it apart, since `shortcuts` is keyed by key."""
+    rows = [["save", ""], ["find", ""], ["copy", "CTRL+SHIFT+C"]]
+
+    click_ok(app_module, monkeypatch, rows)
+
+    assert app_module.shortcuts == {"CTRL+SHIFT+C": ["copy"]}
+    assert app_module.unbound_commands == {"save", "find"}
+
+
+def test_ok_with_every_command_bound_leaves_none_unbound(monkeypatch, app_module):
+    click_ok(app_module, monkeypatch, [["copy", "CTRL+SHIFT+C"], ["paste", "CTRL+SHIFT+V"]])
+
+    assert app_module.shortcuts == {"CTRL+SHIFT+C": ["copy"], "CTRL+SHIFT+V": ["paste"]}
+    assert app_module.unbound_commands == set()
+
+
+def test_ok_gives_a_command_without_a_key_no_accelerator(monkeypatch, app_module):
+    """`sync_shortcut_accels` gives [] to a command that `shortcuts` does not hold."""
+    applied = {}
+
+    class ApplicationStub:
+        def set_accels_for_action(self, action, accels):
+            applied[action] = accels
+
+    monkeypatch.setattr(
+        app_module.Gtk.Application, "get_default", lambda: ApplicationStub(), raising=False
+    )
+    monkeypatch.setattr(app_module, "shortcut_to_accel", lambda key: f"<{key}>" if key else None)
+
+    click_ok(app_module, monkeypatch, [["find", ""], ["copy", "CTRL+SHIFT+C"]])
+
+    assert applied["app.find"] == []
+    assert applied["app.copy"] == ["<CTRL+SHIFT+C>"]
+
+
+class FieldStub:
+    """The entry of the cell editor, which has only what the handler asks of it."""
+
+    def __init__(self, text: str = "OLD"):
+        self.text = text
+
+    def set_text(self, text: str) -> None:
+        self.text = text
+
+
+CTRL, SHIFT, ALT, SUPER = 1, 2, 4, 8
+
+
+def press_in_column(app_module, monkeypatch, name, state=0, types_text=True, capturing=True):
+    """Press the key GDK calls `name` in the Shortcut column's editor.
+
+    Returns what the handler answered, and the entry. GDK's key names are the fakes' keyvals,
+    so that `get_key_name` is the real one; `types_text` is what GDK says of the key.
+    """
+    monkeypatch.setattr(app_module.Gdk, "keyval_name", lambda keyval: keyval, raising=False)
+    monkeypatch.setattr(
+        app_module.Gdk, "keyval_to_unicode", lambda _keyval: 1 if types_text else 0, raising=False
+    )
+    wconfig = object.__new__(app_module.Wconfig)
+    wconfig.capture_keys = capturing
+    entry = FieldStub()
+    event = types.SimpleNamespace(keyval=name, state=state)
+
+    answered = wconfig.on_treeCommands_key_press_event(entry, event, "model", "row", 1)
+
+    return answered, entry
+
+
+@pytest.mark.parametrize("name", ["BackSpace", "Delete"])
+def test_backspace_or_delete_clears_the_key_and_the_entry_does_not_act(
+    app_module, monkeypatch, name
+):
+    """BackSpace bound BackSpace, and Delete left 'ELETE', measured (#419). True keeps the
+    entry from acting on the key after the handler has."""
+    answered, entry = press_in_column(app_module, monkeypatch, name)
+
+    assert entry.text == ""
+    assert answered is True
+
+
+@pytest.mark.parametrize(
+    ("name", "state", "types_text", "bound"),
+    [
+        ("s", CTRL, True, "CTRL+S"),
+        ("s", CTRL | SHIFT, True, "CTRL+SHIFT+S"),
+        ("F8", 0, False, "F8"),
+        ("r", ALT, True, "ALT+R"),
+        # Enter and Tab bind with a key held, as the default keys Ctrl+Return and Ctrl+Tab do
+        ("Return", CTRL, True, "CTRL+RETURN"),
+        ("Tab", CTRL, True, "CTRL+TAB"),
+        ("BackSpace", CTRL, True, "CTRL+BACKSPACE"),
+    ],
+)
+def test_a_key_pressed_is_named_as_the_key_of_the_command(
+    app_module, monkeypatch, name, state, types_text, bound
+):
+    answered, entry = press_in_column(app_module, monkeypatch, name, state, types_text)
+
+    assert entry.text == bound
+    assert answered is True
+
+
+@pytest.mark.parametrize(
+    ("name", "state"),
+    [
+        ("a", 0),  # a letter would be taken from every console
+        ("A", SHIFT),
+        ("space", 0),
+        ("Shift_L", 0),  # a modifier waits for the key it modifies
+        ("Control_R", CTRL),
+        ("Super_L", SUPER),
+    ],
+)
+def test_a_key_that_binds_nothing_leaves_the_text_and_the_entry_does_not_act(
+    app_module, monkeypatch, name, state
+):
+    """Handed on, the entry typed it after the name the handler had written."""
+    answered, entry = press_in_column(app_module, monkeypatch, name, state)
+
+    assert entry.text == "OLD"
+    assert answered is True
+
+
+@pytest.mark.parametrize(
+    "name", ["Return", "KP_Enter", "ISO_Enter", "Tab", "ISO_Left_Tab", "Escape"]
+)
+def test_enter_tab_and_escape_are_left_to_the_cell_editor(app_module, monkeypatch, name):
+    """Enter commits, Tab moves on and commits, and Escape cancels: they are the editor's."""
+    answered, entry = press_in_column(app_module, monkeypatch, name)
+
+    assert entry.text == "OLD"
+    assert answered is False
+
+
+def test_a_key_is_ignored_unless_the_editor_is_capturing_keys(app_module, monkeypatch):
+    answered, entry = press_in_column(
+        app_module, monkeypatch, "F8", types_text=False, capturing=False
+    )
+
+    assert entry.text == "OLD"
+    assert answered is False
+
+
+def test_a_call_without_the_editor_s_three_arguments_captures_nothing(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gdk, "keyval_name", lambda keyval: keyval, raising=False)
+    wconfig = object.__new__(app_module.Wconfig)
+    wconfig.capture_keys = True
+    entry = FieldStub()
+
+    answered = wconfig.on_treeCommands_key_press_event(entry, types.SimpleNamespace(keyval="F8"))
+
+    assert entry.text == "OLD"
+    assert answered is False
+
+
+def test_the_key_names_the_shortcut_column_goes_by_are_gdks_own():
+    """The handler compares GDK's names, which the fakes above cannot vouch for."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gdk", "3.0")
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gdk, Gtk
+
+    named = {
+        "Return": Gdk.KEY_Return,
+        "KP_Enter": Gdk.KEY_KP_Enter,
+        "ISO_Enter": Gdk.KEY_ISO_Enter,
+        "Tab": Gdk.KEY_Tab,
+        "ISO_Left_Tab": Gdk.KEY_ISO_Left_Tab,
+        "Escape": Gdk.KEY_Escape,
+        "BackSpace": Gdk.KEY_BackSpace,
+        "Delete": Gdk.KEY_Delete,
+    }
+    for name, keyval in named.items():
+        assert Gdk.keyval_name(keyval) == name
+    assert Gdk.keyval_to_unicode(Gdk.KEY_a) != 0, "a letter types text"
+    assert Gdk.keyval_to_unicode(Gdk.KEY_F8) == 0, "a function key does not"
+    assert hasattr(Gtk.Entry, "set_text"), "the fake entry offers set_text"
+    assert hasattr(FieldStub, "set_text")

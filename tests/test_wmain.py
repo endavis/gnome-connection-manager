@@ -6400,3 +6400,135 @@ def test_folder_fakes_offer_only_what_gtk_has():
     for name in ("get_target", "set", "get_data"):
         assert hasattr(DragData, name) and hasattr(Gtk.SelectionData, name), name
     assert hasattr(Gtk.TreePath, "copy")
+
+
+# -- a console is given six of the application's keys before they run (#419) -------------
+
+
+class KeyWindow:
+    """The window a key press reaches: what has the keyboard, and what is propagated to it."""
+
+    def __init__(self, focus, handled=True):
+        self.focus = focus
+        self.handled = handled
+        self.propagated = []
+
+    def get_focus(self):
+        return self.focus
+
+    def propagate_key_event(self, event):
+        self.propagated.append(event)
+        return self.handled
+
+
+def press_in_window(app_module, monkeypatch, focus, name, handled=True):
+    """Press the key GCM names `name` with `focus` having the keyboard.
+
+    Returns what `on_window_key_press` answered, and the window it was given.
+    """
+    monkeypatch.setattr(app_module, "get_key_name", lambda _event: name)
+    window = KeyWindow(focus, handled)
+    event = object()
+    answered = object.__new__(app_module.Wmain).on_window_key_press(window, event)
+    window.event = event
+    return answered, window
+
+
+@pytest.mark.parametrize("name", sorted(shortcuts.CONSOLE_FIRST_KEYS))
+def test_a_console_is_given_a_fixed_accelerators_key_before_the_accelerator(
+    app_module, monkeypatch, name
+):
+    """GTK runs an accelerator before the focused widget sees the key, which took Ctrl+E,
+    Ctrl+R and Ctrl+Q from the program in a console. True ends the key press there, so the
+    accelerator never runs."""
+    terminal = app_module.Vte.Terminal()
+
+    answered, window = press_in_window(app_module, monkeypatch, terminal, name)
+
+    assert answered is True
+    assert window.propagated == [window.event]
+
+
+def test_a_key_the_console_does_not_handle_goes_on_to_the_accelerator(app_module, monkeypatch):
+    """False lets GTK carry on, to the accelerator, as it does for a VNC desktop."""
+    terminal = app_module.Vte.Terminal()
+
+    answered, window = press_in_window(app_module, monkeypatch, terminal, "CTRL+Q", handled=False)
+
+    assert answered is False
+    assert len(window.propagated) == 1
+
+
+@pytest.mark.parametrize(
+    "name", ["CTRL+SHIFT+S", "CTRL+SHIFT+H", "CTRL+SHIFT+U", "CTRL+COMMA", "CTRL+W", "F5", "A"]
+)
+def test_any_other_key_in_a_console_is_the_accelerators_to_run_first(app_module, monkeypatch, name):
+    """The rest are GCM's [shortcuts], which `on_terminal_keypress` runs when the
+    accelerator has not, and the fixed accelerators a console never gets first."""
+    terminal = app_module.Vte.Terminal()
+
+    answered, window = press_in_window(app_module, monkeypatch, terminal, name)
+
+    assert answered is False
+    assert window.propagated == []
+
+
+@pytest.mark.parametrize("name", sorted(shortcuts.CONSOLE_FIRST_KEYS))
+def test_with_the_keyboard_outside_a_console_the_accelerator_acts(app_module, monkeypatch, name):
+    """The server tree, the search box and a tab without a terminal: Ctrl+E edits a host
+    from the tree, and Ctrl+Q quits."""
+    answered, window = press_in_window(app_module, monkeypatch, object(), name)
+
+    assert answered is False
+    assert window.propagated == []
+
+
+def test_the_key_is_named_only_for_a_console(app_module, monkeypatch):
+    """Anything else with the keyboard costs no name: the handler runs for every key."""
+
+    def never_named(_event):
+        raise AssertionError("named a key with the keyboard outside a console")
+
+    monkeypatch.setattr(app_module, "get_key_name", never_named)
+    window = KeyWindow(object())
+
+    answered = object.__new__(app_module.Wmain).on_window_key_press(window, object())
+
+    assert answered is False
+
+
+def test_a_vnc_desktop_with_the_keyboard_is_given_every_key(app_module, monkeypatch):
+    """Unchanged (#234): the desktop gets GCM's shortcuts too, not only the six."""
+
+    class Display:
+        pass
+
+    monkeypatch.setattr(app_module, "GtkVnc", types.SimpleNamespace(Display=Display))
+    for name in ("CTRL+W", "CTRL+Q", "CTRL+SHIFT+S", "A"):
+        answered, window = press_in_window(app_module, monkeypatch, Display(), name)
+
+        assert answered is True, name
+        assert window.propagated == [window.event]
+
+
+def test_without_gtk_vnc_only_a_console_is_given_a_key_first(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "GtkVnc", None)
+
+    answered, window = press_in_window(app_module, monkeypatch, object(), "CTRL+W")
+
+    assert answered is False
+    assert window.propagated == []
+
+
+def test_the_key_window_fake_offers_only_what_gtk_has():
+    """The window above stands in for a real one; a method the real class lacks would pass
+    here and fail in the application (#30, #41)."""
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Vte", "2.91")
+    from gi.repository import Gtk, Vte
+
+    for name in ("get_focus", "propagate_key_event"):
+        assert hasattr(KeyWindow, name) and hasattr(Gtk.Window, name), name
+    # What a console's focus is: GCM adds nothing to the class, it uses Vte's own.
+    assert issubclass(Vte.Terminal, Gtk.Widget)
