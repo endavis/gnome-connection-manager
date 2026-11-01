@@ -43,55 +43,11 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   (#267), over SFTP or an sshfs mount the Mounted tab lists (#269), with no password in an
   argument. Notes: its docstrings, and those of `app.py`'s `mount_files` and `list_mounts`.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
-  (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
-  which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
-  host's folder, so everything that reads the path string is unchanged -- which only holds
-  while every folder has a distinct path, the reason `repair` forbids `/` in a name and
-  merges same-named siblings. `FolderTree.bind` files each host: its folder id wins when
-  it resolves, and otherwise its `group` is resolved, which is the whole migration.
-  `app.py` runs it through `sync_folders`, called from `updateTree` and `writeConfig`, so
-  the code that edits `groups` by path needed no change. A folder outlives its last host.
-  A folder's `tab_color` colours the tabs of the hosts below it (#350), `tab-color` in its
-  record only when set, which v2.1.1 reads and drops at its save, measured; `repair`'s
-  merge of two folders of one name keeps the colour of the one merged away where the one
-  kept has none.
-  Edits go through `add`, `rename`, `move` and `remove`, which raise `FolderError` rather
-  than break a rule; `check_move` asks without moving, since a drag asks on every motion.
-  In the tree widget a folder row is one with no host in it (`is_folder_row`), not one
-  with children -- an empty folder has none. Collapsed folders are saved by id in
-  `collapsed-folder-ids`, beside the positional `collapsed-folders` older builds read
-  unguarded: `Gtk.TreePath.new_from_string` raises `TypeError` on an id.
-  Order is a `position` on folders and hosts alike, one sequence per folder with
-  subfolders and hosts mixed. It is kept only while it differs from name order
-  (subfolders, then hosts) -- `number` strips it otherwise, and `sync_folders` runs that
-  on every folder -- so a config nobody arranges carries no positions at all.
-  `FolderTree.contents` gives each folder's children as drawn; `place` files an item
-  beside a sibling, or into a folder: at the end of an arranged one, by name otherwise.
+  (ADR-0002). `host.group` is a path derived from the host's folder, true only while no two
+  folders share a path. Notes: its docstrings, and `app.py`'s `sync_folders`.
 - `src/gnome_connection_manager/utils/configfile.py` – how gcm.conf and an imported export
-  are read, by `loadConfig`, the import dialog, and `require_readable_config`, which
-  `main()` runs before the window exists (#161). A hand merge of two copies repeats
-  sections -- both number their hosts from `[host 1]` -- and strict configparser refuses
-  that. `read_config` keeps a repeated host or folder section as a record of its own,
-  drops one that is a verbatim copy, and merges a repeated singleton section. A folder id
-  that named two records comes back in `ambiguous_folders`, and `refile_ambiguous_hosts`
-  files the hosts naming it by their `group` path instead. Anything else it cannot read
-  raises `UnreadableError`, and GCM refuses to start rather than start empty. Do not go
-  back to `cp.read`: it skips a file it cannot open, so GCM came up with no hosts and
-  wrote that over the file when the window closed.
-  A save starts from the file too (#163). `carried_config` in `app.py` reads it as it is
-  on disk, and `unwritten` strips what the save writes: `WRITTEN_SECTIONS`, and host and
-  folder records by `RECORD_PREFIXES`. What is left survives -- `[keys]`, which people
-  write by hand, and any section GCM does not know. A section added to `writeConfig`
-  belongs in `WRITTEN_SECTIONS`, or the next save finds it already there and fails; a new
-  kind of record belongs in `RECORD_PREFIXES`, or a deleted one comes back. A file that
-  cannot be read at save time is kept aside under `aside_path`, never written over. And
-  never read `gcm.conf.tmp`: it is the save's own output, and one left behind by an
-  interrupted save made every later save fail.
-  A single value that cannot be read comes back from `read_option` as an `Unread` beside
-  the default (#173). `loadConfig` keeps those from `[options]` in `unread_options`,
-  `writeConfig` writes their text back through `put_back_unread` while each setting still
-  holds that default, and `report_unread_options` lists them once the window is up. Not
-  `[window]`: that is GCM's record of its own window, and a save writes the window as it is.
+  are read, never by `cp.read` (#161). A section a save writes goes in `WRITTEN_SECTIONS`,
+  a new kind of record in `RECORD_PREFIXES` (#163). Notes: its docstrings and comments.
 - `src/gnome_connection_manager/utils/configpaths.py` – which directory holds `gcm.conf` and
   `.gcm.key` (#192). `resolve` takes `$XDG_CONFIG_HOME/gcm` if it is there, else `~/.gcm` if
   it is there, else `$XDG_CONFIG_HOME/gcm` for the caller to create; `config_home` supplies
