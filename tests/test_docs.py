@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import configparser
 import fnmatch
+import functools
 import inspect
 import logging
 import re
@@ -24,6 +25,8 @@ DOC = Path(__file__).resolve().parents[1] / "docs" / "TERMINAL-USAGE.md"
 GUIDES = (DOC, DOC.with_name("HOSTS-AND-FOLDERS.md"))
 # Every guide for GCM's users, each of which the README has to link.
 USER_GUIDES = (*GUIDES, DOC.with_name("WSL-SETUP.md"))
+# The design notes moved out of AGENTS.md (#430), held to the checks AGENTS.md is held to.
+DESIGN_NOTES = tuple(sorted(DOC.with_name("design").glob("*.md")))
 
 # Settings Preferences draws a control for that no guide names, and why not. Every one of
 # these predates the documentation this list was written with (#193); nothing added since
@@ -623,6 +626,7 @@ _MARKDOWN_DOCS = [
     "docs/PROJECT_STRUCTURE.md",
     "AGENTS.md",
     "README.md",
+    *(f"docs/design/{page.name}" for page in DESIGN_NOTES),
 ]
 
 
@@ -759,10 +763,12 @@ def test_the_toc_lists_our_guides_under_their_own_heading():
 
 AGENTS = Path(__file__).resolve().parents[1] / "AGENTS.md"
 REPO = AGENTS.parent
+# AGENTS.md and the pages its notes moved to (#430), which the checks below read alike.
+AGENT_NOTES = (AGENTS, *DESIGN_NOTES)
 
 
-def _agents_references():
-    return sorted(set(re.findall(r"`([^`]+)`", AGENTS.read_text())))
+def _references(notes: Path) -> list[str]:
+    return sorted(set(re.findall(r"`([^`]+)`", notes.read_text())))
 
 
 # Suffixes that mark a reference as naming a file in this repo. Anything else -- API
@@ -774,9 +780,9 @@ _REPO_DIRS = ("src/", "data/", "tests/", "docs/", "lang/")
 _SHORTHAND = {"app.py", "main.py", "__main__.py", "conftest.py", "relay.py"}
 
 
-def _agents_file_refs():
+def _file_refs(notes: Path) -> list[str]:
     refs = []
-    for ref in _agents_references():
+    for ref in _references(notes):
         if " " in ref or ref.startswith(("/", "~", "$", ".")):
             continue
         if ref.endswith(_FILE_SUFFIXES) or ref.startswith(_REPO_DIRS):
@@ -784,14 +790,17 @@ def _agents_file_refs():
     return refs
 
 
-def test_agents_md_references_paths_that_exist():
+@pytest.mark.parametrize("notes", AGENT_NOTES, ids=lambda path: path.name)
+def test_agents_md_and_the_design_notes_reference_paths_that_exist(notes):
     """The previous version described the pre-src/ layout and had 11 dead references.
 
     A reference is wrong two ways: the path may not exist at all, or -- the case that
-    actually happened -- it may name a bare filename that lives somewhere else now.
+    actually happened -- it may name a bare filename that lives somewhere else now. A
+    design page uses a shorthand only where it also gives the full path, as AGENTS.md does.
     """
-    refs = _agents_file_refs()
-    assert len(refs) >= 10, f"reference extraction looks broken, only found {refs}"
+    refs = _file_refs(notes)
+    least = 10 if notes == AGENTS else 1
+    assert len(refs) >= least, f"reference extraction looks broken, only found {refs}"
 
     problems = []
     for ref in refs:
@@ -811,7 +820,7 @@ def test_agents_md_references_paths_that_exist():
             f"{ref}: does not exist" + (f", actual location {elsewhere}" if elsewhere else "")
         )
 
-    assert not problems, "AGENTS.md is out of step with the tree: " + "; ".join(problems)
+    assert not problems, f"{notes.name} is out of step with the tree: " + "; ".join(problems)
 
 
 def test_agents_md_names_symbols_that_exist():
@@ -823,9 +832,111 @@ def test_agents_md_names_symbols_that_exist():
         assert re.search(rf"^(class |){symbol}\b", source, re.M), f"{symbol} is gone from app.py"
 
 
-def test_agents_md_carries_no_line_number_references():
+# A backticked name in the form of code: dotted, with an underscore or with a capital, and
+# perhaps a call's parentheses. A lowercase word, `tab` or `main`, cannot be told from prose,
+# and is left alone.
+_CODE_NAME = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?:\(\))?")
+
+# Names the notes give from other programs, which none of GCM's files contain. The test after
+# the next fails on an entry no note names any more, or one GCM's files now contain.
+FOREIGN_NAMES = {
+    # FreeRDP's source and its log
+    "freerdp_settings_enforce_monitor_exists",
+    "CS_MONITOR",
+    "CS_MONITOR_EX",
+    # Windows: a group policy, and what a script called to bring a window forward
+    "DisablePasswordSaving",
+    "SetForegroundWindow",
+    "AppActivate",
+    # X11, Wayland and Weston
+    "ReplayPointer",
+    "wl_data_source.send",
+    "wl_keyboard.enter",
+    "weston_seat_set_selection",
+    "weston_desktop_xdg_positioner_get_geometry",
+    "zwlr_virtual_pointer_manager_v1",
+    # GTK's C source, and a method PyGObject does not have
+    "gtk_menu_position",
+    "gtk_window_guess_default_size",
+    "Gdk.Window.add_filter",
+    # The method a fake offered that the real Vte.Terminal lacks (#30)
+    "select_none()",
+    # Words: a log level, a Spanish locale, and a form of address in Spanish
+    "DEBUG",
+    "es_MX",
+    "Usted",
+}
+
+# Where GCM's own words are: its code, tests, scripts, glade file and catalogs, and not the
+# Markdown being checked. Of this file only the names it defines, as AGENTS.md names
+# UNDOCUMENTED_SETTINGS: its text would let the list above vouch for itself.
+_TREE_ROOTS = ("src", "tests", "tools", "data", "lang")
+_TREE_FILES = ("install.sh", "Makefile", "pyproject.toml", "dodo.py")
+_TREE_SUFFIXES = {".py", ".expect", ".glade", ".css", ".po", ".desktop", ".toml", ".sh", ""}
+
+
+@functools.cache
+def _tree_words() -> frozenset[str]:
+    this = Path(__file__).resolve()
+    paths = [REPO / name for name in _TREE_FILES]
+    for root in _TREE_ROOTS:
+        paths += [p for p in (REPO / root).rglob("*") if p.is_file() and p.suffix in _TREE_SUFFIXES]
+    words: set[str] = set()
+    for path in paths:
+        if path.resolve() != this and "__pycache__" not in path.parts:
+            words |= set(re.findall(r"\w+", path.read_text(encoding="utf-8", errors="ignore")))
+    for node in ast.parse(this.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.FunctionDef | ast.ClassDef):
+            words.add(node.name)
+        elif isinstance(node, ast.Assign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            words |= {target.id for target in targets if isinstance(target, ast.Name)}
+    return frozenset(words)
+
+
+def _code_names(notes: Path) -> list[str]:
+    names = []
+    for ref in _references(notes):
+        name = ref.removesuffix("()")
+        if _CODE_NAME.fullmatch(ref) and ("." in name or "_" in name or name != name.lower()):
+            names.append(ref)
+    return names
+
+
+def _in_tree(ref: str) -> bool:
+    return all(part in _tree_words() for part in ref.removesuffix("()").split("."))
+
+
+@pytest.mark.parametrize("notes", AGENT_NOTES, ids=lambda path: path.name)
+def test_agents_md_and_the_design_notes_name_symbols_that_exist(notes):
+    """A name in the form of code has to be one GCM's files contain, each part of it, so that
+    a symbol renamed or removed fails here rather than sending an agent after it (#430).
+    `Rdp.in_tab` needs `Rdp` and `in_tab` both, though not that one holds the other."""
+    names = _code_names(notes)
+    stale = [ref for ref in names if ref not in FOREIGN_NAMES and not _in_tree(ref)]
+
+    assert names, f"name extraction looks broken for {notes.name}"
+    assert not stale, f"{notes.name} names what none of GCM's files contain: {stale}"
+
+
+def test_each_foreign_name_is_named_and_is_not_gcms():
+    """The list above stays the names that need it, or it hides the next stale one."""
+    named = {ref for notes in AGENT_NOTES for ref in _code_names(notes)}
+
+    assert sorted(FOREIGN_NAMES - named) == [], "no note names these any more"
+    assert sorted(ref for ref in FOREIGN_NAMES if _in_tree(ref)) == [], "GCM's files have these"
+
+
+@pytest.mark.parametrize("page", DESIGN_NOTES, ids=lambda path: path.name)
+def test_agents_md_points_to_each_design_page(page):
+    """A page no entry names is a page no agent is sent to read (#430)."""
+    assert f"`docs/design/{page.name}`" in AGENTS.read_text()
+
+
+@pytest.mark.parametrize("notes", AGENT_NOTES, ids=lambda path: path.name)
+def test_agents_md_and_the_design_notes_carry_no_line_number_references(notes):
     """Line numbers rot: the old file pointed at a path:line wrong in both halves."""
-    stale = re.findall(r"`[^`]*\.py:\d+`", AGENTS.read_text())
+    stale = re.findall(r"`[^`]*\.py:\d+`", notes.read_text())
 
     assert not stale, f"replace line-number references with symbol names: {stale}"
 
