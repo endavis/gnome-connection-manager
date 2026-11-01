@@ -49,19 +49,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   are read, never by `cp.read` (#161). A section a save writes goes in `WRITTEN_SECTIONS`,
   a new kind of record in `RECORD_PREFIXES` (#163). Notes: its docstrings and comments.
 - `src/gnome_connection_manager/utils/configpaths.py` – which directory holds `gcm.conf` and
-  `.gcm.key` (#192). `resolve` takes `$XDG_CONFIG_HOME/gcm` if it is there, else `~/.gcm` if
-  it is there, else `$XDG_CONFIG_HOME/gcm` for the caller to create; `config_home` supplies
-  the `~/.config` default and ignores a value that is empty or relative, as the spec
-  requires. Nothing is migrated: relocating someone's hosts and the key that decrypts their
-  passwords, unasked, is the failure this must not have. `resolve` creates nothing and
-  `ensure` is the only thing that does, which is the whole of it -- a directory created
-  before the choice satisfies the rule that looks for it, so an eager `~/.config/gcm` would
-  put `~/.gcm` permanently out of reach. `app.py` resolves at import into `CONFIG_DIRECTORY`
-  and creates in `require_config_dir`, called from `main()` beside `require_expect` and
-  `require_readable_config`. `is_dir`, not `exists`, so a stray *file* named `.gcm` is not
-  chosen. Beware when mutation-testing that swap: the two names are the same length, so
-  `sed` leaves the file size unchanged and Python can serve a stale `.pyc` within the
-  same second.
+  `.gcm.key` (#192). Nothing is migrated, and `resolve` creates nothing: a directory made
+  before the choice would be the one chosen. Notes: its docstrings and `require_config_dir`'s.
 - `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
   AES in OFB mode over a PBKDF2-stretched key, plus the two legacy formats that must stay
   readable (bare-SHA-256, and repeating-key XOR before that). OFB, not CTR, as these notes
@@ -144,28 +133,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   and a launcher holding a shared `flock` on its version. An update never changes a
   version's files, which a running GCM still reads. Notes: `docs/design/packaging.md`.
 
-- `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/`,
-  `.github/skills/`, `.github/hooks/` – agent configuration, for Claude, Codex, Copilot and
-  Antigravity. `.claude/settings.json`, `.agents/hooks.json` and
-  `.github/hooks/copilot-hooks.json` register the guard rails in `tools/hooks/ai/`, which
-  refuse `gh pr create`/`gh pr merge` in favour of the doit tasks and treat
-  `ready-to-merge` as a label only a person may apply. At a session's start,
-  `tools/hooks/ai/template-update-check.py` says in one line when the template's `main` is
-  no longer the commit that `.config/pyproject_template/settings.toml` records (#420). A
-  workflow skill is written once, in `.agents/skills/<name>/SKILL.md`, and
-  `doit skills_sync` writes Claude's copy under `.claude/skills/`, which is never edited by
-  hand: `tests/template/test_skills_sync.py` fails when the two part. "Implement issue N"
-  runs the `implement-issue` skill, which replaced the per-agent plan and implement
-  commands (#324), and "N is green" runs the `merge-pr` skill (#385). "Implement issues
-  A, B" runs `implement-issues`, each issue in a worktree and a background agent of its
-  own, and `report-template-bug` files a bug in the vendored tooling on the template,
-  through `doit issue --upstream` (#420). The review and
-  adversarial-review commands, and the bridges that hand them to another agent, are in
-  `.claude/commands/`, `.github/skills/` and `.agents/skills/`. `.claude/rules/` holds
-  narrow footgun rules that apply on top of this file, and `.github/instructions/` and
-  `.agents/skills/` carry the same rules for the other agents:
-  `tests/template/test_rule_files.py` keeps the three identical. All of it is vendored
-  from pyproject-template and replaced on a sync.
+- `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/`, `.github/skills/`,
+  `.github/hooks/` – agent configuration, vendored from pyproject-template and replaced on a
+  sync: a fix goes upstream, by `report-template-bug`. Notes: `docs/development/ai/`.
 - `docs/development/` – how the vendored tooling works: the doit tasks, CI, repository
   settings, and `docs/development/ai/` on the hooks, delegation and slash commands.
   Written for the template, so it describes machinery this project has but does not
@@ -270,7 +240,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   several tests that passed against broken code. In a worktree, unset `GCM_DATA_DIR`,
   `GCM_GLADE_DIR` and `GCM_SCRIPTS_DIR`: `main()` sets them, a shell in a GCM tab inherits
   them, and measured, they gave the worktree's GCM the main checkout's `data/`, so a
-  mutant of a script there went unseen and survived.
+  mutant of a script there went unseen and survived. And a mutant the size of the code it
+  replaces, as `exists` is of `is_dir`, written within the second of the file's last change,
+  runs the old `.pyc`: Python checks only a source's size and its time to the second,
+  measured on 3.12.3. Delete `__pycache__` first.
 - **The weekly mutation run is mutmut over `utils/`, `relay.py` and `main.py`** (#326),
   as `[tool.mutmut]` in `pyproject.toml` sets it up. Not `app.py`: mutmut's copy of a
   module holds every mutant of it, and `app_module` imports `app.py` afresh for each
