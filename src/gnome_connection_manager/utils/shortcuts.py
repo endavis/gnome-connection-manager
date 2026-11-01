@@ -137,7 +137,8 @@ def bound_key(value: str | None, default: str) -> str:
     `value` is what gcm.conf says for the command, None where it has no line. No line is the
     `default`. A line with nothing after the ``=`` is "", a command with no key: written
     ``save =`` so that it is not read as no line, which takes the default. An older GCM
-    reads it as bound to a key named "", which no key is, so unbound there too.
+    reads it as bound to a key named "", which no key is, so unbound there too, and keeps
+    one command of two such lines, which meet at that key.
     """
     if value is None:
         return default

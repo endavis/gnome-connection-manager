@@ -464,13 +464,14 @@ _SNIPPETS = ["snippets"]
 #
 # A key typed into a console belongs to its program, except these (#419). Six of them were
 # Ctrl+letter keys that readline binds, and are on Ctrl+Shift now. A program cannot tell
-# Ctrl+Shift+letter from Ctrl+letter, so it loses nothing it would have had. Save is on
-# GCM's own Save Buffer accelerator, Ctrl+Shift+S, so that the key has one meaning. Find
-# Next and Close Console are on G and W, where GNOME Terminal has find next and close tab.
-# Find is on L, for look up, as Ctrl+Shift+F is View Buffer; Find Previous is on B, for
-# back, as Ctrl+Shift+H is Add Host; Reconnect is on R, as Ctrl+Shift+N is New Local
-# Console. Only a gcm.conf with no line for a command gets its new key: every save writes
-# each key it holds.
+# Ctrl+Shift+letter from Ctrl+letter, so it loses nothing it would have had: measured with
+# VTE 0.76, a plain Vte.Terminal sends the same byte for both, for each of their letters,
+# old and new. Save is on GCM's own Save Buffer accelerator, Ctrl+Shift+S, so that the key
+# has one meaning. Find Next and Close Console are on G and W, where GNOME Terminal has find
+# next and close tab. Find is on L, for look up, as Ctrl+Shift+F is View Buffer; Find
+# Previous is on B, for back, as Ctrl+Shift+H is Add Host; Reconnect is on R, as
+# Ctrl+Shift+N is New Local Console. Only a gcm.conf with no line for a command gets its new
+# key: every save writes each key it holds.
 SHORTCUT_DEFAULTS = (
     ("copy", _COPY, "CTRL+SHIFT+C"),
     ("paste", _PASTE, "CTRL+SHIFT+V"),
@@ -3315,7 +3316,12 @@ class Wmain(GladeComponent):
         `on_terminal_keypress` runs. One the terminal does not handle goes on to the
         accelerator. With the keyboard anywhere else, GCM's shortcuts apply. A console whose
         program has ended handles all six and does nothing with them, measured, so none
-        acts there and the menus are the way to each.
+        acts there and the menus are the way to each: Ctrl+Q does not quit from such a tab,
+        and File → Quit does. Not handled yet (#425): a check of the terminal's child_pid
+        here would pass such a key on.
+
+        propagate_key_event gives the key to the focused widget and its parents, and stops
+        before the window, so it does not run this handler again for the key.
         """
         focus = window.get_focus()
         if GtkVnc is not None and isinstance(focus, GtkVnc.Display):
