@@ -60,6 +60,14 @@ the git log.
   before any window exists. The host dialog and Preferences already had the main window as
   their parent when they were reported, so whether WSLg's compositor places a window over
   its parent has not been checked either, and may not be so.
+- Under WSLg, an OSC 52 write that follows a copy made in Windows, or follows another write,
+  with no input to GCM between, could leave Windows pasting the older text while GCM pasted
+  the program's, and GCM went on pasting it after later copies made in Windows. Weston
+  ignored the set and said nothing. GCM now sets such a write again, at most twice more, when
+  the keyboard next enters or leaves one of its windows, unless Weston has asked for its text
+  by then. A copy made in Windows after the ignored write, and before the keyboard next
+  changes window, is replaced by the write at that change. The terminal guide's OSC 52
+  section has the other limits.
 
 ## [2.2.1] - 2026-10-30
 

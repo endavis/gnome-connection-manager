@@ -369,6 +369,12 @@ def test_a_pair_of_clipboard_writes_sets_the_clipboard_once(monkeypatch, fds, ap
     monkeypatch.setattr(app_module.conf, "OSC52_ENABLED", 1)
     # Held still only now: the relay's own limit reads the clock while it runs.
     monkeypatch.setattr(app_module.time, "monotonic", lambda: 100.0)
+    # Whatever this machine is, it is a WSL one, and the display, which has no type, says no
+    # (#412): the same sets here and on a machine that is not.
+    monkeypatch.setattr(
+        app_module.osc52, "kernel_release", lambda: "6.18.33.2-microsoft-standard-WSL2"
+    )
+    monkeypatch.setattr(app_module.osc52, "wslg_folder", lambda: True)
     monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: object(), raising=False)
     monkeypatch.setattr(
         app_module.Gtk.Clipboard,
