@@ -4413,7 +4413,9 @@ class Wmain(GladeComponent):
         click, so a new tab takes it twice. The second time is only while the tab is still
         the one in use: one opened in the meantime, or a pane the keyboard was moved into,
         keeps it. Measured, a shell tab's timer moved the keyboard into the shell, hidden
-        behind a desktop opened 1 ms after it, for 15 ms (#264).
+        behind a desktop opened 1 ms after it, for 15 ms (#264). A test that moves the
+        keyboard elsewhere in the window after opening a tab waits that out first, or the
+        timer takes the keyboard back.
         """
         if self.page_in_use() is page:
             self.wMain.set_focus(keyboard_of(widget))
@@ -4605,7 +4607,13 @@ class Wmain(GladeComponent):
 
     def hold_key(self, terminal, event):
         """Whether a key typed while the commands after login wait is held for after
-        them, as it is unless it answers the login (#312)."""
+        them, as it is unless it answers the login (#312).
+
+        Asked last in on_terminal_keypress, after the shortcuts and [keys]. A paste, a
+        snippet and the cluster window write to the terminal with no key event, so none of
+        them is held: measured for #312, a paste during the login went ahead of the
+        commands.
+        """
         gate = getattr(terminal, "commands_gate", None)
         if gate is None or event.keyval in MODIFIER_KEYS or vte_keeps(event):
             return False

@@ -4,7 +4,9 @@ its tab before then goes after them (#312).
 Each scenario runs against real GTK and a real terminal, in a process of its own. The
 session is a fake `ssh` that sets its terminal's modes as ssh does: canonical with echo
 while it connects and asks about a host key, without echo while it reads a password, and
-raw once the session has started. Each step it takes is a line in a log, with the time,
+raw once the session has started. It enters raw mode with `TCSADRAIN`, as ssh does:
+`tty.setraw`'s own default, `TCSAFLUSH`, discards what was typed and not read yet, the very
+thing these tests are about. Each step it takes is a line in a log, with the time,
 and each read is the bytes it got, so the order things arrived in is read back from it.
 Keys are typed as key events through the window. Nothing reaches the network.
 """
