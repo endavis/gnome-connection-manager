@@ -20,7 +20,9 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [ADR-0001: A stable id on every host record](decisions/0001-a-stable-id-on-every-host-record.md) - Why each saved host carries a random id, and what that makes possible
 - [ADR-0002: Folders are records, not a path string](decisions/0002-folders-are-records-not-a-path-string.md) - Why the folder tree is stored as records keyed by id, with group kept as a derived path
 - [ADR-0003: The msgids are English, and Spanish is a catalog](decisions/0003-the-msgids-are-english-and-spanish-is-a-catalog.md) - Why GCM's messages are written in English, and why that is what a locale with no catalog needs
+- [Clipboard and OSC 52](design/clipboard.md) - How GCM sets the clipboard for a program's OSC 52 writes, and why: one copy from a pair, and a write set again where WSLg's Weston ignored it
 - [Connection Manager - Feature Specification](SPEC.md) - A statement of behaviour, written as a spec for a Qt 6 port that is not being built
+- [Connection Types](design/connection-types.md) - How GCM opens each kind of host, and why: the registry of connection types, a type's own settings, command hosts, RDP through FreeRDP or Windows Remote Desktop, and web and VNC hosts
 - [Developing on a Headless Machine](HEADLESS-DEVELOPMENT.md) - Coding GCM and running its full test suite on an Ubuntu 26.04 VM or LXC container with no screen, which steps each needs, and what stays on the Windows machine
 - [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
@@ -86,7 +88,9 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Architecture Decision Records](decisions/README.md) - What an ADR is, the two numbering series, the ADR format, and how to create one with doit adr
 - [CI/CD Testing Guide](development/ci-cd-testing.md) - GitHub Actions pipelines for testing, linting, and coverage
 - [Claude Code Statusline](development/ai/statusline.md) - Custom statusline showing git branch, Python version, and project info
+- [Clipboard and OSC 52](design/clipboard.md) - How GCM sets the clipboard for a program's OSC 52 writes, and why: one copy from a pair, and a write set again where WSLg's Weston ignored it
 - [Connection Manager - Feature Specification](SPEC.md) - A statement of behaviour, written as a spec for a Qt 6 port that is not being built
+- [Connection Types](design/connection-types.md) - How GCM opens each kind of host, and why: the registry of connection types, a type's own settings, command hosts, RDP through FreeRDP or Windows Remote Desktop, and web and VNC hosts
 - [Cross-Agent Delegation Matrix](development/ai/cross-agent-delegation.md) - Commands that let any supported AI CLI hand a review task to any other; plan and implement are handled by the shared implement-issue skill instead
 - [Dependabot Auto-merge](development/dependabot-automerge.md) - How the dependabot auto-merge workflow evaluates, enables, and skips PRs
 - [Developing on a Headless Machine](HEADLESS-DEVELOPMENT.md) - Coding GCM and running its full test suite on an Ubuntu 26.04 VM or LXC container with no screen, which steps each needs, and what stays on the Windows machine
@@ -173,7 +177,9 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Architecture Decision Records](decisions/README.md) - What an ADR is, the two numbering series, the ADR format, and how to create one with doit adr
 - [CI/CD Testing Guide](development/ci-cd-testing.md) - GitHub Actions pipelines for testing, linting, and coverage
 - [Claude Code Statusline](development/ai/statusline.md) - Custom statusline showing git branch, Python version, and project info
+- [Clipboard and OSC 52](design/clipboard.md) - How GCM sets the clipboard for a program's OSC 52 writes, and why: one copy from a pair, and a write set again where WSLg's Weston ignored it
 - [Connection Manager - Feature Specification](SPEC.md) - A statement of behaviour, written as a spec for a Qt 6 port that is not being built
+- [Connection Types](design/connection-types.md) - How GCM opens each kind of host, and why: the registry of connection types, a type's own settings, command hosts, RDP through FreeRDP or Windows Remote Desktop, and web and VNC hosts
 - [Consumer Notes](template/consumer-notes.md) - Breaking changes and behaviour changes that arrive when a project syncs from the template.
 - [Cross-Agent Delegation Matrix](development/ai/cross-agent-delegation.md) - Commands that let any supported AI CLI hand a review task to any other; plan and implement are handled by the shared implement-issue skill instead
 - [Dependabot Auto-merge](development/dependabot-automerge.md) - How the dependabot auto-merge workflow evaluates, enables, and skips PRs

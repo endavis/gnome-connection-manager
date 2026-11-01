@@ -61,7 +61,7 @@ Each step below is marked **Both**, **LXC** or **VM**.
 ## Ubuntu 26.04 against CI's 24.04
 
 CI runs Ubuntu 24.04, and so does WSL on the Windows machine, where everything in
-`AGENTS.md` was measured. The 26.04 column is what was installed on the container; the 24.04
+`AGENTS.md` and `docs/design/` was measured. The 26.04 column is what was installed on the container; the 24.04
 column is what Launchpad lists for `noble`, read on 2026-11-01:
 
 | | 24.04 (CI, WSL) | 26.04 (container) |
