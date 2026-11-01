@@ -27,36 +27,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `childpython.module_command`, never `python -m` (#415). Notes: `docs/design/recording.md`.
 - `src/gnome_connection_manager/utils/urlregex.py` – prebuilt PCRE2-compatible regex strings
   for hyperlink detection inside terminals, including `file:line` locations.
-- `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which
-  read and write it to the `configparser` object behind gcm.conf. Pure: the passphrase and
-  the pre-v2 `legacy` flag are arguments the caller supplies, not defaults read from
-  `get_password()` and `conf.VERSION` as they used to be, and `Vte.EraseBinding.AUTO` is
-  held as `ERASE_BINDING_AUTO` with a test asserting it still matches the real enum.
-  Every record also carries an `id` from `new_host_id` -- random, not sequential, because
-  an imported export brings ids minted elsewhere. `Host` mints one for any record read
-  without it, which is the whole migration, and `HostUtils.ensure_unique_ids` repairs a
-  repeat afterwards. `clone` deliberately does not carry it: a clone is a second host.
-  No folder holds two hosts of one name, so that a folder path and a name always tell
-  two hosts apart (#351). The host dialog and a drag refuse one, `copy_name` names
-  Duplicate Host's copy, and `HostUtils.ensure_unique_names` renames a later repeat
-  `<name> (2)` and so on. `loadConfig` and the import run it once the hosts are filed,
-  since `FolderTree.repair` merges two folders of one name with their hosts, and in the
-  file's order, which `groups` does not keep. `report_renamed_hosts` says which.
-  A host's commands are written as `commands`, each new line as `\n`, which is what an
-  older GCM reads, and which reads a backslash and an n back as a new line. Where that
-  would change them they are written exactly as well, under `commands-json`, and
-  `read_commands` takes that only while `commands` still says the same, so a hand edit
-  wins (#243). The name has no dot, since an option with one is a type's setting.
-  Measured with the save GCM had before #243, an older GCM drops it and rewrites
-  `commands` unchanged. A host's own tab name is `tab-name`, written only when set
-  (#349). Measured with v2.1.1, an older GCM reads a file holding it, names the host's
-  tabs by name, and leaves it out when it saves, with the host's other options as they
-  were, bar the password, which every save encrypts afresh. A host's own tab colour is
-  `tab-color`, written only when set and kept as written (#350): v2.1.1 drops it the same
-  way, measured. A carriage return goes into `commands` as a new line: gcm.conf is
-  read with universal newlines, and one written as it is ended its line, which left the
-  file unreadable or set another option, measured. Sending ends a line there anyway,
-  since `addTab` splits the commands with `splitlines`.
+- `src/gnome_connection_manager/utils/hosts.py` – the `Host` record and `HostUtils`, which read
+  and write it in gcm.conf. A host option with a dot in its name is a connection type's
+  setting, so an option of the host's own has none. Notes: its docstrings and comments.
 - `src/gnome_connection_manager/utils/placeholders.py` – a host's values filled into a
   command written for it, `{name}` and the rest (#238). Pure: the caller supplies the
   quoting, `shlex.quote` for a host's commands on this computer, which run through
@@ -203,44 +176,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   stays on the screen, as WSLg's Weston moves none (#392). A new pop-up menu opens through
   `popup_menu_at` in `app.py`, as the other five do. Notes: `docs/design/menus-and-windows.md`.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
-  widget: `parse_custom_keys`, which turns the `[keys]` section into key-name-to-bytes
-  and refuses anything already bound, `clamp_font_scale` with the VTE range it mirrors,
-  and `captured_key`, what a key pressed in a snippet's key field, or in Preferences'
-  Shortcut column, binds (#240, #419). That one
-  asks `MODIFIER_KEY_NAMES` whether a key is a modifier, since GDK's `is_modifier` is
-  False for every key under X11, measured with real input (#239).
-  Pure — the reserved set is an argument, and `RESERVED_ACCELERATORS` stays in `app.py`
-  beside the `do_startup` registrations a test checks it against. `shortcut_to_accel`,
-  `apply_menu_accels` and `sync_shortcut_accels` stay too: measurement showed they are
-  `Gdk`/`Gtk` calls rather than logic, which is what put the seam here (#140).
-  A key typed into a console belongs to its program, bar what `[shortcuts]` binds (#419),
-  and the defaults take no key a shell reads: `save`, `find`, `find_next`, `find_back`,
-  `console_close` and `console_reconnect` were Ctrl+S, F, G, H, W and N, and are on
-  Ctrl+Shift+S, L, G, B, W and R, where a program cannot tell the key from the
-  Ctrl+letter one: a plain `Vte.Terminal` sends the same byte for both, measured for each
-  of those letters. The six accelerators `do_startup` registers that a program reads too,
-  Ctrl+Q, R and E, F1, F9 and Shift+F9, are `CONSOLE_FIRST_KEYS`, and
-  `RESERVED_ACCELERATORS` holds the four that act wherever the keyboard is. A test
-  checks that the two together are what `do_startup` registers, stateful actions
-  included, which the old check missed. `[keys]` is refused only on the second set.
-  `Wmain.on_window_key_press` gives the first set to the console that has the keyboard
-  before GTK's accelerators run, as it gives every key to a remote desktop (#234):
-  `propagate_key_event` stops before the window, so it does not recurse. Measured with
-  real input on a private Xvfb, the program reads `13 06 07 08 0e 17` for Ctrl+S, F, G,
-  H, N and W, and a program in a console window reads Ctrl+Q, F1 and F9. **A console
-  whose program has ended swallows them**: VTE takes the key and has nobody to give it
-  to, and the accelerator does not run, measured for each of the six with the program
-  killed and the tab left open. So Ctrl+Q does not quit from an ended tab, and **File →
-  Quit** does. Not handled; a check of the terminal's `child_pid` in `on_window_key_press`
-  would pass such a key on.
-  A command without a key is written `<command> =` and read back as none, where a
-  missing line is the default: `bound_key` tells the two apart. `shortcuts` is keyed by
-  key, so two such commands would meet at `""`, as they do in an older GCM, which reads
-  the line as the key `""` and keeps one. They are kept in the module's
-  `unbound_commands` instead, which `writeConfig` writes and `Wconfig` lists with an empty
-  Shortcut through `preference_rows`, and takes back on OK through `kept_bindings`.
-  `tests/test_console_keys.py` runs real GCM and a program that logs the bytes it reads,
-  on a private Xvfb, with keys sent through XTest.
+  widget. A key typed into a console is its program's, bar what `[shortcuts]` binds (#419).
+  Notes: its docstrings and comments, and those of the `app.py` code they name.
 - `src/gnome_connection_manager/utils/activity.py` – when a console busy out of sight has
   gone quiet (#208). An agent CLI finishing in a tab nobody watches gave no sign: measured
   in a real VTE, only codex of Claude Code, codex, agy and Copilot CLI rings the bell at

@@ -35,9 +35,10 @@ HOST_ID_BYTES = 4
 def legacy_commands(text):
     """A host's commands as `commands` has always held them: each new line as `\\n`.
 
-    A carriage return is written as one too. It ends a line when they are sent, and
-    written as it is, it ended its line in the file: measured, `uptime\\rwho` left gcm.conf
-    unreadable, and `uptime\\rname = evil` set the host's name (#243).
+    A carriage return is written as one too. It ends a line when they are sent anyway, as
+    `afterlogin.command_groups` splits them with `splitlines`. Written as it is, it ended its
+    line in the file, which is read with universal newlines: measured, `uptime\\rwho` left
+    gcm.conf unreadable, and `uptime\\rname = evil` set the host's name (#243).
     """
     return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
 
@@ -52,9 +53,9 @@ def read_legacy_commands(value):
 def read_commands(stored, exact):
     """A host's commands from its `commands` value and its `commands-json` one (#243).
 
-    The exact text is taken only while it still says what `commands` does. An older GCM
-    rewrites `commands` and drops the other, but a hand edit can change `commands` alone,
-    and then that is what the host sends.
+    The exact text is taken only while it still says what `commands` does. Measured with the
+    save GCM had before #243, an older GCM rewrites `commands` unchanged and drops the
+    other. But a hand edit can change `commands` alone, and then that is what the host sends.
     """
     if exact is not None:
         try:
@@ -336,7 +337,8 @@ class HostUtils:
         # As an older GCM reads them. Where that form would not read back as they are, a
         # backslash and an n or a carriage return coming back as a new line, or a space
         # stripped from an end, they are written exactly as well, for a GCM that knows to
-        # read that first (#243).
+        # read that first (#243). Under a name with no dot, as an option with one is a
+        # connection type's setting.
         stored = legacy_commands(host.commands)
         cp.set(section, "commands", stored)
         if read_legacy_commands(stored.strip()) != host.commands:
@@ -365,10 +367,12 @@ class HostUtils:
             cp.set(section, "before-command", host.before_command)
         if host.after_command:
             cp.set(section, "after-command", host.after_command)
-        # An older GCM reads the file and leaves it out of what it saves, measured (#349).
+        # Measured with v2.1.1, an older GCM reads a file holding it, names the host's tabs
+        # by name, and leaves it out when it saves, with the host's other options as they
+        # were, bar the password, which every save encrypts afresh (#349).
         if host.tab_name:
             cp.set(section, "tab-name", host.tab_name)
-        # The same for this (#350).
+        # v2.1.1 drops this the same way, measured (#350).
         if host.tab_color:
             cp.set(section, "tab-color", host.tab_color)
 
@@ -399,6 +403,9 @@ class HostUtils:
     @staticmethod
     def ensure_unique_names(hosts):
         """Rename each host whose folder already holds a host of its name (#351).
+
+        No folder holds two hosts of one name, so that a folder path and a name always tell
+        two hosts apart.
 
         The host dialog and a drag refuse a repeat. But gcm.conf is a text file people edit
         and merge by hand, an import brings in whatever its file holds, and
