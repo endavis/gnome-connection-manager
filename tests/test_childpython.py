@@ -5,7 +5,8 @@ the relay and the update check as `python -m gnome_connection_manager.<module>`,
 `/usr/bin/python3` could not find, so no console opened with OSC 52 or raw recording on, and
 the update check failed without a word. The last tests here start GCM's own commands in an
 interpreter that finds nothing of GCM by itself, as that one does, and on the `-m` commands
-they fail with `ModuleNotFoundError`.
+they fail with `ModuleNotFoundError`. `tests/test_install.py` checks what `install.sh`
+installs, and starts none of the installed GCM's children, which is how this went unseen.
 """
 
 from __future__ import annotations

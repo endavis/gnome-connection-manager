@@ -31,33 +31,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   and write it in gcm.conf. A host option with a dot in its name is a connection type's
   setting, so an option of the host's own has none. Notes: its docstrings and comments.
 - `src/gnome_connection_manager/utils/placeholders.py` – a host's values filled into a
-  command written for it, `{name}` and the rest (#238). Pure: the caller supplies the
-  quoting, `shlex.quote` for a host's commands on this computer, which run through
-  `sh -c`, so that a name holding a `;` stays one argument. Anything else in braces is
-  left as written. `{folder}` is the last folder of `{group}`, the whole path, and empty
-  at the top level (#348). A command host's line (#248) goes through `fill_command`, which makes
-  `{password}` the reference `"$GCM_PASSWORD"`, `PASSWORD_VARIABLE`, and never the
-  password: measured, `/proc/<pid>/cmdline` is mode 444 and `/proc/<pid>/environ` 400.
-  Those commands are the host's `before_command` and `after_command`. `addTab` runs the
-  first in the tab's own terminal through `run_before_command`, and
-  `on_terminal_child_exited` starts the session with `start_session` only once it exits
-  0, from an idle rather than inside the signal. `addTab` builds the connection's command
-  before that, so Reconnect has it when the first attempt failed. `session_ended` runs the
-  second once per session, for a terminal or a page alike. Measured, Ctrl+Q ends GCM with
-  no session's end reported, while closing the window reports each, with status 9, so
-  `request_quit` runs `end_sessions` first. A page reports nothing when its tab closes,
-  so `open_type_page` listens for its `destroy`.
-  Reconnecting a dropped session (#239) asks the type whether it `dropped` or was
-  `refused`, from the exit status and the tab's last lines. `child-exited` gives the wait
-  status, measured: 65280 for a program that exits 255, 9 for one killed by SIGKILL, so
-  `reconnect_if_dropped` converts it first. ssh exits 255 for every failure, `~.`
-  included, and only its last line tells a lost connection. telnet exits 0 however its
-  session ends, a server that dies included, so Telnet never drops. The countdown lives
-  in `count_down_to_reconnect`, and Reconnect cancels it before reconnecting itself.
-  `on_terminal_keypress` stops it for a key not in `MODIFIER_KEYS`. Not
-  `event.is_modifier`: measured with real input under X11, GDK sets it for no key, Shift
-  and Control included, and a test that builds its own events can set it to anything. Close console and the tab's mark wait in `session_over`
-  until the attempts run out.
+  command written for it (#238), which the caller quotes; `{password}` is never filled with
+  the password (#248). Notes: its docstring, and `app.py`'s `run_before_command`.
 - `src/gnome_connection_manager/utils/snippets.py` – the snippet library (#240): text
   typed into a console on request, found by name, each a `[snippet <id>]` record, which
   `configfile.RECORD_PREFIXES` names so that one deleted stays deleted. Snippets
@@ -225,36 +200,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   measured, a GCM quit during the request exited with the thread still inside it, as did
   the test that crashed at exit in #316. `quit_application`, which Ctrl+Q and closing the
   window both reach, kills a check still running.
-- `src/gnome_connection_manager/utils/childpython.py` – how GCM starts its two Python
-  children, the relay and the update check, on the files the running GCM started with
-  (#415). They ran as `sys.executable -m gnome_connection_manager.<module>`, which finds
-  the package only where a fresh interpreter can import it: a checkout's `.venv` has it
-  installed, and the `.deb` installs it under `/usr` (read in the Makefile, not measured).
-  The launcher `install.sh` writes makes it importable in GCM's own process alone, with
-  `sys.path.insert(0, <version>/src)`. Measured on #415 against a real v2.2.0 install, the
-  child exited 1 with `No module named 'gnome_connection_manager'`: no console opened while
-  OSC 52 or raw recording was on, and the update check failed without a word, so no v2.2.0
-  installed so could learn of a newer release. `module_command` gives
-  `[sys.executable, "-c", BOOTSTRAP, <folder>, <module>]`, and the caller appends the
-  module's arguments. `BOOTSTRAP` takes the folder and the module out of `sys.argv`, puts
-  the folder at `sys.path[0]` only if it is not on `sys.path` already, and runs the module
-  with `runpy.run_module(module, run_name="__main__", alter_sys=True)`. So a checkout's
-  `.venv` and the `.deb`, which find the package themselves, import in the order they did,
-  and the module has `-m`'s `__name__` and `__package__` and its own file as `sys.argv[0]`,
-  its arguments after, and its exit status is the child's. `package_root` is the folder
-  above the package, from this file's `__file__`, and is not resolved through symlinks: the
-  child looks for it among its `sys.path` entries as text, and the parent imported the
-  package from one of them. Coming from the running GCM's own files, it keeps a child on
-  that version after an update has moved `current`. No environment variable is set. The
-  launcher exporting `PYTHONPATH` was ruled out: every program in a tab would inherit it,
-  and measured on #415, a checkout's `.venv` then imported the installed copy in place of
-  its own. So was a `.pth` file naming `current/src`: every Python of the user's would see
-  it, and it follows `current`, not the version running. Standard library only.
-  `tests/test_childpython.py` runs GCM's own commands, from `relay_command` and
-  `Wmain.check_updates`, with `-I -S` after the interpreter, so that it finds GCM only
-  where the command says, as `/usr/bin/python3` does under the launcher. Both fail on the
-  `-m` commands with `ModuleNotFoundError`. `tests/test_install.py` checks what `install.sh`
-  installs and starts none of the installed GCM's children, which let this through.
+- `src/gnome_connection_manager/utils/childpython.py` – how GCM starts its Python children,
+  the relay and the update check (#415). Never `python -m`: under `install.sh`'s launcher a
+  fresh interpreter cannot import GCM. Notes: its docstrings, and `tests/test_childpython.py`.
 - `src/gnome_connection_manager/utils/osc52.py` – OSC 52 writes: one copy from a pair (#393), and
   a write set again where WSLg's Weston ignored it (#412, #413). Under WSLg GCM then owns GDK's
   event handler: chain any hook through `Wmain.watch_gdk_event`. Notes: `docs/design/clipboard.md`.
