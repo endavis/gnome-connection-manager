@@ -116,65 +116,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `CONNECTION_TYPES`: a new type adds a class, not a branch in `app.py`. A test must never reach
   the real `mstsc.exe` or a real browser. Notes: `docs/design/connection-types.md`.
 - `src/gnome_connection_manager/utils/remotefiles.py` – a host's files outside its console
-  (#267): the `sftp://` address the server tree's Open in File Manager hands on, and the
-  `sshfs` command its Mount with SSHFS runs, at `~/mnt/<name>` from `mount_folder`. Only a
-  type with `sftp` offers them, which is `Ssh`. Not `xdg-open`: measured, with nothing
-  for `sftp:` it gave the address to `x-www-browser` and exited 0, and no file manager in
-  Ubuntu 24.04 declares the scheme. So `open_in_file_manager` in `app.py` asks GIO for the
-  default application for `inode/directory`, which GIO finds only through a MIME cache or
-  `mimeapps.list`, measured, and else takes the first of `FILE_MANAGERS` on `PATH`.
-  sshfs runs as a daemon, its default: measured with sshfs 3.7.3, the mount appears
-  before it connects and goes again on a failure, while a daemon exits 0 only once
-  connected. A daemon drops ssh's messages and prints `read: Connection reset by peer`
-  for every failure, so ssh writes them to a log of its own, `ssh -E` in `ssh_command`,
-  which `failure_reason` reads. sshfs splits that command at spaces, and measured, an
-  escaped space reached ssh with its backslash, so `ssh_log` picks a folder whose path
-  holds none, and there is no log where the runtime folder's path has one. Never a
-  fallback in `/tmp`: another user could put a link where the log goes there, and GCM,
-  emptying the log for each attempt, would empty the file it names. `read_as_option`
-  refuses a user beginning with `-`: measured, sshfs hands ssh a source after `--` as it
-  is, so a user `-oProxyCommand=...` would run a command, where a console passes the user
-  as `-l`'s value. An address so made comes behind the user, and ssh refuses it. `SSHFS_OPTIONS` bounds the wait for a host that never answers: 15 s,
-  measured, where tcp(7) puts the kernel's own at about 127 s. The password reaches ssh in
-  `GCM_PASSWORD` through `data/scripts/gcm-askpass`, never in an argument.
-  `Wmain.mount_files` starts sshfs with `child_setup=os.setsid`, so the mount outlives
-  GCM, and `mount_at` reads `/proc/self/mountinfo` for what is mounted at the folder.
-  `remove_mount_folder` removes the folder again after an unmount and after a failed
-  mount, so that one is not left for every host ever mounted. `rmdir` alone: measured,
-  it refuses a folder still mounted, as busy, and one holding anything, so files that
-  were there before the mount stay, folder and all.
-  `find_mounts` says where each host is mounted: where its name puts it, or else, for a
-  host renamed while mounted, by its `user@host:` in another folder of `~/mnt`, only
-  while no other host has the same, as the mount table names no port. `Wmain.find_mounts`
-  reads the table for it, `~/mnt` resolved first, since measured, a mount made through a
-  link is listed where the link leads, and leaves out a folder still in `mounting`:
-  sshfs mounts before it connects, measured. `Wmain.show_mounts` marks each host mounted
-  in the tree and `list_mounts` lists every mount under Servers ▸ Mounted, rebuilt only
-  when what it lists changed. `watch_mounts` runs it on GIO's `mounts-changed`, so a
-  mount made or ended outside GCM shows too. The mark is `MOUNTED_MARK`, a tick before
-  the host's name, through `marked_name`: in the tree by `draw_mount_mark`, a data
-  function on the name's renderer, and in the Hosts menu on the item `host_items` keeps
-  for each host, which `show_mounts` relabels. Text, so that it is drawn at the name's
-  size: measured at a font scale of 2.25, the 16 pixel icon that took the host's place
-  sat beside a line of text 46 pixels tall, and went unnoticed. Not at the row's end,
-  which a name wider than the tree puts out of sight, measured. The list's empty line is
-  given Unmount All, disabled then, since GTK draws an item with no action as one to
-  choose, measured. Pure: the programs found and the mount table are arguments.
-  The server pane is the notebook `nbServers` (#269): the tree's tab, Servers, and a
-  Mounted tab that `list_mounts` fills through `fill_mounts_page`, shown only while
-  anything is mounted. The Servers tab is always there, and names the pane where the
-  tree's header did, which the glade hides: measured, with the header kept and the tabs
-  shown only while mounted, the tree's first row dropped from 27 pixels below the pane's
-  top to 64 at each mount, where now it stays at 39. The Mounted tab's
-  menu, `popupMenuMounts`, acts on the folder `mount_menu_folder` holds, and Open over
-  SFTP finds the host there through `mounted_host`, again each time, as Edit Host makes a
-  new `Host`. Open Folder hands `open_in_file_manager` a `file://` address, and measured,
-  GIO gives the application a folder's path for it. The tabs ellipsize and share the
-  strip, and `data/style.css` trims their padding: measured, the theme's left the strip
-  136 pixels at its narrowest, and in GCM's default pane of 100 the tree lost its left
-  side; now 68, and 96 at a font scale of 2.25. `on_hpMain_button_press_event` shows and
-  hides the pane only for a double-click on the divider's own window: measured, one on a
-  tab, or below the Mounted tab's rows, reached it too, and hid the pane.
+  (#267), over SFTP or an sshfs mount the Mounted tab lists (#269), with no password in an
+  argument. Notes: its docstrings, and those of `app.py`'s `mount_files` and `list_mounts`.
 - `src/gnome_connection_manager/utils/folders.py` – the folder tree hosts are filed under
   (ADR-0002): `Folder` records keyed by id in `[folder <id>]` sections, and `FolderTree`,
   which loads, repairs and saves them. `host.group` is kept as a path *derived* from the
@@ -390,78 +333,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `package` job holds the built packages to it. Notes: `docs/design/packaging.md`.
 - `data/ui/gnome-connection-manager.glade` – GTK Builder UI definition. Keep widget
   names/signals aligned with handler names in `app.py`.
-- `data/scripts/ssh.expect` – Expect script wrapping `ssh`/`telnet`, and FreeRDP for an RDP
-  host, to feed stored credentials, propagate terminal resize events, and hand control
-  back to the VTE widget.
-  Its exit status becomes the tab's, which Close console's Only on clean exit decides on,
-  so every way out ends at its `exp_wait` and passes on the status of `ssh` or `telnet`.
-  An early `exit` reports 0, a clean exit, as the host key failure once did (#210).
-  `exp_wait` gives 0 for a program killed by a signal too, so the script reports that as
-  a shell does, 128 and the signal's number.
-  It runs only hosts with a stored password; the rest run `ssh`, `telnet` or FreeRDP
-  directly. `expect_environment` gives it the password as `GCM_PASSWORD`, which it unsets
-  before the spawn, measured, so the program does not inherit it (#314). GCM used to type
-  it into the tab 2 s after the spawn, and the script started nothing until it came: every
-  connection started 2 s late, and a key pressed first became part of the password. Keys
-  typed early now wait for the program, and `stty -echo` keeps them off the screen until
-  they reach it; without it, measured, they showed twice.
-  It turns `log_user` on straight after the `spawn`, so the tab shows everything the
-  program prints as it arrives, as a host without a stored password would: the banner,
-  the host key question, the prompts. `log_user` is 0 until then only
-  so that `spawn` does not echo its command line. While it stayed 0 through the `expect`
-  block, only what a pattern's action printed ever showed: a connection that failed left
-  an empty tab (#212), a new host key was trusted out of sight (#214), and printing from
-  each branch instead loses what follows the match. A `#` line inside the `expect` block
-  is read as a pattern, not a comment.
-  The host key question is the user's to answer; the script used to answer `yes`, and
-  send the password to the server whose key it had trusted (#216). Nothing typed reaches the
-  program while the `expect` block waits, only during `interact`, so the question hands
-  the terminal over until Enter and then goes back to the block for the password.
-  Measured, and each one a test: without `-nobuffer`, `interact` dropped an answer typed
-  before it began, all but the Enter; with it, the Enter is passed on, so the action
-  must not send another, which ssh would read as an empty password. `interact` also
-  returns when the program ends, having closed the spawn id, and an `exp_continue` then
-  fails with a Tcl traceback in the tab.
-  ssh need not ask for the password at all: it tries keys first, and a server that
-  accepts one gets no password prompt (#313). The block waited for ever then, and the
-  tab took no input. So ssh's timeout is 1 s, and each timeout reads ssh's own terminal,
-  the spawn pty, with `stty -a`. Measured with OpenSSH 9.6, it is canonical with echo
-  while connecting and at the host key question, without echo at a passphrase, and raw
-  once the session has started. Raw hands over, and so does no echo at two looks
-  running, since the password prompt matches first. An echoing question cannot be told
-  from connecting. expect's timeout is whole seconds, measured: 0.25 times out at once,
-  and output that matches nothing does not restart it. The handover sends the WINCH, as
-  after the password, for a change of size before the trap is set. Measured in GCM, the
-  trap is set within 60 ms of `addTab`, and a new tab's size changed at about 0.2 s and
-  0.4 s. expect gives the program the size its own terminal had when expect started, or
-  when `stty` last read it, measured, so the trap reads the size before the spawn too,
-  and sets the program's terminal only once there is one: naming `spawn_out(slave,name)`
-  before then is a Tcl error, which shows in the tab.
-  Telnet's terminal is not read: its 20 s timeout hands over as before.
-  An RDP host (#225) names its program as the script's first argument: `rdp_client` in
-  `src/gnome_connection_manager/utils/connections.py` picks `xfreerdp3`, else `xfreerdp`,
-  and `rdp_arguments` builds the rest. Never
-  `/p:`: FreeRDP 3 masks it in its own argv, measured, but not in its parent's, and
-  `relay.py` is that parent when raw recording or OSC 52 is on. The rdp branch has an
-  `expect` block of its own, so that its `Domain:` pattern never meets an ssh banner. It
-  answers FreeRDP 3's `Domain:` with an empty line and hands its `(Y/T/N)` certificate
-  question over as the ssh block hands over the host key question. FreeRDP 2 asks for the
-  password only, as FreeRDP 3 does given `DOMAIN\user`. The RDP type's `sends_commands`
-  is False: a command typed into its tab would answer FreeRDP's certificate question or
-  its password prompt. `tests/test_rdp.py` covers GCM's side, with a fake `xfreerdp3` on
-  `PATH`.
-  `tests/test_ssh_expect.py` runs it on a pty with a fake `ssh`, `telnet` or FreeRDP: its
-  `stty` refuses to run without a controlling terminal, and closing the pty before it
-  exits kills it. The fakes turn echo off before asking for a password, as `ssh` and
-  `login` do; printing the prompt first races the script's answer, and the pty echoes it.
-  A test that types Ctrl+C waits for `interact` to put the pty in raw mode: until then the
-  terminal turns it into a SIGINT for the script, not the program.
-- `data/scripts/gcm-askpass` – ssh's askpass for a mount (#267), under
-  `SSH_ASKPASS_REQUIRE=force`. It answers a prompt ending in `assword:` with
-  `GCM_PASSWORD` from its environment and refuses every other question: a key's
-  passphrase, and the host key question above all, which is the user's to answer in a
-  console (#216). Measured, ssh then fails at once with `Host key verification failed.`
-  The Makefile installs it executable, and a test checks that of every script there.
+- `data/scripts/ssh.expect` – the Expect script that runs a host with a stored password, and
+  only such a host: it types the password, passes the tab's size on, and hands the terminal
+  over. Inside an `expect` block a `#` line is a pattern, not a comment. Notes: its comments.
+- `data/scripts/gcm-askpass` – ssh's askpass for a mount (#267): it answers only a password
+  prompt, from `GCM_PASSWORD`, refusing the host key question above all (#216). A test
+  checks that the Makefile installs every script here executable. Notes: its comments.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
 - `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
