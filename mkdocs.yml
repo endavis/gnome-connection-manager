@@ -111,6 +111,7 @@ nav:
       - Clipboard and OSC 52: design/clipboard.md
       - Connection types: design/connection-types.md
       - Menus and window placement: design/menus-and-windows.md
+      - Session logs and transcripts: design/recording.md
       - Tab names and colours: design/tabs.md
   - Decisions:
       - A stable id on every host record: decisions/0001-a-stable-id-on-every-host-record.md
