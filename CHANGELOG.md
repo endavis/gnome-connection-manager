@@ -43,6 +43,23 @@ the git log.
 - A letter, or another key that types a character, is not bound in the **Shortcut** column
   without Ctrl, Alt or Super, since bound alone it would be taken from every console, and
   `Enter`, `Tab` and `Escape` work in the column as they do elsewhere.
+- Under WSLg, the host dialog, the buffer viewer, Preferences and the messages that mounting
+  and unmounting show were reported to open at random places on the screen. Under Wayland
+  GTK cannot place a window, and the compositor puts one over its parent where it has one.
+  The messages GCM shows, its prompts, its file and colour choosers, the buffer viewer and
+  the snippet picker now have one of GCM's windows as their parent, where most had none. A
+  window opened from a dialog is over that dialog: a message that the host dialog or
+  Preferences shows is over it, where it had no parent, and so is the Browse chooser, where
+  it had the main window. With a console in a window of its own in use, these and the host
+  dialog, Preferences, the cluster window and the About dialog are over that window, where
+  the last four were over the main window, perhaps on another monitor. The buffer viewer is
+  kept with the window it was opened from. A message that arrives while the main window is
+  minimized, such as a mount's result, now has that minimized window for its parent, where
+  it appeared on its own; what a desktop does with one has not been checked. A console's
+  own window is not given a parent, and nor are the three messages GCM can show at start-up,
+  before any window exists. The host dialog and Preferences already had the main window as
+  their parent when they were reported, so whether WSLg's compositor places a window over
+  its parent has not been checked either, and may not be so.
 
 ## [2.2.1] - 2026-10-30
 

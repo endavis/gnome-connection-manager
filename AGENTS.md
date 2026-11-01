@@ -1333,6 +1333,42 @@ Practices below have each caught real bugs in this repo. They are worth the time
   maps its entry only on its next frame, so `focus_search` realizes it: unrealized, each
   key let go of meanwhile was a GTK critical. A mark flags the window holding the tab,
   which `window_of` gives.
+- A window GCM opens has a transient parent, bar six (#403). Under Wayland GTK cannot place
+  a window: the compositor does, over the window's transient parent where it has one, and
+  wherever it likes where not. The host dialog, the buffer viewer, Preferences and the mount
+  messages were reported to open at random places on WSLg. `dialog_parent` in `app.py` says
+  which window, and everything asks it: the modal window on top, else the parent the caller
+  names, else the console window in use, else the main window, else none. Modal first, since
+  a window opened over a modal one must sit above it, and a chain is unambiguous where two
+  siblings of one parent are not. `modal_window` is the toplevel of the widget holding
+  `Gtk.grab_get_current()`, kept only while it is visible and of type `TOPLEVEL`. Measured
+  on X11 with GTK 3.24.41: inside `msgbox` it is the message; with the host dialog open it
+  is the host dialog, and with Preferences open it is Preferences; a message shown over the
+  host dialog takes it and gives it back as it closes; with a popup menu showing the grab is
+  the menu, whose window is no toplevel, and with the About dialog, which is not modal, or a
+  console window in use, there is none. A parent a caller names is kept unless a modal
+  window is on top, as the server tree's New Folder, Rename Folder, Tab Color, Import and
+  Export name the main window, where that tree is. A dialog about a console names none, so
+  it opens over `window_in_use`, which `page_in_use` goes by: Save Buffer, the `{?Label}`
+  prompts of a snippet, the transcript's messages and Rename tab. `Whost`, `Wconfig`,
+  `Wcluster` and `Wabout` ask it in place of `wMain.window`, since their keys work in a
+  console window, where they opened over the main window, perhaps on another monitor.
+  `BufferViewer` and `SnippetPicker` call `set_transient_for(dialog_parent())` in their
+  `__init__`. The six with no parent are in `EXEMPT` in `tests/test_dialog_parents.py`, each
+  with its reason: `require_expect`, `require_config_dir` and `require_readable_config`,
+  which run from `main()` before any window exists; `Wmain`, the root; `ConsoleWindow`
+  (#255), a peer of the main window that is moved to another monitor on purpose, where a
+  transient window is kept above its parent and goes with it when the parent is minimized;
+  and the `Gtk.OffscreenWindow` of `TranscriptReplayer.start`, which is never on a screen.
+  `tests/test_dialog_parents.py` holds the rule over `app.py` with `ast`, naming each window
+  built with no `parent=` or `transient_for=` that is a call of `dialog_parent`, and each
+  class of windows with no `__init__` of its own that sets one, and opens the windows
+  against real GTK; `tests/test_dialog_parent_order.py` holds the order. Not measured: where
+  WSLg puts a window that has a parent, and GCM already gave the host dialog and Preferences
+  the main window when they were reported, so it may not be over it either; whether a
+  message shows while its parent is minimized, as a mount's result can now be, where it
+  appeared on its own before. The measurements and the scenarios are X11 with no window
+  manager: they say what GCM asks for, not where a Wayland compositor puts a window.
 - Translation sources are the `.po` files directly under `lang/`, one per locale
   (`lang/de_DE.po`); the catalogs the application loads are compiled beside them
   (`lang/de/LC_MESSAGES/gcm-lang.mo`). `doit translate` compiles every source, creating

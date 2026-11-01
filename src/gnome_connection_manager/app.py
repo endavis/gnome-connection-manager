@@ -1533,10 +1533,63 @@ def read_config_option(cp, section, option, kind, default):
     return value, unread
 
 
+def modal_window() -> Gtk.Window | None:
+    """The modal window on top, or None: the toplevel of the widget holding GTK's grab.
+
+    A modal window takes GTK's grab, and one opened over it takes the grab in turn, so
+    the grab is always with the window on top. Measured on X11 (#403): inside msgbox it
+    is the message; with the host dialog open it is the host dialog, and with Preferences
+    open it is Preferences; a message shown over the host dialog takes the grab and gives
+    it back as it closes; with a popup menu showing, the grab is the menu, whose window is
+    not a toplevel, and with a console window in use or the About dialog, which is not
+    modal, open, there is none. Not measured under Wayland.
+    """
+    grab = Gtk.grab_get_current()
+    window = grab.get_toplevel() if grab is not None else None
+    if (
+        isinstance(window, Gtk.Window)
+        and window.get_window_type() == Gtk.WindowType.TOPLEVEL
+        and window.get_visible()
+    ):
+        return window
+    return None
+
+
+def dialog_parent(preferred: Gtk.Window | None = None) -> Gtk.Window | None:
+    """The window a dialog, or a window opened from one, is transient for (#403).
+
+    Under Wayland GTK cannot place a window and the compositor does, over its parent if
+    it has one: a window with none is placed wherever the compositor likes. Every window
+    GCM opens asks here, in this order:
+
+    - the modal window on top, since a window opened over a modal one must sit above it,
+      and a chain is unambiguous where two siblings of one parent are not;
+    - else `preferred`, as the caller gave it;
+    - else the console window in use, which is what an action goes to (`page_in_use`);
+    - else the main window;
+    - else None.
+
+    `wMain` does not exist until a Wmain is built, and a Wmain is half built while
+    `load_encryption_key` can already ask for a message, so each is read from what is
+    there. Where WSLg puts a window that has a parent is not measured.
+    """
+    modal = modal_window()
+    if modal is not None:
+        return modal
+    if preferred is not None:
+        return preferred
+    controller = globals().get("wMain")
+    in_use = getattr(controller, "window_in_use", None)
+    if isinstance(in_use, Gtk.Window) and in_use in getattr(controller, "console_windows", ()):
+        return in_use
+    main = getattr(controller, "wMain", None)
+    return main if isinstance(main, Gtk.Window) else None
+
+
 def msgbox(text: str, parent: Gtk.Window | None = None) -> None:
-    """Show an error message dialog."""
+    """Show an error message dialog, over `parent` or else where `dialog_parent` says."""
     msgBox = Gtk.MessageDialog(
-        parent=parent,
+        parent=dialog_parent(parent),
         modal=True,
         message_type=Gtk.MessageType.ERROR,
         buttons=Gtk.ButtonsType.OK,
@@ -1551,7 +1604,7 @@ def msginfo(text: str, parent: Gtk.Window | None = None) -> None:
     """Show a message that something worked, or that there was nothing to do: drawn as
     information, where msgbox draws an error, its icon included."""
     msgBox = Gtk.MessageDialog(
-        parent=parent,
+        parent=dialog_parent(parent),
         modal=True,
         message_type=Gtk.MessageType.INFO,
         buttons=Gtk.ButtonsType.OK,
@@ -1565,7 +1618,7 @@ def msginfo(text: str, parent: Gtk.Window | None = None) -> None:
 def msgconfirm(text: str) -> int:
     """Show a confirmation dialog and return the response."""
     msgBox = Gtk.MessageDialog(
-        parent=wMain.window,
+        parent=dialog_parent(),
         modal=True,
         message_type=Gtk.MessageType.QUESTION,
         buttons=Gtk.ButtonsType.OK_CANCEL,
@@ -1584,7 +1637,7 @@ def inputbox(
     password: bool = False,
     parent: Gtk.Window | None = None,
 ) -> str | None:
-    msgBox = EntryDialog(title, text, default, mask=password, parent=parent)
+    msgBox = EntryDialog(title, text, default, mask=password, parent=dialog_parent(parent))
     msgBox.set_icon_from_file(ICON_PATH)
     response = msgBox.value if msgBox.run() == Gtk.ResponseType.OK else None
     msgBox.destroy()
@@ -1601,7 +1654,7 @@ def choose_tab_color(current: str, parent: Gtk.Window | None = None) -> str | No
     GTK's colour chooser, with a No Color button, and starting at `current` where that is a
     colour.
     """
-    dialog = Gtk.ColorChooserDialog(title=_("Tab Color"), transient_for=parent)
+    dialog = Gtk.ColorChooserDialog(title=_("Tab Color"), transient_for=dialog_parent(parent))
     dialog.set_icon_from_file(ICON_PATH)
     dialog.set_use_alpha(False)
     dialog.add_button(_("No Color"), NO_COLOR)
@@ -2001,7 +2054,7 @@ def show_font_dialog(parent, title, button):
     if parent.dlgFont is None:
         # Get the actual window widget for transient_for
         parent_window = parent.main_widget if hasattr(parent, "main_widget") else None
-        parent.dlgFont = Gtk.FontChooserDialog(title=title, parent=parent_window)
+        parent.dlgFont = Gtk.FontChooserDialog(title=title, parent=dialog_parent(parent_window))
     parent.dlgFont.set_font(button.selected_font.to_string())
 
     response = parent.dlgFont.run()
@@ -2017,7 +2070,10 @@ def show_font_dialog(parent, title, button):
 
 
 def show_open_dialog(parent, title, action):
-    dlg = Gtk.FileChooserDialog(title=title, parent=parent, action=action)
+    # `parent` is also what remembers the last folder, so the window it opens over is
+    # asked for apart: the modal window on top when there is one, as with the host
+    # dialog's Browse (#403).
+    dlg = Gtk.FileChooserDialog(title=title, parent=dialog_parent(parent), action=action)
     dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
 
     dlg.add_button(
@@ -3496,11 +3552,11 @@ class Wmain(GladeComponent):
             return True
         elif item == "R":  # RENAME TAB
             tab = self.get_context_tab_label()
+            # Over the window in use, which a console window may be (#403).
             text = inputbox(
                 _("Rename tab"),
                 _("Enter new name"),
                 tab.get_text().strip(),
-                parent=self.window,
             )
             if text is not None and text != "":
                 tab.rename(text)
@@ -4812,7 +4868,7 @@ class Wmain(GladeComponent):
             for unread in unread_options
         ]
         dialog = Gtk.MessageDialog(
-            parent=self.wMain,
+            parent=dialog_parent(self.wMain),
             modal=True,
             message_type=Gtk.MessageType.WARNING,
             buttons=Gtk.ButtonsType.OK,
@@ -4843,7 +4899,7 @@ class Wmain(GladeComponent):
             for host, old in renamed
         ]
         dialog = Gtk.MessageDialog(
-            parent=self.wMain,
+            parent=dialog_parent(self.wMain),
             modal=True,
             message_type=Gtk.MessageType.WARNING,
             buttons=Gtk.ButtonsType.OK,
@@ -5793,7 +5849,7 @@ class Wmain(GladeComponent):
         """Ask for a filename and write text to it. Shared by Save Buffer and the viewer."""
         dlg = Gtk.FileChooserDialog(
             title=_("Save as"),
-            parent=parent or self.wMain,
+            parent=dialog_parent(parent),
             action=Gtk.FileChooserAction.SAVE,
         )
         dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
@@ -5849,10 +5905,9 @@ class Wmain(GladeComponent):
                 _(
                     "This session has no recording. Turn on “Record the raw session” in Preferences and open a new session."
                 ),
-                self.wMain,
             )
             return None
-        dialog = Gtk.Dialog(title=_("Rebuilding transcript"), parent=self.wMain, modal=True)
+        dialog = Gtk.Dialog(title=_("Rebuilding transcript"), parent=dialog_parent(), modal=True)
         dialog.set_icon_from_file(ICON_PATH)
         dialog.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         bar = Gtk.ProgressBar()
@@ -5874,11 +5929,10 @@ class Wmain(GladeComponent):
                 # Closing the dialog and doing nothing else reads as the feature being
                 # broken. A recording with nothing in it yet is the ordinary case right
                 # after a session starts.
-                msgbox(_("This recording has no text in it yet"), self.wMain)
+                msgbox(_("This recording has no text in it yet"))
                 return
             self.save_text_to_file(
                 text,
-                self.wMain,
                 name=Path(raw_path).with_suffix(".txt").name,
                 folder=str(Path(raw_path).parent),
             )
@@ -6718,15 +6772,15 @@ class Wmain(GladeComponent):
     def send_snippet_to(self, snippet, terminals, parent=None):
         """Type `snippet` into each of `terminals`, each with its own host's values (#240).
 
-        Each `{?Label}` is asked for first, over `parent` or else the main window: once
-        for them all, however often it appears. Cancelling one sends nothing, and with no
-        terminal nothing is asked. Say whether it was sent.
+        Each `{?Label}` is asked for first, over `parent` or else the window in use (#403):
+        once for them all, however often it appears. Cancelling one sends nothing, and with
+        no terminal nothing is asked. Say whether it was sent.
         """
         if not terminals:
             return False
         answers = {}
         for label in placeholders.asked(snippet.text):
-            answer = inputbox(snippet.name, label.strip(), parent=parent or self.wMain)
+            answer = inputbox(snippet.name, label.strip(), parent=parent)
             if answer is None:
                 return False
             answers[label] = answer
@@ -7289,7 +7343,7 @@ class Whost(GladeComponent):
         self, path="gnome-connection-manager.glade", root="wHost", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=dialog_parent())
 
         self.treeModel = Gtk.ListStore(
             GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING, GObject.TYPE_STRING
@@ -7934,7 +7988,7 @@ class Wabout(GladeComponent):
         self, path="gnome-connection-manager.glade", root="wAbout", domain=domain_name, **kwargs
     ):
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=dialog_parent())
         self.wAbout.set_icon_from_file(ICON_PATH)
 
     # -- Wabout.new {
@@ -7979,7 +8033,7 @@ def resolve_preference(field):
 class Wconfig(GladeComponent):
     def __init__(self, path="gnome-connection-manager.glade", root="wConfig", domain=domain_name):
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=dialog_parent())
 
     # -- Wconfig.new {
     def new(self):
@@ -8677,7 +8731,7 @@ class Wcluster(GladeComponent):
     ):
         self.terms = terms
         path = str(Path(glade_dir) / path)
-        super().__init__(path, root, domain, parent=wMain.window)
+        super().__init__(path, root, domain, parent=dialog_parent())
 
     # -- Wcluster.new {
     def new(self):
@@ -9174,8 +9228,9 @@ class SnippetPicker(Gtk.Window):
         self.controller = controller
         self.terminal = terminal
         self.set_modal(True)
-        if isinstance(controller.wMain, Gtk.Window):
-            self.set_transient_for(controller.wMain)
+        # Over the window in use, which a console window may be (#403). None is allowed,
+        # and leaves it with no parent, as a picker built with no window up is.
+        self.set_transient_for(dialog_parent())
         self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
         self.set_default_size(560, 360)
         with contextlib.suppress(Exception):
@@ -9260,7 +9315,7 @@ class SnippetPicker(Gtk.Window):
         return False
 
     def send_chosen(self):
-        """Close, then send: a `{?Label}` asks over the main window, not over this."""
+        """Close, then send: a `{?Label}` asks over the window in use, not over this."""
         snippet = self.chosen()
         if snippet is None:
             return
@@ -9283,6 +9338,9 @@ class BufferViewer(Gtk.Window):
         Gtk.Window.__init__(self, title=title)
         self.controller = controller
         self.terminal = terminal
+        # Kept with the window in use, which a console window may be, so that the
+        # compositor does not place it by itself (#403). None is allowed.
+        self.set_transient_for(dialog_parent())
         self.set_default_size(*clamp_to_workarea(900, 600, monitor_workarea()))
         with contextlib.suppress(Exception):
             self.set_icon_from_file(ICON_PATH)
