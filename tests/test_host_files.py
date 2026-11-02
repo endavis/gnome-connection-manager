@@ -1895,8 +1895,13 @@ if scenario == "the-tree-menu":
     from_servers_menu("Mount with SSHFS")
     assert mounted == [("box", folder), ("box", folder)], mounted
 
-    # Mounted where Mount with SSHFS puts it, from it: Unmount in Mount's place.
+    # Mounted where Mount with SSHFS puts it, from it: Unmount in Mount's place. Held off
+    # until the scenario's own show_mounts, so a mount elsewhere on the machine does not
+    # have GIO tell GCM first (#449).
+    show = w.show_mounts
+    w.show_mounts = lambda: None
     app.read_mount_table = lambda: f"300 1 0:90 / {folder} rw - fuse.sshfs eric@192.0.2.10: rw\n"
+    w.mount_monitor.emit("mounts-changed")
     right_click("box")
     assert offered() == (True, False, True), offered()
     choose(menu.mnuUnmount)
@@ -1959,6 +1964,7 @@ if scenario == "the-tree-menu":
     assert text_of("box") == "box", text_of("box")
     items = hosts_menu()
     assert items == ["box", "switch"], items
+    w.show_mounts = show
     w.show_mounts()
     icon, marked = drawing("box")
     assert marked != plain and icon == plain_icon
