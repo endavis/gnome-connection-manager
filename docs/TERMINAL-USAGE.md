@@ -631,7 +631,10 @@ consoles in every window.
 ## Typing into several consoles at once
 
 **Servers → Cluster** (`Ctrl+Shift+U`) opens a window listing your open consoles, each by its
-tab's name with where its host is filed under it, as the open-console list has them. Tick the
+tab's name with the window it is in and where its host is filed under it. The window is
+**Main window** or **Console window N**, numbered in the order the console windows are open,
+and a console moved to another window is listed under it at once. The rest is as the
+open-console list has it. Tick the
 ones to type into, or use **Select all**, **Clear selection** and **Invert selection**. A
 ticked console's tab is yellow while the window is open, its text dark whatever the theme,
 and below a [tab colour](HOSTS-AND-FOLDERS.md#tab-colours) where it has one. A tab that

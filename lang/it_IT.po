@@ -977,6 +977,12 @@ msgstr "Clonare la console"
 msgid "No open consoles"
 msgstr "Nessuna console aperta"
 
+msgid "Main window"
+msgstr "Finestra principale"
+
+msgid "Console window {}"
+msgstr "Finestra console {}"
+
 #: ../gnome_connection_manager.py:1901 ../gnome_connection_manager.py:1986
 #: ../gnome_connection_manager.py:2184 ../gnome_connection_manager.py:2285
 #: ../gnome_connection_manager.py:2403 ../gnome_connection_manager.py:2573
