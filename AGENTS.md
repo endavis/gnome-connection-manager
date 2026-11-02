@@ -397,99 +397,21 @@ Practices below have each caught real bugs in this repo. They are worth the time
   text, `#2e3436`, Adwaita's own: measured, on Adwaita-dark and Yaru-dark the theme's
   light text could not be read on the yellow (#350). `color` on the box reaches the label
   inside it in all four themes, measured.
-- Dragging in the server tree is GtkTreeView's model drag with a target of GCM's own,
-  `GCM_TREE_ROW`: GTK highlights the row under the pointer and opens a folder hovered
-  over, but never moves a row itself -- `on_treeServers_drag_data_received` refiles the
-  record and redraws. A refused spot is vetoed in `on_treeServers_drag_motion` by
-  `Gdk.drag_status(context, 0, time)` *and returning True*. Measured with real pointer
-  input under Xvfb: return False instead and the refused drop is delivered anyway.
-  The dragged row is the one under the press (`_drag_source_path`), not the selection:
-  measured the same way, a press on a folder's expander arrow starts a drag without
-  selecting the folder. `drop_target` reads the edge of a row as a place beside it and
-  the middle as that row's folder.
-- A console's tab label is a `NotebookTabLabel`, and it holds state its text does not:
-  the title the program set, a rename, whether the session has ended, the marks the
-  bell and the cluster window leave, and its host's colour (#350). Three texts, and they differ: `get_text()` is the
-  identity (the host's tab name, `host_tab_name`, or a rename) that clone, cluster
-  consoles and `move_page` read,
-  `get_display_text()` is the whole composed label, and the widget draws that cut to
-  `TAB_LABEL_MAX` (#190). Everything with room for the long form -- the tooltip, the
-  open-console list, the rename and close dialogs -- must take one of the first two, never
-  `self.label.get_text()`, which is the cut one. The tooltip and the two lists add the
-  host's whole path under it, `get_path` (#347). `render_label` is the single place that
-  composes and cuts, so the constructor goes through it too. Move a console between notebooks with
-  `Wmain.move_page`, which takes the label along. Split and Unsplit used to build a new
-  one from `get_text()`, and every moved tab lost all of that (#180). Dragging a tab
-  into another pane is GTK's own notebook drag, not GCM code: measured with real
-  pointer input, the drop carries the same label object across, still reorderable and
-  detachable, so the tab keeps everything it was showing (#186). GCM's `page-added`
-  and `page-removed` handlers do run on a drop, which is what the test there covers.
-- A console action acts on the tab in use, or, from a tab's or a terminal's menu, on
-  that tab (#219, #221). `get_context_tab_widget` answers which, reading the terminal's
-  context too: the terminal menu's Reset and Clone are tab actions. The tab in use is
-  `page_in_use`: the page showing in the pane the keyboard is in, or was last in, in the
-  window that last had it, which `current_notebook` gives. `on_window_set_focus` keeps
-  that pane, following the window's `set-focus` into the panes by a click or a key alike
-  (#223). It replaced `self.current`, the last terminal given the keyboard, which a click
-  never set and a tab without a terminal could not be. `get_target_terminal` is the
-  context terminal, else that tab's terminal, else None. Terminal shortcuts are also
-  application accelerators, which run before the focused terminal sees the key, so a key
-  reaches the action's handler and not `on_terminal_keypress`. A remote desktop with the
-  keyboard is the exception, and gets the key first (#234), and so does a console for the
-  six keys in `CONSOLE_FIRST_KEYS` (#419). Both menus clear their context
-  from an idle callback after `hide`, in `on_context_menu_hide`, and
-  `trigger_popup_action` clears it even when the action raises. Measured: GTK hides a menu
-  before the chosen item's action runs, and that action reads the context. The tab menu
-  cleared half of it at once, which sent the next paste or Ctrl+W to a tab nobody was
-  looking at. The terminal menu cleared all of it, so each item acted on the terminal with
-  the keyboard, which after a split can be in the other pane. Opening the menu does not
-  move the keyboard, measured.
-- A tab holds a page, and the page need not hold a terminal (#223). `addTab` builds one
-  around a terminal and opens it with `add_page`, which a page of any other kind goes
-  through too: VNC's is one (#234), and web views are to be (#207). An RDP desktop shown
-  in its tab is not one: it sits after FreeRDP's terminal in the terminal's page (#227).
-  Nothing may take a page's first child for its terminal; `page_terminal` answers, with None for a
-  page that holds something else. Terminal actions then do nothing, and tab actions --
-  Rename, Close console, Split, moving between panes and windows, the open-console list --
-  work on any tab. Close console destroys the page once it is out of its notebook, as
-  the close button's `close_tab` does, which is what ends its session. Only taken out, a
-  page lived on, held by the handlers on its widgets, and its session ran on unseen
-  until GCM exited, measured (#374). It keeps its own `remove_page`, not `close_tab`,
-  whose `is_closed` has `check_notebook_pages` remove an emptied pane, which Close
-  console has never done. `NotebookTabLabel.prepare_menu` offers such a tab Rename, Split and
-  Move to New Window only, and the cluster window leaves it out. Measured, choosing a tab
-  whose page cannot take the keyboard leaves the keyboard on the notebook itself. Alt+1 to
-  Alt+9 are handled in `on_terminal_keypress`, not as accelerators, so they do nothing
-  from such a tab. `tests/test_tab_pages.py` opens a kind of page of its own to test all
-  of this.
-- A console can move to a window of its own, a `ConsoleWindow` (#255). It holds one
-  notebook from `new_console_notebook`, as a split does, so tabs drag between it and the
-  panes, and no splits: `split_notebook` refuses there, both menus hide Split, and
-  `check_notebook_pages` passes its notebook over. Code that reaches every console walks
-  `console_notebooks`, the main window's panes and then each console window's;
-  `collect_notebooks(self.console_side())` is the main window's alone, which is what
-  `on_window_set_focus` and `main_notebook` want. `console_side` is right of the server
-  pane, never all of `hpMain`: the server pane is a notebook too (#269), and taken for a
-  pane of consoles, the keyboard in its tree made it the pane in use. The window in use, `window_in_use`, is
-  the last of them to become active, through `on_window_active_changed`, or the one
-  `use_window` brought forward, and `current_notebook` reads it. A console window joins
-  the application, so the application's keys work there: measured, without that the
-  terminal shortcuts still worked, through `on_terminal_keypress`, but Ctrl+Shift+U did
-  not. `toggle_console_window` moves a tab out or back. Back is into `main_notebook`, the
-  main window's pane in use, and so is every console of a window being closed, which ends
-  none of them, as decided in #255. An emptied console window closes itself, from an idle.
-  A tab dropped outside every notebook raises `create-window`: measured with real pointer
-  input under X11, a drop on the root window arrives through GTK's root-window drop,
-  `drag-data-get` and not `drag-failed`, with the pointer's position, and a drop anywhere
-  else but a tab strip, a terminal included, through `drag-failed` with no target. Under
-  Wayland, measured on sway, GTK reports either as `drag-failed` with an error and opens
-  nothing, so there `on_notebook_drag_failed` moves the tab out itself, the one
-  `on_notebook_drag_begin` recorded, once GTK has put it back. `watch_tab_drags` wires
-  those signals on every console notebook. Find there opens the window's own search box,
-  which `search_box` returns, and F11 makes the console window fill the screen. The bar
-  maps its entry only on its next frame, so `focus_search` realizes it: unrealized, each
-  key let go of meanwhile was a GTK critical. A mark flags the window holding the tab,
-  which `window_of` gives.
+- Dragging in the server tree is GtkTreeView's model drag, but GCM refiles the row itself,
+  and a refused spot is vetoed by `Gdk.drag_status(context, 0, time)` *and returning True*.
+  Notes: `drop_target`'s docstring and the comments of `on_treeServers_drag_motion`.
+- A console's tab label is a `NotebookTabLabel`, which holds state its text does not. Read
+  its long form through `get_text()` or `get_display_text()`, never `self.label.get_text()`,
+  which is cut, and move a console with `Wmain.move_page`. Notes: its docstrings.
+- A console action acts on `get_context_tab_widget`'s tab: the one whose menu is open, else
+  `page_in_use` (#219, #221). Notes: their docstrings, and those of `current_notebook` and
+  `on_context_menu_hide`.
+- A tab holds a page, which need not hold a terminal (#223): nothing may take a page's first
+  child for its terminal, as `page_terminal` answers. Notes: its docstring, `add_page`'s, and
+  `tests/test_tab_pages.py`'s.
+- A console can move to a window of its own, a `ConsoleWindow` (#255), so code that reaches
+  every console walks `console_notebooks`, not the main window's panes alone. Notes: the
+  docstrings of `ConsoleWindow`, `console_notebooks` and `current_notebook`.
 - A window GCM opens has a transient parent from `dialog_parent` in `app.py`, bar the six in
   `EXEMPT` in `tests/test_dialog_parents.py`, which holds the rule (#403): under Wayland the
   compositor places a window over its parent. Notes: `docs/design/menus-and-windows.md`.
