@@ -49,10 +49,10 @@ host. `with_path` puts it on a second line of a list, smaller and fainter by alp
 Measured in a menu built as the open-console list's, a row with it was 43 pixels tall
 against 27, and 85 against 50 at a font scale of 2.25. On the same line it made the
 menu twice as wide, and as a tooltip it showed one row's path, half a second after the
-pointer stopped there. `Wcluster.draw_console` reads it from the row's terminal's tab as
-the row is drawn, so the cluster window's store keeps its columns. A row rewritten by
-`name_cluster_consoles` is drawn again even with the same name, as the store emits
-`row-changed` for it, measured.
+pointer stopped there. `Wcluster.draw_console` reads it and `Wmain.console_place` from the
+row's terminal as the row is drawn, so the cluster window's store keeps its columns (#451).
+A row rewritten by `name_cluster_consoles` is drawn again even with the same name, as the
+store emits `row-changed` for it, measured.
 
 ## Preferences' Tab name
 

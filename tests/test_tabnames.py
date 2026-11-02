@@ -1041,6 +1041,122 @@ def test_a_cluster_row_is_drawn_with_its_hosts_path(app_module, monkeypatch):
     ]
 
 
+def test_a_cluster_row_shows_its_window_and_updates_when_moved(app_module, monkeypatch):
+    """Consoles in the main window and in a console window (#451), and moving one while the
+    cluster window is open rewrites the rows so the tree redraws them."""
+    from tests.test_console_list import escape
+
+    monkeypatch.setattr(app_module.GLib, "markup_escape_text", escape, raising=False)
+
+    class BoxNotebook:
+        def __init__(self):
+            self.pages = []
+            self.labels = {}
+
+        def get_n_pages(self):
+            return len(self.pages)
+
+        def get_tab_label(self, page):
+            return self.labels.get(page)
+
+        def append_page(self, page, label):
+            page.notebook = self
+            self.pages.append(page)
+            self.labels[page] = label
+
+        def remove(self, page):
+            self.pages.remove(page)
+            self.labels.pop(page, None)
+
+        def set_tab_reorderable(self, page, reorderable):
+            pass
+
+        def set_tab_detachable(self, page, detachable):
+            pass
+
+    class BoxPage:
+        def __init__(self):
+            self.notebook = None
+            self.terminal = types.SimpleNamespace(get_parent=lambda: self)
+
+        def get_parent(self):
+            return self.notebook
+
+    web_tab = tab_for(app_module, host_at(app_module, "1. Projects/infrafoundry/web"))
+    web_tab.set_name("web", "1. Projects/infrafoundry/web")
+    router_tab = tab_for(app_module, app_module.Host("", "router"))
+    router_tab.set_name("router", "router")
+    web_page, router_page = BoxPage(), BoxPage()
+    web_term, router_term = web_page.terminal, router_page.terminal
+
+    main = BoxNotebook()
+    main.append_page(web_page, web_tab)
+    main.append_page(router_page, router_tab)
+    split = BoxNotebook()
+    window = types.SimpleNamespace(notebook=BoxNotebook())
+
+    wmain = window_with(app_module, main, split, console_windows=(window,))
+    monkeypatch.setattr(app_module, "wMain", wmain, raising=False)
+
+    class WatchedRows(list):
+        def __init__(self, items):
+            super().__init__(items)
+            self.writes = 0
+
+        def __getitem__(self, index):
+            row = super().__getitem__(index)
+            parent = self
+
+            class Row(list):
+                def __setitem__(self, idx, value):
+                    parent.writes += 1
+                    row[idx] = value
+
+            return Row(row)
+
+        def __iter__(self):
+            for index in range(len(self)):
+                yield self[index]
+
+    rows = WatchedRows([[False, "  web  ", web_term], [True, "  router  ", router_term]])
+    wmain.wCluster = ClusterWindow(rows)
+    cluster = object.__new__(app_module.Wcluster)
+
+    def render():
+        drawn = []
+        cell = types.SimpleNamespace(set_property=lambda _name, value: drawn.append(value))
+        for index in range(len(rows)):
+            cluster.draw_console(None, cell, rows, index)
+        return drawn
+
+    assert render() == [
+        "web\n<span size='small' alpha='60%'>1. Projects/infrafoundry/web</span>",
+        "router",
+    ]
+
+    wmain.move_page(router_page, window.notebook)
+    assert rows.writes == 2
+    assert render() == [
+        "web\n<span size='small' alpha='60%'>Pane 1 · 1. Projects/infrafoundry/web</span>",
+        "router\n<span size='small' alpha='60%'>Window 1</span>",
+    ]
+
+    wmain.move_page(router_page, split)
+    assert rows.writes == 4
+    assert render() == [
+        "web\n<span size='small' alpha='60%'>Pane 1 · 1. Projects/infrafoundry/web</span>",
+        "router\n<span size='small' alpha='60%'>Pane 2</span>",
+    ]
+
+    wmain.move_page(router_page, main)
+    wmain.on_console_window_destroy(window)
+    assert rows.writes == 8
+    assert render() == [
+        "web\n<span size='small' alpha='60%'>1. Projects/infrafoundry/web</span>",
+        "router",
+    ]
+
+
 # What the stubs above cannot show: real tabs, drawn, and the windows and lists that name
 # them. Each host has no address, so its tab is a local shell. HOME is a scratch folder,
 # so this never reads a real gcm.conf.
@@ -1301,6 +1417,20 @@ elif scenario == "the-paths-beside-the-names":
     pump()
     assert labels()[2].get_tooltip_text() == "deploys\n2. Archive/web", labels()[2].get_tooltip_text()
     assert drawn_rows()[2] == "deploys\n2. Archive/web", drawn_rows()
+
+    # Moved to a console window and back while the cluster window is open (#451).
+    w.toggle_console_window(w.nbConsole.get_nth_page(3))
+    pump()
+    assert drawn_rows() == [
+        "infrafoundry/ansible\nPane 1 · 1. Projects/infrafoundry/ansible",
+        "pyproject-template/ansible\nPane 1 · 1. Projects/pyproject-template/ansible",
+        "deploys\nPane 1 · 2. Archive/web",
+        "router\nWindow 1",
+        "local\nPane 1",
+    ], drawn_rows()
+    w.toggle_console_window(w.console_windows[0].notebook.get_nth_page(0))
+    pump()
+    assert drawn_rows()[3] == "router" and drawn_rows()[4] == "local", drawn_rows()
 
 elif scenario == "the-template-names-the-tabs":
     # As gcm.conf gives them, since OK saves them: a hand-built Host leaves these None.

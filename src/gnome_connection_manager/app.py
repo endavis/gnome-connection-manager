@@ -3079,6 +3079,29 @@ class Wmain(GladeComponent):
         """The window a console notebook is in: its console window, or the main window."""
         return self.console_window_of(notebook) or self.wMain
 
+    def console_place(self, terminal):
+        """The pane or console window holding `terminal`, once consoles sit in more than
+        one pane or in a console window (#451)."""
+        pane = terminal.get_parent() if hasattr(terminal, "get_parent") else None
+        target = pane.get_parent() if hasattr(pane, "get_parent") else None
+        if target is None:
+            return ""
+        notebooks = self.console_notebooks()
+        many = sum(1 for notebook in notebooks if notebook.get_n_pages()) > 1
+        panes = windows = 0
+        for notebook in notebooks:
+            if self.console_window_of(notebook) is None:
+                panes += 1
+                place = _("Pane {}").format(panes) if many else ""
+            elif notebook.get_n_pages():
+                windows += 1
+                place = _("Window {}").format(windows)
+            else:
+                place = ""
+            if notebook is target:
+                return place
+        return ""
+
     def open_console_groups(self):
         """Every open console, grouped by the pane or console window it is in."""
         focused = self.page_in_use()
@@ -5553,6 +5576,7 @@ class Wmain(GladeComponent):
         notebook.append_page(page, label)
         notebook.set_tab_reorderable(page, True)
         notebook.set_tab_detachable(page, True)
+        self.name_cluster_consoles()
 
     def open_console_window(self, width, height):
         """A new console window, `width` by `height`, empty until a tab moves in (#255)."""
@@ -5664,6 +5688,7 @@ class Wmain(GladeComponent):
         self.console_windows = tuple(other for other in self.console_windows if other is not window)
         if self.window_in_use is window:
             self.window_in_use = None
+        self.name_cluster_consoles()
 
     def on_console_window_page_removed(self, notebook, _page, _number):
         """Close a console window once its last tab has left it, however it left (#255).
@@ -5730,6 +5755,7 @@ class Wmain(GladeComponent):
             hp.show()
             hp.queue_draw()
             self.on_tab_focus(cnb, cnb.get_nth_page(cnb.get_current_page()))
+            self.name_cluster_consoles()
 
     def find_notebook(self, widget, exclude=None):
         if widget != exclude and isinstance(widget, Gtk.Notebook):
@@ -5774,6 +5800,7 @@ class Wmain(GladeComponent):
         if hasattr(widget, "is_closed") and widget.is_closed:
             # tab has been closed
             self.check_notebook_pages(widget)
+            self.name_cluster_consoles()
         else:
             # tab has been moved to another notebook
             # save a reference to this notebook, on_page_added check if the notebook must be removed
@@ -5784,6 +5811,7 @@ class Wmain(GladeComponent):
         if hasattr(self, "check_notebook"):
             self.check_notebook_pages(self.check_notebook)
             delattr(self, "check_notebook")
+        self.name_cluster_consoles()
 
     def show_save_buffer(self, terminal):
         """Save Buffer is the same operation as the viewer's Save As, minus the window."""
@@ -8904,13 +8932,16 @@ class Wcluster(GladeComponent):
     # -- Wcluster.new }
 
     def draw_console(self, _column, cell, model, iter_, _data=None):
-        """A console's row: its tab's name over its host's whole path, as the open-console
-        list draws it (#347). The path is read from the tab as the row is drawn, and
-        Wmain.name_cluster_consoles has each row drawn again as the hosts change."""
+        """A console's row: its tab's name over its pane or console window and its host's
+        whole path, as the open-console list draws them (#347, #451). Both are read as the
+        row is drawn, and Wmain.name_cluster_consoles has each row drawn again as the
+        hosts or the windows change."""
         name, terminal = model[iter_][1], model[iter_][2]
         tab = wMain.get_tab_label_for_terminal(terminal)
+        place = wMain.console_place(terminal) if hasattr(wMain, "console_place") else ""
         path = tab.get_path() if hasattr(tab, "get_path") else ""
-        cell.set_property("markup", with_path(GLib.markup_escape_text(name.strip()), path))
+        detail = " · ".join(part for part in (place, path) if part)
+        cell.set_property("markup", with_path(GLib.markup_escape_text(name.strip()), detail))
 
     def send_snippet(self, snippet):
         """Send `snippet` to every console selected, asking over this window (#240)."""
