@@ -2964,6 +2964,8 @@ class Wmain(GladeComponent):
                 elif cmd == _CONNECT:
                     self.on_btnConnect_clicked(None)
                 elif cmd[0][0:8] == "console_":
+                    # Consoles 1 to 9 have no accelerator in TERMINAL_ACTIONS, only this,
+                    # so they do nothing from a tab that holds no terminal (#223).
                     page = int(cmd[0][8:]) - 1
                     widget.get_parent().get_parent().set_current_page(page)
                 elif cmd == _NEW_LOCAL:
@@ -3526,6 +3528,9 @@ class Wmain(GladeComponent):
                 # As the tab's close button does, which is what ends its session. Only
                 # taken out of its notebook, a page lived on, held by the handlers on its
                 # widgets, and its session ran on unseen until GCM exited, measured (#374).
+                # Removed here, not through close_tab, whose is_closed has
+                # check_notebook_pages remove a pane left empty, which Close console has
+                # never done.
                 page.destroy()
             return True
         elif item == "W":  # TO A WINDOW OF ITS OWN, OR BACK, whatever the tab holds (#255)
@@ -6831,7 +6836,9 @@ class Wmain(GladeComponent):
     def on_treeServers_drag_motion(self, widget, context, x, y, time):
         item = self.dragged_tree_item()
         if item is None or self.drop_refusal(item, self.drop_target(x, y)) is not None:
-            # Returning True keeps GtkTreeView from accepting the spot itself.
+            # Returning True keeps GtkTreeView from accepting the spot itself: measured
+            # with real pointer input under Xvfb, with False the refused drop was
+            # delivered anyway.
             Gdk.drag_status(context, 0, time)
             widget.set_drag_dest_row(None, Gtk.TreeViewDropPosition.BEFORE)
             return True
@@ -10236,7 +10243,20 @@ def opens_terminal(kind):
 
 
 class NotebookTabLabel(Gtk.HBox):
-    """Notebook tab label with close button."""
+    """A console's tab label, with its close button.
+
+    It holds state its text does not: the title the program set, a rename, whether the
+    session has ended, the marks the bell and the cluster window leave, and its host's
+    colour (#350). So a console moves between notebooks through Wmain.move_page, which
+    takes the label along.
+
+    Three texts, and they differ. get_text() is the identity, the host's tab name
+    (host_tab_name) or a rename, that clone, the cluster window and move_page read.
+    get_display_text() is the whole label, and the label widget draws that cut to
+    TAB_LABEL_MAX (#190). So whatever has room for the long form, the tooltip, the
+    open-console list, the rename and close dialogs, takes one of the first two, never
+    self.label.get_text().
+    """
 
     # The host the tab was opened for, which Wmain.name_tabs names it after again as the
     # hosts change (#346). None for a tab opened for none.
@@ -10432,6 +10452,8 @@ class NotebookTabLabel(Gtk.HBox):
         self.render_label()
 
     def render_label(self):
+        """Compose the label and cut it to TAB_LABEL_MAX: the one place that does either,
+        so the constructor draws through it too."""
         full = self.title.strip()
         if conf.TAB_TITLE_FROM_TERMINAL and not self.renamed and self.terminal_title:
             full = f"{full}: {self.terminal_title}"
