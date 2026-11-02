@@ -24,12 +24,12 @@ the git log.
   to keep the old ones, see *Keys that moved, and a command with no key* in the terminal
   guide.
 - `Ctrl+Q`, `Ctrl+R`, `Ctrl+E`, `F1`, `F9` and `Shift+F9` go to the program in a console
-  and act as before anywhere else, in the server tree or the search box. `Ctrl+Q` no longer
-  quits GCM from inside a console, nor does `F9` hide the panel there: **File → Quit**,
-  **Servers → Refresh**, **Servers → Edit Host**, **Help → About**, **View → Show Panel**
-  and **View → Show Toolbar** reach each from anywhere. A console whose program has ended
-  takes these keys too, so use the menu there. `Ctrl+Shift+H`, `Ctrl+,`, `Ctrl+Shift+U` and
-  `Ctrl+Shift+S` still act wherever the keyboard is.
+  and act as before anywhere else, in the server tree, the search box or a console whose
+  program has ended. `Ctrl+Q` no longer quits GCM from inside a running console, nor does
+  `F9` hide the panel there: **File → Quit**, **Servers → Refresh**, **Servers → Edit Host**,
+  **Help → About**, **View → Show Panel** and **View → Show Toolbar** reach each from
+  anywhere. `Ctrl+Shift+H`, `Ctrl+,`, `Ctrl+Shift+U` and `Ctrl+Shift+S` still act wherever
+  the keyboard is.
 - A custom sequence in `[keys]` on `Ctrl+Q`, `Ctrl+R`, `Ctrl+E`, `F1`, `F9` or `Shift+F9`
   is sent in a console. The first four were refused, with a line in the log, and the last
   two were accepted and never sent, as the accelerator took the key first.

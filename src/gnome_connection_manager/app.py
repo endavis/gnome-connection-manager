@@ -3323,14 +3323,13 @@ class Wmain(GladeComponent):
         Ctrl+W closed a VNC tab and Ctrl+F never reached the desktop. So the desktop gets
         a key first, and GCM only one gtk-vnc leaves.
 
-        A console gets the fixed accelerators in CONSOLE_FIRST_KEYS first (#419), as a key
-        typed into a console belongs to its program, except GCM's [shortcuts], which
-        `on_terminal_keypress` runs. One the terminal does not handle goes on to the
-        accelerator. With the keyboard anywhere else, GCM's shortcuts apply. A console whose
-        program has ended handles all six and does nothing with them, measured, so none
-        acts there and the menus are the way to each: Ctrl+Q does not quit from such a tab,
-        and File → Quit does. Not handled yet (#425): a check of the terminal's child_pid
-        here would pass such a key on.
+        A console with a running program gets the fixed accelerators in
+        CONSOLE_FIRST_KEYS first (#419, #425), as a key typed into a console belongs to
+        its program, except GCM's [shortcuts], which `on_terminal_keypress` runs. One the
+        terminal does not handle goes on to the accelerator. With the keyboard anywhere
+        else, or in a console whose program has ended (which `on_terminal_child_exited`
+        clears `child_pid` on, as VTE still takes all six and does nothing with them,
+        measured), GCM's shortcuts apply.
 
         propagate_key_event gives the key to the focused widget and its parents, and stops
         before the window, so it does not run this handler again for the key.
@@ -3338,7 +3337,11 @@ class Wmain(GladeComponent):
         focus = window.get_focus()
         if GtkVnc is not None and isinstance(focus, GtkVnc.Display):
             return window.propagate_key_event(event)
-        if isinstance(focus, Vte.Terminal) and get_key_name(event) in CONSOLE_FIRST_KEYS:
+        if (
+            isinstance(focus, Vte.Terminal)
+            and getattr(focus, "child_pid", None) is not None
+            and get_key_name(event) in CONSOLE_FIRST_KEYS
+        ):
             return window.propagate_key_event(event)
         return False
 

@@ -6434,6 +6434,12 @@ def press_in_window(app_module, monkeypatch, focus, name, handled=True):
     return answered, window
 
 
+def running_console(app_module, pid=123):
+    terminal = app_module.Vte.Terminal()
+    terminal.child_pid = pid
+    return terminal
+
+
 @pytest.mark.parametrize("name", sorted(shortcuts.CONSOLE_FIRST_KEYS))
 def test_a_console_is_given_a_fixed_accelerators_key_before_the_accelerator(
     app_module, monkeypatch, name
@@ -6441,7 +6447,7 @@ def test_a_console_is_given_a_fixed_accelerators_key_before_the_accelerator(
     """GTK runs an accelerator before the focused widget sees the key, which took Ctrl+E,
     Ctrl+R and Ctrl+Q from the program in a console. True ends the key press there, so the
     accelerator never runs."""
-    terminal = app_module.Vte.Terminal()
+    terminal = running_console(app_module)
 
     answered, window = press_in_window(app_module, monkeypatch, terminal, name)
 
@@ -6449,9 +6455,23 @@ def test_a_console_is_given_a_fixed_accelerators_key_before_the_accelerator(
     assert window.propagated == [window.event]
 
 
+@pytest.mark.parametrize("name", sorted(shortcuts.CONSOLE_FIRST_KEYS))
+def test_a_console_whose_program_has_ended_leaves_the_fixed_accelerators_to_run(
+    app_module, monkeypatch, name
+):
+    """Once on_terminal_child_exited clears child_pid, VTE has no program to give the key
+    to and would swallow it (#425). False lets the window's accelerator act instead."""
+    terminal = running_console(app_module, pid=None)
+
+    answered, window = press_in_window(app_module, monkeypatch, terminal, name)
+
+    assert answered is False
+    assert window.propagated == []
+
+
 def test_a_key_the_console_does_not_handle_goes_on_to_the_accelerator(app_module, monkeypatch):
     """False lets GTK carry on, to the accelerator, as it does for a VNC desktop."""
-    terminal = app_module.Vte.Terminal()
+    terminal = running_console(app_module)
 
     answered, window = press_in_window(app_module, monkeypatch, terminal, "CTRL+Q", handled=False)
 
@@ -6465,7 +6485,7 @@ def test_a_key_the_console_does_not_handle_goes_on_to_the_accelerator(app_module
 def test_any_other_key_in_a_console_is_the_accelerators_to_run_first(app_module, monkeypatch, name):
     """The rest are GCM's [shortcuts], which `on_terminal_keypress` runs when the
     accelerator has not, and the fixed accelerators a console never gets first."""
-    terminal = app_module.Vte.Terminal()
+    terminal = running_console(app_module)
 
     answered, window = press_in_window(app_module, monkeypatch, terminal, name)
 

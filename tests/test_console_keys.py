@@ -273,6 +273,27 @@ elif scenario == "the-fixed-keys":
     assert toggles() == (False, False), toggles()
     assert reads() == reading, "a key reached the program from the server tree"
 
+    # Once the console's program has ended, they act from the console too (#425).
+    import signal
+    os.kill(term.child_pid, signal.SIGTERM)
+    assert until(lambda: term.child_pid is None), term.child_pid
+    w.wMain.set_focus(term)
+    pump(0.3)
+    assert w.wMain.get_focus() is term, w.wMain.get_focus()
+    press(CONTROL, ord("e"))
+    assert taken() == {"edit": 2, "refresh": 1, "about": 1, "quit": 1}, taken()
+    press(CONTROL, ord("r"))
+    assert taken() == {"edit": 2, "refresh": 2, "about": 1, "quit": 1}, taken()
+    press(F1)
+    assert taken() == {"edit": 2, "refresh": 2, "about": 2, "quit": 1}, taken()
+    press(SHIFT, F9)
+    assert toggles() == (False, True), toggles()
+    press(F9)
+    assert toggles() == (True, True), toggles()
+    press(CONTROL, ord("q"))
+    assert taken() == {"edit": 2, "refresh": 2, "about": 2, "quit": 2}, taken()
+    assert reads() == reading
+
 elif scenario == "an-existing-configuration":
     assert app.CONFIG_FILE == os.path.join(home, ".config", "gcm", "gcm.conf"), app.CONFIG_FILE
     page, term = open_console()
