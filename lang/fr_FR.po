@@ -1591,6 +1591,12 @@ msgstr "Déplacer vers une nouvelle fenêtre"
 msgid "Move to Main Window"
 msgstr "Déplacer vers la fenêtre principale"
 
+msgid "Move All to Main Window"
+msgstr "Tout déplacer vers la fenêtre principale"
+
+msgid "Move every console in a console window back into the main window"
+msgstr "Déplacer toutes les consoles des fenêtres de console vers la fenêtre principale"
+
 msgid "Window {}"
 msgstr "Fenêtre {}"
 

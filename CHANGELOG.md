@@ -11,6 +11,12 @@ the git log.
 
 ## [Unreleased]
 
+### Added
+- **View → Move All to Main Window**, and a toolbar button after Unsplit's, bring every
+  console in every console window back into the main window at once and end none of them,
+  as closing each console window does. The consoles go into the main window's pane in use,
+  and each emptied console window closes (#404).
+
 ### Changed
 - A key typed into a console now belongs to its program, bar GCM's own shortcuts, and the
   defaults no longer take a Ctrl+letter key a shell reads. Six commands moved to

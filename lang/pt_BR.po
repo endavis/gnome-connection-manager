@@ -1590,6 +1590,12 @@ msgstr "Mover para nova janela"
 msgid "Move to Main Window"
 msgstr "Mover para a janela principal"
 
+msgid "Move All to Main Window"
+msgstr "Mover todos para a janela principal"
+
+msgid "Move every console in a console window back into the main window"
+msgstr "Mover todos os consoles das janelas de console para a janela principal"
+
 msgid "Window {}"
 msgstr "Janela {}"
 

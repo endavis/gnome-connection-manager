@@ -116,6 +116,11 @@ def use(window):
     window.present()
     assert until(window.is_active), window.get_title()
 
+def text_of(item):
+    """A menu item's text as drawn, or None for one without a label, a separator."""
+    child = item.get_child()
+    return child.get_text() if isinstance(child, Gtk.Label) else None
+
 def split_off(name):
     """Split H with `name` in use, which moves it into a pane of its own."""
     page = page_of(name)
@@ -356,6 +361,117 @@ elif scenario == "closing-it-moves-its-consoles-back":
     run("B", "echo back-$KEPT", "back-b")
     run("C", "echo back-$KEPT", "back-c")
 
+elif scenario == "every-console-comes-back":
+    open_tabs("A", "B", "C", "D")
+    # B in a window, then C and D in a second one, which shows C.
+    w.toggle_console_window(page_of("B"))
+    first = window_of("B")
+    w.toggle_console_window(page_of("C"))
+    second = window_of("C")
+    w.move_page(page_of("D"), second.notebook)
+    second.notebook.set_current_page(0)
+    for name, value in (("B", "b"), ("C", "c"), ("D", "d")):
+        run(name, "KEPT=" + value + "; echo ready", "ready")
+    ended = []
+    w.session_ended = ended.append
+    kept = {name: (label_of(name), terminal(name)) for name in "ABCD"}
+    assert names() == [["A"], ["B"], ["C", "D"]], names()
+    assert w.console_windows == (first, second), names()
+
+    # The console windows open at +0+0 as the main window does, and with no window manager
+    # nothing puts one in front of another: raise the main window over them, so that a
+    # click lands on its toolbar.
+    use(w.wMain)
+    w.treeServers.grab_focus()
+    assert w.wMain.get_focus() is w.treeServers, w.wMain.get_focus()
+    toolbar = w.get_widget("toolbar1")
+    items = [toolbar.get_nth_item(n) for n in range(toolbar.get_n_items())]
+    actions = [item.get_action_name() if isinstance(item, Gtk.ToolButton) else None for item in items]
+    place = actions.index("app.unsplit")
+    assert actions[place + 1] == "app.all-to-main-window", actions
+    button_ = items[place + 1]
+    assert button_.get_label() == "Move All to Main Window", button_.get_label()
+    assert button_.get_tooltip_text() == (
+        "Move every console in a console window back into the main window"
+    ), button_.get_tooltip_text()
+    # In the bar, not pushed into its overflow menu.
+    assert button_.get_mapped() and button_.is_sensitive(), actions
+
+    point(*centre(button_))
+    pump(0.1)
+    button(1, True)
+    button(1, False)
+    assert until(lambda: w.console_windows == ()), names()
+    assert not first.get_visible() and not second.get_visible()
+    # Into the main window's pane in use, the windows' consoles in their order, none ended.
+    assert names() == [["A", "B", "C", "D"]], names()
+    assert ended == [], ended
+    for name in "ABCD":
+        assert (label_of(name), terminal(name)) == kept[name], name
+        assert label_of(name).is_active, name
+    # The keyboard went to the console the pane showed, from the server tree.
+    assert until(w.wMain.is_active)
+    assert w.page_in_use() is page_of("A")
+    assert w.wMain.get_focus() is terminal("A"), w.wMain.get_focus()
+    for name, value in (("B", "b"), ("C", "c"), ("D", "d")):
+        run(name, "echo back-$KEPT", "back-" + value)
+
+    # From the menu bar, with nothing left in the main window's pane. The windows open in
+    # an order that is not the tabs', so that the order back is the windows'.
+    w.toggle_console_window(page_of("C"))
+    third = window_of("C")
+    w.move_page(page_of("D"), third.notebook)
+    w.toggle_console_window(page_of("A"))
+    fourth = window_of("A")
+    w.move_page(page_of("B"), fourth.notebook)
+    pump()
+    assert names() == [[], ["C", "D"], ["A", "B"]], names()
+    assert w.console_windows == (third, fourth), names()
+    use(w.wMain)
+    w.treeServers.grab_focus()
+    view = [item for item in w.menubar.get_children() if text_of(item) == "View"][0]
+    entries = view.get_submenu().get_children()
+    texts = [text_of(item) for item in entries]
+    place = texts.index("Unsplit")
+    assert texts[place + 1] == "Move All to Main Window", texts
+    entries[place + 1].activate()
+    assert until(lambda: w.console_windows == ()), names()
+    assert not third.get_visible() and not fourth.get_visible()
+    assert names() == [["C", "D", "A", "B"]], names()
+    assert ended == [], ended
+    # The pane had none to keep showing, so it shows the first one back.
+    assert w.page_in_use() is page_of("C")
+    assert w.wMain.get_focus() is terminal("C"), w.wMain.get_focus()
+
+    # With no console window open there is nothing to move, and the keyboard stays put.
+    w.treeServers.grab_focus()
+    shown = w.nbConsole.get_current_page()
+    assert application.lookup_action("all-to-main-window").get_enabled() and button_.is_sensitive()
+    application.activate_action("all-to-main-window", None)
+    pump(0.3)
+    assert names() == [["C", "D", "A", "B"]], names()
+    assert w.nbConsole.get_current_page() == shown
+    assert w.wMain.get_focus() is w.treeServers, w.wMain.get_focus()
+    assert ended == [], ended
+
+    # With the main window split they go into the pane in use, the one the keyboard was
+    # last in there, and not into the first.
+    split_off("B")
+    pane = page_of("B").get_parent()
+    assert names() == [["C", "D", "A"], ["B"]], names()
+    w.toggle_console_window(page_of("D"))
+    w.toggle_console_window(page_of("A"))
+    use(w.wMain)
+    w.wMain.set_focus(terminal("B"))
+    w.treeServers.grab_focus()
+    assert w.main_notebook() is pane
+    application.activate_action("all-to-main-window", None)
+    assert until(lambda: w.console_windows == ()), names()
+    assert names() == [["C"], ["B", "D", "A"]], names()
+    assert ended == [], ended
+    assert w.page_in_use() is page_of("B")
+    assert w.wMain.get_focus() is terminal("B"), w.wMain.get_focus()
+
 elif scenario == "it-closes-when-its-last-tab-leaves":
     open_tabs("A", "B", "C")
     # Dropped into a pane: GTK's drag takes the page out and puts it in with its label.
@@ -593,6 +709,7 @@ def _holder(lock):
         "a-key-in-a-console-window-acts-on-its-tab",
         "a-mark-flags-the-console-window",
         "closing-it-moves-its-consoles-back",
+        "every-console-comes-back",
         "it-closes-when-its-last-tab-leaves",
         "every-window-is-reached",
         "no-splits-in-a-console-window",

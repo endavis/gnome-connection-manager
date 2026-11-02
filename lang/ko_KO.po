@@ -1727,6 +1727,12 @@ msgstr "새 창으로 이동"
 msgid "Move to Main Window"
 msgstr "주 창으로 이동"
 
+msgid "Move All to Main Window"
+msgstr "모두 주 창으로 이동"
+
+msgid "Move every console in a console window back into the main window"
+msgstr "콘솔 창에 있는 모든 콘솔을 주 창으로 되돌립니다."
+
 msgid "Window {}"
 msgstr "창 {}"
 

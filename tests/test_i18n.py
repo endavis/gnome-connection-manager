@@ -304,6 +304,7 @@ def test_no_glade_text_is_a_placeholder_and_the_toolbar_buttons_are_labelled():
         "app.split-horizontal": "Split Horizontal",
         "app.split-vertical": "Split Vertical",
         "app.unsplit": "Unsplit",
+        "app.all-to-main-window": "Move All to Main Window",
         "app.preferences": "Preferences",
         "app.search-back": "Find Previous",
         "app.search-next": "Find Next",
