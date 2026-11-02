@@ -278,7 +278,7 @@ def glade_strings(glade=GLADE):
                 continue
             text = element.text or ""
             bare = text.strip()
-            if not bare or bare in _NOT_UI_TEXT or bare.startswith(_PLACEHOLDER_PREFIX):
+            if not bare or bare in _NOT_UI_TEXT:
                 continue
             found.add(text)
     return found
@@ -293,6 +293,27 @@ def test_a_glade_text_keeps_its_edge_spaces(tmp_path):
         encoding="utf-8",
     )
     assert glade_strings(glade) == {"Enter text: "}
+
+
+def test_no_glade_text_is_a_placeholder_and_the_toolbar_buttons_are_labelled():
+    """Glade's `__glade_unnamed_N` placeholders showed as button labels (#388)."""
+    tree = ElementTree.parse(GLADE)
+    for element in tree.iter("property"):
+        assert not (element.text or "").strip().startswith(_PLACEHOLDER_PREFIX)
+    expected = {
+        "app.split-horizontal": "Split Horizontal",
+        "app.split-vertical": "Split Vertical",
+        "app.unsplit": "Unsplit",
+        "app.preferences": "Preferences",
+        "app.search-back": "Find Previous",
+        "app.search-next": "Find Next",
+    }
+    found = {}
+    for obj in tree.iter("object"):
+        props = {p.get("name"): p.text for p in obj.findall("property")}
+        if props.get("action-name") in expected:
+            found[props["action-name"]] = props.get("label")
+    assert found == expected
 
 
 def test_glade_string_extraction_finds_a_realistic_number():
