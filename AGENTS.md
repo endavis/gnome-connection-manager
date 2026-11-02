@@ -517,8 +517,6 @@ templates in `.github/`, and `tools/hooks/ai/` refuses the raw commands (#119). 
 - **`--body-file` for anything long**, written under `tmp/agents/`: a body passed inline is
   scanned as command arguments, so one that names a blocked pattern is refused. The same
   goes for a commit message: `git commit -F`.
-- **A body file left in a worktree's `tmp/agents/` keeps the worktree**: `doit pr_merge`
-  removes one only while every file git ignores there can be rebuilt (#332). Delete it first.
 - Section headings in an issue body must be `##`; the validator parses on that and reports
   "Missing required sections" for `###`.
 - **Approving work on an issue runs `implement-issue`**, and authorizes its commit, push and
@@ -530,6 +528,20 @@ templates in `.github/`, and `tools/hooks/ai/` refuses the raw commands (#119). 
   change at hand. Never put an unfixed one in a public issue, PR, comment or commit
   message: file each as a private draft security advisory, and if that is refused, stop and
   ask. `.github/SECURITY.md` sets out the rest, for `src/` and for `tools/`.
+
+### Temporary Files
+
+An agent never writes a temporary file to `/tmp/`: it uses the session scratchpad where the
+harness gives one, else `tmp/agents/<agent-type>/`, with the issue or PR number in the file's
+name, and deletes it when done. A file left in a worktree's `tmp/` keeps the worktree, as
+`doit pr_merge` removes one only while every file git ignores there can be rebuilt (#332).
+So a script or log meant to be reused goes in the main checkout's `tmp/agents/<agent-type>/`,
+and a body file or commit message written in a worktree is deleted before the merge.
+
+### When Blocked Protocol
+
+A blocked command is blocked for a reason. Find out why, never override it with a flag or a
+workaround, then report it and wait for the user.
 
 ## Agent Checklist
 1. Understand which component you're touching and read its neighbors before editing.
