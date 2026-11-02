@@ -583,66 +583,31 @@ a name in a library's API, has nothing to apply to here.
 
 ## Contribution Workflow
 
-Issue first, then a branch for it, then a PR. Use the doit tasks rather than `gh` directly:
-they validate against the templates in `.github/`, and `tools/hooks/ai/` refuses the raw
-commands once wired (#119).
+Issue, branch, commit, PR and merge, each through its doit task rather than `gh`, as
+`.github/CONTRIBUTING.md` (Development Workflow) sets out: the tasks validate against the
+templates in `.github/`, and `tools/hooks/ai/` refuses the raw commands (#119). The traps:
 
-| Step | Command |
-|---|---|
-| File the issue | `doit issue --type=<bug\|feature\|docs\|refactor\|chore> --title=... --body-file=...` |
-| Branch from `origin/main` | `<type>/<issue-number>-<slug>`, e.g. `fix/111-session-log-host-ordering` |
-| Open the PR | `doit pr` |
-| Merge | `doit pr_merge` |
-
-- **`feat/`, not `feature/`.** A pre-commit hook rejects a malformed branch name, and
-  another rejects a commit citing an issue that is not the branch's own.
-- **`doit pr_merge` squashes**, producing `<type>: <subject> (merges PR #XX, addresses #YY)`.
-  That is why `main` has linear history, which branch protection requires. Run from the
-  base branch, it then fast-forwards that branch to the merge.
-- **`doit worktree --branch=<branch>`** puts a branch in `worktrees/<branch>`, with a
-  `.venv` of its own (ADR-9022). The template's task builds that with `uv sync`, which
-  leaves out the system's site packages, so `gi` did not import there (#327). GCM's
-  `task_worktree` then builds it again, as CI builds GCM's, so the suite runs there as it
-  does here, and `implement-issue` makes every issue's worktree so (ADR-9027). Unset the
-  `GCM_*_DIR` variables there too, as Testing says. `doit pr_merge`
-  removes it once merged, but only while everything git ignores there can be rebuilt, as
-  the `.venv` and the caches can: any other file keeps it, under `tmp/` too, a body file
-  in `tmp/agents/` included. So `.gitignore` ignores `tmp/*` but not the tracked
-  `tmp/.gitkeep`, as the template's does, which has git list what is in `tmp/` file by
-  file. Under a bare `tmp/` git listed the folder as one entry, and `doit pr_merge` kept
-  every worktree with anything in it (#332). For the same reason `audit` exports
-  `uv.lock` outside the tree, not into `tmp/`.
-- **`--body-file` for anything long.** A body passed inline is scanned as command
-  arguments, so a message that merely names a blocked pattern is refused. Write it under
-  `tmp/agents/` and pass the path. The same applies to commit messages: `git commit -F`.
 - **A closing keyword closes its issue wherever it stands in a PR's description, negated
-  or not.** "This does not close #291" in #292's closed #291 at the merge, before the
-  release it tracked existed. `Addresses #N` closes nothing; check a PR with
+  or not.** `Addresses #N` closes nothing; check a PR with
   `gh pr view <n> --json closingIssuesReferences` before it merges.
 - **`ready-to-merge` is a governance label**, applied by a person. An agent may not add it,
   and `require-label` blocks the merge until someone does.
+- **`--body-file` for anything long**, written under `tmp/agents/`: a body passed inline is
+  scanned as command arguments, so one that names a blocked pattern is refused. The same
+  goes for a commit message: `git commit -F`.
+- **A body file left in a worktree's `tmp/agents/` keeps the worktree**: `doit pr_merge`
+  removes one only while every file git ignores there can be rebuilt (#332). Delete it first.
 - Section headings in an issue body must be `##`; the validator parses on that and reports
   "Missing required sections" for `###`.
-- **Approving work on an issue runs `implement-issue`**, as "implement issue N" does, a
-  "yes" to a fix an agent filed as an issue included, and authorizes its commit, push and
-  PR on that issue's branch. A question is not approval. "Implement issues A, B" runs
-  `implement-issues`, with the same authorization for each issue. **"N is green" or
-  "merge N" runs `merge-pr`**: consent to merge that PR and to close the issues it fully
-  addresses, never to add `ready-to-merge`. See
+- **Approving work on an issue runs `implement-issue`**, and authorizes its commit, push and
+  PR on that issue's branch; a question is not approval. **"N is green" or "merge N" runs
+  `merge-pr`**: consent to merge that PR and to close the issues it fully addresses, never
+  to add `ready-to-merge`. See
   [Slash Commands and Workflows](docs/development/ai/slash-commands.md#merge-pr-n).
 - **A security review's findings stay private until fixed.** Fix those that belong to the
   change at hand. Never put an unfixed one in a public issue, PR, comment or commit
-  message (`.github/SECURITY.md`). Reproduce it and keep the command and its output, then
-  file it as a private draft security advisory, one per finding:
-  `gh api -X POST repos/{owner}/{repo}/security-advisories --input <file>`. If that is
-  refused, stop and ask, and never fall back to a public issue. A finding in the
-  development tooling, `tools/`, is the exception once the repo admin takes it up: its fix
-  goes through an ordinary issue and PR that describe the change, never the bypass, a
-  reproduction or the advisory, and the advisory is closed unpublished after the merge. A
-  finding in `src/` stays private until a release fixes it, as `.github/SECURITY.md`
-  (Security Update Process) sets out.
-
-See `.github/CONTRIBUTING.md` (Development Workflow) for the full account.
+  message: file each as a private draft security advisory, and if that is refused, stop and
+  ask. `.github/SECURITY.md` sets out the rest, for `src/` and for `tools/`.
 
 ## Agent Checklist
 1. Understand which component you're touching and read its neighbors before editing.
