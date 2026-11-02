@@ -38,6 +38,16 @@
 # - Persist history of cluster commands. is it really necessary?
 # - Option to disable shortcuts
 
+"""GCM's windows and what they share: the configuration (class `conf`), the main window
+(`Wmain`), the host dialog (`Whost`), Preferences (`Wconfig`), the application that owns
+them (`GcmApplication`), the encryption key file, and the consoles' VTE terminals.
+
+Large by design. The window classes are wired to the glade file by handler name and share
+mutable module globals, so splitting them relocates the coupling without reducing it.
+What does come out is pure logic, into `utils/`, as the crypto primitives, `Host` and
+`HostUtils`, the naming of session logs and the shortcut helpers did (#137 to #140).
+"""
+
 import base64
 import binascii
 import builtins

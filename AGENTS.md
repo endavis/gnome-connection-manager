@@ -13,13 +13,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   such as `data/scripts/ssh.expect` and the external `pyaes` library.
 
 ## Repository Map
-- `src/gnome_connection_manager/app.py` – configuration (class `conf`), window/controller
-  classes (`Wmain`, `Whost`, `Wconfig`, `GcmApplication`), `Host`/`HostUtils` models,
-  the encryption key file, and VTE management. Large by design: the window classes are
-  wired to the glade file by handler name and share mutable module globals, so splitting
-  them relocates the coupling without reducing it. What does come out is pure logic, into
-  `utils/` — see #137 to #140 for the seams identified, and the crypto entry below for
-  the first one taken.
+- `src/gnome_connection_manager/app.py` – the configuration (class `conf`), the windows and
+  the application (`Wmain`, `Whost`, `Wconfig`, `GcmApplication`), the key file and VTE. Large
+  by design: only pure logic comes out of it, into `utils/`. Notes: its module docstring.
 - `src/gnome_connection_manager/main.py` and `src/gnome_connection_manager/__main__.py` –
   entry points (`doit launch` uses these).
 - `src/gnome_connection_manager/relay.py` – the PTY relay a session runs under while OSC 52 or
@@ -51,14 +47,9 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/configpaths.py` – which directory holds `gcm.conf` and
   `.gcm.key` (#192). Nothing is migrated, and `resolve` creates nothing: a directory made
   before the choice would be the one chosen. Notes: its docstrings and `require_config_dir`'s.
-- `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts:
-  AES in OFB mode over a PBKDF2-stretched key, plus the two legacy formats that must stay
-  readable (bare-SHA-256, and repeating-key XOR before that). OFB, not CTR, as these notes
-  once said: the two agree on the first block only, so a port written in CTR reads
-  passwords shorter than 16 bytes and garbles the rest (#206). Pure — the key file and the
-  `conf.VERSION` check that selects the legacy path stay in `app.py`, which keeps a thin
-  `encrypt` / `decrypt` pair wrapping this. Tested directly rather than through the `gi`
-  stub, which is the point: the stub hid the XOR path failing outright on Python 3 (#141).
+- `src/gnome_connection_manager/utils/crypto.py` – password encryption for stored hosts, and
+  the two older formats it must still read. OFB, not CTR: a port in CTR reads a password
+  shorter than 16 bytes and garbles any longer one (#206). Notes: its docstrings.
 - `src/gnome_connection_manager/utils/logpaths.py` – where a session's files go, and the cut of
   a long tab label (#190). A session's files share a number, claimed by creating one empty: an
   empty `.log` is a claim, not an old log (#202). Notes: `docs/design/recording.md`.
