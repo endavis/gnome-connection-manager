@@ -1034,8 +1034,8 @@ or in the search box. A menu reaches each from anywhere:
 | `Shift+F9` | Show or hide the toolbar | **View → Show Toolbar** |
 
 So `Ctrl+Q` quits GCM with the keyboard in the server tree, not in a console, where it is
-the program's: use **File → Quit** there. The same holds for a console whose program has
-ended, which takes these keys and has no program to give them to. With the panel hidden and
+the program's: use **File → Quit** there. A console whose program has ended has none to read them,
+so there they act as they do outside a console. With the panel hidden and
 the keyboard in a console, `F9` no longer shows it again: **View → Show Panel** does.
 
 Avoid rebinding a terminal shortcut onto one of the first four. Window accelerators are

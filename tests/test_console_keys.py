@@ -295,6 +295,40 @@ elif scenario == "an-existing-configuration":
     assert got(CONTROL, SHIFT, ord("w")) == ""
     assert until(lambda: w.nbConsole.get_n_pages() == 0), "Close console is not on Ctrl+Shift+W"
 
+elif scenario == "an-ended-console":
+    page, term = open_console()
+    use(w.wMain)
+    assert w.wMain.get_focus() is term, w.wMain.get_focus()
+    # Running, the program has them: nothing acts (the-fixed-keys reads each in full).
+    assert got(CONTROL, ord("q")) == "11"
+    assert taken() == {}, taken()
+
+    # End the program, and leave the tab open, as Close console, Never, does.
+    pid = term.child_pid
+    assert pid, pid
+    os.kill(pid, 9)
+    assert until(lambda: term.child_pid is None), "the console kept its child_pid"
+    pump(0.5)
+    assert w.nbConsole.get_n_pages() == 1, "the tab closed"
+    w.wMain.set_focus(term)
+    pump(0.3)
+    assert w.wMain.get_focus() is term, w.wMain.get_focus()
+    assert toggles() == (True, True), toggles()
+
+    # With no program to read them, the six act as they do outside a console.
+    press(CONTROL, ord("e"))
+    assert taken() == {"edit": 1}, taken()
+    press(CONTROL, ord("r"))
+    assert taken() == {"edit": 1, "refresh": 1}, taken()
+    press(F1)
+    assert taken() == {"edit": 1, "refresh": 1, "about": 1}, taken()
+    press(SHIFT, F9)
+    assert toggles() == (True, False), toggles()
+    press(CONTROL, ord("q"))
+    assert taken() == {"edit": 1, "refresh": 1, "about": 1, "quit": 1}, taken()
+    press(F9)
+    assert toggles() == (False, False), toggles()
+
 elif scenario == "a-console-window":
     page, term = open_console()
     w.toggle_console_window(page)
@@ -397,6 +431,7 @@ print("OK")
         "the-fixed-keys",
         "an-existing-configuration",
         "a-console-window",
+        "an-ended-console",
         "a-cleared-shortcut",
     ],
 )

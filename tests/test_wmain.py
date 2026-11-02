@@ -6442,6 +6442,7 @@ def test_a_console_is_given_a_fixed_accelerators_key_before_the_accelerator(
     Ctrl+R and Ctrl+Q from the program in a console. True ends the key press there, so the
     accelerator never runs."""
     terminal = app_module.Vte.Terminal()
+    terminal.child_pid = 4242  # a program is running in it
 
     answered, window = press_in_window(app_module, monkeypatch, terminal, name)
 
@@ -6449,9 +6450,22 @@ def test_a_console_is_given_a_fixed_accelerators_key_before_the_accelerator(
     assert window.propagated == [window.event]
 
 
+@pytest.mark.parametrize("name", sorted(shortcuts.CONSOLE_FIRST_KEYS))
+def test_a_console_with_no_program_is_not_given_the_key_first(app_module, monkeypatch, name):
+    """VTE takes the key and has nobody to give it to, so it goes on to the accelerator (#425)."""
+    terminal = app_module.Vte.Terminal()
+    terminal.child_pid = None
+
+    answered, window = press_in_window(app_module, monkeypatch, terminal, name)
+
+    assert answered is False
+    assert window.propagated == []
+
+
 def test_a_key_the_console_does_not_handle_goes_on_to_the_accelerator(app_module, monkeypatch):
     """False lets GTK carry on, to the accelerator, as it does for a VNC desktop."""
     terminal = app_module.Vte.Terminal()
+    terminal.child_pid = 4242
 
     answered, window = press_in_window(app_module, monkeypatch, terminal, "CTRL+Q", handled=False)
 
