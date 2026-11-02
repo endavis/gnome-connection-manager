@@ -256,11 +256,10 @@ def catalog_entries(po):
 
 GLADE = REPO / "data" / "ui" / "gnome-connection-manager.glade"
 
-# Not UI text. Glade emits placeholder names for unnamed widgets, and localhost is a
-# host name, where a translation would be wrong. The connection types were here too, until
-# the host dialog took its list from the registry (#228).
+# Not UI text. Glade's notebook placeholder tabs and the default host name `localhost`,
+# where a translation would be wrong. The connection types were here too, until the host
+# dialog took its list from the registry (#228).
 _NOT_UI_TEXT = {"label", "page 1", "page 2", "localhost"}
-_PLACEHOLDER_PREFIX = "__glade_unnamed_"
 
 
 def glade_strings(glade=GLADE):
@@ -278,10 +277,26 @@ def glade_strings(glade=GLADE):
                 continue
             text = element.text or ""
             bare = text.strip()
-            if not bare or bare in _NOT_UI_TEXT or bare.startswith(_PLACEHOLDER_PREFIX):
+            if not bare or bare in _NOT_UI_TEXT:
                 continue
             found.add(text)
     return found
+
+
+def test_every_toolbar_button_has_a_translatable_label_and_tooltip():
+    """Each toolbar button's label is its accessible name and its row in the toolbar's
+    overflow menu, and its tooltip is what hovering shows (#388)."""
+    tree = ElementTree.parse(GLADE)
+    buttons = list(tree.findall(".//object[@class='GtkToolButton']"))
+    assert len(buttons) == 12
+    for button in buttons:
+        props = {prop.get("name"): prop for prop in button.findall("property")}
+        action = props["action-name"].text
+        for name in ("label", "tooltip-text"):
+            prop = props.get(name)
+            assert prop is not None and prop.get("translatable") == "yes", f"{action}: {name}"
+            text = (prop.text or "").strip()
+            assert text and not text.startswith("__glade_unnamed_"), f"{action}: {name}={text!r}"
 
 
 def test_a_glade_text_keeps_its_edge_spaces(tmp_path):
@@ -737,7 +752,18 @@ def test_gcm_shows_english_where_it_reads_no_catalog(lang, language):
     # English, not merely not Spanish: the texts the bug showed as Agregar, Separador de
     # Palabras and Editar Host.
     assert {"Gnome Connection Manager", "Preferences", "Edit Host"} <= set(windows)
-    assert {"Add", "Edit", "Remove", "Add new host"} <= set(windows["Gnome Connection Manager"])
+    assert {
+        "Add",
+        "Edit",
+        "Remove",
+        "Add new host",
+        "Split Horizontal",
+        "Split Vertical",
+        "Unsplit",
+        "Preferences",
+        "Find Previous",
+        "Find Next",
+    } <= set(windows["Gnome Connection Manager"])
     assert {"Word separator", "Buffer size", "Logs path"} <= set(windows["Preferences"])
     assert {"Name", "Port", "Private key"} <= set(windows["Edit Host"])
 
@@ -942,9 +968,20 @@ def test_gcm_shows_spanish_where_it_reads_the_catalog(lang, language, tmp_path):
     assert {"Gnome Connection Manager", entries["Preferences"], entries["Edit Host"]} <= set(
         windows
     )
-    assert {entries[m] for m in ("Add", "Edit", "Remove")} <= set(
-        windows["Gnome Connection Manager"]
-    )
+    assert {
+        entries[m]
+        for m in (
+            "Add",
+            "Edit",
+            "Remove",
+            "Split Horizontal",
+            "Split Vertical",
+            "Unsplit",
+            "Preferences",
+            "Find Previous",
+            "Find Next",
+        )
+    } <= set(windows["Gnome Connection Manager"])
     assert {entries[m] for m in ("Word separator", "Buffer size", "Logs path")} <= set(
         windows[entries["Preferences"]]
     )
