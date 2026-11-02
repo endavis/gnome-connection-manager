@@ -957,6 +957,15 @@ def test_agents_md_and_the_design_notes_carry_no_line_number_references(notes):
     assert not stale, f"replace line-number references with symbol names: {stale}"
 
 
+def test_agents_md_carries_the_sections_vendored_files_point_to():
+    """Four vendored files send agents to `Temporary Files` and `When Blocked Protocol` in
+    AGENTS.md by name, and test_instruction_pointers.py did not reach them (#447)."""
+    headings = {line.strip() for line in AGENTS.read_text().splitlines() if line.startswith("#")}
+
+    assert "### Temporary Files" in headings
+    assert "### When Blocked Protocol" in headings
+
+
 def test_agents_md_does_not_claim_tests_are_manual():
     text = AGENTS.read_text().lower()
 

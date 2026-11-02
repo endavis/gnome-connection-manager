@@ -642,6 +642,21 @@ commands once wired (#119).
   finding in `src/` stays private until a release fixes it, as `.github/SECURITY.md`
   (Security Update Process) sets out.
 
+### Temporary Files
+Never write a temporary file to `/tmp/`. Write every temporary file — a `--body-file`, a
+`git commit -F` message, a probe script or a check log — to `tmp/agents/<agent-type>/`
+(`claude`, `copilot`, `codex`, `antigravity`), with the issue or PR number in its name so
+concurrent runs do not collide, and delete it when done (`tmp/checkpoints/` is the one
+shared exception). A file left in a worktree's `tmp/` stops `doit pr_merge` from removing
+the worktree (#332), so put a reusable script or a log in the main checkout's
+`tmp/agents/<agent-type>/`, and delete a body file in a worktree before the merge.
+
+### When Blocked Protocol
+A blocked command (a merge that fails, a rejected push, a hook or permission refusal) is
+blocked for a reason (`tools/hooks/ai/`, `docs/development/ai/command-blocking.md`).
+Investigate why it was blocked, never override it with `--admin`, `--force`, `--no-verify`
+or a similar flag, and report what is blocked and wait for the user.
+
 See `.github/CONTRIBUTING.md` (Development Workflow) for the full account.
 
 ## Agent Checklist
