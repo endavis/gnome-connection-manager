@@ -56,7 +56,7 @@ gnome-connection-manager/
 │   │   └── gcm-askpass    # ssh's askpass, for a mount with a stored password
 │   ├── style.css
 │   └── icon.png
-├── docs/                  # The guides, this page, and the decision records
+├── docs/                  # The guides, this page, the design notes and decision records
 ├── tests/                 # The pytest suite
 ├── tools/                 # build_mo.py, generate_doc_toc.py, the doit tasks (GCM's in
 │                          # doit/gcm.py), and the vendored hooks and template tooling
