@@ -964,6 +964,25 @@ def test_agents_md_does_not_claim_tests_are_manual():
     assert "doit test" in text
 
 
+# Every agent loads AGENTS.md at every start, so it keeps what any change can trip over,
+# and a design note goes beside its code: in its module's docstrings, or in a docs/design/
+# page for an area that spans files (#430). The limits are its size once the last area
+# had moved out, 542 lines and 42,825 bytes at aea5f34, with room for the few lines #447
+# adds. Raise them only for a rule every change needs.
+AGENTS_MD_MAX_LINES = 560
+AGENTS_MD_MAX_BYTES = 44_500
+
+
+def test_agents_md_stays_within_its_size():
+    """It held 1,734 lines at 517530a, before #430's first piece merged: design notes, mostly."""
+    text = AGENTS.read_bytes()
+    lines = text.count(b"\n")
+    hint = "put design notes beside their code, in a docstring or a docs/design/ page (#430)"
+
+    assert lines <= AGENTS_MD_MAX_LINES, f"AGENTS.md has {lines} lines: {hint}"
+    assert len(text) <= AGENTS_MD_MAX_BYTES, f"AGENTS.md has {len(text)} bytes: {hint}"
+
+
 def test_agents_md_lists_the_locales_that_exist():
     locales = sorted(p.name for p in (REPO / "lang").iterdir() if p.is_dir())
     text = AGENTS.read_text()
