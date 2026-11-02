@@ -138,7 +138,7 @@ Delete `<old_name>` and its `__all__` entry. Leave `<new_name>` as the one remai
 ### Step 6: Follow the Breaking Changes Policy
 
 Write a `BREAKING CHANGE:` footer in the commit message and a migration guide in the PR description,
-following `AGENTS.md`'s Breaking Changes Policy section. That policy also lists updating
+following [AGENTS.md — Breaking Changes Policy](../../../AGENTS.md#breaking-changes-policy). That policy also lists updating
 `CHANGELOG.md`; in this project that step is carried out by `doit release`, which writes the changelog
 entry from commit history — not by hand-editing the file. The same is true of the version in
 `pyproject.toml`: it comes from git tags, never a hand edit. The agent's own part of the policy is the

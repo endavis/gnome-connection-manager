@@ -889,7 +889,7 @@ doit delegation_context --kind=pr --n=42 --out=tmp/agents/claude/multi-review-42
   empty file.
 
 **Output location:** by convention, `--out` is `tmp/agents/<host>/<task>-<n>/` (for example
-`tmp/agents/claude/multi-review-123/`), per `AGENTS.md`'s temp-file convention. The orchestrating
+`tmp/agents/claude/multi-review-123/`), per [AGENTS.md — Temporary Files](../../AGENTS.md#temporary-files). The orchestrating
 skill that creates the directory deletes it once every delegated agent has returned — this task
 does not clean up after itself.
 

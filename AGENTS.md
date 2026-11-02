@@ -538,7 +538,7 @@ name, and deletes it when done. A file left in a worktree's `tmp/` keeps the wor
 So a script or log meant to be reused goes in the main checkout's `tmp/agents/<agent-type>/`,
 and a body file or commit message written in a worktree is deleted before the merge.
 
-### When Blocked Protocol
+### 4. When Blocked Protocol
 
 A blocked command is blocked for a reason. Find out why, never override it with a flag or a
 workaround, then report it and wait for the user.

@@ -85,7 +85,9 @@ issue (or posts one together with the plan) and the plan cites that comment. "Th
 clear" does not qualify. The plan uses the Planner brief's exact shape. Before posting it, run the
 **Plan-review brief** below on the draft, in a subagent or through another agent CLI with the same
 non-interactive invocation as "with \<agent\>"; fix or reject each point it raises. The review
-reads only the draft, the findings and the files the plan names.
+reads the draft, the findings and the code locations the plan names, within the brief's budget. A
+second review runs only when the first changed the plan's design; edits that only apply its points
+need none.
 
 **Roles.** Who runs the Planner brief (`plan`), the Plan-review brief (`plan_review`) and the Coder
 brief (`code`) comes from the person's agent-role config. Before each, run
@@ -200,7 +202,7 @@ checkout: `uv run doit pr_merge --pr=<pr> --auto-close`. It removes the worktree
 Stop and ask the user, at any step, when one of these fires: a new dependency, scope growing beyond
 the issue, a requirement of the issue that cannot be met as written (unsafe, contradicted by a review
 finding, or needing a different design), an architecture choice, a breaking change the issue did not
-already describe, a failing test that would need changing to pass, or a blocked command (see `AGENTS.md` — When Blocked Protocol). Narrowing
+already describe, a failing test that would need changing to pass, or a blocked command (see [AGENTS.md — When Blocked Protocol](../../../AGENTS.md#4-when-blocked-protocol)). Narrowing
 the scope is a trigger just as growing it is. Do not resolve any of these unilaterally and keep going.
 
 This skill **never** adds the `ready-to-merge` label, never merges a PR, and never closes the issue
@@ -223,7 +225,8 @@ path:
    `docs/decisions/`.
 3. Explore the codebase for the files, modules, and tests the change touches, and the existing
    patterns in that area. If more than one approach is reasonable, pick one and say why in the plan
-   rather than leaving it open — nothing downstream can ask the user.
+   rather than leaving it open — nothing downstream can ask the user. Note what you read (symbols,
+   patterns, tests) so the Coder need not read it again.
 4. Findings the caller passes are settled: do not re-measure or re-probe them, and flag in the
    Overview any the code contradicts. Explore and probe only what they do not cover. Without
    findings, step 3 applies as written.
@@ -233,16 +236,24 @@ path:
    ```
    ## Implementation Plan for #<n>: <title>
 
+   Base commit: `<sha from git rev-parse HEAD>`
+
    ### Overview
    What will be done and why.
 
    ### Files to Create/Modify
    - [ ] `path/to/file.py` — what changes
+     - Symbols: `name` (~L10-40), the functions or sections it changes
+     - Pattern: `path/to/other.py:55`, an existing example to copy
+     - Tests: `tests/test_file.py`, plus the fixtures to reuse
    - [ ] `tests/test_file.py` — what it covers
 
    ### Test Plan
    - [ ] Test case 1
    - [ ] Test case 2
+
+   ### Test Commands
+   - `uv run pytest tests/test_file.py`
 
    ### Documentation
    - [ ] Docs that need updating
@@ -252,6 +263,9 @@ path:
    - [ ] `doit check` passes
    ```
 
+   The symbol is the pointer; line ranges are hints and go stale when the branch moves. A new file
+   has no symbols to name, so give its pattern and tests instead.
+
 ## Plan-review brief
 
 Give this to the reviewing subagent (or another agent's CLI) when the host wrote the plan, with the
@@ -259,9 +273,14 @@ worktree root as an absolute path and the context directory:
 
 1. Work only under the worktree root. Use absolute paths and start each shell command with
    `cd <root> &&`.
-2. Read the draft plan and the findings from the file under `<context-dir>` the caller names. Read
-   only the files the plan names. Do not explore the codebase, do not probe, and make no `gh` call.
-3. Return a critique of design errors, missed edge cases and conflicts with project rules, or
+2. Read the draft plan and the findings from the file under `<context-dir>` the caller names. Your
+   reading list is the plan's own per-file `Symbols:`, `Pattern:` and `Tests:` pointers.
+   Read the named symbols and ranges, not whole files, and open a
+   whole file only when the plan rewrites most of it. Do not explore the codebase, do not probe,
+   and make no `gh` call.
+3. Budget about 15 tool calls. A few may go beyond the list, for example to the direct callers of a
+   changed symbol.
+4. Return a critique of design errors, missed edge cases and conflicts with project rules, or
    `NO ISSUES`. Do not edit files and do not post anything.
 
 ## Coder brief
@@ -281,7 +300,9 @@ name, the worktree root as an absolute path, and any issue-specific notes:
    unreadable, print `DELEGATION-ERROR:` and stop.
 3. Implement the plan (or the issue): create and edit files, follow existing patterns, and write
    tests — this is mandatory whenever there is code to test, with no exceptions for "small" changes.
-   All new code is type-annotated for mypy strict mode.
+   All new code is type-annotated for mypy strict mode. Start from the plan's locations: read the
+   named symbols and ranges, not whole files. If the plan's base commit differs from `HEAD`, treat
+   the ranges as hints only. Explore beyond the plan's pointers only when one is wrong or missing.
 4. Checking budget, run from the worktree root through `uv run`: the tests covering the change; one
    revert check (undo the fix, confirm the new tests fail, restore — using `git show HEAD:<path>`
    or a WIP commit); only what project rules require, such as the `mutation-triage` and
@@ -289,7 +310,7 @@ name, the worktree root as an absolute path, and any issue-specific notes:
    nothing beyond that unless the plan asks: no extra mutmut runs, no flakiness reruns. Do not run
    `uv run doit check`; the full `doit check` runs once, in Step 5. Fix failures.
 5. Return a summary: files created or modified, test results, every check command you ran, and any
-   deviations from the plan.
+   deviations from the plan, including each read outside its pointers and why.
 6. Never use a bare `git stash`: the stash stack is shared with the main checkout, every worktree
    and every session, so a `pop` can take another session's entry. To compare against unchanged
    code, write `git show HEAD:<path>` to a scratch file under the worktree's `tmp/`, or make a

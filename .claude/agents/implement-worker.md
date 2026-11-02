@@ -47,3 +47,7 @@ The parent prompt will provide:
 See the Coder brief in `.agents/skills/implement-issue/SKILL.md` for the full step list (read the
 rules, read the plan or issue body from the context directory, implement with tests, run the
 checking budget, return a summary listing every check command).
+
+Start from the plan's named symbols, line-range hints and patterns instead of re-reading whole
+files. Explore beyond them only when a pointer is wrong or missing, and report each such read as a
+deviation from the plan.
