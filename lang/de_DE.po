@@ -1657,6 +1657,12 @@ msgstr "In neues Fenster verschieben"
 msgid "Move to Main Window"
 msgstr "In das Hauptfenster verschieben"
 
+msgid "Move All to Main Window"
+msgstr "Alle in das Hauptfenster verschieben"
+
+msgid "Move every console in a console window back into the main window"
+msgstr "Alle Terminals aus Konsolenfenstern zurück in das Hauptfenster verschieben"
+
 msgid "Window {}"
 msgstr "Fenster {}"
 

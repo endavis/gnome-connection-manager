@@ -1594,6 +1594,12 @@ msgstr "Переместить в новое окно"
 msgid "Move to Main Window"
 msgstr "Переместить в главное окно"
 
+msgid "Move All to Main Window"
+msgstr "Переместить все в главное окно"
+
+msgid "Move every console in a console window back into the main window"
+msgstr "Переместить все консоли из окон консолей в главное окно"
+
 msgid "Window {}"
 msgstr "Окно {}"
 

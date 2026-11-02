@@ -2308,6 +2308,21 @@ Eg: ##D=1000&lt;/span&gt;</property>
               </packing>
             </child>
             <child>
+              <object class="GtkToolButton">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="tooltip-text" translatable="yes">Move every console in a console window back into the main window</property>
+                <property name="label" translatable="yes">Move All to Main Window</property>
+                <property name="use-underline">True</property>
+                <property name="stock-id">gtk-leave-fullscreen</property>
+                <property name="action-name">app.all-to-main-window</property>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="homogeneous">True</property>
+              </packing>
+            </child>
+            <child>
               <object class="GtkSeparatorToolItem">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>

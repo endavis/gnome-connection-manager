@@ -74,6 +74,9 @@ class ControllerStub:
     def on_btnUnsplit_clicked(self, arg):
         self.calls.append(("unsplit", arg))
 
+    def move_all_to_main_window(self):
+        self.calls.append(("all-to-main-window", None))
+
     def on_btnSearchBack_clicked(self, arg):
         self.calls.append(("search-back", arg))
 
@@ -199,10 +202,12 @@ def test_application_split_actions(app_module):
     app._on_action_split_horizontal(None, None)
     app._on_action_split_vertical(None, None)
     app._on_action_unsplit(None, None)
+    app._on_action_all_to_main_window(None, None)
 
     assert ("split-h", None) in controller.calls
     assert ("split-v", None) in controller.calls
     assert ("unsplit", None) in controller.calls
+    assert ("all-to-main-window", None) in controller.calls
 
 
 def test_application_paste_single_line_action_asks_for_a_join(app_module):
@@ -221,6 +226,14 @@ def test_controller_stub_paste_matches_the_real_signature(app_module):
     """A stub that drifts from Wmain.terminal_paste hides real TypeErrors."""
     real = inspect.signature(app_module.Wmain.terminal_paste).parameters
     stub = inspect.signature(ControllerStub.terminal_paste).parameters
+
+    assert list(real) == list(stub)
+
+
+def test_controller_stub_move_all_matches_the_real_signature(app_module):
+    """The stub answers the action as Wmain.move_all_to_main_window does (#404)."""
+    real = inspect.signature(app_module.Wmain.move_all_to_main_window).parameters
+    stub = inspect.signature(ControllerStub.move_all_to_main_window).parameters
 
     assert list(real) == list(stub)
 

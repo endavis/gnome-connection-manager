@@ -1590,6 +1590,12 @@ msgstr "Przenieś do nowego okna"
 msgid "Move to Main Window"
 msgstr "Przenieś do okna głównego"
 
+msgid "Move All to Main Window"
+msgstr "Przenieś wszystkie do okna głównego"
+
+msgid "Move every console in a console window back into the main window"
+msgstr "Przenieś wszystkie konsole z okien konsoli do okna głównego"
+
 msgid "Window {}"
 msgstr "Okno {}"
 

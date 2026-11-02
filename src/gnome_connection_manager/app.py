@@ -5670,6 +5670,25 @@ class Wmain(GladeComponent):
             self.move_to_new_window(page)
         return False
 
+    def move_all_to_main_window(self) -> None:
+        """Move every console in every console window back into the main window (#404).
+
+        As closing each window moves its consoles back, and ending none: into the main
+        window's pane in use, window by window in the order they are open and each
+        window's tabs in theirs. An emptied window closes itself, from the idle that
+        on_console_window_page_removed queues, so none leaves console_windows while this
+        walks it. The keyboard goes once, to the console the pane shows. Closing the
+        windows one after another would have moved it to the console each had showing.
+        With no console window open this does nothing, the keyboard included.
+        """
+        if not self.console_windows:
+            return
+        notebook = self.main_notebook()
+        for window in self.console_windows:
+            while window.notebook.get_n_pages():
+                self.move_page(window.notebook.get_nth_page(0), notebook)
+        self.focus_console(notebook, notebook.get_nth_page(notebook.get_current_page()))
+
     def on_console_window_delete(self, window, _event):
         """Closing a console window moves its consoles back into the main window (#255).
 
@@ -10558,8 +10577,9 @@ class ConsoleWindow(Gtk.Window):
 
     It holds one notebook, made as a split's is and in the panes' group, so tabs drag
     between it and the panes, and more can be dropped in. It has no splits. Closing it
-    moves its consoles back into the main window, and it closes itself once its last tab
-    has left. It joins the application, so GCM's shortcuts work in it: measured, a key
+    moves its consoles back into the main window, as Move All to Main Window does for
+    every console window (#404), and it closes itself once its last tab has left. It
+    joins the application, so GCM's shortcuts work in it: measured, a key
     pressed there runs the application's action as one in the main window does.
     """
 
@@ -10688,6 +10708,7 @@ class GcmApplication(Gtk.Application):
         self._create_action("split-horizontal", self._on_action_split_horizontal)
         self._create_action("split-vertical", self._on_action_split_vertical)
         self._create_action("unsplit", self._on_action_unsplit)
+        self._create_action("all-to-main-window", self._on_action_all_to_main_window)
         self._create_action("zoom-in", self._on_action_zoom_in)
         self._create_action("zoom-out", self._on_action_zoom_out)
         self._create_action("zoom-reset", self._on_action_zoom_reset)
@@ -10824,6 +10845,7 @@ class GcmApplication(Gtk.Application):
         split_section.append(_("Split Horizontal"), "app.split-horizontal")
         split_section.append(_("Split Vertical"), "app.split-vertical")
         split_section.append(_("Unsplit"), "app.unsplit")
+        split_section.append(_("Move All to Main Window"), "app.all-to-main-window")
         # From here the main window is in use, so the console moves out (#255).
         split_section.append(_("Move to New Window"), "app.console-window")
         view_menu.append_section(None, split_section)
@@ -11083,6 +11105,11 @@ class GcmApplication(Gtk.Application):
     def _on_action_unsplit(self, action, _param):
         if self._controller is not None:
             self._controller.on_btnUnsplit_clicked(None)
+
+    def _on_action_all_to_main_window(self, action, _param) -> None:
+        if self._controller is not None:
+            # No tab action, unlike Move to New Window: it moves every console window's (#404).
+            self._controller.move_all_to_main_window()
 
     def _on_action_find(self, action, _param):
         if self._controller is not None:

@@ -616,6 +616,10 @@ To bring a console back:
 - Drag its tab into a tab strip in the main window.
 - Close the window, which brings back every console in it. Closing it ends none of them:
   to end a session, close its tab.
+- **View → Move All to Main Window**, or the toolbar button after Split Horizontal, Split
+  Vertical and Unsplit, brings back every console in every console window at once, and ends
+  none of them. Those buttons are icons without text: this one's tooltip reads "Move every
+  console in a console window back into the main window".
 
 Each one goes into the main window's pane in use, the one the keyboard is in or was last in.
 A console window closes itself once its last tab has left, however it left.
