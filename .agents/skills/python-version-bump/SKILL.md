@@ -84,7 +84,7 @@ Matrix Strategy" this skill's policy section describes. That is the user's call,
 that decision belongs to the user, not to you. Wait for an explicit yes before Step 4.
 
 Ask two more things in that same message, not a follow-up one. First, whether the commit should
-carry a `BREAKING CHANGE:` footer: neither AGENTS.md's Breaking Changes Policy nor this skill's
+carry a `BREAKING CHANGE:` footer: neither [AGENTS.md — Breaking Changes Policy](../../../AGENTS.md#breaking-changes-policy) nor this skill's
 policy section names dropping a Python version, so it is not a foregone conclusion, and the footer
 changes what `doit release`'s automatic bump produces next: while `[tool.commitizen]` has
 `major_version_zero = true`, it's a MINOR bump, and `doit release` refuses to release 1.0 or

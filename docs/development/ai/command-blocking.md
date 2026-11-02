@@ -823,5 +823,5 @@ marker; none of the probe config was kept in tracked files.
 ## Related
 
 - [AI Enforcement Principles](enforcement-principles.md) - Why and how we enforce rules in code
-- [AGENTS.md](../../../AGENTS.md) - AI agent rules including "When Blocked Protocol"
+- [AGENTS.md — When Blocked Protocol](../../../AGENTS.md#4-when-blocked-protocol) - AI agent rules for a blocked command
 - [AI Agent Setup](../AI_SETUP.md) - Setting up AI coding assistants

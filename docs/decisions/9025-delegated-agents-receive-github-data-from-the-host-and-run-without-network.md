@@ -29,7 +29,7 @@ the delegated prompt reads those files instead of calling `gh` itself.**
    - A missing or inaccessible issue/PR aborts the task with a clear error and exit code 1 — never a
      silent empty file.
 2. **Output location:** `tmp/agents/<host>/<task>-<n>/` (for example
-   `tmp/agents/claude/multi-review-123/`), per `AGENTS.md`'s temp-file convention. The orchestrating
+   `tmp/agents/claude/multi-review-123/`), per [AGENTS.md — Temporary Files](../../AGENTS.md#temporary-files). The orchestrating
    skill that creates the directory deletes it once every delegated agent (or subagent) using it has
    returned.
 3. **A fixed, generous set of files is fetched per task**, not a `DELEGATION-NEEDS:` back-and-forth:
