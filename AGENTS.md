@@ -112,15 +112,12 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `.claude/`, `.agents/`, `.codex/`, `.copilot/`, `.github/instructions/`, `.github/skills/`,
   `.github/hooks/` – agent configuration, vendored from pyproject-template and replaced on a
   sync: a fix goes upstream, by `report-template-bug`. Notes: `docs/development/ai/`.
-- `docs/development/` – how the vendored tooling works: the doit tasks, CI, repository
-  settings, and `docs/development/ai/` on the hooks, delegation and slash commands.
-  Written for the template, so it describes machinery this project has but does not
-  always use — `docs/development/release-and-automation.md` carries a banner saying so.
-- `docs/decisions/` – Architecture Decision Records, created with `doit adr`. The template
-  numbers its own decisions from 9001; a project's own start at 0001. The 9001 to 9025
-  records and the folder's `README.md` are the template's, synced with it (#324), and
-  `tests/test_docs.py` treats them as vendored, as it treats `docs/development/` and
-  `docs/template/`.
+- `docs/development/` – how the vendored tooling works: the doit tasks, CI, repository settings
+  and `docs/development/ai/`. Written for the template: it describes machinery GCM has but does
+  not always use, as the banner on `docs/development/release-and-automation.md` says.
+- `docs/decisions/` – Architecture Decision Records, created with `doit adr`. GCM's own are
+  numbered from 0001; those from 9001 and the folder's `README.md` are the template's, synced
+  with it (#324). Notes: the README, and `VENDORED_DOC_PATTERNS` in `tests/test_docs.py`.
 
 ## Documentation
 - `docs/TERMINAL-USAGE.md` – user-facing, everything inside a tab: selection and what a
