@@ -910,6 +910,12 @@ msgstr "Klon konsole"
 msgid "No open consoles"
 msgstr "Brak otwartych konsol"
 
+msgid "Main window"
+msgstr "Okno główne"
+
+msgid "Console window {}"
+msgstr "Okno konsoli {}"
+
 #: ../gnome_connection_manager.py:1901 ../gnome_connection_manager.py:2184
 #: ../gnome_connection_manager.py:2285 ../gnome_connection_manager.py:2403
 #: ../gnome_connection_manager.py:2573

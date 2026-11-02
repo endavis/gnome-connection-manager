@@ -82,6 +82,9 @@ the git log.
 ## [2.2.0] - 2026-10-30
 
 ### Added
+- The cluster window shows which window each console is in, **Main window** or
+  **Console window N**, before the host's folders under its name, and a console moved to
+  another window is listed under it at once.
 - Where a tab's host is filed now shows wherever there is room for it. Hover a tab, and
   under its label the tooltip gives the host's folders and name,
   `1. Projects/pyproject-template/ansible`. The open-console list, behind the ▾ button

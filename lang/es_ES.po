@@ -293,6 +293,12 @@ msgstr "Clonar consola"
 msgid "No open consoles"
 msgstr "No hay consolas abiertas"
 
+msgid "Main window"
+msgstr "Ventana principal"
+
+msgid "Console window {}"
+msgstr "Ventana de consola {}"
+
 msgid "Copy selection to clipboard"
 msgstr "Copiar selección al portapapeles"
 

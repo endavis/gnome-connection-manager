@@ -3081,6 +3081,22 @@ class Wmain(GladeComponent):
         """The window a console notebook is in: its console window, or the main window."""
         return self.console_window_of(notebook) or self.wMain
 
+    def console_window_name(self, terminal):
+        """The name of the window holding `terminal`, for the cluster window's list (#451).
+
+        "Main window", or "Console window N" with N the console window's place among those
+        open: a console window's title follows its tab, so it cannot tell two apart. Empty
+        for a terminal whose tab has gone.
+        """
+        pane = terminal.get_parent()
+        notebook = pane.get_parent() if pane is not None else None
+        if notebook is None or not hasattr(notebook, "get_tab_label"):
+            return ""
+        window = self.console_window_of(notebook)
+        if window is None:
+            return _("Main window")
+        return _("Console window {}").format(self.console_windows.index(window) + 1)
+
     def open_console_groups(self):
         """Every open console, grouped by the pane or console window it is in."""
         focused = self.page_in_use()
@@ -5669,6 +5685,8 @@ class Wmain(GladeComponent):
         self.console_windows = tuple(other for other in self.console_windows if other is not window)
         if self.window_in_use is window:
             self.window_in_use = None
+        # The windows after it are numbered again (#451).
+        self.name_cluster_consoles()
 
     def on_console_window_page_removed(self, notebook, _page, _number):
         """Close a console window once its last tab has left it, however it left (#255).
@@ -5786,6 +5804,8 @@ class Wmain(GladeComponent):
 
     def on_page_added(self, widget, *args):
         self.count += 1
+        # A console that moved to another window is listed under it (#451).
+        self.name_cluster_consoles()
         if hasattr(self, "check_notebook"):
             self.check_notebook_pages(self.check_notebook)
             delattr(self, "check_notebook")
@@ -8912,11 +8932,15 @@ class Wcluster(GladeComponent):
 
     def draw_console(self, _column, cell, model, iter_, _data=None):
         """A console's row: its tab's name over its host's whole path, as the open-console
-        list draws it (#347). The path is read from the tab as the row is drawn, and
+        list draws it (#347), with the window it is in before the path (#451). Both are read
+        as the row is drawn, and
         Wmain.name_cluster_consoles has each row drawn again as the hosts change."""
         name, terminal = model[iter_][1], model[iter_][2]
         tab = wMain.get_tab_label_for_terminal(terminal)
         path = tab.get_path() if hasattr(tab, "get_path") else ""
+        where = wMain.console_window_name(terminal) if tab is not None else ""
+        if where:
+            path = f"{where} · {path}" if path else where
         cell.set_property("markup", with_path(GLib.markup_escape_text(name.strip()), path))
 
     def send_snippet(self, snippet):

@@ -1025,7 +1025,9 @@ def test_a_cluster_row_is_drawn_with_its_hosts_path(app_module, monkeypatch):
     monkeypatch.setattr(app_module.GLib, "markup_escape_text", escape, raising=False)
     tab = tab_for(app_module, host_at(app_module, "R&D/<lab>/web"))
     tab.set_name("web", "R&D/<lab>/web")
-    wmain = types.SimpleNamespace(get_tab_label_for_terminal={"one": tab}.get)
+    wmain = types.SimpleNamespace(
+        get_tab_label_for_terminal={"one": tab}.get, console_window_name=lambda _terminal: ""
+    )
     monkeypatch.setattr(app_module, "wMain", wmain, raising=False)
     model = {"first": [False, "  web  ", "one"], "second": [True, "  a&b  ", "gone"]}
     drawn = []
@@ -1039,6 +1041,92 @@ def test_a_cluster_row_is_drawn_with_its_hosts_path(app_module, monkeypatch):
         ("markup", "web\n<span size='small' alpha='60%'>R&amp;D/&lt;lab&gt;/web</span>"),
         ("markup", "a&amp;b"),
     ]
+
+
+class _Pane:
+    def __init__(self, notebook):
+        self.notebook = notebook
+
+    def get_parent(self):
+        return self.notebook
+
+
+class _Console:
+    def __init__(self, notebook):
+        self.pane = _Pane(notebook)
+
+    def get_parent(self):
+        return self.pane
+
+
+class _PlainNotebook:
+    def get_n_pages(self):
+        return 0
+
+    def get_tab_label(self, _pane):
+        return None
+
+
+def test_a_cluster_row_names_the_window_its_console_is_in(app_module):
+    """The main window for a pane of it, a console window by its place among those open,
+    numbered again as one closes, and nothing for a console whose tab has gone (#451)."""
+    main_pane, first, second = _PlainNotebook(), _PlainNotebook(), _PlainNotebook()
+    wmain = window_with(
+        app_module,
+        main_pane,
+        console_windows=(
+            types.SimpleNamespace(notebook=first),
+            types.SimpleNamespace(notebook=second),
+        ),
+    )
+
+    assert wmain.console_window_name(_Console(main_pane)) == "Main window"
+    assert wmain.console_window_name(_Console(first)) == "Console window 1"
+    assert wmain.console_window_name(_Console(second)) == "Console window 2"
+    assert wmain.console_window_name(_Console(None)) == ""
+    assert wmain.console_window_name(types.SimpleNamespace(get_parent=lambda: None)) == ""
+
+    wmain.console_windows = wmain.console_windows[1:]
+    assert wmain.console_window_name(_Console(second)) == "Console window 1"
+
+
+def test_a_cluster_row_is_drawn_with_its_window_before_its_path(app_module, monkeypatch):
+    from tests.test_console_list import escape
+
+    monkeypatch.setattr(app_module.GLib, "markup_escape_text", escape, raising=False)
+    tab = tab_for(app_module, host_at(app_module, "lab/web"))
+    tab.set_name("web", "lab/web")
+    bare = tab_for(app_module, None, "notes")
+    windows = {"one": "Console window 2", "two": "Main window"}
+    wmain = types.SimpleNamespace(
+        get_tab_label_for_terminal={"one": tab, "two": bare}.get,
+        console_window_name=windows.get,
+    )
+    monkeypatch.setattr(app_module, "wMain", wmain, raising=False)
+    model = {"a": [False, "  web  ", "one"], "b": [False, "  notes  ", "two"]}
+    drawn = []
+    cell = types.SimpleNamespace(set_property=lambda name, value: drawn.append(value))
+
+    cluster = object.__new__(app_module.Wcluster)
+    cluster.draw_console(None, cell, model, "a")
+    cluster.draw_console(None, cell, model, "b")
+
+    assert drawn == [
+        "web\n<span size='small' alpha='60%'>Console window 2 · lab/web</span>",
+        "notes\n<span size='small' alpha='60%'>Main window</span>",
+    ]
+
+
+def test_a_console_moving_between_windows_has_its_cluster_row_drawn_again(app_module):
+    """Both a page added to a notebook and a console window closing refresh the list."""
+    wmain = window_with(app_module, _PlainNotebook())
+    calls = []
+    wmain.name_cluster_consoles = lambda: calls.append(1)
+
+    wmain.on_page_added(None)
+    wmain.on_console_window_destroy(types.SimpleNamespace())
+
+    assert len(calls) == 2
 
 
 # What the stubs above cannot show: real tabs, drawn, and the windows and lists that name
@@ -1290,9 +1378,22 @@ elif scenario == "the-paths-beside-the-names":
             texts.append(column.get_cells()[0].props.text)
         return texts
 
-    assert drawn_rows() == expected, drawn_rows()
-    heights = [tree.get_background_area(row.path, column).height for row in store]
-    assert min(heights[:3]) > max(heights[3:]), heights
+    # Each row says the window it is in before the path (#451).
+    in_main = [
+        text.replace("\n", "\nMain window \u00b7 ", 1) if "\n" in text else text + "\nMain window"
+        for text in expected
+    ]
+    assert drawn_rows() == in_main, drawn_rows()
+
+    # A console moved to a window of its own is listed under it, and back (#451).
+    local_page = w.nbConsole.get_nth_page(4)
+    w.move_to_new_window(local_page)
+    pump(0.5)
+    assert drawn_rows()[4] == "local\nConsole window 1", drawn_rows()
+    assert drawn_rows()[3] == "router\nMain window", drawn_rows()
+    w.move_to_main_window(local_page)
+    pump(0.5)
+    assert drawn_rows()[4] == "local\nMain window", drawn_rows()
 
     # Moved to another folder, web's tab keeps its rename and takes the new path.
     moved = app.Host("2. Archive", "web")
@@ -1300,7 +1401,7 @@ elif scenario == "the-paths-beside-the-names":
     configure(infra, other, moved, router)
     pump()
     assert labels()[2].get_tooltip_text() == "deploys\n2. Archive/web", labels()[2].get_tooltip_text()
-    assert drawn_rows()[2] == "deploys\n2. Archive/web", drawn_rows()
+    assert drawn_rows()[2] == "deploys\nMain window \u00b7 2. Archive/web", drawn_rows()
 
 elif scenario == "the-template-names-the-tabs":
     # As gcm.conf gives them, since OK saves them: a hand-built Host leaves these None.
