@@ -1895,6 +1895,10 @@ if scenario == "the-tree-menu":
     from_servers_menu("Mount with SSHFS")
     assert mounted == [("box", folder), ("box", folder)], mounted
 
+    # Hold GCM's mounts-changed handler off (it looks show_mounts up when it runs), so that a
+    # stray signal from another process cannot mark the row before the scenario means it to.
+    show = w.show_mounts
+    w.show_mounts = lambda: None
     # Mounted where Mount with SSHFS puts it, from it: Unmount in Mount's place.
     app.read_mount_table = lambda: f"300 1 0:90 / {folder} rw - fuse.sshfs eric@192.0.2.10: rw\n"
     right_click("box")
@@ -1954,11 +1958,15 @@ if scenario == "the-tree-menu":
         pump(0.3)
         return items
 
-    # Not yet marked: the mount table was changed without GIO telling.
+    # Not yet marked: the mount table was changed without GIO telling. A mounts-changed
+    # emitted now, as another process's mount would, finds the handler held off (#449).
+    w.mount_monitor.emit("mounts-changed")
+    pump(0.3)
     plain_icon, plain = drawing("box")
     assert text_of("box") == "box", text_of("box")
     items = hosts_menu()
     assert items == ["box", "switch"], items
+    w.show_mounts = show
     w.show_mounts()
     icon, marked = drawing("box")
     assert marked != plain and icon == plain_icon
