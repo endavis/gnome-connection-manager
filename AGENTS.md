@@ -75,29 +75,14 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   widget. A key typed into a console is its program's, bar what `[shortcuts]` binds (#419).
   Notes: its docstrings and comments, and those of the `app.py` code they name.
 - `src/gnome_connection_manager/utils/activity.py` – when a console busy out of sight has
-  gone quiet (#208). An agent CLI finishing in a tab nobody watches gave no sign: measured
-  in a real VTE, only codex of Claude Code, codex, agy and Copilot CLI rings the bell at
-  the end of a turn. All four redraw continuously while they work, with the longest pause
-  at 1.35 s, and not at all while idle. `QuietWatch` turns `contents-changed` into that
-  decision. Output only counts while the tab is out of sight, and must run for
-  `QUIET_MIN_BUSY`, so typing a command and switching away is not work finishing. Pure:
-  the time is an argument. `Wmain.on_terminal_contents_changed` feeds it, and `check_quiet`
-  polls it on a timer that exists only while a tab is waiting, so an idle console costs
-  nothing. It, the bell and a session ending all mark through `request_attention`.
+  gone quiet (#208). It is asked on a timer that runs only while a tab waits, so an idle
+  console costs nothing. Notes: its docstrings, and `app.py`'s `check_quiet`.
 - `src/gnome_connection_manager/utils/afterlogin.py` – when a host's commands after login are
   typed, and what becomes of keys typed before then (#312). A fake ssh in a test enters raw
   mode with `TCSADRAIN`, as ssh does. Notes: its docstrings, and `app.py`'s `hold_key`.
 - `src/gnome_connection_manager/utils/updates.py` – whether this repository has released a
-  newer GCM (#295). `newer_release` compares the `vX.Y.Z` tags GitHub lists at
-  `TAGS_URL` with `app_version` as numbers. The check it replaced asked the original
-  author's site, which serves that GCM's 1.2.1, and compared strings, under which 10.0.0
-  is less than 9.0.0. Pure but for `main`, the request, which `Wmain.check_updates` runs
-  two seconds after start, while `check-updates` is on, as a process of its own, started
-  with `childpython.module_command` as the relay is (#369, #415). It reads the answer in the
-  main loop through `Gio.Subprocess`, and says nothing on any failure. Not a thread:
-  measured, a GCM quit during the request exited with the thread still inside it, as did
-  the test that crashed at exit in #316. `quit_application`, which Ctrl+Q and closing the
-  window both reach, kills a check still running.
+  newer GCM (#295), compared as numbers. The request runs as a process of its own, never on
+  a thread (#369). Notes: its docstrings, and `app.py`'s `check_updates`.
 - `src/gnome_connection_manager/utils/childpython.py` – how GCM starts its Python children,
   the relay and the update check (#415). Never `python -m`: under `install.sh`'s launcher a
   fresh interpreter cannot import GCM. Notes: its docstrings, and `tests/test_childpython.py`.
