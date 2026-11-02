@@ -3344,11 +3344,11 @@ class Wmain(GladeComponent):
         A console gets the fixed accelerators in CONSOLE_FIRST_KEYS first (#419), as a key
         typed into a console belongs to its program, except GCM's [shortcuts], which
         `on_terminal_keypress` runs. One the terminal does not handle goes on to the
-        accelerator. With the keyboard anywhere else, GCM's shortcuts apply. A console whose
-        program has ended handles all six and does nothing with them, measured, so none
-        acts there and the menus are the way to each: Ctrl+Q does not quit from such a tab,
-        and File → Quit does. Not handled yet (#425): a check of the terminal's child_pid
-        here would pass such a key on.
+        accelerator. With the keyboard anywhere else, GCM's shortcuts apply. A console with no
+        program running, one whose program has ended or whose spawn has not reported a pid
+        (`child_pid` is None), is not given them (#425): VTE would take each and do nothing
+        with it, measured, so Ctrl+Q could not quit from such a tab. They go on to the
+        accelerators there, as with the keyboard outside a console.
 
         propagate_key_event gives the key to the focused widget and its parents, and stops
         before the window, so it does not run this handler again for the key.
@@ -3356,7 +3356,11 @@ class Wmain(GladeComponent):
         focus = window.get_focus()
         if GtkVnc is not None and isinstance(focus, GtkVnc.Display):
             return window.propagate_key_event(event)
-        if isinstance(focus, Vte.Terminal) and get_key_name(event) in CONSOLE_FIRST_KEYS:
+        if (
+            isinstance(focus, Vte.Terminal)
+            and get_key_name(event) in CONSOLE_FIRST_KEYS
+            and getattr(focus, "child_pid", None) is not None
+        ):
             return window.propagate_key_event(event)
         return False
 
