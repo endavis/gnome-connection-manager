@@ -52,7 +52,8 @@ gnome-connection-manager/
 │           ├── transcript.py     # A readable transcript from a raw recording
 │           ├── updates.py        # Whether a newer GCM has been released
 │           ├── urlregex.py       # Link and file:line patterns
-│           └── vtehtml.py        # VTE's HTML export, for the buffer viewer
+│           ├── vtehtml.py        # VTE's HTML export, for the buffer viewer
+│           └── wslg.py           # Whether WSLg cannot draw GCM's window
 ├── data/                  # Non-Python assets
 │   ├── ui/
 │   │   ├── gnome-connection-manager.glade

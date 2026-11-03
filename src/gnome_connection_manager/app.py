@@ -157,6 +157,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     updates,
     urlregex,
     vtehtml,
+    wslg,
 )
 from gnome_connection_manager.utils import snippets as snippetlib  # noqa: E402
 from gnome_connection_manager.utils.folders import (  # noqa: E402
@@ -11498,6 +11499,9 @@ def main(argv=None):
     require_expect()
     require_config_dir()
     require_readable_config()
+    notice = wslg.startup_notice()
+    if notice:
+        print(notice, file=sys.stderr)
     application = GcmApplication()
     return application.run(argv)
 
