@@ -18,7 +18,11 @@ fits. A menu taller than the whole room starts at the top of it and scrolls, as 
 one taller than the monitor. Whether the room is the monitor or the window is `app.py`'s
 to say: a Wayland client does not know where its window is on the output.
 
-Pure: only numbers go in, on one axis, all in the same coordinates.
+The same is worked out across (#398): Weston does not flip or slide a menu sideways
+either, so one opened near the right edge ran off it. `place_across` opens it rightwards
+or leftwards, whichever fits, else slides it along the room.
+
+Pure: only numbers go in, on one axis at a time, all in the same coordinates.
 """
 
 from __future__ import annotations
@@ -63,3 +67,49 @@ def place_menu(top: int, bottom: int, height: int, low: int, high: int) -> Place
     hung = bottom if below else top - shown
     start = min(max(hung, low), high - shown)
     return Placement(below, start - hung, height > room)
+
+
+class Across(NamedTuple):
+    """Which way a menu opens from the rectangle it opens beside (#398).
+
+    `leftwards` hangs the menu's right edge from the rectangle's right edge, and otherwise
+    its left edge stands on the rectangle's left. `shift` moves it on from there, right
+    when positive and left when negative: the slide, 0 for a menu that fits on its side.
+    """
+
+    leftwards: bool
+    shift: int
+
+
+def place_across(
+    left: int, right: int, width: int, low: int, high: int, leftwards: bool = False
+) -> Across:
+    """Which way a menu `width` wide goes for a rectangle spanning `left` to `right`, in
+    a room spanning `low` to `high` (#398).
+
+    On the preferred side (`leftwards` says which) if it fits there, else on the other,
+    else on the side with more room, the preferred one on a tie, slid along the room until
+    it is inside. A menu wider than the room is as wide as the room and starts at `low`.
+    """
+    shown = min(width, high - low)
+    space_right = high - left
+    space_left = right - low
+    fits_right = shown <= space_right
+    fits_left = shown <= space_left
+    if leftwards:
+        if fits_left:
+            go_left = True
+        elif fits_right:
+            go_left = False
+        else:
+            go_left = space_left >= space_right
+    else:
+        if fits_right:
+            go_left = False
+        elif fits_left:
+            go_left = True
+        else:
+            go_left = space_left > space_right
+    hung = right - shown if go_left else left
+    start = min(max(hung, low), high - shown)
+    return Across(go_left, start - hung)

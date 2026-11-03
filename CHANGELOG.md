@@ -50,6 +50,8 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- **A menu opened near the right edge** of the window opens leftwards, or slides, instead of
+  running off the screen under WSLg (#398).
 - **A menu opens at its top.** GTK kept a menu's scroll position from one opening to the
   next, so the open-console list, scrolled to its end and opened again with fewer
   consoles, opened empty with its entries above it. All five menus are scrolled back to
