@@ -365,6 +365,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_whost.py",
     "tests/test_window_fit.py",
     "tests/test_windows_rdp.py",
+    "tests/test_wslg.py",
     "tests/test_wmain.py",
 ]
 # --no-cov: coverage made each run half as long again, measured. The real-GTK scenarios

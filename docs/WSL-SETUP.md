@@ -468,7 +468,8 @@ describes.
 **GCM's window is blank, and its title starts with `[WARN] COPY MODE`.** WSLg has lost the
 shared memory it draws windows through, and marks every Linux window's title that way.
 `/mnt/wslg/weston.log` shows `rdp_allocate_shared_memory` errors. Run `wsl --shutdown` in
-PowerShell, and start GCM again.
+PowerShell, and start GCM again. Started from a terminal, GCM says so on its console
+when the log shows that failure.
 
 **The pointer never changes shape.** There is no text cursor over a console, and no arrows
 at a window's edge or at the server pane's divider, though dragging there still works. The

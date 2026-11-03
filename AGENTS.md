@@ -75,6 +75,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/updates.py` – whether this repository has released a
   newer GCM (#295), compared as numbers. The request runs as a process of its own, never on
   a thread (#369). Notes: its docstrings, and `app.py`'s `check_updates`.
+- `src/gnome_connection_manager/utils/wslg.py` – whether WSLg's log shows it cannot draw
+  windows (#414), said on the console by `main()`. Notes: its docstrings.
 - `src/gnome_connection_manager/utils/childpython.py` – how GCM starts its Python children,
   the relay and the update check (#415). Never `python -m`: under `install.sh`'s launcher a
   fresh interpreter cannot import GCM. Notes: its docstrings, and `tests/test_childpython.py`.

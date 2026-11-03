@@ -1854,3 +1854,6 @@ msgstr "Windows-Remotedesktop zeigt den Desktop in einem eigenen Fenster."
 
 msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
 msgstr "GCM läuft nicht unter X11, daher zeigt FreeRDP den Desktop in einem eigenen Fenster."
+
+msgid "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
+msgstr "WSLg konnte den gemeinsamen Speicher, über den es Fenster zeichnet, nicht öffnen, daher bleibt das Fenster von GCM möglicherweise leer. Führen Sie `wsl --shutdown` in Windows aus und starten Sie GCM dann erneut. Siehe docs/WSL-SETUP.md, 'When something goes wrong'."
