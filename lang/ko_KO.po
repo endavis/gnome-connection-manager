@@ -1925,5 +1925,5 @@ msgstr "Windows 원격 데스크톱은 데스크톱을 별도의 창에 표시�
 msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
 msgstr "GCM이 X11에서 실행되고 있지 않아서, FreeRDP가 데스크톱을 별도의 창에 표시합니다."
 
-msgid "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
-msgstr "WSLg가 창을 그리는 데 쓰는 공유 메모리를 열지 못해 GCM 창이 빈 채로 남을 수 있습니다. Windows에서 `wsl --shutdown`을 실행한 다음 GCM을 다시 시작하세요. docs/WSL-SETUP.md, 'When something goes wrong'을 참조하세요."
+msgid "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank, its title starting with [WARN:COPY MODE]. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
+msgstr "WSLg가 창을 그리는 데 쓰는 공유 메모리를 열지 못해 GCM 창이 빈 채로 남고 제목이 [WARN:COPY MODE]로 시작할 수 있습니다. Windows에서 `wsl --shutdown`을 실행한 다음 GCM을 다시 시작하세요. docs/WSL-SETUP.md, 'When something goes wrong'을 참조하세요."

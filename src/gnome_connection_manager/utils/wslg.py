@@ -12,6 +12,13 @@ Measured on a working WSLg session: `/mnt/wslg/weston.log` was 43,045 bytes, its
 the same `enable_copy_warning_title = 1` line, so that setting is not a sign of the failure:
 only the failure line is, and it is the one thing matched.
 
+The blank window's title is `[WARN:COPY MODE] <window title> (<distro>)`, measured two ways:
+WSLg's source (`microsoft/weston-mirror` at 7fbf69314f8a74450c265650232f66f59a4e0630,
+`libweston/backend-rdp/rdprail.c`) builds it as `"[WARN:COPY MODE] %s (%s)"`, the window's
+title then the distro's name or "Linux"; and the installed WSLg's
+`/usr/lib/libweston-9/rdp-backend.so`, read with `wsl --system -- grep -a -o -F "WARN:COPY"`,
+holds `WARN:COPY` and no `WARN]`.
+
 Pure but for `read_log` and `startup_notice`, which read the one file: the log's text is an
 argument everywhere else. The message is marked with `N_` and `app.py` translates it where it
 prints it, as `utils/connections.py` does.
@@ -37,7 +44,7 @@ def N_(message: str) -> str:
 _FAILURE = "rdp_allocate_shared_memory: Failed to open"
 
 NOTICE = N_(
-    "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
+    "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank, its title starting with [WARN:COPY MODE]. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
 )
 
 

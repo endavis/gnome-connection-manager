@@ -66,3 +66,13 @@ def test_main_prints_notice(app_module, monkeypatch, capsys):
     monkeypatch.setattr(app_module, "GcmApplication", App)
     assert app_module.main(["gcm"]) == 0
     assert wslg.NOTICE in capsys.readouterr().err
+
+
+def test_notice_and_guide_spell_the_title_as_measured():
+    # Measured in WSLg's source and its installed backend: `[WARN:COPY MODE]`.
+    assert "[WARN:COPY MODE]" in wslg.NOTICE
+    root = Path(__file__).resolve().parent.parent
+    guide = (root / "docs" / "WSL-SETUP.md").read_text()
+    assert "[WARN:COPY MODE]" in guide
+    for text in (guide, wslg.NOTICE, Path(wslg.__file__).read_text()):
+        assert "[WARN] COPY MODE" not in text
