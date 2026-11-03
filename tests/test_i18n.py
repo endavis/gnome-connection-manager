@@ -764,6 +764,63 @@ def test_gcm_shows_english_where_it_reads_no_catalog(lang, language):
     assert {"Name", "Port", "Private key"} <= set(windows["Edit Host"])
 
 
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for real windows",
+)
+def test_gcm_draws_no_german_under_c_utf8_with_language_de():
+    """`LANG=C.UTF-8 LANGUAGE=de` drew one window in two languages (#395).
+
+    Python's `gettext` read `LANGUAGE=de` and translated the code's texts, while glibc, which
+    translates the glade file's, ignores `LANGUAGE` under a `C` messages locale and left them
+    as their English msgids. Under `C` every window is English now, from both halves.
+    """
+    pytest.importorskip("gi", reason="PyGObject not available")
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _SCRUBBED and not key.startswith("LC_")
+    }
+    environment["LANG"] = "C.UTF-8"
+    environment["LANGUAGE"] = "de"
+
+    result = subprocess.run(
+        [sys.executable, "-c", _ENGLISH_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        env=environment,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert glib_complaints(result.stderr) == [], result.stderr[-2000:]
+    shown = json.loads(result.stdout.strip().splitlines()[-1])
+    windows = shown["windows"]
+    assert {"Gnome Connection Manager", "Preferences", "Edit Host"} <= set(windows)
+
+    entries = catalog_entries(PO_DIR / "de_DE.po")
+    german = {
+        without_access_key(msgstr)
+        for msgid, msgstr in entries.items()
+        if msgid and msgstr and without_access_key(msgstr) != without_access_key(msgid)
+    }
+    # A German text that is also an English msgid is English, `Name` among them.
+    german -= {without_access_key(msgid) for msgid in entries}
+    drawn = {
+        title: [text for text in texts if without_access_key(text) in german]
+        for title, texts in windows.items()
+    }
+    drawn_german = {title: found for title, found in drawn.items() if found}
+    menus = [text for text in shown["menus"] if without_access_key(text) in german]
+    assert not drawn_german, f"these are German: {drawn_german}"
+    assert not menus, f"these menus are German: {menus}"
+    assert {"Add", "Edit", "Remove", "Add new host"} <= set(windows["Gnome Connection Manager"])
+    assert {"Word separator", "Buffer size", "Logs path"} <= set(windows["Preferences"])
+    assert {"Name", "Port", "Private key"} <= set(windows["Edit Host"])
+
+
 # -- the Spanish catalog (#391) --
 
 ES_PO = PO_DIR / "es_ES.po"

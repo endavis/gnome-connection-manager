@@ -44,6 +44,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- Under `LANG=C.UTF-8` (or `C`, `POSIX`) with `LANGUAGE` set, as `LANGUAGE=de`, GCM drew a
+  window in two languages. It is English now, as glibc already ignored `LANGUAGE` there. To
+  have another language, set `LANG` to a locale of it (#395).
 - `Ctrl+Q`, `Ctrl+E`, `Ctrl+R`, `F1`, `F9` and `Shift+F9` did nothing in a console whose
   program had ended, which kept them and had no program to give them to. With no program
   running they act as they do anywhere outside a console (#425).

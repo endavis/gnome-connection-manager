@@ -27,8 +27,9 @@ lacks -- shows the msgids, from Python's `gettext` and from glibc, which transla
 glade file's texts, alike, with no fallback code. Measured with glibc 2.39: glibc ignores
 `LANGUAGE` while `LC_MESSAGES` is `C` or `C.UTF-8`, and Python's `gettext` stops at `C`,
 so under `C.UTF-8` neither half reads a catalog, and the Spanish msgids showed. Python's
-half does read `LANGUAGE=de` there, so `LANG=C.UTF-8 LANGUAGE=de` still mixes the two:
-the Python messages in German, the glade texts as their msgids. Rewording
+half read `LANGUAGE=de` there, so `LANG=C.UTF-8 LANGUAGE=de` mixed the two (#395). Now
+`bindtextdomain` installs `NullTranslations` under a `C` or `POSIX` messages locale, and
+every window is English; the cost is that `LANGUAGE` picks no language under `C.UTF-8`. Rewording
 an English message re-keys it: change the msgid in the code or the glade file and in
 every catalog, or its translations are lost, and the entry left behind fails
 `test_no_catalog_keeps_an_entry_nothing_uses`. GCM was written in Spanish, and

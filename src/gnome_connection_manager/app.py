@@ -110,6 +110,13 @@ except (ImportError, ValueError):
     GdkX11 = None
 
 
+def is_c_locale(name: str | None) -> bool:
+    """Whether a messages locale is `C`, `POSIX` or `C.UTF-8`, which glibc translates nothing
+    in, whatever `LANGUAGE` says (#395). Charset and modifier do not change that."""
+    base = (name or "C").split("@")[0].split(".")[0]
+    return base in ("C", "POSIX")
+
+
 def bindtextdomain(app_name, locale_dir=None):
     global _
     try:
@@ -120,7 +127,13 @@ def bindtextdomain(app_name, locale_dir=None):
         locale.bindtextdomain(app_name, locale_dir)
         gettext.bindtextdomain(app_name, locale_dir)
         gettext.textdomain(app_name)
-        gettext.install(app_name, locale_dir)
+        if is_c_locale(locale.setlocale(locale.LC_MESSAGES)):
+            # glibc, which translates the glade file, ignores LANGUAGE here, and Python's
+            # gettext would not: under LANG=C.UTF-8 LANGUAGE=de one window came out in two
+            # languages. So translate nothing, and the window is English (#395, ADR-0003).
+            gettext.NullTranslations().install()
+        else:
+            gettext.install(app_name, locale_dir)
     except (OSError, locale.Error):
         builtins.__dict__["_"] = lambda x: x
 
