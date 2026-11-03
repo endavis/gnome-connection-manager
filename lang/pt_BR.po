@@ -1752,6 +1752,18 @@ msgstr "Como a aba de um host é chamada. {name}, {address}, {port}, {user}, {gr
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "O nome das abas deste host, usado como está, sem pasta na frente. {name}, {address}, {port}, {user}, {group}, {folder} e {type} são os valores do host. Se ficar vazio, o Nome da aba das Preferências dá nome a elas."
 
+msgid "Prefix keys"
+msgstr "Teclas de prefixo"
+
+msgid "Other keys"
+msgstr "Outras teclas"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "Depois de uma dessas teclas, a próxima tecla vai para o programa do console e não para os atalhos do GCM: tmux e screen esperam um comando depois de Ctrl+B e Ctrl+A. As teclas de prefixo de um host são somadas a estas."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Teclas depois das quais o programa deste host espera um comando, como o tmux com Ctrl+B: a tecla digitada depois vai para o programa e não para os atalhos do GCM. São somadas às teclas de prefixo das Preferências. Pressione uma tecla para adicioná-la e Backspace para limpar."
+
 msgid "Tab color"
 msgstr "Cor da aba"
 

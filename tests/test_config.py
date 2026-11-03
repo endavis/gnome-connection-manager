@@ -292,6 +292,26 @@ def test_the_tab_name_template_is_kept_as_written(tmp_path, app_module, monkeypa
     assert written.get("options", "tab-name") == template
 
 
+def test_prefix_keys_are_none_without_a_line_and_survive_a_save(tmp_path, app_module, monkeypatch):
+    """#452: no prefix key by default, so a gcm.conf from before behaves as it did."""
+    assert _load_with(tmp_path, app_module, monkeypatch, {"term": "xterm"}).PREFIX_KEYS == ""
+
+    conf = _load_with(tmp_path, app_module, monkeypatch, {"prefix-keys": "CTRL+B,F5"})
+    assert conf.PREFIX_KEYS == "CTRL+B,F5"
+
+    wmain = object.__new__(app_module.Wmain)
+    wmain.hpMain = types.SimpleNamespace(get_position=lambda: 100)
+    wmain.wMain = types.SimpleNamespace(is_maximized=lambda: False)
+    wmain.get_collapsed_nodes = lambda: []
+    wmain.get_collapsed_folder_ids = lambda: []
+    monkeypatch.setattr(app_module, "snippets", [])
+    wmain.writeConfig()
+
+    written = configparser.RawConfigParser()
+    written.read(tmp_path / "gcm.conf")
+    assert written.get("options", "prefix-keys") == "CTRL+B,F5"
+
+
 def test_load_config_malformed_value_only_affects_its_own_option(tmp_path, app_module, monkeypatch):
     conf = _load_with(
         tmp_path,

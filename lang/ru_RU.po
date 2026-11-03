@@ -1756,6 +1756,18 @@ msgstr "Как называется вкладка хоста. {name}, {address}
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "Как будут называться вкладки этого хоста; имя используется как есть, без префикса с именем папки. {name}, {address}, {port}, {user}, {group}, {folder} и {type} — значения хоста. Если оставить поле пустым, вкладки будут называться согласно настройке «Имя вкладки» в «Параметрах»."
 
+msgid "Prefix keys"
+msgstr "Префиксные клавиши"
+
+msgid "Other keys"
+msgstr "Другие клавиши"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "После одной из этих клавиш следующая клавиша передаётся программе в консоли, а не ярлыкам GCM: tmux и screen ждут команду после Ctrl+B и Ctrl+A. Префиксные клавиши хоста добавляются к этим."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Клавиши, после которых программа этого хоста ждёт команду, как tmux после Ctrl+B: нажатая после неё клавиша передаётся программе, а не ярлыкам GCM. Они добавляются к префиксным клавишам из параметров. Нажмите клавишу, чтобы добавить её, Backspace, чтобы очистить."
+
 msgid "Tab color"
 msgstr "Цвет вкладок"
 

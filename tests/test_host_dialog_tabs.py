@@ -133,6 +133,7 @@ elif scenario == "round-trip":
         host.after_command = "true" if kind.opens_tab else ""
         host.tab_name = "tpl {name} ({type})" if kind.opens_tab else ""
         host.tab_color = "#e01b24" if kind.opens_tab else ""
+        host.prefix_keys = "CTRL+A,F5"
         if kind.id == "command":
             host.type_settings = {"command.line": "echo {name}"}
         if kind.id == "rdp":

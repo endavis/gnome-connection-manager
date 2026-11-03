@@ -1752,6 +1752,18 @@ msgstr "Jak nazywa się zakładka hosta. {name}, {address}, {port}, {user}, {gro
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "Jak nazywają się zakładki tego hosta – nazwa jest używana bez zmian, bez katalogu na początku. {name}, {address}, {port}, {user}, {group}, {folder} i {type} to wartości hosta. Jeśli pole jest puste, nazywa je Nazwa zakładki z Preferencji."
 
+msgid "Prefix keys"
+msgstr "Klawisze prefiksu"
+
+msgid "Other keys"
+msgstr "Inne klawisze"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "Po jednym z tych klawiszy następny klawisz trafia do programu w konsoli, a nie do skrótów GCM: tmux i screen oczekują polecenia po Ctrl+B i Ctrl+A. Klawisze prefiksu hosta są dodawane do tych."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Klawisze, po których program tego hosta oczekuje polecenia, jak tmux po Ctrl+B: klawisz naciśnięty po nim trafia do programu, a nie do skrótów GCM. Są dodawane do klawiszy prefiksu z Preferencji. Naciśnij klawisz, aby go dodać, a Backspace, aby wyczyścić."
+
 msgid "Tab color"
 msgstr "Kolor zakładek"
 

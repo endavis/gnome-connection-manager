@@ -129,6 +129,7 @@ def make_whost(
     whost.cmbBackspace = types.SimpleNamespace(get_active=lambda: 1)
     whost.cmbDelete = types.SimpleNamespace(get_active=lambda: 2)
     whost.txtTerm = TextEntry("xterm-256color")
+    whost.txtPrefixKeys = TextEntry("")
     whost.txtBeforeCommand = TextEntry("")
     whost.txtAfterCommand = TextEntry("")
     whost.txtTabName = TextEntry("")
@@ -371,6 +372,7 @@ SSH_OPTIONS = (
 TERMINAL_OPTIONS = (
     "chkLogging",
     "txtTerm",
+    "txtPrefixKeys",
     "chkDefaultColors",
     "btnFColor",
     "btnBColor",
@@ -450,6 +452,7 @@ def make_loadable_whost(app_module, monkeypatch):
         "txtCompressionLevel",
         "txtExtraParams",
         "txtTerm",
+        "txtPrefixKeys",
         "txtBeforeCommand",
         "txtAfterCommand",
         "txtTabName",
@@ -1057,3 +1060,49 @@ def test_a_hosts_own_colours_come_back_as_picked_against_real_gtk():
     assert result.returncode == 0, result.stderr[-2000:]
     assert "Traceback" not in result.stderr, result.stderr[-2000:]
     assert "OK" in result.stdout
+
+
+# -- a host's own prefix keys (#452) -----------------------------------------------
+
+
+def test_init_loads_the_prefix_keys(monkeypatch, app_module):
+    dialog = make_loadable_whost(app_module, monkeypatch)
+    host = make_stored_host(app_module, commands="", enabled=False)
+    host.prefix_keys = "CTRL+A,F5"
+
+    dialog.init("ops", host)
+
+    assert dialog.txtPrefixKeys.get_text() == "CTRL+A,F5"
+
+
+def test_ok_saves_the_prefix_keys_in_the_form_gcm_conf_holds(monkeypatch, app_module):
+    whost, _destroy = make_whost(app_module)
+    whost.txtPrefixKeys.set_text(" ctrl+a , CTRL+SHIFT+B,ctrl+a")
+
+    assert saved_host(app_module, monkeypatch, whost).prefix_keys == "CTRL+A,CTRL+SHIFT+B"
+
+
+def test_ok_saves_the_prefix_keys_of_a_type_whose_page_is_hidden(monkeypatch, app_module):
+    """As `term` is (#277): a hidden page keeps what its widgets hold."""
+    whost, _destroy = make_whost(app_module)
+    whost.cmbType = ComboStub("web")
+    whost.txtUser = TextEntry("")
+    whost.txtPass = TextEntry("")
+    whost.txtPrefixKeys.set_text("CTRL+A")
+
+    assert saved_host(app_module, monkeypatch, whost).prefix_keys == "CTRL+A"
+
+
+def test_the_prefix_keys_entry_takes_the_key_pressed(app_module):
+    """The handler is connected in the glade, by name, and takes the key as a prefix."""
+    root = ElementTree.parse(GLADE).getroot()
+    entry = root.find(".//object[@id='txtPrefixKeys']")
+    signal = entry.find("signal[@name='key-press-event']")
+    assert signal.get("handler") == "on_txtPrefixKeys_key_press_event"
+    assert hasattr(app_module.Whost, "on_txtPrefixKeys_key_press_event")
+
+
+def test_the_prefix_keys_are_on_the_terminal_page():
+    root = ElementTree.parse(GLADE).getroot()
+    page = root.find(".//object[@id='terminalPage']")
+    assert page.find(".//object[@id='txtPrefixKeys']") is not None

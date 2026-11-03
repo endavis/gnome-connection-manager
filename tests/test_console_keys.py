@@ -113,7 +113,7 @@ def use(window):
 
 # Real input, through XTest, on the scenario's own display.
 CONTROL, SHIFT, RETURN, BACKSPACE, DELETE = 0xFFE3, 0xFFE1, 0xFF0D, 0xFF08, 0xFFFF
-F1, F9 = 0xFFBE, 0xFFC6
+F1, F9, F11 = 0xFFBE, 0xFFC6, 0xFFC8
 X = {}
 
 def xtest():
@@ -161,10 +161,10 @@ def got(*keysyms):
     pump(0.1)
     return "".join(reads()[before:])
 
-def open_console():
+def open_console(host=None):
     """A local console running the logger, with the keyboard in it, once its terminal is raw."""
     ready = log().count("ready")
-    w.addTab(w.nbConsole, app.Host("", "logger"))
+    w.addTab(w.nbConsole, host or app.Host("", "logger"))
     page = w.nbConsole.get_nth_page(w.nbConsole.get_n_pages() - 1)
     terminal = app.page_terminal(page)
     assert until(lambda: log().count("ready") > ready), log()
@@ -174,8 +174,10 @@ def open_console():
 
 # What GCM would do, recorded in place of doing it: the window a key opens would take the
 # keyboard, and quitting would end the scenario.
-calls = {"save": [], "edit": [], "refresh": [], "about": [], "quit": [], "next": [], "back": []}
+calls = {"save": [], "edit": [], "refresh": [], "about": [], "quit": [], "next": [], "back": [],
+         "full": []}
 w.show_save_buffer = lambda terminal: calls["save"].append(terminal)
+w.toggle_fullscreen = lambda: calls["full"].append(1)
 w.on_bntEdit_clicked = lambda *_args: calls["edit"].append(1)
 w.updateTree = lambda *_args: calls["refresh"].append(1)
 w.on_acerca_de1_activate = lambda *_args: calls["about"].append(1)
@@ -272,6 +274,58 @@ elif scenario == "the-fixed-keys":
     press(F9)
     assert toggles() == (False, False), toggles()
     assert reads() == reading, "a key reached the program from the server tree"
+
+elif scenario == "a-prefix-key":
+    # Ctrl+B is a prefix, as tmux's is (#452). The key after it is the program's, GCM's
+    # shortcut or not, and the key after that is GCM's again.
+    app.conf.PREFIX_KEYS = "CTRL+B"
+    page, term = open_console()
+    use(w.wMain)
+    assert w.wMain.get_focus() is term, w.wMain.get_focus()
+
+    assert got(CONTROL, ord("b")) == "02", "the prefix did not reach the program"
+    read = got(CONTROL, SHIFT, ord("s"))
+    assert read == "13", f"the program read {read!r}, and GCM did {taken()}"
+    assert taken() == {}, taken()
+    # GCM acts again on the key after that.
+    assert got(CONTROL, SHIFT, ord("s")) == ""
+    assert taken() == {"save": 1}, taken()
+
+    # A modifier alone between the two does not use the pass up.
+    assert got(CONTROL, ord("b")) == "02"
+    assert got(SHIFT) == ""
+    read = got(CONTROL, SHIFT, ord("s"))
+    assert read == "13", f"the program read {read!r}, and GCM did {taken()}"
+    assert taken() == {"save": 1}, taken()
+
+    # F11 is Fullscreen, and after a prefix it is the program's.
+    assert got(CONTROL, ord("b")) == "02"
+    read = got(F11)
+    assert read.startswith("1b"), f"the program read {read!r}, and GCM did {taken()}"
+    assert taken() == {"save": 1}, taken()
+    assert got(F11) == "" and taken() == {"save": 1, "full": 1}, taken()
+
+elif scenario == "a-hosts-prefix-key":
+    # A host's prefix keys add to Preferences', and a host without them has Preferences' alone.
+    app.conf.PREFIX_KEYS = "CTRL+B"
+    host = app.Host("", "logger")
+    host.prefix_keys = "CTRL+A"
+    page, term = open_console(host)
+    use(w.wMain)
+    assert w.wMain.get_focus() is term, w.wMain.get_focus()
+
+    assert got(CONTROL, ord("a")) == "01"
+    assert got(CONTROL, SHIFT, ord("s")) == "13" and taken() == {}, taken()
+    assert got(CONTROL, ord("b")) == "02"
+    assert got(CONTROL, SHIFT, ord("s")) == "13" and taken() == {}, taken()
+    assert got(CONTROL, SHIFT, ord("s")) == "" and taken() == {"save": 1}, taken()
+
+    # A console of a host with none of its own: Ctrl+A is no prefix there.
+    page, plain = open_console()
+    use(w.wMain)
+    assert w.wMain.get_focus() is plain, w.wMain.get_focus()
+    assert got(CONTROL, ord("a")) == "01"
+    assert got(CONTROL, SHIFT, ord("s")) == "" and taken() == {"save": 2}, taken()
 
 elif scenario == "an-existing-configuration":
     assert app.CONFIG_FILE == os.path.join(home, ".config", "gcm", "gcm.conf"), app.CONFIG_FILE
@@ -429,6 +483,8 @@ print("OK")
     [
         "the-default-keys",
         "the-fixed-keys",
+        "a-prefix-key",
+        "a-hosts-prefix-key",
         "an-existing-configuration",
         "a-console-window",
         "an-ended-console",

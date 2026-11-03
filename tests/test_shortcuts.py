@@ -233,3 +233,72 @@ def test_of_two_rows_with_one_key_the_later_keeps_it():
 
     assert bound == {"F5": "paste"}
     assert unbound == set()
+
+
+# -- prefix keys (#452) -------------------------------------------------------
+
+
+def test_no_prefix_key_is_named_by_nothing():
+    assert shortcuts.parse_prefix_keys(None) == []
+    assert shortcuts.parse_prefix_keys("") == []
+    assert shortcuts.parse_prefix_keys(" , ,") == []
+
+
+def test_prefix_keys_are_read_upper_case_trimmed_and_once():
+    assert shortcuts.parse_prefix_keys("ctrl+b, CTRL+A ,CTRL+B") == ["CTRL+B", "CTRL+A"]
+
+
+def test_prefix_keys_round_trip_through_format():
+    keys = ["CTRL+B", "CTRL+SHIFT+A", "GRAVE"]
+
+    assert shortcuts.parse_prefix_keys(shortcuts.format_prefix_keys(keys)) == keys
+    assert shortcuts.format_prefix_keys(keys) == "CTRL+B,CTRL+SHIFT+A,GRAVE"
+
+
+def test_with_prefix_key_adds_and_removes_one():
+    assert shortcuts.with_prefix_key("", "CTRL+B", True) == "CTRL+B"
+    assert shortcuts.with_prefix_key("CTRL+B", "CTRL+B", True) == "CTRL+B"
+    assert shortcuts.with_prefix_key("CTRL+A,CTRL+B", "CTRL+B", False) == "CTRL+A"
+    assert shortcuts.with_prefix_key("CTRL+A", "CTRL+B", False) == "CTRL+A"
+
+
+def test_split_prefix_keys_separates_the_common_from_the_others():
+    assert shortcuts.split_prefix_keys("CTRL+X,F5,CTRL+B") == (["CTRL+B", "CTRL+X"], "F5")
+    assert shortcuts.split_prefix_keys("") == ([], "")
+
+
+def test_common_prefix_keys_are_tmux_screen_and_emacs():
+    assert [key for key, _program in shortcuts.COMMON_PREFIX_KEYS] == [
+        "CTRL+B",
+        "CTRL+A",
+        "CTRL+X",
+    ]
+
+
+def test_a_consoles_prefix_keys_are_the_global_and_the_hosts():
+    assert shortcuts.console_prefix_keys("CTRL+B", "CTRL+A,CTRL+B") == {"CTRL+B", "CTRL+A"}
+    assert shortcuts.console_prefix_keys("", None) == frozenset()
+
+
+PREFIXES = frozenset({"CTRL+B"})
+
+
+def test_a_key_that_is_no_prefix_is_not_given_and_arms_nothing():
+    assert shortcuts.prefix_step(False, "CTRL+SHIFT+S", "S", PREFIXES) == (False, False)
+
+
+def test_a_prefix_key_is_given_and_arms():
+    assert shortcuts.prefix_step(False, "CTRL+B", "b", PREFIXES) == (True, True)
+
+
+def test_the_key_after_a_prefix_is_given_and_disarms():
+    assert shortcuts.prefix_step(True, "CTRL+SHIFT+S", "S", PREFIXES) == (True, False)
+
+
+def test_the_prefix_after_a_prefix_is_given_and_disarms():
+    assert shortcuts.prefix_step(True, "CTRL+B", "b", PREFIXES) == (True, False)
+
+
+def test_a_modifier_alone_leaves_the_pass_as_it_was():
+    assert shortcuts.prefix_step(True, "CTRL+SHIFT", "Shift_L", PREFIXES) == (False, True)
+    assert shortcuts.prefix_step(False, "CTRL", "Control_L", PREFIXES) == (False, False)

@@ -144,7 +144,12 @@ choose a type. This is deliberate:
 | **RDP** | an RDP host: how FreeRDP shows the remote desktop |
 | **Command line** | a command host |
 | **Commands** | every type |
-| **Terminal** | a host whose tab is a terminal: **Enable Logging**, **TERM**, the colours, and the Backspace and Delete keys |
+| **Terminal** | a host whose tab is a terminal: **Enable Logging**, **TERM**, **Prefix keys**, the colours, and the Backspace and Delete keys |
+
+**Prefix keys** are the host's own, which add to the ones in Preferences: after one, the
+key typed goes to the program in the console and not to GCM's shortcuts, as tmux's
+`Ctrl+B` and screen's `Ctrl+A` need. Press a key in the field to add it. See
+[Prefix keys](TERMINAL-USAGE.md#prefix-keys-tmux-screen-and-agent-clis).
 
 A web host has no Terminal tab, since it opens no tab, and neither has a VNC host while
 GCM draws its desktop with gtk-vnc. A new host is an SSH host until you choose another

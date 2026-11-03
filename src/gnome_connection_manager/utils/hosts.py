@@ -123,6 +123,10 @@ class Host:
         # What the host's tabs are called in place of Preferences' Tab name (#349), with
         # the same placeholders, and empty for that. Not an argument either.
         self.tab_name = ""
+        # Prefix keys of the host's own, which add to Preferences' (#452): the key after one
+        # goes to the console's program. Comma-separated, as utils/shortcuts.py reads them,
+        # and empty for none. Not an argument either.
+        self.prefix_keys = ""
         # The colour of the host's tabs in place of its folder's (#350), as written, and
         # empty for that; see utils/tabcolors.py. Not an argument either.
         self.tab_color = ""
@@ -221,6 +225,7 @@ class Host:
         copy.before_command = self.before_command
         copy.after_command = self.after_command
         copy.tab_name = self.tab_name
+        copy.prefix_keys = self.prefix_keys
         copy.tab_color = self.tab_color
         return copy
 
@@ -318,6 +323,7 @@ class HostUtils:
         h.before_command = HostUtils.get_val(cp, section, "before-command", "")
         h.after_command = HostUtils.get_val(cp, section, "after-command", "")
         h.tab_name = HostUtils.get_val(cp, section, "tab-name", "")
+        h.prefix_keys = HostUtils.get_val(cp, section, "prefix-keys", "")
         h.tab_color = HostUtils.get_val(cp, section, "tab-color", "")
         return h
 
@@ -372,6 +378,9 @@ class HostUtils:
         # were, bar the password, which every save encrypts afresh (#349).
         if host.tab_name:
             cp.set(section, "tab-name", host.tab_name)
+        # Only when set, like tab-name (#452); an older GCM ignores it, not measured.
+        if host.prefix_keys:
+            cp.set(section, "prefix-keys", host.prefix_keys)
         # v2.1.1 drops this the same way, measured (#350).
         if host.tab_color:
             cp.set(section, "tab-color", host.tab_color)

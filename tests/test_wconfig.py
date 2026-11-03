@@ -160,6 +160,10 @@ def make_wconfig(app_module):
     wconfig.dlgColor = None
     wconfig.treeCmd = []
     wconfig.treeCustom = []
+    # Preferences' prefix keys (#452): none ticked, none typed.
+    wconfig.prefix_field = "conf.PREFIX_KEYS"
+    wconfig.prefix_checks = {"CTRL+B": CheckStub(False), "CTRL+A": CheckStub(False)}
+    wconfig.prefix_other = types.SimpleNamespace(get_text=lambda: "")
 
     destroy_stub = DestroyStub()
     widgets = {
@@ -663,3 +667,115 @@ def test_the_key_names_the_shortcut_column_goes_by_are_gdks_own():
     assert Gdk.keyval_to_unicode(Gdk.KEY_F8) == 0, "a function key does not"
     assert hasattr(Gtk.Entry, "set_text"), "the fake entry offers set_text"
     assert hasattr(FieldStub, "set_text")
+
+
+# -- Preferences' prefix keys (#452) ------------------------------------------
+
+
+def test_ok_stores_the_ticked_prefix_keys_and_the_other_keys_typed(monkeypatch, app_module):
+    monkeypatch.setattr(app_module.Gtk, "CheckButton", CheckButtonStub, raising=False)
+    monkeypatch.setattr(app_module.Gtk, "SpinButton", SpinButtonStub, raising=False)
+    monkeypatch.setattr(app_module.Gtk, "ComboBox", ComboBoxStub, raising=False)
+    monkeypatch.setattr(app_module.Gtk, "Entry", EntryStub, raising=False)
+    wconfig, _destroy_stub = make_wconfig(app_module)
+    wconfig.prefix_checks["CTRL+A"].set_active(True)
+    wconfig.prefix_other = types.SimpleNamespace(get_text=lambda: "grave, ctrl+a,F5")
+    wmain_stub = WmainStub(DonateButton())
+    wmain_stub.conf = app_module.conf
+    monkeypatch.setattr(app_module, "wMain", wmain_stub, raising=False)
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module, "snippets", [])
+    monkeypatch.setattr(app_module.conf, "PREFIX_KEYS", "", raising=False)
+
+    wconfig.on_okbutton1_clicked(None)
+
+    assert app_module.conf.PREFIX_KEYS == "CTRL+A,GRAVE,F5"
+
+
+def test_no_prefix_key_is_set_by_default(app_module):
+    assert app_module.conf.PREFIX_KEYS == ""
+    assert ("PREFIX_KEYS", "options", "prefix-keys", str) in app_module.CONFIG_OPTIONS
+
+
+class WidgetFake:
+    """Whatever addPrefixKeys draws: it keeps its text and its state, and takes anything."""
+
+    def __init__(self, *_args, label: str = "", **_kwargs):
+        self.text = label
+        self.active = False
+        self.children: list = []
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return lambda *_args, **_kwargs: None
+
+    def set_text(self, text: str) -> None:
+        self.text = text
+
+    def get_text(self) -> str:
+        return self.text
+
+    def set_active(self, value: bool) -> None:
+        self.active = value
+
+    def get_active(self) -> bool:
+        return self.active
+
+    def pack_start(self, child, *_args) -> None:
+        self.children.append(child)
+
+
+def test_preferences_draws_a_checkbox_for_each_common_prefix_and_a_field_for_the_rest(
+    app_module, monkeypatch
+):
+    """On the Shortcuts page, ticked as gcm.conf says, the rest in the field."""
+    for name in ("Box", "Label", "CheckButton", "Entry"):
+        monkeypatch.setattr(app_module.Gtk, name, WidgetFake, raising=False)
+    wconfig = object.__new__(app_module.Wconfig)
+    box = WidgetFake()
+    wconfig.get_widget = lambda name: box
+    monkeypatch.setattr(app_module.conf, "PREFIX_KEYS", "CTRL+X,F5", raising=False)
+
+    wconfig.addPrefixKeys("Prefix keys", "conf.PREFIX_KEYS")
+
+    assert {key: check.get_active() for key, check in wconfig.prefix_checks.items()} == {
+        "CTRL+B": False,
+        "CTRL+A": False,
+        "CTRL+X": True,
+    }
+    assert [check.text for check in wconfig.prefix_checks.values()] == [
+        "Ctrl+B (tmux)",
+        "Ctrl+A (screen)",
+        "Ctrl+X (Emacs)",
+    ]
+    assert wconfig.prefix_other.get_text() == "F5"
+    assert wconfig.prefix_keys_value() == "CTRL+X,F5"
+
+
+def test_the_other_keys_field_takes_the_key_pressed(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gdk, "keyval_name", lambda keyval: keyval, raising=False)
+    entry = WidgetFake()
+    take = app_module.take_prefix_key
+
+    assert take(entry, types.SimpleNamespace(keyval="grave", state=0)) is True
+    assert entry.get_text() == "GRAVE"
+    assert take(entry, types.SimpleNamespace(keyval="b", state=CTRL)) is True
+    assert entry.get_text() == "GRAVE,CTRL+B"
+    # A modifier alone waits for its key; Tab is the dialog's; Backspace clears.
+    assert take(entry, types.SimpleNamespace(keyval="Shift_L", state=0)) is True
+    assert entry.get_text() == "GRAVE,CTRL+B"
+    assert take(entry, types.SimpleNamespace(keyval="Tab", state=0)) is False
+    assert entry.get_text() == "GRAVE,CTRL+B"
+    assert take(entry, types.SimpleNamespace(keyval="BackSpace", state=0)) is True
+    assert entry.get_text() == ""
+
+
+def test_the_prefix_keys_box_is_on_the_shortcuts_page_in_the_glade():
+    from xml.etree import ElementTree
+
+    glade = Path(__file__).resolve().parent.parent / "data/ui/gnome-connection-manager.glade"
+    root = ElementTree.parse(glade).getroot()
+    vbox = root.find(".//object[@id='vbox4']")
+    assert vbox.find(".//object[@id='boxPrefixKeys']") is not None
+    assert vbox.find(".//object[@id='treeCommands']") is not None
