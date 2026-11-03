@@ -324,6 +324,13 @@ def test_load_config_without_a_config_file_falls_back_to_defaults(
     default_title = app_module.app_name
     assert app_module.conf.BUFFER_LINES == 10000
     assert default_title == app_module.conf.APP_TITLE
+    assert app_module.conf.SHOW_STATUS_BAR is False
+
+
+def test_the_status_bar_is_off_by_default_and_a_missing_key_leaves_it_off(app_module, tmp_path):
+    """#405: it takes a line of every window, so a gcm.conf with no key does not show it."""
+    assert app_module.conf.SHOW_STATUS_BAR is False
+    assert ("SHOW_STATUS_BAR", "options", "status-bar", bool) in app_module.CONFIG_OPTIONS
 
 
 def test_config_options_table_matches_the_conf_defaults(app_module):

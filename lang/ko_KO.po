@@ -1457,6 +1457,9 @@ msgstr "제목"
 msgid "Dynamic title"
 msgstr "동적 제목"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "상태 표시줄에 탭의 전체 제목 표시"
+
 msgid "Unsplit"
 msgstr "분할 해제"
 

@@ -1392,6 +1392,9 @@ msgstr "Titolo"
 msgid "Dynamic title"
 msgstr "Titolo dinamico"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "Mostra il titolo completo della scheda in una barra di stato"
+
 msgid "Unsplit"
 msgstr "Riunisci"
 

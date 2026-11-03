@@ -951,6 +951,9 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     SHOW_PANEL = True
     VERSION = 0
     UPDATE_TITLE = 0
+    # A status bar under each window's consoles, giving the whole title of the tab shown
+    # past the cut the tab's label makes (#405). Off: it takes a line of every window.
+    SHOW_STATUS_BAR = False
     TAB_TITLE_FROM_TERMINAL = 1
     # What a host's tab is called, its values filled in (#348). `{name}` names it as before.
     TAB_NAME = tabnames.NAME
@@ -998,6 +1001,7 @@ CONFIG_OPTIONS = (
     ("CYCLE_TABS", "options", "cycle-tabs", bool),
     ("TERM", "options", "term", str),
     ("UPDATE_TITLE", "options", "update-title", bool),
+    ("SHOW_STATUS_BAR", "options", "status-bar", bool),
     ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
     ("TAB_NAME", "options", "tab-name", str),
     ("EDITOR_COMMAND", "options", "editor-command", str),
@@ -2460,6 +2464,17 @@ def window_title(tab_text):
     return conf.APP_TITLE or app_name
 
 
+def make_status_bar():
+    """A window's status bar, hidden until Wmain.update_status_bars shows it (#405).
+
+    set_no_show_all keeps show_all, which every window calls, from showing it while the
+    setting is off.
+    """
+    bar = Gtk.Statusbar()
+    bar.set_no_show_all(True)
+    return bar
+
+
 # -- the open-console list, shared by the tab-strip dropdown and the menubar (#84) ------
 
 
@@ -2591,6 +2606,7 @@ class Wmain(GladeComponent):
     application: object = None
     count: int = 0
     update_check: object = None
+    status_bar: object = None
 
     def __init__(
         self, path="gnome-connection-manager.glade", root="wMain", domain=domain_name, **kwargs
@@ -2765,6 +2781,10 @@ class Wmain(GladeComponent):
         self.menuConsoles.connect("show", self.build_console_menu)
         self.menubar = None
         self.install_menubar()
+        self.status_bar = make_status_bar()
+        status_box = self.get_widget("mainBox")
+        if status_box is not None:
+            status_box.pack_end(self.status_bar, False, False, 0)
         # The main window's console notebook the keyboard was last in, whatever its tab
         # holds: where an action goes once the keyboard has left for the server tree or the
         # search box. It replaces the last terminal given the keyboard, which a click never
@@ -2780,6 +2800,7 @@ class Wmain(GladeComponent):
         self.mounting = frozenset()
         self.count = 0
         self.row_activated = False
+        self.update_status_bars()
 
     # -- Wmain.new }
 
@@ -3152,6 +3173,7 @@ class Wmain(GladeComponent):
                     self.apply_preferences_to_terminal(terminal)
                 if hasattr(entry.label, "render_label"):
                     entry.label.render_label()
+        self.update_status_bars()
 
     def create_console_menu_item(self, entry):
         """One console's row, marked when it is the console holding the keyboard."""
@@ -3330,7 +3352,10 @@ class Wmain(GladeComponent):
         while widget is not None and widget not in notebooks:
             widget = widget.get_parent()
         if widget is not None:
+            changed = widget is not self.last_notebook
             self.last_notebook = widget
+            if changed:
+                self.update_status_bars()
 
     def on_window_key_press(self, window, event):
         """Give what has the keyboard a key before GCM's accelerators do, where it needs it.
@@ -5300,6 +5325,7 @@ class Wmain(GladeComponent):
         cp.set("options", "auto-close-tab", conf.AUTO_CLOSE_TAB)
         cp.set("options", "cycle-tabs", conf.CYCLE_TABS)
         cp.set("options", "update-title", conf.UPDATE_TITLE)
+        cp.set("options", "status-bar", conf.SHOW_STATUS_BAR)
         cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
         cp.set("options", "tab-name", conf.TAB_NAME)
         cp.set("options", "editor-command", conf.EDITOR_COMMAND)
@@ -5549,6 +5575,40 @@ class Wmain(GladeComponent):
             else:
                 tab_text = ""
             window.set_title(window_title(tab_text))
+        shown = widget.get_parent() if isinstance(widget, Vte.Terminal) else tab
+        self.update_status_bars(notebook, shown)
+
+    def update_status_bars(self, notebook=None, page=None):
+        """Show each window's status bar, with the whole label of the tab it shows (#405).
+
+        `page` is the tab a switch-page is moving to, for `notebook`: inside that signal
+        get_current_page() still answers the tab being left, so the handler passes the new
+        one. Every other bar reads its notebook's current page. The main window's bar
+        follows the pane in use and ignores Dynamic title, which is about the window's
+        title. A bar is written only when its text has changed, so a label that renders
+        often costs nothing.
+        """
+        pairs = []
+        if self.status_bar is not None:
+            pairs.append((self.status_bar, self.main_notebook()))
+        pairs.extend((window.status_bar, window.notebook) for window in self.console_windows)
+        for bar, nb in pairs:
+            bar.set_visible(bool(conf.SHOW_STATUS_BAR))
+            shown = None
+            if page is not None and nb is notebook:
+                shown = page
+            else:
+                position = nb.get_current_page()
+                if position >= 0:
+                    shown = nb.get_nth_page(position)
+            label = nb.get_tab_label(shown) if shown is not None else None
+            text = getattr(label, "get_display_text", lambda: "")().strip()
+            if text == getattr(bar, "shown_text", None):
+                continue
+            bar.shown_text = text
+            bar.remove_all(0)
+            bar.push(0, text)
+            bar.set_tooltip_text(text or None)
 
     def title_windows(self):
         """Title each window that names its tab after the tab it shows, once more (#346).
@@ -5583,6 +5643,7 @@ class Wmain(GladeComponent):
         """A new console window, `width` by `height`, empty until a tab moves in (#255)."""
         window = ConsoleWindow(self, width, height)
         self.console_windows = (*self.console_windows, window)
+        self.update_status_bars()
         return window
 
     def toggle_console_window(self, page):
@@ -8303,6 +8364,7 @@ class Wconfig(GladeComponent):
             bool,
         )
         self.addParam(_("Dynamic title"), "conf.UPDATE_TITLE", bool)
+        self.addParam(_("Show the tab's whole title in a status bar"), "conf.SHOW_STATUS_BAR", bool)
         tab_name = self.addParam(_("Tab name"), "conf.TAB_NAME", str)
         tab_name.set_tooltip_text(
             _(
@@ -10312,7 +10374,7 @@ class NotebookTabLabel(Gtk.HBox):
     (host_tab_name) or a rename, that clone, the cluster window and move_page read.
     get_display_text() is the whole label, and the label widget draws that cut to
     TAB_LABEL_MAX (#190). So whatever has room for the long form, the tooltip, the
-    open-console list, the rename and close dialogs, takes one of the first two, never
+    open-console list, the rename and close dialogs, the status bar, takes one of the first two, never
     self.label.get_text().
     """
 
@@ -10531,6 +10593,10 @@ class NotebookTabLabel(Gtk.HBox):
         # The host's whole path on a line of its own, where it adds to the label (#347).
         path = self.get_path()
         self.set_tooltip_text(f"{full}\n{path}" if path else full)
+        # The constructor renders before wMain exists, and a bare Wmain has no bars.
+        update = getattr(globals().get("wMain"), "update_status_bars", None)
+        if callable(update):
+            update()
 
     def prepare_menu(self):
         """Make this tab the tab menu's context, and show the items that apply to it.
@@ -10621,6 +10687,8 @@ class ConsoleWindow(Gtk.Window):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.pack_start(self.search_bar, False, False, 0)
         box.pack_start(self.notebook, True, True, 0)
+        self.status_bar = make_status_bar()
+        box.pack_end(self.status_bar, False, False, 0)
         self.add(box)
         box.show_all()
         self.controller = controller

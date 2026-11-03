@@ -1139,6 +1139,9 @@ msgstr "Отключить чередование полос в окне хос�
 msgid "Dynamic title"
 msgstr "Динамический заголовок"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "Показывать полный заголовок вкладки в строке состояния"
+
 # --- added for GCM UI strings that had no catalog entry ---
 
 msgid "About"

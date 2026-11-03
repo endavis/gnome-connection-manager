@@ -122,3 +122,20 @@ of theme emits the tree's `style-updated` once, when the menus already give the 
 background, and emits no hidden menu's own. The real-GTK scenarios read a row's pixels in
 the mark's own box, which Pango measures: on a selected row in Adwaita, the text beside
 it is white, the colour of a patch on a white row.
+
+## The status bar
+
+`make_status_bar` builds one for the main window and one for each `ConsoleWindow` (#405), and
+`Wmain.update_status_bars` writes them: the whole label of the tab each window shows, from
+`NotebookTabLabel.get_display_text`. It is off by default, `conf.SHOW_STATUS_BAR`, and a
+bar calls `set_no_show_all` so that `show_all` leaves it hidden while it is off.
+
+`switch-page` is emitted before the notebook's current page changes, so inside it
+`get_current_page()` still answers the tab being left. `on_tab_focus` therefore passes the
+page it is moving to. The other callers read the current page: `on_window_set_focus` when
+the pane in use changes, `apply_settings_to_open_consoles`, `NotebookTabLabel.render_label`
+(a title, a rename) and `open_console_window`. The main window's bar follows the pane in
+use and ignores Dynamic title, which is about the window's title only.
+
+A bar's label is ellipsized by GTK where the window is too narrow, and the bar's tooltip
+carries the whole text. A bar is written only when its text changes.

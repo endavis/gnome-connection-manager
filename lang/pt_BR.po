@@ -1320,6 +1320,9 @@ msgstr "Título"
 msgid "Dynamic title"
 msgstr "Título dinâmico"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "Mostrar o título completo da aba em uma barra de status"
+
 msgid "Unsplit"
 msgstr "Desfazer divisão"
 
