@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- **A status bar** under each window's consoles gives the whole title of the tab shown,
+  past the 30 characters its label is cut to. It follows tabs, panes and the titles
+  programs set, and is off until Preferences' "Show the tab's whole title in a status bar"
+  is ticked (`status-bar` under `[options]`) (#405).
 - **View → Move All to Main Window**, and a toolbar button after Unsplit's, bring every
   console in every console window back into the main window at once and end none of them,
   as closing each console window does. The consoles go into the main window's pane in use,

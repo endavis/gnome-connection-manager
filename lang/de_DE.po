@@ -1387,6 +1387,9 @@ msgstr "Titel"
 msgid "Dynamic title"
 msgstr "Dynamischer Titel"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "Den ganzen Titel des Tabs in einer Statusleiste anzeigen"
+
 msgid "Unsplit"
 msgstr "Teilung aufheben"
 

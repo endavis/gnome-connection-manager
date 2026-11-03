@@ -1321,6 +1321,9 @@ msgstr "Titre"
 msgid "Dynamic title"
 msgstr "Titre dynamique"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "Afficher le titre complet de l'onglet dans une barre d'état"
+
 msgid "Unsplit"
 msgstr "Fusionner"
 

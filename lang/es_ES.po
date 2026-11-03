@@ -602,6 +602,9 @@ msgstr "Título"
 msgid "Dynamic title"
 msgstr "Título dinámico"
 
+msgid "Show the tab's whole title in a status bar"
+msgstr "Mostrar el título completo de la pestaña en una barra de estado"
+
 msgid "Unsplit"
 msgstr "Unir"
 

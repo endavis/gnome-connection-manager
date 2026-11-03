@@ -544,6 +544,26 @@ tab-name = [{type}] {folder}/{name}
 
 Edit that with GCM closed. Sessions are still logged by the host's folder and name.
 
+### The whole title in a status bar
+
+A tab's label is cut at 30 characters, and the tab's tooltip gives the rest. A status bar
+gives it too, always in view: tick **Show the tab's whole title in a status bar** in
+Preferences. It is off by default, as it takes a line of every window.
+
+Each window has a bar of its own, under its consoles, and the main window's and each
+console window's bar shows the whole label of the tab that window shows, past the cut. It
+follows the tab you switch to, the pane the keyboard is in, the title a program sets and a
+rename. The main window's bar follows these whether or not **Dynamic title** is on. A title
+wider than the window is cut at the window's edge, and the bar's tooltip gives it whole. A
+change applies straight away, to windows already open too. In `gcm.conf`:
+
+```ini
+[options]
+status-bar = true
+```
+
+Edit that with GCM closed.
+
 ## Finding a console among many
 
 Once the tabs stop fitting, the tab strip grows arrows and most of your sessions are off
@@ -623,6 +643,8 @@ To bring a console back:
 
 Each one goes into the main window's pane in use, the one the keyboard is in or was last in.
 A console window closes itself once its last tab has left, however it left.
+
+With the [status bar](#the-whole-title-in-a-status-bar) on, each console window has one of its own, under its tab.
 
 The [open-console list](#finding-a-console-among-many) shows consoles in console windows
 too, under the headings Window 1, Window 2 and so on. The
