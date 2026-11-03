@@ -26,6 +26,17 @@ slid along the room until it is inside, which covers the row. It lands inside th
 whichever way the row stands to it, and a menu taller than the room starts at the top of
 it and `scrolls`, only when strictly taller. Pure: the numbers are arguments.
 
+`place_across` is the same decision along the other axis (#398), as Weston applies no
+flip or slide sideways either. It takes the rectangle's left and right edges, the menu's
+width and the room, and gives an `Across(leftwards, shift)`: on the preferred side if the
+menu fits there, else the other, else the side with more room (the preferred on a tie),
+slid along the room until inside. Rightwards hangs the menu's left edge from the
+rectangle's left (WEST gravity); leftwards hangs its right edge from the rectangle's
+right (EAST). `east` in `popup_menu_at` means "prefer leftwards": the open-console list
+still opens leftwards, and now flips or slides where that does not fit. The shift goes to
+GTK as `rect-anchor-dx`, set at every opening beside `rect-anchor-dy`; probed, with
+`anchor-hints` 0, -50 moved a west-anchored menu from 1800 to 1750.
+
 ## Opening the five menus
 
 `popup_menu_at` in `app.py` supplies them and asks GTK, for all five menus: the server
@@ -74,10 +85,21 @@ container's border width. The CSS margin and border, and the deprecated
 already shown by the style it had then: after a provider was added, the popped height
 stayed 195 where the height worked out from the style context was 198.
 
+## A menu's width
+
+`menu_width` is `Gtk.Menu.do_get_preferred_width(menu)[1]`, GtkMenu's own size vfunc,
+called through the class: the bound `menu.do_get_preferred_width()` raises `TypeError` in
+PyGObject. It skips the visibility check and shows nothing, so emits no `hide`. Probed on
+X11 at twice the usual text size, it gives the landed width to the pixel even before the
+first showing: terminal 555, tab 552, server tree (host) 514, Mounted 272. Rejected:
+`menu.get_preferred_width()`, which answers `(0, 0)` while the menu is hidden, even after
+it has been shown once; and the items' natural widths summed, 329 for the terminal's menu
+against 555, as the menu adds its toggle and accelerator columns.
+
 ## The room a menu has
 
-`menu_room` is the monitor's work area under X11. Under Wayland it is the toplevel's own
-span: a client is not told where its window is, and GDK puts every window with no
+`menu_room` gives the room on both axes, (left, top, right, bottom). It is the monitor's
+work area under X11. Under Wayland it is the toplevel's own span: a client is not told where its window is, and GDK puts every window with no
 parent at (0, 0) -- read in `gdk_window_wayland_get_root_coords`, and measured on Weston
 13, where a window at output y=505 reported root coordinates (0, 0) -- so a monitor's
 geometry means nothing. That is so on every Wayland compositor, decided in #392 over
@@ -94,18 +116,20 @@ against the guess, the terminal's menu opened 6 pixels from the pointer, measure
 the server tree, a tab's label and the Mounted list the two coincide, measured: the
 tree's bin window, where its cell areas are, stays where the tree's own window is as it
 scrolls, with its header hidden as GCM has it, and a tab label's event box has a window
-of its own. Not handled, and filed: a menu's width near the right edge (#398), and the
-menu bar's Hosts submenu, which GTK places itself (#397). No decision record: it is an
+of its own. Not handled: the menu bar's Hosts submenu, which GTK places itself (#397), the submenus
+of the terminal's menu, which GTK places too, and cutting the room to the screen rather
+than the window (#402). No decision record: it is an
 internal helper, and no setting, file, command line or workflow changes.
 
 ## Tests of menu placement
 
-`tests/test_menuplacement.py` tests `place_menu` with no display, the helpers with
-fakes, and eight scenarios against real GTK on a display of their own, at twice the usual
-text size, with real clicks through XTest. Six take the hints from a menu just before it
+`tests/test_menuplacement.py` tests `place_menu` and `place_across` with no display, the
+helpers with fakes, and thirteen scenarios against real GTK on a display of their own, at twice the usual
+text size, with real clicks through XTest. Eight take the hints from a menu just before it
 opens, `anchor-hints` 0, which leaves it where GCM asked, as a compositor that moves
-nothing does. Five of them fail against the guess, and the sixth holds `menu_height` to
-the height GTK gives each menu. The two `-with-its-hints` scenarios keep GCM's hints, so
+nothing does. Five of them fail against the guess, two (`-at-the-right-edge`) fail against code that
+only opens rightwards, and one holds `menu_height` and `menu_width` to the size GTK gives
+each menu. The three `-with-its-hints` scenarios keep GCM's hints, so
 that what GCM works out is not undone by the flipping and sliding X11 does itself. They
 are named `against_real_gtk`, which mutmut deselects.
 

@@ -1,7 +1,8 @@
 """Where a pop-up menu goes so that it stays on the screen (#392).
 
 A menu in GCM is placed by GCM: below the row or the click, else above it, else slid until it
-fits. The decision is `menuplacement.place_menu`, which takes numbers and is tested here
+fits, and rightwards or leftwards the same way (#398). The decisions are
+`menuplacement.place_menu` and `place_across`, which takes numbers and is tested here
 without a display. `app.py` supplies the numbers -- the menu's height from its items, and the
 room from the monitor or, under Wayland, the window -- and asks GTK for the result in
 `popup_menu_at`, which is tested with fakes first and then against real GTK.
@@ -37,7 +38,7 @@ from pathlib import Path
 
 import pytest
 
-from gnome_connection_manager.utils.menuplacement import Placement, place_menu
+from gnome_connection_manager.utils.menuplacement import Across, Placement, place_across, place_menu
 from tests.test_connections import glib_complaints
 from tests.test_console_window import _private_display
 
@@ -215,6 +216,101 @@ def test_a_placement_unpacks_as_it_is_named():
     assert (below, shift, scrolls) == (True, -140, False)
 
 
+# -- the decision across, with no display (#398) ----------------------------------------------
+
+
+def across_landing(result: Across, left: int, right: int, width: int, low: int, high: int):
+    shown = min(width, high - low)
+    start = (right - shown if result.leftwards else left) + result.shift
+    return start, start + shown
+
+
+def test_a_menu_that_fits_rightwards_hangs_from_the_left_edge():
+    assert place_across(100, 140, 300, 0, 1000) == Across(False, 0)
+
+
+def test_a_menu_that_fits_only_leftwards_stands_on_the_right_edge():
+    result = place_across(900, 940, 300, 0, 1000)
+
+    assert result == Across(True, 0)
+    assert across_landing(result, 900, 940, 300, 0, 1000) == (640, 940)
+
+
+@pytest.mark.parametrize(
+    ("left", "expected"),
+    [(700, Across(False, 0)), (701, Across(True, 0))],
+)
+def test_a_menu_fits_rightwards_with_exactly_the_room_that_is_left(left, expected):
+    assert place_across(left, left + 40, 300, 0, 1000) == expected
+
+
+@pytest.mark.parametrize(
+    ("right", "expected"),
+    [
+        # Room 500 to 1000, a menu of 300 and a rectangle from 701: rightwards leaves 299.
+        # Leftwards leaves exactly 300 from a right edge of 800; from 799 it leaves 299 too,
+        # a tie, so rightwards, slid left by the one pixel it takes.
+        (800, Across(True, 0)),
+        (799, Across(False, -1)),
+    ],
+)
+def test_a_menu_fits_leftwards_with_exactly_the_room_that_is_left(right, expected):
+    assert place_across(701, right, 300, 500, 1000) == expected
+
+
+def test_leftwards_is_preferred_where_both_fit_and_rightwards_where_only_it_fits():
+    assert place_across(400, 440, 300, 0, 1000, leftwards=True) == Across(True, 0)
+    assert place_across(100, 140, 300, 0, 1000, leftwards=True) == Across(False, 0)
+    assert place_across(400, 440, 300, 0, 1000) == Across(False, 0)
+
+
+def test_a_menu_that_fits_neither_way_goes_to_the_side_with_more_room_and_slides():
+    # Room 0..1000, menu 800: from 300..340 there are 700 right and 340 left.
+    right = place_across(300, 340, 800, 0, 1000)
+    assert right == Across(False, -100)
+    assert across_landing(right, 300, 340, 800, 0, 1000) == (200, 1000)
+    # From 600..640: 400 right and 640 left.
+    left = place_across(600, 640, 800, 0, 1000)
+    assert left == Across(True, 160)
+    assert across_landing(left, 600, 640, 800, 0, 1000) == (0, 800)
+
+
+def test_where_both_sides_are_alike_the_preferred_one_gets_a_menu_that_fits_neither():
+    assert place_across(450, 550, 600, 0, 1000) == Across(False, -50)
+    assert place_across(450, 550, 600, 0, 1000, leftwards=True) == Across(True, 50)
+
+
+def test_a_menu_wider_than_the_room_starts_at_the_low_edge():
+    for leftwards in (False, True):
+        result = place_across(450, 550, 1500, 30, 1030, leftwards)
+        assert across_landing(result, 450, 550, 1500, 30, 1030)[0] == 30
+
+
+@pytest.mark.parametrize("offset", [0, 37, -500, 4000])
+def test_where_the_room_is_across_does_not_change_what_is_decided(offset):
+    base = place_across(900, 940, 300, 0, 1000)
+    moved = place_across(900 + offset, 940 + offset, 300, offset, 1000 + offset)
+
+    assert moved == base
+
+
+def test_every_menu_lands_inside_the_room_across():
+    low, high = 20, 520
+    for width in range(1, 700, 37):
+        for left in range(-50, 600, 23):
+            for span in (1, 40):
+                for leftwards in (False, True):
+                    result = place_across(left, left + span, width, low, high, leftwards)
+                    start, end = across_landing(result, left, left + span, width, low, high)
+                    assert low <= start and end <= high, (width, left, span, leftwards)
+
+
+def test_an_across_unpacks_as_it_is_named():
+    leftwards, shift = place_across(900, 940, 300, 0, 1000)
+
+    assert (leftwards, shift) == (True, 0)
+
+
 # -- the numbers app.py supplies, with fakes --------------------------------------------------
 
 
@@ -249,7 +345,8 @@ class MenuItem:
 class FakeMenu:
     """A Gtk.Menu as popup_menu_at drives one."""
 
-    def __init__(self, items=(), padding=(0, 0), border=0, popup_at_rect=True):
+    def __init__(self, items=(), padding=(0, 0), border=0, popup_at_rect=True, width=200):
+        self.width = width
         self.items, self.padding, self.border = list(items), Padding(*padding), border
         self.style = StyleContext(self.padding)
         self.properties = {}
@@ -331,8 +428,9 @@ class FakeDisplay:
 class FakeWindow:
     """A Gdk.Window: where it is, how tall its toplevel is, and which display it is on."""
 
-    def __init__(self, display, offset=(0, 0), toplevel=None, height=0):
+    def __init__(self, display, offset=(0, 0), toplevel=None, height=0, width=0):
         self.display, self.offset, self.toplevel, self.height = display, offset, toplevel, height
+        self.width = width
 
     def get_display(self):
         return self.display
@@ -346,6 +444,9 @@ class FakeWindow:
     def get_height(self):
         return self.height
 
+    def get_width(self):
+        return self.width
+
 
 X11, WAYLAND = "GdkX11Display", "GdkWaylandDisplay"
 
@@ -354,7 +455,7 @@ def test_under_x11_the_room_is_the_work_area_of_the_monitor_the_window_is_on(app
     display = FakeDisplay(X11, FakeMonitor(Rect(0, 27, 1920, 1053)))
     window = FakeWindow(display)
 
-    assert app_module.menu_room(window) == (27, 1080)
+    assert app_module.menu_room(window) == (0, 27, 1920, 1080)
     assert display.asked == [window]
 
 
@@ -366,20 +467,38 @@ def test_under_wayland_the_room_is_the_toplevels_own_span(app_module):
     """Its top is where GDK says it is, which is 0 for a window with no parent, and
     nothing is asked of a monitor: a client is not told where its window is."""
     display = FakeDisplay(WAYLAND, FakeMonitor(Rect(0, 0, 3840, 2160)))
-    toplevel = FakeWindow(display, offset=(0, 37), height=600)
+    toplevel = FakeWindow(display, offset=(11, 37), height=600, width=800)
     child = FakeWindow(display, offset=(5, 200), toplevel=toplevel)
 
-    assert app_module.menu_room(child) == (37, 637)
+    assert app_module.menu_room(child) == (11, 37, 811, 637)
     assert display.asked == []
 
 
 def test_a_room_with_no_height_is_no_room(app_module):
     display = FakeDisplay(WAYLAND)
 
-    assert app_module.menu_room(FakeWindow(display, height=0)) is None
+    assert app_module.menu_room(FakeWindow(display, height=0, width=800)) is None
+    assert app_module.menu_room(FakeWindow(display, height=600, width=0)) is None
     assert (
         app_module.menu_room(FakeWindow(FakeDisplay(X11, FakeMonitor(Rect(0, 0, 10, 0))))) is None
     )
+    assert (
+        app_module.menu_room(FakeWindow(FakeDisplay(X11, FakeMonitor(Rect(0, 0, 0, 10))))) is None
+    )
+
+
+def test_a_menus_width_is_what_the_class_vfunc_gives(app_module, monkeypatch):
+    asked = []
+
+    def vfunc(menu):
+        asked.append(menu)
+        return (10, 555)
+
+    monkeypatch.setattr(app_module.Gtk.Menu, "do_get_preferred_width", vfunc, raising=False)
+    menu = FakeMenu()
+
+    assert app_module.menu_width(menu) == 555
+    assert asked == [menu]
 
 
 # A fake of the enumerations: the real values, which the last test here holds them to.
@@ -403,6 +522,12 @@ def popping(app_module, monkeypatch):
     monkeypatch.setattr(app_module.Gdk, "Rectangle", Rect, raising=False)
     monkeypatch.setattr(app_module.Gtk, "StateFlags", types.SimpleNamespace(NORMAL=0))
     monkeypatch.setattr(app_module.Gtk, "get_current_event_time", lambda: 777, raising=False)
+    monkeypatch.setattr(
+        app_module.Gtk.Menu,
+        "do_get_preferred_width",
+        lambda menu: (0, menu.width),
+        raising=False,
+    )
     return app_module
 
 
@@ -485,7 +610,7 @@ def test_a_menu_that_fits_below_hangs_from_the_click(popping):
 
     [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
     assert (rect_anchor, menu_anchor) == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
-    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0}
+    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0, "rect-anchor-dx": 0}
 
 
 def test_a_menu_that_fits_above_stands_on_the_click(popping):
@@ -495,7 +620,7 @@ def test_a_menu_that_fits_above_stands_on_the_click(popping):
 
     [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
     assert (rect_anchor, menu_anchor) == (GRAVITY.NORTH_WEST, GRAVITY.SOUTH_WEST)
-    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0}
+    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0, "rect-anchor-dx": 0}
 
 
 def test_a_menu_that_fits_neither_side_is_slid_by_the_anchors_offset(popping):
@@ -507,7 +632,11 @@ def test_a_menu_that_fits_neither_side_is_slid_by_the_anchors_offset(popping):
 
     [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
     assert (rect_anchor, menu_anchor) == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
-    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 1080 - 821 - 301}
+    assert properties == {
+        "anchor-hints": ALL_HINTS,
+        "rect-anchor-dy": 1080 - 821 - 301,
+        "rect-anchor-dx": 0,
+    }
 
 
 def test_a_menu_taller_than_the_screen_is_not_told_it_may_resize_in_height(popping):
@@ -516,7 +645,11 @@ def test_a_menu_taller_than_the_screen_is_not_told_it_may_resize_in_height(poppi
     popping.popup_menu_at(menu, click(screen_window(), y=300))
 
     [(*_head, properties)] = menu.opened
-    assert properties == {"anchor-hints": SCROLLING_HINTS, "rect-anchor-dy": -301}
+    assert properties == {
+        "anchor-hints": SCROLLING_HINTS,
+        "rect-anchor-dy": -301,
+        "rect-anchor-dx": 0,
+    }
 
 
 def test_a_menu_opened_again_is_given_its_placement_again(popping):
@@ -530,15 +663,23 @@ def test_a_menu_opened_again_is_given_its_placement_again(popping):
 
     popping.popup_menu_at(menu, click(window, y=300))
 
-    assert menu.opened[0][-1] == {"anchor-hints": SCROLLING_HINTS, "rect-anchor-dy": -301}
-    assert menu.opened[1][-1] == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0}
+    assert menu.opened[0][-1] == {
+        "anchor-hints": SCROLLING_HINTS,
+        "rect-anchor-dy": -301,
+        "rect-anchor-dx": 0,
+    }
+    assert menu.opened[1][-1] == {
+        "anchor-hints": ALL_HINTS,
+        "rect-anchor-dy": 0,
+        "rect-anchor-dx": 0,
+    }
 
 
 def test_a_rectangle_and_a_window_given_are_used_in_place_of_the_click(popping):
     """The console button's allocation, in the window the button is drawn in."""
     window = screen_window(offset=(0, 700))
     elsewhere = screen_window()
-    rect = Rect(1800, 10, 40, 30)
+    rect = Rect(1000, 10, 40, 30)
     menu = tall(600)
 
     popping.popup_menu_at(menu, click(elsewhere), rect, window)
@@ -561,6 +702,87 @@ def test_east_hangs_the_menus_right_edge_from_the_rectangles(popping):
     assert above.opened[0][2:4] == (GRAVITY.NORTH_EAST, GRAVITY.SOUTH_EAST)
 
 
+def wide(width, height=100):
+    return FakeMenu([MenuItem(True, height, height)], width=width)
+
+
+def test_a_menu_near_the_right_edge_opens_leftwards(popping):
+    menu = wide(555)
+
+    popping.popup_menu_at(menu, click(screen_window(), x=1900, y=300))
+
+    [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
+    assert (rect_anchor, menu_anchor) == (GRAVITY.SOUTH_EAST, GRAVITY.NORTH_EAST)
+    assert properties["rect-anchor-dx"] == 0
+
+
+def test_a_menu_in_the_middle_opens_rightwards(popping):
+    menu = wide(555)
+
+    popping.popup_menu_at(menu, click(screen_window(), x=900, y=300))
+
+    [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
+    assert (rect_anchor, menu_anchor) == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
+    assert properties["rect-anchor-dx"] == 0
+
+
+def test_a_menu_that_fits_neither_way_in_a_narrow_window_is_slid(popping):
+    """A toplevel 400 wide at x 100, a menu of 300, a click at 250 (150 in): 250 of room
+    on the right and 151 on the left, so rightwards, moved left by 50."""
+    display = FakeDisplay(WAYLAND, FakeMonitor(Rect(0, 0, 3840, 2160)))
+    toplevel = FakeWindow(display, offset=(100, 0), height=600, width=400)
+    window = FakeWindow(display, offset=(100, 0), toplevel=toplevel)
+    menu = wide(300)
+
+    popping.popup_menu_at(menu, click(window, x=150, y=100))
+
+    [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
+    assert (rect_anchor, menu_anchor) == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
+    assert properties["rect-anchor-dx"] == -50
+
+
+def test_east_opens_leftwards_where_there_is_room_on_the_left(popping):
+    menu = wide(300)
+
+    popping.popup_menu_at(menu, None, Rect(1800, 100, 40, 30), screen_window(), east=True)
+
+    assert menu.opened[0][2:4] == (GRAVITY.SOUTH_EAST, GRAVITY.NORTH_EAST)
+    assert menu.opened[0][-1]["rect-anchor-dx"] == 0
+
+
+def test_east_opens_rightwards_where_the_button_is_at_the_left_of_a_narrow_room(popping):
+    menu = wide(300)
+
+    popping.popup_menu_at(menu, None, Rect(10, 100, 40, 30), screen_window(), east=True)
+
+    assert menu.opened[0][2:4] == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
+    assert menu.opened[0][-1]["rect-anchor-dx"] == 0
+
+
+def test_the_slide_across_does_not_stay_for_the_next_opening(popping):
+    display = FakeDisplay(WAYLAND, FakeMonitor(Rect(0, 0, 3840, 2160)))
+    window = FakeWindow(display, height=600, width=400)
+    menu = wide(300)
+
+    popping.popup_menu_at(menu, click(window, x=150, y=100))
+    popping.popup_menu_at(menu, click(window, x=10, y=100))
+
+    assert menu.opened[0][-1]["rect-anchor-dx"] == -50
+    assert menu.opened[1][-1]["rect-anchor-dx"] == 0
+
+
+def test_where_the_room_cannot_be_told_the_menu_opens_rightwards_unless_east(popping):
+    window = FakeWindow(FakeDisplay(X11, None))
+    west, east = wide(300), wide(300)
+
+    popping.popup_menu_at(west, click(window, x=1900))
+    popping.popup_menu_at(east, click(window, x=1900), east=True)
+
+    assert west.opened[0][2:4] == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
+    assert east.opened[0][2:4] == (GRAVITY.SOUTH_EAST, GRAVITY.NORTH_EAST)
+    assert west.opened[0][-1]["rect-anchor-dx"] == 0 == east.opened[0][-1]["rect-anchor-dx"]
+
+
 def test_where_the_room_cannot_be_told_gtk_is_left_to_place_the_menu(popping):
     """No monitor: below, as GTK would have it, with all its hints."""
     window = FakeWindow(FakeDisplay(X11, None))
@@ -570,14 +792,14 @@ def test_where_the_room_cannot_be_told_gtk_is_left_to_place_the_menu(popping):
 
     [(_w, _r, rect_anchor, menu_anchor, _e, properties)] = menu.opened
     assert (rect_anchor, menu_anchor) == (GRAVITY.SOUTH_WEST, GRAVITY.NORTH_WEST)
-    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0}
+    assert properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": 0, "rect-anchor-dx": 0}
 
 
 def test_under_wayland_the_window_is_the_room(popping):
     """A window 600 tall on an output of 2160: a menu of 400 opened 500 down it does not
     fit below, though the output has room, and stands on the click instead."""
     display = FakeDisplay(WAYLAND, FakeMonitor(Rect(0, 0, 3840, 2160)))
-    window = FakeWindow(display, height=600)
+    window = FakeWindow(display, height=600, width=800)
     menu = tall(400)
 
     popping.popup_menu_at(menu, click(window, y=500))
@@ -611,7 +833,11 @@ def test_the_fakes_match_real_gtk():
         (MenuItem, Gtk.MenuItem, ("get_visible", "get_preferred_height")),
         (FakeMonitor, Gdk.Monitor, ("get_workarea",)),
         (FakeDisplay, Gdk.Display, ("get_monitor_at_window",)),
-        (FakeWindow, Gdk.Window, ("get_display", "get_toplevel", "get_root_coords", "get_height")),
+        (
+            FakeWindow,
+            Gdk.Window,
+            ("get_display", "get_toplevel", "get_root_coords", "get_height", "get_width"),
+        ),
     ):
         for name in names:
             assert hasattr(fake, name), f"{fake.__name__} is missing {name}"
@@ -619,7 +845,10 @@ def test_the_fakes_match_real_gtk():
     # FakeMenu has popup_at_rect on an instance only when a test asks, as a menu on older GTK
     # lacks it; the real class has it.
     assert hasattr(Gtk.Menu, "popup_at_rect")
-    assert {"anchor-hints", "rect-anchor-dy"} <= {p.name for p in Gtk.Menu.list_properties()}
+    assert {"anchor-hints", "rect-anchor-dy", "rect-anchor-dx"} <= {
+        p.name for p in Gtk.Menu.list_properties()
+    }
+    assert hasattr(Gtk.Menu, "do_get_preferred_width")
     assert hasattr(Gtk, "get_current_event_time")
     # The values the fake enumerations hold.
     for name in ("FLIP", "SLIDE", "RESIZE_X", "RESIZE_Y", "RESIZE"):
@@ -683,6 +912,7 @@ app.msginfo = shown.append
 display = Gdk.Display.get_default()
 workarea = (display.get_primary_monitor() or display.get_monitor(0)).get_workarea()
 SCREEN_TOP, SCREEN_BOTTOM = workarea.y, workarea.y + workarea.height
+SCREEN_LEFT, SCREEN_RIGHT = workarea.x, workarea.x + workarea.width
 
 def pump(seconds=0.2):
     end = time.monotonic() + seconds
@@ -736,7 +966,8 @@ def recording(name):
     real = getattr(Gtk.Menu, name)
     def opened(menu, *arguments):
         asked.append({"menu": menu, "call": name, "hints": int(menu.get_property("anchor-hints")),
-                      "dy": menu.get_property("rect-anchor-dy")})
+                      "dy": menu.get_property("rect-anchor-dy"),
+                      "dx": menu.get_property("rect-anchor-dx")})
         if not KEEP_HINTS:
             menu.set_property("anchor-hints", 0)
         return real(menu, *arguments)
@@ -792,6 +1023,15 @@ def check(what, top, bottom, box):
         assert y == bottom or y + height == top, (
             f"{what}: the menu {y} to {y + height} is not against the row {top} to {bottom}"
         )
+
+def check_across(what, x, box, width):
+    """The menu `box` is inside the screen from side to side, and, as it would have run off
+    the screen rightwards, opened leftwards with its right edge at the pointer `x`."""
+    assert SCREEN_LEFT <= box[0] and box[0] + box[2] <= SCREEN_RIGHT, (
+        f"{what}: the menu runs from {box[0]} to {box[0] + box[2]} on a screen from {SCREEN_LEFT} to {SCREEN_RIGHT}"
+    )
+    assert x + width > SCREEN_RIGHT, f"{what}: the menu would have fitted rightwards"
+    assert abs(box[0] + box[2] - (x + 1)) <= 1, f"{what}: the menu's right edge is at {box[0] + box[2]}, not at {x}"
 
 def pointer_row(y):
     """The row a click at y is, to the menu: one pixel."""
@@ -880,6 +1120,36 @@ if scenario == "the-tree-menu":
     pump(0.5)
     assert w.treeServers.get_visible_rect().y > 0, "the tree did not scroll"
     click_each(rows_in_sight()[-9:], set())
+
+elif scenario == "the-terminal-menu-at-the-right-edge":
+    menu = w.popupMenu
+    w.addTab(w.nbConsole, app.Host("", "shell"))
+    fill_screen(width=SCREEN_RIGHT - SCREEN_LEFT)
+    terminal = app.page_terminal(w.nbConsole.get_nth_page(0))
+    terminal_x, terminal_top = on_screen(terminal)
+    x = terminal_x + terminal.get_allocated_width() - 20
+    assert terminal_top < 300 and 900 < terminal_top + terminal.get_allocated_height(), terminal_top
+    for y in (300, 600, 900):
+        box = open_at(menu, x, y)
+        check_across(f"a click at {y}", x, box, app.menu_width(menu))
+        check(f"a click at {y}", *pointer_row(y), box)
+        assert asked[-1]["dx"] == 0, asked[-1]
+        close(menu)
+
+elif scenario == "the-tab-menu-at-the-right-edge":
+    w.addTab(w.nbConsole, app.Host("", "shell"))
+    # The tabs down the right side, so that the label is at the screen's right edge.
+    w.nbConsole.set_tab_pos(Gtk.PositionType.RIGHT)
+    label = w.nbConsole.get_tab_label(w.nbConsole.get_nth_page(0))
+    menu = label.popup
+    for height in (500, 800, 1070):
+        fill_screen(height, width=SCREEN_RIGHT - SCREEN_LEFT)
+        assert until(lambda: label.eb.get_allocated_height() > 10)
+        x, y = on_screen(label.eb, label.eb.get_allocated_width() // 2, label.eb.get_allocated_height() // 2)
+        box = open_at(menu, x, y)
+        check_across(f"a tab in a window {height} tall", x, box, app.menu_width(menu))
+        check(f"a tab in a window {height} tall", *pointer_row(y), box)
+        close(menu)
 
 elif scenario == "the-terminal-menu":
     menu = w.popupMenu
@@ -1027,6 +1297,7 @@ elif scenario == "a-menu-is-as-tall-as-the-items-it-shows":
         box = open_at(menu, x, y)
         # GTK makes a menu no taller than the screen, as it scrolls one that is.
         asked_for = min(app.menu_height(menu), SCREEN_BOTTOM - SCREEN_TOP)
+        assert app.menu_width(menu) == box[2], f"{what}: asked {app.menu_width(menu)} wide, GTK gave {box[2]}"
         assert asked_for == box[3], f"{what}: asked {app.menu_height(menu)}, GTK gave {box[3]}"
         heights[what] = box[3]
         close(menu)
@@ -1082,6 +1353,7 @@ elif scenario == "a-menu-is-as-tall-as-the-items-it-shows":
     assert until(listed.get_visible)
     pump(0.3)
     assert app.menu_height(listed) == landed(listed)[3], (app.menu_height(listed), landed(listed))
+    assert app.menu_width(listed) == landed(listed)[2], (app.menu_width(listed), landed(listed))
     close(listed)
 
 elif scenario in ("a-menu-opens-at-its-top-once-it-is-shorter", "a-long-menu-opened-again-starts-at-its-top"):
@@ -1192,6 +1464,9 @@ def run_scenario(scenario, tmp_path, display):
         "the-console-list",
         "the-mounted-tab-menu",
         "a-menu-is-as-tall-as-the-items-it-shows",
+        "the-terminal-menu-at-the-right-edge",
+        "the-tab-menu-at-the-right-edge",
+        "the-tab-menu-at-the-right-edge-with-its-hints",
         "the-terminal-menu-with-its-hints",
         "the-console-list-with-its-hints",
         "a-menu-opens-at-its-top-once-it-is-shorter",

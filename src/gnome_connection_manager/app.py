@@ -1866,9 +1866,26 @@ def menu_height(menu: Gtk.Menu) -> int:
     return height
 
 
-def menu_room(window: Gdk.Window) -> tuple[int, int] | None:
-    """The span, top to bottom, that a menu opened from `window` has to sit in, in the
-    coordinates `Gdk.Window.get_root_coords` gives; None where that cannot be told (#392).
+def menu_width(menu: Gtk.Menu) -> int:
+    """How wide `menu` is when it opens (#398).
+
+    `Gtk.Menu.do_get_preferred_width(menu)[1]`: GtkMenu's own size vfunc, which skips the
+    visibility check and shows nothing, so emits no `hide`. Measured on X11 at twice the
+    usual text size, it gives the landed width to the pixel, even before the first
+    showing: terminal 555, tab 552, server tree (host) 514, Mounted 272. Rejected:
+    `menu.get_preferred_width()`, which answers (0, 0) while the menu is hidden; the
+    items' natural widths summed, 329 for the terminal's menu against 555, as the menu
+    adds its toggle and accelerator columns; and the bound `menu.do_get_preferred_width()`,
+    which raises TypeError in PyGObject.
+    """
+    width: int = Gtk.Menu.do_get_preferred_width(menu)[1]
+    return width
+
+
+def menu_room(window: Gdk.Window) -> tuple[int, int, int, int] | None:
+    """The room, as (left, top, right, bottom), that a menu opened from `window` has to
+    sit in, in the coordinates `Gdk.Window.get_root_coords` gives; None where either span
+    is empty (#392, #398).
 
     Under X11 it is the work area of the monitor the window is on. Under Wayland it is
     the window's own: a client is not told where its window is on the output, and GDK puts
@@ -1880,15 +1897,16 @@ def menu_room(window: Gdk.Window) -> tuple[int, int] | None:
     display = window.get_display()
     if display.__gtype__.name == "GdkWaylandDisplay":
         toplevel = window.get_toplevel()
-        low = toplevel.get_root_coords(0, 0)[1]
-        high = low + toplevel.get_height()
+        left, top = toplevel.get_root_coords(0, 0)
+        right, bottom = left + toplevel.get_width(), top + toplevel.get_height()
     else:
         monitor = display.get_monitor_at_window(window)
         if monitor is None:
             return None
         workarea = monitor.get_workarea()
-        low, high = workarea.y, workarea.y + workarea.height
-    return (low, high) if high > low else None
+        left, top = workarea.x, workarea.y
+        right, bottom = left + workarea.width, top + workarea.height
+    return (left, top, right, bottom) if right > left and bottom > top else None
 
 
 def reset_menu_scroll(menu: Gtk.Menu) -> None:
@@ -1920,14 +1938,16 @@ def popup_menu_at(
     received it, as `popup_at_pointer` has it.
 
     Below the rectangle if the menu fits there, else above it, else slid along the room
-    until it fits, as `menuplacement.place_menu` works out from the menu's real height.
+    until it fits, as `menuplacement.place_menu` works out from the menu's real height;
+    and across the same way, rightwards or leftwards, as `place_across` works out from its
+    width (#398).
     GTK is asked for that, not left to move the menu itself: under Wayland it only sends
     flip, slide and resize to the compositor, and Weston's, which WSLg's is built on,
     applies none of them (read in its source), so a menu opened low in the window ran off
     the bottom of the screen. The hints stay on for a compositor that does move a menu. A menu taller than the room is not
     told it may resize in height, so that GTK makes it no taller than the monitor and
-    scrolls it. `east` hangs the menu's right edge from the rectangle's, so that it opens
-    leftwards, from a button at the right end of a strip.
+    scrolls it. `east` means "prefer leftwards": the menu's right edge hangs from the
+    rectangle's, as from a button at the right end of a strip, where it fits.
 
     The window is `event.window`, not the widget's: a terminal has no window of its own,
     so its `get_window()` is its parent's, and measured, its menu then opened 6 pixels
@@ -1957,11 +1977,18 @@ def popup_menu_at(
         rect.width = 1
         rect.height = 1
     placement = menuplacement.Placement(below=True, shift=0, scrolls=False)
+    across = menuplacement.Across(leftwards=east, shift=0)
     room = menu_room(window)
     if room is not None:
-        top = window.get_root_coords(rect.x, rect.y)[1]
-        placement = menuplacement.place_menu(top, top + rect.height, menu_height(menu), *room)
-    if east:
+        room_left, room_top, room_right, room_bottom = room
+        x, top = window.get_root_coords(rect.x, rect.y)
+        placement = menuplacement.place_menu(
+            top, top + rect.height, menu_height(menu), room_top, room_bottom
+        )
+        across = menuplacement.place_across(
+            x, x + rect.width, menu_width(menu), room_left, room_right, leftwards=east
+        )
+    if across.leftwards:
         south, north = Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST
     else:
         south, north = Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST
@@ -1972,6 +1999,7 @@ def popup_menu_at(
     # Set at each opening: a menu is opened again, and the last placement must not stay.
     menu.set_property("anchor-hints", hints)
     menu.set_property("rect-anchor-dy", placement.shift)
+    menu.set_property("rect-anchor-dx", across.shift)
     menu.popup_at_rect(window, rect, rect_anchor, menu_anchor, event)
     reset_menu_scroll(menu)
 
@@ -3387,12 +3415,11 @@ class Wmain(GladeComponent):
 
     def show_console_menu(self, button, menu, event):
         self.build_console_menu(menu)
-        # East, not west: the button sits at the right end of the tab strip, so a
-        # menu whose left edge starts there runs off the screen -- measured 800px
-        # off with a full-width window. Anchoring the menu's right edge to the
-        # button's makes it open leftwards, which is correct by construction rather
-        # than relying on GTK sliding it back, which does not always happen. Below
-        # the button, or above it where the list is too tall for the room below (#392).
+        # East is a preference: the button sits at the right end of the tab strip, so a
+        # menu whose left edge starts there runs off the screen -- measured 800px off
+        # with a full-width window. Hanging the menu's right edge from the button's opens
+        # it leftwards, and popup_menu_at flips or slides it where that does not fit
+        # either (#398). Below the button, or above it where the room below is short (#392).
         popup_menu_at(menu, event, button.get_allocation(), button.get_window(), east=True)
 
     def search_box(self):

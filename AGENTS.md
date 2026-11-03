@@ -60,7 +60,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   marked with, its own or its nearest folder's (#350, #358). `color_of` reads only `#rgb` and
   `#rrggbb`, so a hand edit can put nothing else into the CSS. Notes: `docs/design/tabs.md`.
 - `src/gnome_connection_manager/utils/menuplacement.py` – where a pop-up menu goes so that it
-  stays on the screen, as WSLg's Weston moves none (#392). A new pop-up menu opens through
+  stays on the screen on both axes, as WSLg's Weston moves none (#392, #398). A new pop-up menu opens through
   `popup_menu_at` in `app.py`, as the other five do. Notes: `docs/design/menus-and-windows.md`.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget. A key typed into a console is its program's, bar what `[shortcuts]` binds (#419),
