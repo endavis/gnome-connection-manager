@@ -32,6 +32,8 @@ gnome-connection-manager/
 │       ├── ui/                   # UI components (future)
 │       └── utils/                # Logic with no widgets in it, tested without a display
 │           ├── activity.py       # When a console busy out of sight has gone quiet
+│           ├── afterlogin.py     # When a host's commands after login are typed
+│           ├── childpython.py    # How GCM starts its Python children
 │           ├── configfile.py     # Reading gcm.conf and an export; what a save keeps
 │           ├── configpaths.py    # Which directory holds gcm.conf
 │           ├── connections.py    # The connection types, one class per kind of host
@@ -45,12 +47,17 @@ gnome-connection-manager/
 │           ├── remotefiles.py    # A host's files: its sftp:// address, sshfs mounts
 │           ├── shortcuts.py      # Custom keys, font scale, a snippet's key
 │           ├── snippets.py       # The snippet library
+│           ├── tabcolors.py      # The colour a host's tabs and tree row are marked with
+│           ├── tabnames.py       # What a host's tab is called
 │           ├── transcript.py     # A readable transcript from a raw recording
+│           ├── updates.py        # Whether a newer GCM has been released
 │           ├── urlregex.py       # Link and file:line patterns
 │           └── vtehtml.py        # VTE's HTML export, for the buffer viewer
 ├── data/                  # Non-Python assets
 │   ├── ui/
-│   │   └── gnome-connection-manager.glade
+│   │   ├── gnome-connection-manager.glade
+│   │   ├── donate.gif
+│   │   └── icon.png
 │   ├── scripts/
 │   │   ├── ssh.expect     # Types a stored password for ssh, telnet and FreeRDP
 │   │   └── gcm-askpass    # ssh's askpass, for a mount with a stored password
@@ -58,8 +65,8 @@ gnome-connection-manager/
 │   └── icon.png
 ├── docs/                  # The guides, this page, the design notes and decision records
 ├── tests/                 # The pytest suite
-├── tools/                 # build_mo.py, generate_doc_toc.py, the doit tasks (GCM's in
-│                          # doit/gcm.py), and the vendored hooks and template tooling
+├── tools/                 # build_mo.py, packages.py, generate_doc_toc.py, the doit tasks
+│                          # (GCM's in doit/gcm.py), and the vendored hooks and template tooling
 └── lang/                  # Translations
 ```
 
