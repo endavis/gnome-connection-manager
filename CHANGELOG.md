@@ -28,6 +28,8 @@ the git log.
   and each emptied console window closes (#404).
 
 ### Changed
+- A long menu scrolls a row for each notch of the mouse wheel, not 15 pixels, at any
+  text size (#399).
 - A key typed into a console now belongs to its program, bar GCM's own shortcuts, and the
   defaults no longer take a Ctrl+letter key a shell reads. Six commands moved to
   Ctrl+Shift, where a program cannot tell the key from the Ctrl+letter one: `save` from

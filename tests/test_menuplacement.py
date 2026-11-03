@@ -38,7 +38,14 @@ from pathlib import Path
 
 import pytest
 
-from gnome_connection_manager.utils.menuplacement import Across, Placement, place_across, place_menu
+from gnome_connection_manager.utils.menuplacement import (
+    Across,
+    Placement,
+    place_across,
+    place_menu,
+    wheel_extra,
+    wheel_row,
+)
 from tests.test_connections import glib_complaints
 from tests.test_console_window import _private_display
 
@@ -309,6 +316,44 @@ def test_an_across_unpacks_as_it_is_named():
     leftwards, shift = place_across(900, 940, 300, 0, 1000)
 
     assert (leftwards, shift) == (True, 0)
+
+
+# -- a notch of the wheel, with no display (#399) -----------------------------------------------
+
+
+def moved(delta, row):
+    """What GTK's step and the extra come to, as GTK truncates each."""
+    return int(delta * 15) + int(wheel_extra(delta, row) * 15)
+
+
+def test_a_notch_and_the_extra_come_to_exactly_a_row():
+    for row in (25, 40):
+        assert moved(1.0, row) == row
+        assert moved(-1.0, row) == -row
+    assert 15 + wheel_extra(1.0, 25) * 15 == pytest.approx(25.5)
+    assert wheel_extra(1.0, 40) == pytest.approx(25.5 / 15)
+
+
+@pytest.mark.parametrize("delta", [1.0, -1.0, 0.1, -0.1, 2.0, -2.0])
+def test_a_movement_scrolls_a_row_for_each_notch_within_a_pixel(delta):
+    for row in range(16, 121):
+        assert abs(moved(delta, row) - round(delta * row)) <= 1, (delta, row)
+        if abs(delta) == 1.0:
+            assert moved(delta, row) == round(delta * row), row
+
+
+@pytest.mark.parametrize("delta,row", [(0.0, 40), (1.0, None), (1.0, 15), (-1.0, 10), (1.0, 0)])
+def test_nothing_is_added_for_no_movement_no_row_or_a_row_no_taller_than_gtks_step(delta, row):
+    assert wheel_extra(delta, row) == 0.0
+
+
+def test_the_row_is_the_shortest_that_has_a_height():
+    assert wheel_row([40, 67, 40]) == 40
+    assert wheel_row([67, 40, 53]) == 40
+    assert wheel_row([]) is None
+    assert wheel_row([0, 0]) is None
+    assert wheel_row([0, 40, 0, 67]) == 40
+    assert wheel_row(iter([25])) == 25
 
 
 # -- the numbers app.py supplies, with fakes --------------------------------------------------
@@ -864,6 +909,195 @@ def test_the_fakes_match_real_gtk():
         assert display.__gtype__.name in {"GdkX11Display", "GdkWaylandDisplay"}
 
 
+# -- the wheel hook, with fakes (#399) --------------------------------------------------------------
+
+
+class WheelItem:
+    def __init__(self, height, visible=True):
+        self.height, self.visible = height, visible
+
+    def get_visible(self):
+        return self.visible
+
+    def get_allocated_height(self):
+        return self.height
+
+
+class WheelSeparator(WheelItem):
+    pass
+
+
+class WheelMenu(FakeMenu):
+    pass
+
+
+class WheelEvent:
+    """A Gdk.Event as the hook reads and the code that makes one sets."""
+
+    def __init__(self, kind=None):
+        self.kind, self.device = kind, None
+        self.deltas, self.scroll_direction = (False, 0.0, 0.0), (False, None)
+        self.direction = self.delta_y = None
+
+    def set_source_device(self, device):
+        self.device = device
+
+    def get_source_device(self):
+        return self.device
+
+    def get_scroll_deltas(self):
+        return self.deltas
+
+    def get_scroll_direction(self):
+        return self.scroll_direction
+
+
+DIRECTION = types.SimpleNamespace(UP="up", DOWN="down", SMOOTH="smooth")
+
+
+@pytest.fixture
+def wheel(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gtk, "Menu", WheelMenu)
+    monkeypatch.setattr(app_module.Gtk, "SeparatorMenuItem", WheelSeparator, raising=False)
+    monkeypatch.setattr(
+        app_module.Gdk, "Event", types.SimpleNamespace(new=WheelEvent), raising=False
+    )
+    monkeypatch.setattr(
+        app_module.Gdk, "EventType", types.SimpleNamespace(SCROLL="scroll"), raising=False
+    )
+    monkeypatch.setattr(app_module.Gdk, "ScrollDirection", DIRECTION, raising=False)
+    return app_module
+
+
+DEVICE = object()
+
+
+def notch(direction=None, smooth=None, device=DEVICE):
+    event = WheelEvent()
+    event.device = device
+    if smooth is not None:
+        event.deltas = (True, 0.0, smooth)
+    else:
+        event.scroll_direction = (True, direction)
+    return event
+
+
+def wheel_menu(*heights):
+    return WheelMenu([WheelItem(height) for height in heights])
+
+
+def test_a_discrete_notch_emits_one_smooth_event_of_the_extra(wheel):
+    menu = wheel_menu(40, 67, 40)
+    for direction, delta in ((DIRECTION.DOWN, 1.0), (DIRECTION.UP, -1.0)):
+        del menu.emitted[:]
+        assert wheel.scroll_menu_by_rows(menu, notch(direction)) is True
+        [(name, sent)] = menu.emitted
+        assert name == "scroll-event"
+        assert sent.direction == DIRECTION.SMOOTH and sent.kind == "scroll"
+        assert sent.delta_y == wheel_extra(delta, 40)
+        assert sent.delta_y != 0
+
+
+def test_a_smooth_scroll_emits_the_extra_for_its_own_delta(wheel):
+    menu = wheel_menu(40, 67)
+
+    assert wheel.scroll_menu_by_rows(menu, notch(smooth=0.3)) is True
+
+    [(_name, sent)] = menu.emitted
+    assert sent.delta_y == wheel_extra(0.3, 40)
+
+
+def test_an_event_with_no_source_device_emits_nothing(wheel):
+    menu = wheel_menu(40)
+    assert wheel.scroll_menu_by_rows(menu, notch(DIRECTION.DOWN, device=None)) is True
+    assert menu.emitted == []
+    # The event reset_menu_scroll emits, and the hook's own fed back to it.
+    wheel.reset_menu_scroll(menu)
+    [(_name, reset)] = menu.emitted
+    assert reset.get_source_device() is None
+    del menu.emitted[:]
+    assert wheel.scroll_menu_by_rows(menu, reset) is True
+    assert menu.emitted == []
+    wheel.scroll_menu_by_rows(menu, notch(DIRECTION.DOWN))
+    [(_name, own)] = menu.emitted
+    del menu.emitted[:]
+    assert wheel.scroll_menu_by_rows(menu, own) is True
+    assert menu.emitted == []
+
+
+def test_a_widget_that_is_not_a_menu_emits_nothing_and_every_path_returns_true(wheel):
+    other = FakeMenu([WheelItem(40)])
+    assert wheel.scroll_menu_by_rows(other, notch(DIRECTION.DOWN)) is True
+    assert other.emitted == []
+    menu = wheel_menu(40)
+    for event in (notch("left"), notch(smooth=0.0), notch(DIRECTION.DOWN)):
+        assert wheel.scroll_menu_by_rows(menu, event) is True
+    # No direction at all, and a menu with no row.
+    event = WheelEvent()
+    event.device = object()
+    assert wheel.scroll_menu_by_rows(menu, event) is True
+    assert wheel.scroll_menu_by_rows(WheelMenu(), notch(DIRECTION.DOWN)) is True
+
+
+def test_separators_and_hidden_items_do_not_set_the_row(wheel):
+    menu = WheelMenu(
+        [WheelSeparator(3), WheelItem(10, visible=False), WheelItem(40), WheelItem(67)]
+    )
+    assert wheel.menu_row_height(menu) == 40
+    assert wheel.menu_row_height(WheelMenu([WheelSeparator(3)])) is None
+
+
+def test_the_hook_is_installed_once(wheel, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        wheel.GObject,
+        "add_emission_hook",
+        lambda *arguments: calls.append(arguments),
+        raising=False,
+    )
+
+    wheel.install_menu_wheel()
+    wheel.install_menu_wheel()
+
+    assert calls == [(WheelMenu, "scroll-event", wheel.scroll_menu_by_rows)]
+
+
+def test_startup_installs_the_hook(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gtk.Application, "do_startup", lambda *_a: None, raising=False)
+    app = app_module.GcmApplication()
+    installed = []
+    monkeypatch.setattr(app_module, "install_menu_wheel", lambda: installed.append(True))
+    monkeypatch.setattr(app, "_create_action", lambda *a, **k: None)
+    monkeypatch.setattr(app, "_create_stateful_action", lambda *a, **k: None)
+    monkeypatch.setattr(app, "_build_menus", lambda: None)
+
+    app.do_startup()
+
+    assert installed == [True]
+
+
+def test_the_wheel_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, GObject, Gtk
+
+    for fake, real, names in (
+        (
+            WheelEvent,
+            Gdk.Event,
+            ("get_source_device", "get_scroll_deltas", "get_scroll_direction", "set_source_device"),
+        ),
+        (WheelItem, Gtk.MenuItem, ("get_visible", "get_allocated_height")),
+    ):
+        for name in names:
+            assert hasattr(fake, name), f"{fake.__name__} is missing {name}"
+            assert hasattr(real, name), f"{real.__name__} has no {name}"
+    assert hasattr(GObject, "add_emission_hook")
+    for name in vars(DIRECTION):
+        assert hasattr(Gdk.ScrollDirection, name), name
+
+
 def test_every_menu_is_opened_by_the_one_helper(app_module):
     """The server tree's, the terminal's, a tab's, the Mounted tab's and the console list:
     nothing asks GTK to open a menu by another way, or places one by a guess of its height
@@ -1043,6 +1277,57 @@ def open_page(name, notebook=None):
     page.pack_start(Gtk.Label(label=name), True, True, 0)
     w.add_page(notebook or w.nbConsole, page, name)
     return page
+
+def first_top(menu):
+    """Where the menu's first item is in the menu's window: it moves as the menu scrolls."""
+    shown = menu.get_toplevel().get_window()
+    _, _, shown_y = shown.get_origin()
+    item = menu.get_children()[0]
+    _, _, item_y = item.get_window().get_origin()
+    return item_y + item.get_allocation().y - shown_y
+
+def center_of(item):
+    """Where the middle of a menu item is on the screen."""
+    _, origin_x, origin_y = item.get_window().get_origin()
+    box = item.get_allocation()
+    return origin_x + box.x + box.width // 2, origin_y + box.y + box.height // 2
+
+def wheel(what, menu, down=4, up=2):
+    """Real wheel notches over the open `menu`: each moves it by a row, the shortest, which
+    is 15 pixels without #399's hook, at whatever size the text is."""
+    row = app.menu_row_height(menu)
+    assert row and row > 15, (what, row)
+    x, y, width, height = landed(menu)
+    assert height < app.menu_height(menu), f"{what}: the menu is not cut short"
+    tops = [first_top(menu)]
+    for number in range(down + up):
+        click(5 if number < down else 4, x + width // 2, y + height // 2)
+        pump(0.3)
+        tops.append(first_top(menu))
+    steps = [after - before for before, after in zip(tops, tops[1:])]
+    wanted = [-row] * down + [row] * up
+    assert all(abs(step - want) <= 1 for step, want in zip(steps, wanted)), (
+        f"{what}: the steps were {steps}, a row is {row}"
+    )
+    print(what, "steps", steps, "row", row)
+
+def open_menubar_item(label):
+    """The menu of the menubar's item of that label, open under it. Not by a click on the
+    item: that makes GTK complain, once, that a menu's toplevel is no window."""
+    item = w.find_menubar_item(label)
+    assert item is not None, label
+    menu = item.get_submenu()
+    menu.popup_at_widget(item, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+    assert until(menu.get_visible), f"{label} did not open"
+    pump(0.3)
+    return menu
+
+def center_of_widget(widget):
+    """Where the middle of a widget with a window of its own, or a menubar's item, is."""
+    return on_screen(widget, widget.get_allocated_width() // 2, widget.get_allocated_height() // 2)
+
+def long_list(count):
+    app.snippets[:] = [app.snippetlib.Snippet(f"{n:08x}", f"snippet {n:02d}", "x") for n in range(count)]
 
 if scenario == "the-tree-menu":
     menu = w.popupMenuFolder
@@ -1401,6 +1686,7 @@ elif scenario in ("a-menu-opens-at-its-top-once-it-is-shorter", "a-long-menu-ope
     open_menu()
     top, inside, count = first_item_top()
     assert top >= 0 and 1 < inside < count, (top, inside, count)
+    opened_at = top
     x, y, width, height = landed(menu)
     for _ in range(130):
         click(5, x + width // 2, y + height // 2)
@@ -1422,6 +1708,104 @@ elif scenario in ("a-menu-opens-at-its-top-once-it-is-shorter", "a-long-menu-ope
         assert 1 < inside < count, (top, inside, count)
     close(menu)
 
+elif scenario.startswith("wheel-"):
+    fill_screen()
+    if scenario == "wheel-the-console-list":
+        button = w.nbConsole.get_action_widget(Gtk.PackType.END)
+        for number in range(60):
+            open_page(f"Lab/web-{number:02d} console" if number % 3 == 0 else f"console-{number:02d}")
+        pump(0.4)
+        del asked[:]
+        click(1, *center_of_widget(button))
+        assert until(lambda: asked), "the button opened nothing"
+        menu = asked[-1]["menu"]
+        assert until(menu.get_visible)
+        pump(0.3)
+        wheel("the console list", menu)
+    elif scenario == "wheel-open-consoles-menu":
+        for number in range(60):
+            open_page(f"console-{number:02d}")
+        pump(0.4)
+        terminal_menu = open_menubar_item("_Terminal")
+        item = terminal_menu.get_children()[-1]
+        terminal_menu.select_item(item)
+        assert until(w.menuConsoles.get_visible), "Open Consoles did not open"
+        pump(0.4)
+        wheel("Open Consoles", w.menuConsoles)
+    elif scenario == "wheel-a-hosts-folder-submenu":
+        app.groups.clear()
+        app.groups["Lab"] = [ssh_host(f"host-{i:02d}", f"192.0.2.{i + 1}", "Lab") for i in range(60)]
+        w.updateTree()
+        pump(0.4)
+        hosts = open_menubar_item("H_osts")
+        folder = [item for item in hosts.get_children() if item.get_submenu() is not None][0]
+        click(1, *center_of(folder))
+        sub = folder.get_submenu()
+        assert until(sub.get_visible), "the folder did not open"
+        pump(0.4)
+        wheel("a Hosts folder", sub)
+    elif scenario == "wheel-the-snippets-submenu":
+        long_list(60)
+        w.populateCommandsMenu()
+        pump(0.3)
+        edit = open_menubar_item("_Edit")
+        item = [i for i in edit.get_children() if i.get_submenu() is not None and i.get_label() == "Snippets"][0]
+        click(1, *center_of(item))
+        sub = item.get_submenu()
+        assert until(sub.get_visible), "Snippets did not open"
+        pump(0.4)
+        wheel("the Snippets submenu", sub)
+    elif scenario == "wheel-the-cluster-snippets-button":
+        long_list(60)
+        w.addTab(w.nbConsole, app.Host("", "shell"))
+        pump(0.5)
+        w.on_btnCluster_clicked(None)
+        window = w.wCluster
+        window.move(0, 0)
+        window.present()
+        pump(0.6)
+        found = []
+        def walk(widget):
+            if isinstance(widget, Gtk.MenuButton):
+                found.append(widget)
+            if hasattr(widget, "get_children"):
+                for child in widget.get_children():
+                    walk(child)
+        walk(window)
+        button = [b for b in found if b.get_label() == "Snippets"][0]
+        _, window_x, window_y = window.get_window().get_origin()
+        inside_x, inside_y = button.translate_coordinates(window, button.get_allocated_width() // 2, button.get_allocated_height() // 2)
+        click(1, window_x + inside_x, window_y + inside_y)
+        menu = button.get_popup()
+        assert until(menu.get_visible), "the button opened nothing"
+        pump(0.4)
+        wheel("the cluster's Snippets button", menu)
+    elif scenario == "wheel-the-terminal-menu-on-a-short-screen":
+        w.addTab(w.nbConsole, app.Host("", "shell"))
+        fill_screen()
+        terminal = app.page_terminal(w.nbConsole.get_nth_page(0))
+        terminal_x, terminal_top = on_screen(terminal)
+        menu = w.popupMenu
+        assert SCREEN_BOTTOM - SCREEN_TOP <= 600
+        open_at(menu, terminal_x + 200, terminal_top + 60)
+        assert app.menu_height(menu) > SCREEN_BOTTOM - SCREEN_TOP, app.menu_height(menu)
+        wheel("the terminal's menu", menu)
+    elif scenario == "wheel-a-menu-that-fits":
+        w.addTab(w.nbConsole, app.Host("", "shell"))
+        fill_screen()
+        terminal = app.page_terminal(w.nbConsole.get_nth_page(0))
+        terminal_x, terminal_top = on_screen(terminal)
+        menu = w.popupMenu
+        x, y, width, height = open_at(menu, terminal_x + 200, terminal_top + 60)
+        assert app.menu_height(menu) <= height, (app.menu_height(menu), height)
+        before = first_top(menu)
+        for _ in range(6):
+            click(5, x + width // 2, y + height // 2)
+            pump(0.3)
+        assert first_top(menu) == before, (first_top(menu), before)
+        close(menu)
+        print("fits ok")
+
 else:
     raise SystemExit("no scenario " + scenario)
 w.wMain.destroy()
@@ -1429,10 +1813,10 @@ print("OK")
 '''
 
 
-def run_scenario(scenario, tmp_path, display):
-    """Run a scenario at twice the usual text size, as GCM runs, and fail on what it raised or
+def run_scenario(scenario, tmp_path, display, dpi="2"):
+    """Run a scenario at twice the usual text size unless told, as GCM runs, and fail on what it raised or
     GLib complained of."""
-    environment = dict(os.environ, DISPLAY=display, GDK_BACKEND="x11", GDK_DPI_SCALE="2")
+    environment = dict(os.environ, DISPLAY=display, GDK_BACKEND="x11", GDK_DPI_SCALE=dpi)
     for name in ("WAYLAND_DISPLAY", "GDK_SCALE", "XDG_CONFIG_HOME"):
         environment.pop(name, None)
     # A GCM started from another's tab inherits where that one found its files, and a
@@ -1480,6 +1864,43 @@ def test_menus_stay_on_the_screen_against_real_gtk(scenario, tmp_path):
     process, display = _private_display()
     try:
         run_scenario(scenario, tmp_path, display)
+    finally:
+        process.terminate()
+        process.wait()
+
+
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
+@pytest.mark.parametrize("dpi", ["1", "2"])
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "wheel-the-console-list",
+        "wheel-open-consoles-menu",
+        "wheel-a-hosts-folder-submenu",
+        "wheel-the-snippets-submenu",
+        "wheel-the-cluster-snippets-button",
+        "wheel-a-menu-that-fits",
+    ],
+)
+def test_a_notch_of_the_wheel_scrolls_a_row_against_real_gtk(scenario, dpi, tmp_path):
+    """Real wheel notches through XTest: each moves a long menu by its row, not by GTK's
+    15 pixels (#399)."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    process, display = _private_display()
+    try:
+        run_scenario(scenario, tmp_path, display, dpi)
+    finally:
+        process.terminate()
+        process.wait()
+
+
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
+def test_a_menu_cut_short_by_a_short_screen_scrolls_a_row_against_real_gtk(tmp_path):
+    """The terminal's menu, 821 pixels tall at twice the usual text size, on a screen of 600."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    process, display = _private_display("1920x600x24")
+    try:
+        run_scenario("wheel-the-terminal-menu-on-a-short-screen", tmp_path, display)
     finally:
         process.terminate()
         process.wait()

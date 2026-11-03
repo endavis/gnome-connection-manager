@@ -121,6 +121,40 @@ of the terminal's menu, which GTK places too, and cutting the room to the screen
 than the window (#402). No decision record: it is an
 internal helper, and no setting, file, command line or workflow changes.
 
+## Scrolling a long menu (#399)
+
+GTK moves a menu that is cut short by 15 pixels for each notch of the wheel
+(`MENU_SCROLL_STEP2`), however tall a row is. Measured with real XTest wheel clicks on a
+120-item `Gtk.Menu` cut to 1080 pixels, on a private Xvfb: 15 pixels at `GDK_DPI_SCALE` 1 and
+2, where the rows were 25 and 40 pixels. XTest sends only discrete `DOWN` and `UP` events
+(delta 0, source device "Virtual core XTEST pointer"); GTK's smooth step is `delta_y * 15`.
+
+`install_menu_wheel`, called once from `GcmApplication.do_startup`, adds an emission hook,
+`GObject.add_emission_hook(Gtk.Menu, "scroll-event", ...)`, which reaches every `Gtk.Menu`,
+including the menubar's Snippets submenus GTK builds from a menu model and the Hosts folder
+submenus `add_folder_rows` rebuilds on every `updateTree`. For each notch it emits one more
+smooth scroll, so that GTK's 15 pixels and the extra come to a row. That the hook is
+process-wide, and not a handler on each menu, was the repo owner's decision; a long
+combo-box popup or entry context menu scrolls a row a notch too, which is accepted.
+Rejected: a `connect` on each menu (about eleven places, and the model-built submenus
+cannot be reached), and stopping GTK's own step from the hook, which GLib refuses:
+`emission of signal "scroll-event" ... cannot be stopped from emission hook`. So the hook
+adds to GTK's step.
+
+- **Only a real notch.** The hook acts on an event whose `get_source_device()` is not None.
+  `reset_menu_scroll`'s event (#408) and the hook's own have none, so neither is scrolled
+  again; real wheel events have one.
+- **The shortest row.** `menu_row_height` is the shortest shown item that is not a separator,
+  by allocated height. With half a menu's rows two lines tall (40 and 67 pixels at scale 2) the
+  median gave 53 pixels a notch and the shortest 40, a single line's.
+- **Half a pixel.** `wheel_extra` adds `copysign(0.5, delta)`: GTK truncates, and without it a
+  notch gave 39 pixels for a 40 pixel row, with it exactly 25 and 40, up and down.
+- **Smooth scrolling** is scaled by the same row over 15, as a real mouse under Wayland and
+  with XI2 on X11 sends 1.0 for a notch. Measured with a synthetic smooth event: 1.0 moved
+  40 pixels and 0.1 moved 4 at scale 2. Not measured with a real touchpad, nor on Wayland.
+
+A menu that fits does not move, with the hook and without it (six notches).
+
 ## Tests of menu placement
 
 `tests/test_menuplacement.py` tests `place_menu` and `place_across` with no display, the
@@ -132,6 +166,14 @@ only opens rightwards, and one holds `menu_height` and `menu_width` to the size 
 each menu. The three `-with-its-hints` scenarios keep GCM's hints, so
 that what GCM works out is not undone by the flipping and sliding X11 does itself. They
 are named `against_real_gtk`, which mutmut deselects.
+
+Seven more scenarios hold the wheel (#399), six of them at both text sizes: the console list
+from the tab strip, Terminal > Open Consoles, a Hosts folder, the menubar's Snippets, the
+cluster window's Snippets button, the terminal's menu on a screen of 600 pixels, and a menu
+that fits. Each makes six notches and reads how far the first item moved. Without the call
+in `do_startup` every one moves 15 pixels; without the half pixel, the pure test of the
+exact step fails. A menu is opened under its menubar item by `popup_at_widget`: a click on
+the item made GTK say that a menu's toplevel is no window.
 
 ## Which window a window opens over
 
