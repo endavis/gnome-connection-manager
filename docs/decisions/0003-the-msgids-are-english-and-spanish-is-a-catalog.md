@@ -73,6 +73,20 @@ written in English, as the newer ones are.
 **Keeping `lang/en_US.po`.** It would map each message to itself: an English reader sees the
 msgid either way.
 
+## A `C` locale translates nothing (#395)
+
+Under `LANG=C.UTF-8 LANGUAGE=de`, Python's `gettext` read `LANGUAGE` and translated the
+code's texts, while glibc ignores `LANGUAGE` under a `C`, `POSIX` or `C.UTF-8` messages
+locale and left the glade file's as English. One window came out in two languages. Two
+ways to make it one were open, and the choice is option 1: `bindtextdomain` reads the
+messages locale back from `locale.setlocale(locale.LC_MESSAGES)` and, for `C` or `POSIX`
+with any charset, installs `gettext.NullTranslations`, so every window is English.
+
+Option 2 was to make glade's half follow `LANGUAGE`, by translating its texts through
+Python as well. That is a second way of translating, which this decision already turned
+down for English. The cost of option 1: a user whose only locale is `C.UTF-8` cannot choose
+a language with `LANGUAGE`. They generate a locale of their language and set `LANG`.
+
 ## Consequences
 
 - A locale with no catalog shows English, in the Python messages and the glade file alike.
@@ -96,6 +110,7 @@ msgid either way.
 
 ## Related Issues
 
+- Issue #395: Under `LANG=C.UTF-8` with `LANGUAGE=de`, GCM draws one window in two languages
 - Issue #390: Under the C locale, or a language GCM has no catalog for, GCM shows its Spanish source text
 - Issue #391: Add a Spanish catalog, so that Spanish speakers keep a Spanish interface once the msgids are English
 - Issue #59: Most UI strings have no catalog entry, so they render as Spanish
