@@ -28,7 +28,11 @@ REPO = Path(__file__).resolve().parents[1]
 APP = REPO / "src" / "gnome_connection_manager" / "app.py"
 # The modules that hold user-visible strings. A connection type marks its messages with
 # N_ where it is defined, and app.py translates them where it shows them (#228).
-SOURCES = (APP, REPO / "src" / "gnome_connection_manager" / "utils" / "connections.py")
+SOURCES = (
+    APP,
+    REPO / "src" / "gnome_connection_manager" / "utils" / "connections.py",
+    REPO / "src" / "gnome_connection_manager" / "utils" / "wslg.py",
+)
 PO_DIR = REPO / "lang"
 
 # A literal in either quote. Five messages sit in single quotes inside f-strings, such as

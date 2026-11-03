@@ -11501,7 +11501,7 @@ def main(argv=None):
     require_readable_config()
     notice = wslg.startup_notice()
     if notice:
-        print(notice, file=sys.stderr)
+        print(_(notice), file=sys.stderr)
     application = GcmApplication()
     return application.run(argv)
 

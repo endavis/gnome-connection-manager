@@ -24,6 +24,12 @@ def test_healthy_log_gives_nothing():
     assert wslg.copy_mode_notice("") is None
 
 
+def test_healthy_log_with_the_copy_warning_setting_gives_nothing():
+    # Measured on a working session: it logs this line too, so it is no sign of the failure.
+    healthy = HEALTHY + "[10:23:51.878] RDP backend: enable_copy_warning_title = 1\n"
+    assert wslg.copy_mode_notice(healthy) is None
+
+
 def test_startup_notice_reads_the_file(tmp_path: Path):
     log = tmp_path / "weston.log"
     log.write_text(FAILED)
