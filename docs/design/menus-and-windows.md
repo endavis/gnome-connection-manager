@@ -20,11 +20,14 @@ They were moved here from `AGENTS.md` (#430).
 
 The module says where a pop-up menu goes so that
 it stays on the screen (#392). `place_menu` takes the row a menu opens from, the menu's
-height and the room it has, and gives a `Placement(below, shift, scrolls)`: below the row
+height and the room it has, and gives a `Placement(below, shift, scrolls, height)`: below the row
 if the menu fits there, else above it, else on the side with more room, below on a tie,
 slid along the room until it is inside, which covers the row. It lands inside the room
-whichever way the row stands to it, and a menu taller than the room starts at the top of
-it and `scrolls`, only when strictly taller. Pure: the numbers are arguments.
+whichever way the row stands to it. A menu taller than the room `scrolls`, only when
+strictly taller, and (#402) hangs beside its row on the side with more room, below on a
+tie, cut to that side's space, which is the placement's `height`; it no longer starts at
+the room's top. Where the row fills the whole room it has no side, and the menu is the
+whole room from its top. Pure: the numbers are arguments.
 
 `place_across` is the same decision along the other axis (#398), as Weston applies no
 flip or slide sideways either. It takes the rectangle's left and right edges, the menu's
@@ -44,10 +47,20 @@ tree's, the terminal's, a tab's, the Mounted tab's and the open-console list. It
 replaced a guess of 250 pixels and 50 spare in three, and `popup_at_pointer` and
 `popup_at_widget` in the others. The shift goes to GTK as `rect-anchor-dy`. The
 `anchor-hints` are set at every opening, as a menu is opened again, and a menu that
-scrolls is not told it may resize in height, so that GTK makes it no taller than the
-monitor and scrolls it (read in `gtk_window_guess_default_size` and `gtk_menu_position`;
-measured, a menu of 30 items opened 1080 tall on a screen of 1080 on X11, and one of
-1233 opened 1068 tall on Weston 13).
+scrolls is not told it may resize in height, and is cut to `placement.height` (#402).
+GTK cuts a menu to a height of GCM's choosing only through its toplevel, with two calls
+before `popup_at_rect`: `set_resizable(True)`, then `set_default_size(-1, cut)`. Default
+size alone does nothing (read in `gtk_menu_position` and below): `gtkmenu.c` makes the toplevel non-resizable, and for a
+non-resizable window `gtk_window_compute_hints` sets min = max =
+`gtk_window_guess_default_size`, `min(natural, workarea)`, so every default size is clamped
+back to the monitor. `popup_menu_at` also calls `resize(width, cut)`: measured on X11, a
+menu reopened with a cut of another height was placed by the size it had. A menu that fits
+gets `set_default_size(-1, -1)` and `set_resizable(False)` back, as the toplevel is reused.
+Probed on GTK 3.24.52 at `GDK_DPI_SCALE=2` with a 60-item menu: default size alone,
+`set_size_request` on the menu or its toplevel, and `resize` after the popup did not cut
+(each left 1080); `Gdk.Window.resize` after popup cuts on X11 but is lost on reopen, and
+on Wayland GDK hides and re-shows the popup to do it, so it is rejected. Weston 14.0.2,
+nested, ignores constraint adjustment, and cuts with the two calls.
 
 `reset_menu_scroll` runs after each opening, on the older `menu.popup` call too (#408).
 GTK keeps a menu's scroll position from one opening to the next and does not bring it
@@ -117,8 +130,16 @@ the server tree, a tab's label and the Mounted list the two coincide, measured: 
 tree's bin window, where its cell areas are, stays where the tree's own window is as it
 scrolls, with its header hidden as GCM has it, and a tab label's event box has a window
 of its own. Not handled: the menu bar's Hosts submenu, which GTK places itself (#397), the submenus
-of the terminal's menu, which GTK places too, and cutting the room to the screen rather
-than the window (#402). No decision record: it is an
+of the terminal's menu, which GTK places too. Under Wayland the room is the window's
+content, `window_content`, the span of the `Gtk.Window`'s child, not its GdkWindow: measured
+on Weston 14, GCM's main window not maximized was 1920x282 with its child at
+(26, 67, 1868, 186), so the GdkWindow counted 29 pixels of invisible shadow below the
+visible edge; maximized there is none, and on X11 the child is at (0, 0, w, h). Not
+measured: sway, mutter, WSLg itself, and whether WSLg draws GCM with client-side
+decorations. Weston puts a menu anchored SOUTH 12 pixels low, as before; the menu stays in
+the window. A menu that fits the room but fits neither side still slides over its row
+(#392), so a console list a little shorter than the room covers the button by the
+difference. No decision record: it is an
 internal helper, and no setting, file, command line or workflow changes.
 
 ## Scrolling a long menu (#399)
@@ -158,12 +179,13 @@ A menu that fits does not move, with the hook and without it (six notches).
 ## Tests of menu placement
 
 `tests/test_menuplacement.py` tests `place_menu` and `place_across` with no display, the
-helpers with fakes, and thirteen scenarios against real GTK on a display of their own, at twice the usual
+helpers with fakes, and fourteen scenarios against real GTK on a display of their own, at twice the usual
 text size, with real clicks through XTest. Eight take the hints from a menu just before it
 opens, `anchor-hints` 0, which leaves it where GCM asked, as a compositor that moves
 nothing does. Five of them fail against the guess, two (`-at-the-right-edge`) fail against code that
 only opens rightwards, and one holds `menu_height` and `menu_width` to the size GTK gives
-each menu. The three `-with-its-hints` scenarios keep GCM's hints, so
+each menu. `a-menu-stays-inside-a-short-window` stands in for Wayland's room with
+`window_content` in a window 400 pixels tall (#402). The three `-with-its-hints` scenarios keep GCM's hints, so
 that what GCM works out is not undone by the flipping and sliding X11 does itself. They
 are named `against_real_gtk`, which mutmut deselects.
 
