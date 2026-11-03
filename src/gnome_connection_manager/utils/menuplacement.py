@@ -22,12 +22,25 @@ The same is worked out across (#398): Weston does not flip or slide a menu sidew
 either, so one opened near the right edge ran off it. `place_across` opens it rightwards
 or leftwards, whichever fits, else slides it along the room.
 
+A menu cut short scrolls 15 pixels for each notch of the wheel, however tall a row is
+(#399): GTK's `MENU_SCROLL_STEP2`, measured, at text sizes where a row is 25 and 40
+pixels alike. `wheel_extra` is what is added to that to make it a row, and `wheel_row`
+picks the row: the shortest, which is a single line's.
+
 Pure: only numbers go in, on one axis at a time, all in the same coordinates.
 """
 
 from __future__ import annotations
 
-from typing import NamedTuple
+import math
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+# GTK's step for one notch of the wheel on a menu cut short: MENU_SCROLL_STEP2, measured as
+# 15 pixels at text scales 1 and 2 (#399).
+GTK_MENU_STEP = 15
 
 
 class Placement(NamedTuple):
@@ -113,3 +126,27 @@ def place_across(
     hung = right - shown if go_left else left
     start = min(max(hung, low), high - shown)
     return Across(go_left, start - hung)
+
+
+def wheel_row(heights: Iterable[int]) -> int | None:
+    """The row a notch of the wheel scrolls a menu by (#399): the smallest height above
+    zero, None where there is none.
+
+    The shortest, not the median: with half a menu's rows two lines tall the median made a
+    notch 53 pixels at twice the usual text size, and the shortest 40, one line's.
+    """
+    positive = [height for height in heights if height > 0]
+    return min(positive) if positive else None
+
+
+def wheel_extra(delta: float, row: int | None, step: int = GTK_MENU_STEP) -> float:
+    """The scroll delta to add to GTK's own for a wheel movement of `delta` so that the
+    two come to `delta` rows of `row` pixels (#399); 0.0 where nothing is to be added.
+
+    GTK moves a smooth scroll by `delta * step` pixels, truncated, so half a pixel is
+    added in the direction of the movement: without it a 40 pixel row gave 39. Nothing
+    is added for a row no taller than GTK's step, or for no movement.
+    """
+    if delta == 0 or row is None or row <= step:
+        return 0.0
+    return (delta * (row - step) + math.copysign(0.5, delta)) / step

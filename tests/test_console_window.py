@@ -662,7 +662,7 @@ print("OK")
 '''
 
 
-def _private_display():
+def _private_display(size="1920x1080x24"):
     """An Xvfb of the scenario's own, as (process, display).
 
     The number is chosen free and then bound, and two workers can choose the same one.
@@ -678,7 +678,7 @@ def _private_display():
         if number is None:
             break
         process = subprocess.Popen(
-            ["Xvfb", f":{number}", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+            ["Xvfb", f":{number}", "-screen", "0", size, "-nolisten", "tcp"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

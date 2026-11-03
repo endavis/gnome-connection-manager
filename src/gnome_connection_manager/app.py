@@ -1866,6 +1866,20 @@ def menu_height(menu: Gtk.Menu) -> int:
     return height
 
 
+def menu_row_height(menu: Gtk.Menu) -> int | None:
+    """The row a notch of the wheel scrolls `menu` by (#399): the height of its shortest
+    item that is shown and not a separator, or None where it has none.
+
+    The allocated height, which is what is on the screen; a menu not yet shown has none, and
+    then nothing scrolls. Notes: `menuplacement.wheel_row`.
+    """
+    return menuplacement.wheel_row(
+        item.get_allocated_height()
+        for item in menu.get_children()
+        if item.get_visible() and not isinstance(item, Gtk.SeparatorMenuItem)
+    )
+
+
 def menu_width(menu: Gtk.Menu) -> int:
     """How wide `menu` is when it opens (#398).
 
@@ -1917,13 +1931,55 @@ def reset_menu_scroll(menu: Gtk.Menu) -> None:
     Called once the menu is open, and it takes effect then: measured, it does nothing
     before, or deferred to an idle. `menu.emit`, not `menu.event`, which did nothing. A
     scroll event upwards by far more than the menu holds: GTK's own step stops at the top,
-    so this cannot go too far. `select_first(False)` then `deselect()` also works, and
+    so this cannot go too far. The event has no source device, which is how
+    `scroll_menu_by_rows` leaves it alone (#399). `select_first(False)` then `deselect()` also works, and
     `select_first(True)` does not, as it leaves an insensitive heading out of view.
     """
     scroll = Gdk.Event.new(Gdk.EventType.SCROLL)
     scroll.direction = Gdk.ScrollDirection.SMOOTH
     scroll.delta_y = -1e6
     menu.emit("scroll-event", scroll)
+
+
+def scroll_menu_by_rows(widget: Gtk.Widget, event: Gdk.Event, *_rest: object) -> bool:
+    """Emission hook on `scroll-event`: for each real notch of the wheel over a menu, emit
+    one more smooth scroll so that GTK's own 15 pixels and this come to a row (#399).
+
+    Always True, which keeps the hook installed. An emission hook cannot stop GTK's own
+    step ("emission of signal ... cannot be stopped from emission hook"), so this adds to
+    it. Only an event with a source device is acted on: `reset_menu_scroll`'s event has
+    none, and neither has the one emitted here, so neither is scrolled again.
+    """
+    if not isinstance(widget, Gtk.Menu) or event.get_source_device() is None:
+        return True
+    smooth, _delta_x, delta_y = event.get_scroll_deltas()
+    if smooth:
+        delta = delta_y
+    else:
+        ok, direction = event.get_scroll_direction()
+        delta = 0.0
+        if ok and direction == Gdk.ScrollDirection.UP:
+            delta = -1.0
+        elif ok and direction == Gdk.ScrollDirection.DOWN:
+            delta = 1.0
+    extra = menuplacement.wheel_extra(delta, menu_row_height(widget))
+    if extra:
+        more = Gdk.Event.new(Gdk.EventType.SCROLL)
+        more.direction = Gdk.ScrollDirection.SMOOTH
+        more.delta_y = extra
+        widget.emit("scroll-event", more)
+    return True
+
+
+_menu_wheel_installed = False
+
+
+def install_menu_wheel() -> None:
+    """Hook every `Gtk.Menu`'s `scroll-event` with `scroll_menu_by_rows`, once (#399)."""
+    global _menu_wheel_installed
+    if not _menu_wheel_installed:
+        GObject.add_emission_hook(Gtk.Menu, "scroll-event", scroll_menu_by_rows)
+        _menu_wheel_installed = True
 
 
 def popup_menu_at(
@@ -10963,6 +11019,7 @@ class GcmApplication(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        install_menu_wheel()
         self._create_action("quit", self._on_action_quit, ["<Primary>q"])
         self._create_action("new-local", self._on_action_new_local)
         self._create_action("connect", self._on_action_connect)
