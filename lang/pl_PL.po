@@ -1500,6 +1500,9 @@ msgstr "Rozłączono"
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
 msgstr "Rozłączono przed wyświetleniem pulpitu, bez podania przyczyny. gtk-vnc rozłącza się w ten sposób, gdy nie obsługuje żadnego z typów zabezpieczeń serwera."
 
+msgid "Disconnected before the desktop was shown: {reason}"
+msgstr "Rozłączono przed wyświetleniem pulpitu: {reason}"
+
 msgid "Hide input"
 msgstr "Ukryj wprowadzane znaki"
 

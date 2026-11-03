@@ -1637,6 +1637,9 @@ msgstr "연결 끊김"
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
 msgstr "데스크톱이 표시되기 전에 이유를 알리지 않고 연결이 끊겼습니다. gtk-vnc는 서버의 보안 유형을 하나도 지원하지 않을 때 이렇게 연결을 끊습니다."
 
+msgid "Disconnected before the desktop was shown: {reason}"
+msgstr "데스크톱이 표시되기 전에 연결이 끊어졌습니다: {reason}"
+
 msgid "Hide input"
 msgstr "입력 숨기기"
 
