@@ -63,7 +63,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   stays on the screen, as WSLg's Weston moves none (#392). A new pop-up menu opens through
   `popup_menu_at` in `app.py`, as the other five do. Notes: `docs/design/menus-and-windows.md`.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
-  widget. A key typed into a console is its program's, bar what `[shortcuts]` binds (#419).
+  widget. A key typed into a console is its program's, bar what `[shortcuts]` binds (#419),
+  and the key after a prefix key is its program's whatever it is (#452).
   Notes: its docstrings and comments, and those of the `app.py` code they name.
 - `src/gnome_connection_manager/utils/activity.py` – when a console busy out of sight has
   gone quiet (#208). It is asked on a timer that runs only while a tab waits, so an idle

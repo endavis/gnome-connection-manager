@@ -890,6 +890,7 @@ def make_host_unlike_the_defaults():
     host.before_command = BEFORE
     host.after_command = AFTER
     host.tab_name = TAB_NAME
+    host.prefix_keys = "CTRL+A,CTRL+SHIFT+B"
     host.tab_color = TAB_COLOR
     return host
 
@@ -956,6 +957,7 @@ def test_each_option_missing_from_a_host_reads_as_its_default():
         "before_command": "",
         "after_command": "",
         "tab_name": "",
+        "prefix_keys": "",
         "tab_color": "",
     }
 
@@ -996,6 +998,7 @@ def test_a_host_made_from_a_name_alone_takes_each_default():
         "before_command": "",
         "after_command": "",
         "tab_name": "",
+        "prefix_keys": "",
         "tab_color": "",
     }
     assert {name: attributes(host)[name] for name in defaults} == defaults
@@ -1053,3 +1056,55 @@ def test_ensure_unique_ids_mints_again_when_the_new_id_is_taken_too(monkeypatch)
     hosts.HostUtils.ensure_unique_ids([first, second])
 
     assert second.id == "0badc0de"
+
+
+# -- a host's own prefix keys (#452) ------------------------------------------
+
+
+def test_a_host_has_no_prefix_keys_by_default():
+    assert make_sample_host().prefix_keys == ""
+
+
+def test_prefix_keys_survive_the_ini_round_trip_as_prefix_keys():
+    host = make_sample_host()
+    host.prefix_keys = "CTRL+A,CTRL+SHIFT+B"
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+    stored = reread(config)
+    loaded = hosts.HostUtils.load_host_from_ini(stored, "host 1", pwd="secret")
+
+    assert stored.get("host 1", "prefix-keys") == "CTRL+A,CTRL+SHIFT+B"
+    assert loaded.prefix_keys == "CTRL+A,CTRL+SHIFT+B"
+
+
+def test_a_host_without_prefix_keys_writes_no_option_for_them():
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+
+    hosts.HostUtils.save_host_to_ini(config, "host 1", make_sample_host(), pwd="secret")
+
+    assert not config.has_option("host 1", "prefix-keys")
+    assert (
+        hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret").prefix_keys == ""
+    )
+
+
+def test_clone_carries_the_prefix_keys():
+    host = make_sample_host()
+    host.prefix_keys = "CTRL+A"
+
+    assert host.clone().prefix_keys == "CTRL+A"
+
+
+def test_prefix_keys_are_not_a_types_setting():
+    host = make_sample_host()
+    host.prefix_keys = "CTRL+A"
+    config = configparser.RawConfigParser()
+    config.add_section("host 1")
+    hosts.HostUtils.save_host_to_ini(config, "host 1", host, pwd="secret")
+
+    loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
+
+    assert loaded.type_settings == {}

@@ -12,6 +12,12 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- **Prefix keys.** Name the keys a program takes a command after, as tmux takes `Ctrl+B`,
+  and the key typed after one goes to the program in the console, not to GCM's shortcuts,
+  `Ctrl+Shift+S` and `F11` included; the key after that is GCM's again. Preferences' Shortcuts
+  tab has tmux's `Ctrl+B`, screen's `Ctrl+A` and Emacs's `Ctrl+X` to tick and a field for
+  any other key (`prefix-keys` under `[options]`), and a host's Terminal tab has its own, which
+  add to them. None is set by default (#452).
 - **A status bar** under each window's consoles gives the whole title of the tab shown,
   past the 30 characters its label is cut to. It follows tabs, panes and the titles
   programs set, and is off until Preferences' "Show the tab's whole title in a status bar"

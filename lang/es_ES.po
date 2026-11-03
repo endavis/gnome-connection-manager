@@ -1028,6 +1028,18 @@ msgstr "El nombre de la pestaña de un host. {name}, {address}, {port}, {user}, 
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "El nombre de las pestañas de este host, que se usa tal cual, sin carpetas delante. {name}, {address}, {port}, {user}, {group}, {folder} y {type} son los valores del host. Si se deja vacío, las nombra el ajuste Nombre de la pestaña de Preferencias."
 
+msgid "Prefix keys"
+msgstr "Teclas de prefijo"
+
+msgid "Other keys"
+msgstr "Otras teclas"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "Después de una de estas teclas, la siguiente tecla va al programa de la consola y no a los atajos de GCM: tmux y screen esperan un comando después de Ctrl+B y Ctrl+A. Las teclas de prefijo de un host se suman a estas."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Teclas después de las cuales el programa de este host espera un comando, como tmux con Ctrl+B: la tecla que se pulsa después va al programa y no a los atajos de GCM. Se suman a las teclas de prefijo de Preferencias. Pulse una tecla para añadirla y Retroceso para borrar."
+
 msgid "Tab color"
 msgstr "Color de la pestaña"
 

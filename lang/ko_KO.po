@@ -1889,6 +1889,18 @@ msgstr "호스트의 탭 이름입니다. {name}, {address}, {port}, {user}, {gr
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "이 호스트의 탭 이름이며, 앞에 폴더를 붙이지 않고 그대로 씁니다. {name}, {address}, {port}, {user}, {group}, {folder}, {type}은 호스트의 값입니다. 비워 두면 기본 설정의 탭 이름이 이름을 붙입니다."
 
+msgid "Prefix keys"
+msgstr "접두 키"
+
+msgid "Other keys"
+msgstr "다른 키"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "이 키 중 하나를 누른 다음 키는 GCM의 바로가기가 아니라 콘솔의 프로그램으로 전달됩니다. tmux와 screen은 Ctrl+B와 Ctrl+A 뒤에 명령을 받습니다. 호스트의 접두 키는 여기에 더해집니다."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "이 호스트의 프로그램이 뒤에 명령을 받는 키입니다. tmux의 Ctrl+B가 그 예입니다. 이 키 다음에 누른 키는 GCM의 바로가기가 아니라 프로그램으로 전달됩니다. 기본 설정의 접두 키에 더해집니다. 키를 누르면 추가되고, Backspace를 누르면 지워집니다."
+
 msgid "Tab color"
 msgstr "탭 색상"
 

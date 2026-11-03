@@ -6511,6 +6511,184 @@ def test_the_key_is_named_only_for_a_console(app_module, monkeypatch):
     assert answered is False
 
 
+# -- the key after a prefix key goes to the program (#452) ------------------------------
+
+
+class PrefixWindow(KeyWindow):
+    """A window whose propagated key records whether the shortcuts were being skipped."""
+
+    def __init__(self, focus, handled=True):
+        super().__init__(focus, handled)
+        self.passing = []
+
+    def propagate_key_event(self, event):
+        self.passing.append(self.focus.prefix_passing)
+        return super().propagate_key_event(event)
+
+
+def prefix_console(app_module, monkeypatch, global_keys="CTRL+B", host_keys=None, pid=4242):
+    """A console with a program, in a configuration whose prefix keys are given."""
+    monkeypatch.setattr(app_module.conf, "PREFIX_KEYS", global_keys, raising=False)
+    terminal = app_module.Vte.Terminal()
+    terminal.child_pid = pid
+    terminal.prefix_passing = False
+    if host_keys is not None:
+        host = app_module.Host("g", "n", "", "h", "u", "p", "", "22", "", "", "", "", "")
+        host.prefix_keys = host_keys
+        terminal.host = host
+        monkeypatch.setattr(app_module, "groups", {"g": [host]}, raising=False)
+    else:
+        monkeypatch.setattr(app_module, "groups", {}, raising=False)
+    return terminal
+
+
+def press_keys(app_module, monkeypatch, terminal, *keys, handled=True):
+    """Press each of `keys`, given as (GCM's name, GDK's name), in order, and answer each."""
+    window = PrefixWindow(terminal, handled)
+    wmain = object.__new__(app_module.Wmain)
+    answers = []
+    for name, keyval_name in keys:
+        monkeypatch.setattr(app_module, "get_key_name", lambda _event, name=name: name)
+        monkeypatch.setattr(app_module, "keyval_name_of", lambda _event, k=keyval_name: k)
+        answers.append(wmain.on_window_key_press(window, object()))
+    return answers, window
+
+
+SAVE = ("CTRL+SHIFT+S", "S")
+PREFIX = ("CTRL+B", "b")
+
+
+def test_the_key_after_a_prefix_key_is_given_to_the_console_and_not_to_gcm(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch)
+
+    answers, window = press_keys(app_module, monkeypatch, terminal, PREFIX, SAVE)
+
+    assert answers == [True, True]
+    assert len(window.propagated) == 2
+    # Both with the shortcuts skipped, and the skip is over when the key is.
+    assert window.passing == [True, True]
+    assert terminal.prefix_passing is False
+
+
+def test_the_key_after_that_is_gcms_again(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch)
+
+    answers, window = press_keys(app_module, monkeypatch, terminal, PREFIX, SAVE, SAVE)
+
+    assert answers == [True, True, False]
+    assert len(window.propagated) == 2
+
+
+def test_a_modifier_alone_after_a_prefix_key_keeps_the_pass(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch)
+    shift = ("CTRL+SHIFT", "Shift_L")
+
+    answers, _window = press_keys(app_module, monkeypatch, terminal, PREFIX, shift, SAVE, SAVE)
+
+    assert answers == [True, False, True, False]
+
+
+def test_the_key_after_a_prefix_is_given_even_when_the_console_does_not_handle_it(
+    app_module, monkeypatch
+):
+    """True, so the accelerator never runs on a key the program was to have."""
+    terminal = prefix_console(app_module, monkeypatch)
+
+    answers, _window = press_keys(
+        app_module, monkeypatch, terminal, PREFIX, ("F11", "F11"), ("F11", "F11"), handled=False
+    )
+
+    assert answers == [True, True, False]
+
+
+def test_with_no_prefix_key_named_nothing_is_given(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch, global_keys="")
+
+    answers, window = press_keys(app_module, monkeypatch, terminal, PREFIX, SAVE)
+
+    assert answers == [False, False]
+    assert window.propagated == []
+
+
+def test_a_console_with_no_program_is_not_armed(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch, pid=None)
+
+    answers, window = press_keys(app_module, monkeypatch, terminal, PREFIX, SAVE)
+
+    assert answers == [False, False]
+    assert window.propagated == []
+    assert terminal.prefix_armed is False
+
+
+def test_a_console_whose_program_ended_after_the_prefix_is_disarmed(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch)
+    press_keys(app_module, monkeypatch, terminal, PREFIX)
+    terminal.child_pid = None
+
+    answers, _window = press_keys(app_module, monkeypatch, terminal, SAVE)
+
+    assert answers == [False]
+    terminal.child_pid = 4242
+    answers, _window = press_keys(app_module, monkeypatch, terminal, SAVE)
+    assert answers == [False]
+
+
+def test_a_hosts_prefix_keys_add_to_the_global_ones(app_module, monkeypatch):
+    terminal = prefix_console(app_module, monkeypatch, host_keys="CTRL+A")
+    ctrl_a = ("CTRL+A", "a")
+
+    answers, _window = press_keys(
+        app_module, monkeypatch, terminal, ctrl_a, SAVE, PREFIX, SAVE, SAVE
+    )
+
+    assert answers == [True, True, True, True, False]
+
+
+def test_a_hosts_prefix_keys_are_read_from_the_configuration_by_its_id(app_module, monkeypatch):
+    """An edit in the host dialog reaches a tab already open, which keeps the old record."""
+    terminal = prefix_console(app_module, monkeypatch, global_keys="", host_keys="")
+    edited = terminal.host.clone()
+    edited.id = terminal.host.id
+    edited.prefix_keys = "CTRL+A"
+    monkeypatch.setattr(app_module, "groups", {"g": [edited]}, raising=False)
+
+    answers, _window = press_keys(app_module, monkeypatch, terminal, ("CTRL+A", "a"), SAVE)
+
+    assert answers == [True, True]
+
+
+def test_a_custom_key_is_still_typed_while_the_shortcuts_are_skipped(app_module, monkeypatch):
+    """`[keys]` sequences are the program's text, so only [shortcuts] are skipped (#452)."""
+    wmain = object.__new__(app_module.Wmain)
+    fed: list[bytes] = []
+    terminal = types.SimpleNamespace(prefix_passing=True, feed_child=fed.append)
+    monkeypatch.setattr(app_module, "get_key_name", lambda _event: "CTRL+SHIFT+S")
+    monkeypatch.setattr(app_module, "custom_keys", {"CTRL+SHIFT+S": b"x"})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    event = types.SimpleNamespace(keyval=0, state=0)
+
+    assert wmain.on_terminal_keypress(terminal, event) is True
+    assert fed == [b"x"]
+
+
+def test_a_shortcut_is_skipped_while_the_key_is_the_programs(app_module, monkeypatch):
+    wmain = object.__new__(app_module.Wmain)
+    saved: list[object] = []
+    wmain.show_save_buffer = saved.append
+    wmain.hold_key = lambda _widget, _event: False
+    monkeypatch.setattr(app_module, "get_key_name", lambda _event: "CTRL+SHIFT+S")
+    monkeypatch.setattr(app_module, "shortcuts", {"CTRL+SHIFT+S": app_module._SAVE})
+    event = types.SimpleNamespace(keyval=0, state=0)
+
+    passing = types.SimpleNamespace(prefix_passing=True)
+    assert wmain.on_terminal_keypress(passing, event) is False
+    assert saved == []
+
+    plain = types.SimpleNamespace(prefix_passing=False)
+    assert wmain.on_terminal_keypress(plain, event) is True
+    assert saved == [plain]
+
+
 def test_a_vnc_desktop_with_the_keyboard_is_given_every_key(app_module, monkeypatch):
     """Unchanged (#234): the desktop gets GCM's shortcuts too, not only the six."""
 

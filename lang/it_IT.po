@@ -1824,6 +1824,18 @@ msgstr "Come si chiama la scheda di un host. {name}, {address}, {port}, {user}, 
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "Il nome delle schede di questo host viene usato così com'è, senza anteporre la cartella. {name}, {address}, {port}, {user}, {group}, {folder} e {type} sono quelli dell'host. Se è vuoto, viene usato il Nome della scheda delle Preferenze."
 
+msgid "Prefix keys"
+msgstr "Tasti prefisso"
+
+msgid "Other keys"
+msgstr "Altri tasti"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "Dopo uno di questi tasti, il tasto successivo va al programma nella console e non alle scorciatoie di GCM: tmux e screen aspettano un comando dopo Ctrl+B e Ctrl+A. I tasti prefisso di un host si aggiungono a questi."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Tasti dopo i quali il programma di questo host aspetta un comando, come tmux con Ctrl+B: il tasto premuto dopo va al programma e non alle scorciatoie di GCM. Si aggiungono ai tasti prefisso delle Preferenze. Premere un tasto per aggiungerlo, Backspace per cancellare."
+
 msgid "Tab color"
 msgstr "Colore delle schede"
 

@@ -1753,6 +1753,18 @@ msgstr "Le nom de l'onglet d'un hôte. {name}, {address}, {port}, {user}, {group
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "Le nom des onglets de cet hôte, utilisé tel quel, sans dossier devant. {name}, {address}, {port}, {user}, {group}, {folder} et {type} sont les valeurs de l'hôte. Laissé vide, le Nom de l'onglet des Préférences les nomme."
 
+msgid "Prefix keys"
+msgstr "Touches de préfixe"
+
+msgid "Other keys"
+msgstr "Autres touches"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "Après l'une de ces touches, la touche suivante va au programme de la console et non aux raccourcis de GCM : tmux et screen attendent une commande après Ctrl+B et Ctrl+A. Les touches de préfixe d'un hôte s'ajoutent à celles-ci."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Touches après lesquelles le programme de cet hôte attend une commande, comme tmux avec Ctrl+B : la touche frappée ensuite va au programme et non aux raccourcis de GCM. Elles s'ajoutent aux touches de préfixe des Préférences. Appuyez sur une touche pour l'ajouter, sur Retour arrière pour effacer."
+
 msgid "Tab color"
 msgstr "Couleur des onglets"
 

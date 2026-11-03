@@ -1069,6 +1069,28 @@ dispatched before the focused terminal sees the key, so the application command 
 and the terminal binding would never fire. Onto one of the six, the terminal shortcut acts
 with the keyboard in a console, and the application command with it anywhere else.
 
+### Prefix keys: tmux, screen and agent CLIs
+
+Some programs take a command in two keys: a prefix, then the command's key. tmux's prefix
+is `Ctrl+B` and screen's is `Ctrl+A`. The second key can be any key, one of GCM's shortcuts
+among them, such as `Ctrl+Shift+S` or `F11`, and GCM would take it before the program saw it.
+
+Name the prefix keys and GCM gives the console the key after one, whatever it is, with its
+shortcuts and accelerators skipped. That is the next key only: a modifier pressed alone does
+not count, and the key after it is GCM's again. The prefix key itself goes to the program
+as any key does. No prefix key is set until you set one, so a configuration from before
+this behaves as it did.
+
+In Preferences, the Shortcuts tab has **Prefix keys**: tick tmux's `Ctrl+B`, screen's `Ctrl+A`
+or Emacs's `Ctrl+X`, and give any other key in **Other keys** by pressing it there
+(Backspace clears the field, and a key that types a character counts, as tmux's
+backtick does). They are saved as `prefix-keys` under `[options]`, comma-separated, as
+`CTRL+B,CTRL+A`. A host can have prefix keys of its own, in **Prefix keys** on the host
+dialog's Terminal tab: they add to Preferences', so a host that runs screen can name
+`Ctrl+A` and every other console keeps `Ctrl+B` alone.
+
+The pass is a console's, and a console whose program has ended has none.
+
 ## Snippets
 
 A snippet is text GCM types into a console for you: a command you run often, a query, a

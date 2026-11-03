@@ -1819,6 +1819,18 @@ msgstr "Wie der Tab eines Servers heißt. {name}, {address}, {port}, {user}, {gr
 msgid "What this host's tabs are called, used as it is, with no folder in front. {name}, {address}, {port}, {user}, {group}, {folder} and {type} are the host's. Left empty, Preferences' Tab name names them."
 msgstr "Wie die Tabs dieses Servers heißen. Der Wert wird unverändert verwendet, ohne Ordner davor. {name}, {address}, {port}, {user}, {group}, {folder} und {type} sind die Werte des Servers. Bleibt das Feld leer, benennt sie „Tab-Name“ aus den Einstellungen."
 
+msgid "Prefix keys"
+msgstr "Präfixtasten"
+
+msgid "Other keys"
+msgstr "Andere Tasten"
+
+msgid "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+msgstr "Nach einer dieser Tasten geht die nächste Taste an das Programm in der Konsole und nicht an die Tastenkürzel von GCM: tmux und screen erwarten einen Befehl nach Strg+B und Strg+A. Die Präfixtasten eines Hosts kommen zu diesen hinzu."
+
+msgid "Keys this host's program takes a command after, as tmux takes Ctrl+B: the key typed after one goes to the program, not to GCM's shortcuts. They add to Preferences' prefix keys. Press a key to add it, Backspace to clear."
+msgstr "Tasten, nach denen das Programm dieses Hosts einen Befehl erwartet, wie tmux nach Strg+B: Die danach gedrückte Taste geht an das Programm und nicht an die Tastenkürzel von GCM. Sie kommen zu den Präfixtasten der Einstellungen hinzu. Eine Taste drücken, um sie hinzuzufügen, die Rücktaste löscht."
+
 msgid "Tab color"
 msgstr "Tab-Farbe"
 

@@ -177,14 +177,22 @@ from gnome_connection_manager.utils.logpaths import (  # noqa: E402
     truncate_tab_label,
 )
 from gnome_connection_manager.utils.shortcuts import (  # noqa: E402
+    COMMON_PREFIX_KEYS,
     CONSOLE_FIRST_KEYS,
     FONT_SCALE_STEP,
+    MODIFIER_KEY_NAMES,
     bound_key,
     captured_key,
     clamp_font_scale,
+    console_prefix_keys,
+    format_prefix_keys,
     kept_bindings,
     parse_custom_keys,
+    parse_prefix_keys,
     preference_rows,
+    prefix_step,
+    split_prefix_keys,
+    with_prefix_key,
 )
 
 # check Terminal version
@@ -970,6 +978,10 @@ class conf:  # noqa: N801  # a settings namespace, referenced as conf.X througho
     TAB_TITLE_FROM_TERMINAL = 1
     # What a host's tab is called, its values filled in (#348). `{name}` names it as before.
     TAB_NAME = tabnames.NAME
+    # Prefix keys (#452), as `get_key_name` spells them, comma-separated, and none until the
+    # user names one: after a console receives one, the key after it goes to the program
+    # there, not to GCM's shortcuts. A host's own prefix keys add to these.
+    PREFIX_KEYS = ""
     EDITOR_COMMAND = ""
     OSC52_ENABLED = 0
     RAW_SESSION_LOG = 0
@@ -1017,6 +1029,7 @@ CONFIG_OPTIONS = (
     ("SHOW_STATUS_BAR", "options", "status-bar", bool),
     ("TAB_TITLE_FROM_TERMINAL", "options", "tab-title-from-terminal", bool),
     ("TAB_NAME", "options", "tab-name", str),
+    ("PREFIX_KEYS", "options", "prefix-keys", str),
     ("EDITOR_COMMAND", "options", "editor-command", str),
     ("OSC52_ENABLED", "options", "osc52-clipboard", bool),
     ("RAW_SESSION_LOG", "options", "raw-session-log", bool),
@@ -2170,6 +2183,47 @@ def get_key_name(event):
     return name + Gdk.keyval_name(event.keyval).upper()
 
 
+def keyval_name_of(event):
+    """GDK's name for the key of `event`, "" for one it has none for (#452)."""
+    return Gdk.keyval_name(event.keyval) or ""
+
+
+def take_prefix_key(entry, event):
+    """Make the key pressed in `entry` one of the prefix keys it holds (#452).
+
+    A key that types a character counts, a backtick being a real tmux prefix. A modifier
+    alone waits for the key it modifies, Backspace or Delete alone clears the entry, and
+    Tab, Enter and Escape alone are left to the dialog. True for each key it takes, so that
+    the entry does not type it too.
+    """
+    name = Gdk.keyval_name(event.keyval) or ""
+    held = event.state & (
+        Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.MOD1_MASK | Gdk.ModifierType.SUPER_MASK
+    )
+    if name in MODIFIER_KEY_NAMES:
+        return True
+    if not held and name in ("Tab", "ISO_Left_Tab", "Return", "KP_Enter", "ISO_Enter", "Escape"):
+        return False
+    if not held and name in ("BackSpace", "Delete"):
+        entry.set_text("")
+        return True
+    entry.set_text(with_prefix_key(entry.get_text(), get_key_name(event), True))
+    return True
+
+
+def prefix_keys_of(terminal):
+    """The prefix keys of `terminal`'s console (#452): Preferences', and its host's added.
+
+    The host's are read from the configuration by its id (`configured_host`), as a tab keeps
+    the record it was opened for, so an edit in the host dialog reaches a tab already open.
+    """
+    host = getattr(terminal, "host", None)
+    if host is None:
+        return console_prefix_keys(conf.PREFIX_KEYS)
+    hosts = [each for filed in groups.values() for each in filed]
+    return console_prefix_keys(conf.PREFIX_KEYS, configured_host(host, hosts).prefix_keys)
+
+
 def get_username() -> str | None:
     """Get the current username from environment variables."""
     return os.getenv("USER") or os.getenv("LOGNAME") or os.getenv("USERNAME")
@@ -2921,8 +2975,10 @@ class Wmain(GladeComponent):
         if key_name not in shortcuts and key_name in custom_keys:
             widget.feed_child(custom_keys[key_name])
             return True
-        # if shortcuts.has_key(get_key_name(event)):
-        if get_key_name(event) in shortcuts:
+        # The key after a prefix key is the program's, so GCM's shortcuts are skipped for it
+        # (#452); `on_window_key_press` sets this around the key it gives the console.
+        passing = getattr(widget, "prefix_passing", False)
+        if not passing and key_name in shortcuts:
             cmd = shortcuts[get_key_name(event)]
             if isinstance(cmd, list):
                 # comandos predefinidos
@@ -3388,18 +3444,41 @@ class Wmain(GladeComponent):
         with it, measured, so Ctrl+Q could not quit from such a tab. They go on to the
         accelerators there, as with the keyboard outside a console.
 
+        After a prefix key (#452), one the user named in Preferences or the host dialog, a
+        console is given the next key first whatever it is, GCM's [shortcuts] skipped
+        (`on_terminal_keypress` skips them while `prefix_passing` is set), and the key after
+        that is handled as before. A modifier alone leaves the pass as it was. The state is
+        the terminal's `prefix_armed`, and a console with no program has none. With no prefix
+        key named and none armed, nothing here costs a thing.
+
         propagate_key_event gives the key to the focused widget and its parents, and stops
         before the window, so it does not run this handler again for the key.
         """
         focus = window.get_focus()
         if GtkVnc is not None and isinstance(focus, GtkVnc.Display):
             return window.propagate_key_event(event)
-        if (
-            isinstance(focus, Vte.Terminal)
-            and get_key_name(event) in CONSOLE_FIRST_KEYS
-            and getattr(focus, "child_pid", None) is not None
-        ):
-            return window.propagate_key_event(event)
+        if not isinstance(focus, Vte.Terminal):
+            return False
+        if getattr(focus, "child_pid", None) is None:
+            focus.prefix_armed = False
+        else:
+            prefixes = prefix_keys_of(focus)
+            if prefixes or getattr(focus, "prefix_armed", False):
+                give, focus.prefix_armed = prefix_step(
+                    getattr(focus, "prefix_armed", False),
+                    get_key_name(event),
+                    keyval_name_of(event),
+                    prefixes,
+                )
+                if give:
+                    focus.prefix_passing = True
+                    try:
+                        window.propagate_key_event(event)
+                    finally:
+                        focus.prefix_passing = False
+                    return True
+            if get_key_name(event) in CONSOLE_FIRST_KEYS:
+                return window.propagate_key_event(event)
         return False
 
     def current_notebook(self):
@@ -5341,6 +5420,7 @@ class Wmain(GladeComponent):
         cp.set("options", "status-bar", conf.SHOW_STATUS_BAR)
         cp.set("options", "tab-title-from-terminal", conf.TAB_TITLE_FROM_TERMINAL)
         cp.set("options", "tab-name", conf.TAB_NAME)
+        cp.set("options", "prefix-keys", conf.PREFIX_KEYS)
         cp.set("options", "editor-command", conf.EDITOR_COMMAND)
         cp.set("options", "osc52-clipboard", conf.OSC52_ENABLED)
         cp.set("options", "raw-session-log", conf.RAW_SESSION_LOG)
@@ -7678,6 +7758,7 @@ class Whost(GladeComponent):
         self.cmbBackspace = self.get_widget("cmbBackspace")
         self.cmbDelete = self.get_widget("cmbDelete")
         self.txtTerm = self.get_widget("txtTerm")
+        self.txtPrefixKeys = self.get_widget("txtPrefixKeys")
         for kind in connections.CONNECTION_TYPES:
             self.cmbType.append(kind.id, kind.id)
         self.cmbType.set_active(0)
@@ -7863,6 +7944,7 @@ class Whost(GladeComponent):
         self.cmbDelete.set_active(host.delete_key)
         self.update_texttags()
         self.txtTerm.set_text(host.term)
+        self.txtPrefixKeys.set_text(host.prefix_keys)
         self.txtBeforeCommand.set_text(host.before_command)
         self.txtAfterCommand.set_text(host.after_command)
         self.txtTabName.set_text(host.tab_name)
@@ -7998,6 +8080,8 @@ class Whost(GladeComponent):
         host.before_command = self.txtBeforeCommand.get_text().strip()
         host.after_command = self.txtAfterCommand.get_text().strip() if kind.opens_tab else ""
         host.tab_name = self.txtTabName.get_text().strip() if kind.opens_tab else ""
+        # Saved whatever the type, as `term` is: a hidden page keeps what it holds (#277).
+        host.prefix_keys = format_prefix_keys(parse_prefix_keys(self.txtPrefixKeys.get_text()))
         host.tab_color = (
             color_to_hex(self.btnTabColor.get_rgba())
             if kind.opens_tab and self.chkTabColor.get_active()
@@ -8075,6 +8159,10 @@ class Whost(GladeComponent):
     # -- Whost.on_okbutton1_clicked }
 
     # -- Whost.on_cmbType_changed {
+    def on_txtPrefixKeys_key_press_event(self, widget, event, *args):
+        """Take the key pressed as one of the host's prefix keys, as `take_prefix_key` does (#452)."""
+        return take_prefix_key(widget, event)
+
     def on_cmbType_changed(self, widget, *args):
         kind = connections.named(widget.get_active_text())
         # Greyed and kept, what the program the host opens in leaves unused, such as an RDP
@@ -8293,6 +8381,7 @@ class Wconfig(GladeComponent):
         self.capture_keys = False
 
         self.tblGeneral.rows = 0
+        self.addPrefixKeys(_("Prefix keys"), "conf.PREFIX_KEYS")
         self.addParam(_("Word separator"), "conf.WORD_SEPARATORS", str)
         self.addParam(_("Buffer size"), "conf.BUFFER_LINES", int, 1, 1000000)
         self.addParam(_("Transparency"), "conf.TRANSPARENCY", int, 0, 100)
@@ -8586,6 +8675,52 @@ class Wconfig(GladeComponent):
             )
         return obj
 
+    def addPrefixKeys(self, name, field):
+        """Draw Preferences' prefix keys (#452) on the Shortcuts page: a checkbox for each
+        common prefix, and a field for any other key, which takes the key pressed in it.
+
+        The setting is a list of keys, which a row of `tblGeneral` has no control for, so OK
+        reads these through `prefix_keys_value` rather than by `field`.
+        """
+        owner, attribute = resolve_preference(field)
+        common, others = split_prefix_keys(getattr(owner, attribute))
+        self.prefix_field = field
+        box = self.get_widget("boxPrefixKeys")
+        label = Gtk.Label(label=name)
+        label.set_halign(Gtk.Align.START)
+        label.set_tooltip_text(
+            _(
+                "After one of these keys, the next key goes to the program in the console, not to GCM's shortcuts: tmux and screen take a command after Ctrl+B and Ctrl+A. A host's own prefix keys add to these."
+            )
+        )
+        box.pack_start(label, False, False, 0)
+        self.prefix_checks = {}
+        for key, program in COMMON_PREFIX_KEYS:
+            check = Gtk.CheckButton(label=f"{key.title()} ({program})")
+            check.set_active(key in common)
+            check.set_halign(Gtk.Align.START)
+            self.prefix_checks[key] = check
+            box.pack_start(check, False, False, 0)
+        row = Gtk.Box(spacing=6)
+        other = Gtk.Label(label=_("Other keys"))
+        self.prefix_other = Gtk.Entry()
+        self.prefix_other.set_text(others)
+        self.prefix_other.set_hexpand(True)
+        self.prefix_other.connect("key-press-event", self.on_prefix_other_key_press)
+        row.pack_start(other, False, False, 0)
+        row.pack_start(self.prefix_other, True, True, 0)
+        box.pack_start(row, False, False, 0)
+        box.show_all()
+
+    def on_prefix_other_key_press(self, widget, event, *args):
+        """Take the key pressed as one of the other prefix keys (#452)."""
+        return take_prefix_key(widget, event)
+
+    def prefix_keys_value(self):
+        """The prefix keys Preferences now shows, as `gcm.conf` holds them (#452)."""
+        keys = [key for key, check in self.prefix_checks.items() if check.get_active()]
+        return format_prefix_keys(keys + parse_prefix_keys(self.prefix_other.get_text()))
+
     def on_edited(self, widget, rownum, value, model, colnum):
         model[rownum][colnum] = value
         self.capture_keys = False
@@ -8850,6 +8985,9 @@ class Wconfig(GladeComponent):
                     value = obj.get_text()
                 owner, attribute = resolve_preference(obj.field)
                 setattr(owner, attribute, value)
+
+        owner, attribute = resolve_preference(self.prefix_field)
+        setattr(owner, attribute, self.prefix_keys_value())
 
         if self.get_widget("chkDefaultColors1").get_active():
             conf.FONT_COLOR = ""

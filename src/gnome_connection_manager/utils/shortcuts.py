@@ -175,3 +175,71 @@ def kept_bindings(rows: Iterable[Sequence[str]]) -> tuple[dict[str, str], set[st
         else:
             unbound.add(command)
     return bound, unbound
+
+
+# The prefix keys Preferences offers as checkboxes (#452), as (key, program), the key spelled
+# as `get_key_name` spells it. None is on by default: the keys are the program's, and GCM
+# takes the one after a prefix only where the user names the prefix.
+COMMON_PREFIX_KEYS: tuple[tuple[str, str], ...] = (
+    ("CTRL+B", "tmux"),
+    ("CTRL+A", "screen"),
+    ("CTRL+X", "Emacs"),
+)
+
+
+def parse_prefix_keys(text: str | None) -> list[str]:
+    """The keys a ``prefix-keys`` value names (#452): comma-separated, as `get_key_name`
+    spells them, each once and in order. Case and spaces do not matter; a gap is nothing."""
+    keys: list[str] = []
+    for part in (text or "").split(","):
+        key = part.strip().upper()
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def format_prefix_keys(keys: Iterable[str]) -> str:
+    """The ``prefix-keys`` value for `keys`: comma-separated, each once (#452)."""
+    return ",".join(parse_prefix_keys(",".join(keys)))
+
+
+def with_prefix_key(text: str | None, key: str, on: bool) -> str:
+    """`text`'s prefix keys with `key` added if `on`, else taken out (#452)."""
+    keys = [each for each in parse_prefix_keys(text) if each != key.strip().upper()]
+    if on:
+        keys.append(key)
+    return format_prefix_keys(keys)
+
+
+def split_prefix_keys(text: str | None) -> tuple[list[str], str]:
+    """`text` as Preferences draws it (#452): the common prefixes it names, and the rest
+    as the value the Other keys field holds."""
+    keys = parse_prefix_keys(text)
+    common = [key for key, _program in COMMON_PREFIX_KEYS if key in keys]
+    others = [key for key in keys if key not in common]
+    return common, format_prefix_keys(others)
+
+
+def console_prefix_keys(*texts: str | None) -> frozenset[str]:
+    """The prefix keys of a console (#452): Preferences' and its host's, the host's adding."""
+    return frozenset(key for text in texts for key in parse_prefix_keys(text))
+
+
+def prefix_step(
+    armed: bool, key_name: str, keyval_name: str, prefixes: Iterable[str]
+) -> tuple[bool, bool]:
+    """What a key does after a prefix key (#452): (give it to the console, armed after).
+
+    `armed` is whether a prefix key was the last key a console received. The key after it
+    goes to the program, GCM's shortcuts skipped, whatever it is, and GCM's shortcuts apply
+    again after it. A prefix key is given too, and arms the console, unless it is the key
+    after a prefix, which the program has, as the prefix twice is its own command. A
+    modifier alone is no key: it is left to GCM, and leaves `armed` as it was.
+    """
+    if keyval_name in MODIFIER_KEY_NAMES:
+        return False, armed
+    if armed:
+        return True, False
+    if key_name in prefixes:
+        return True, True
+    return False, False
