@@ -16,6 +16,10 @@ against the code that guessed a menu 250 pixels tall, so they test GCM's side an
 and a sixth holds `menu_height` to the height GTK gives each menu. The two that keep GCM's
 hints hold X11, which moves a menu itself, to the same.
 
+Two more scenarios hold a menu's scroll (#408): GTK keeps it from one opening to the next, so
+a menu scrolled to its end with real wheel notches opened again, shorter or as long, must
+start at its top.
+
 They run at twice the usual text size, where the menus are tall enough to be wrong for the
 old guess on a screen of 1080 pixels: the server tree's menu on a host is 549 pixels there,
 and the terminal's 821. Each runs on a display of its own, with real clicks through XTest.
@@ -251,6 +255,7 @@ class FakeMenu:
         self.properties = {}
         self.opened = []
         self.popped = []
+        self.emitted = []
         if popup_at_rect:
             self.popup_at_rect = self.record_popup_at_rect
 
@@ -272,6 +277,9 @@ class FakeMenu:
 
     def popup(self, *arguments):
         self.popped.append(arguments)
+
+    def emit(self, name, *arguments):
+        self.emitted.append((name, *arguments))
 
 
 def test_a_menus_height_is_its_shown_items_and_its_padding(app_module, monkeypatch):
@@ -418,6 +426,17 @@ def test_without_popup_at_rect_the_older_call_opens_the_menu(popping):
     popping.popup_menu_at(menu, event)
 
     assert menu.popped == [(None, None, None, None, 3, 1234)]
+
+
+def test_a_menu_is_scrolled_back_to_its_top_once_it_is_open(popping):
+    """GTK keeps a menu's scroll position from one opening to the next (#408), on either
+    call; the scenarios hold what the scroll does against real GTK."""
+    for older in (False, True):
+        menu = FakeMenu(popup_at_rect=not older)
+        popping.popup_menu_at(menu, click(screen_window()), rect=None, window=screen_window())
+
+        assert [name for name, *_ in menu.emitted] == ["scroll-event"]
+        assert menu.opened or menu.popped
 
 
 def test_the_older_call_takes_the_current_time_where_there_is_no_event(popping):
@@ -579,7 +598,14 @@ def test_the_fakes_match_real_gtk():
         (
             FakeMenu,
             Gtk.Menu,
-            ("get_children", "get_style_context", "get_border_width", "set_property", "popup"),
+            (
+                "get_children",
+                "get_style_context",
+                "get_border_width",
+                "set_property",
+                "popup",
+                "emit",
+            ),
         ),
         (StyleContext, Gtk.StyleContext, ("get_padding",)),
         (MenuItem, Gtk.MenuItem, ("get_visible", "get_preferred_height")),
@@ -1058,6 +1084,72 @@ elif scenario == "a-menu-is-as-tall-as-the-items-it-shows":
     assert app.menu_height(listed) == landed(listed)[3], (app.menu_height(listed), landed(listed))
     close(listed)
 
+elif scenario in ("a-menu-opens-at-its-top-once-it-is-shorter", "a-long-menu-opened-again-starts-at-its-top"):
+    # GTK keeps a menu's scroll position from one opening to the next, and does not bring it
+    # back within a menu that has become shorter (#408). Real wheel notches, as measured.
+    # A window of its own with a right-click handler, so that the menu has the real trigger
+    # event GTK asks for.
+    pad = Gtk.Window()
+    pad.set_default_size(400, 400)
+    pad_box = Gtk.EventBox()
+    pad.add(pad_box)
+    pad.move(0, 0)
+    pad.show_all()
+    pump(0.5)
+    menu = Gtk.Menu()
+    pad_box.connect("button-press-event", lambda box, event: app.popup_menu_at(menu, event) or True)
+
+    def fill(count):
+        menu.foreach(menu.remove)
+        for number in range(count):
+            item = Gtk.MenuItem(label=f"entry {number}")
+            if number == 0:
+                item.set_sensitive(False)
+            menu.append(item)
+        menu.show_all()
+
+    def open_menu():
+        click(3, 300, 40)
+        assert until(menu.get_visible), "the menu did not open"
+        pump(0.4)
+
+    def first_item_top():
+        """(the first item's top in the menu window, the items in view, the items)."""
+        shown = menu.get_toplevel().get_window()
+        _, shown_x, shown_y = shown.get_origin()
+        items = menu.get_children()
+        tops = []
+        for item in items:
+            _, _, item_y = item.get_window().get_origin()
+            tops.append((item_y + item.get_allocation().y - shown_y, item.get_allocation().height))
+        inside = [t for t in tops if t[0] >= 0 and t[0] + t[1] <= shown.get_height()]
+        return tops[0][0], len(inside), len(items)
+
+    fill(60)
+    open_menu()
+    top, inside, count = first_item_top()
+    assert top >= 0 and 1 < inside < count, (top, inside, count)
+    x, y, width, height = landed(menu)
+    for _ in range(130):
+        click(5, x + width // 2, y + height // 2)
+        pump(0.01)
+    pump(0.3)
+    scrolled = first_item_top()
+    assert scrolled[0] < -100, scrolled
+    close(menu)
+    if scenario == "a-long-menu-opened-again-starts-at-its-top":
+        open_menu()
+    else:
+        fill(8)
+        open_menu()
+    top, inside, count = first_item_top()
+    assert top >= 0, (top, inside, count)
+    if scenario.startswith("a-menu-opens"):
+        assert inside == count == 8, (top, inside, count)
+    else:
+        assert 1 < inside < count, (top, inside, count)
+    close(menu)
+
 else:
     raise SystemExit("no scenario " + scenario)
 w.wMain.destroy()
@@ -1102,6 +1194,8 @@ def run_scenario(scenario, tmp_path, display):
         "a-menu-is-as-tall-as-the-items-it-shows",
         "the-terminal-menu-with-its-hints",
         "the-console-list-with-its-hints",
+        "a-menu-opens-at-its-top-once-it-is-shorter",
+        "a-long-menu-opened-again-starts-at-its-top",
     ],
 )
 def test_menus_stay_on_the_screen_against_real_gtk(scenario, tmp_path):

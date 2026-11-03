@@ -50,6 +50,10 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- **A menu opens at its top.** GTK kept a menu's scroll position from one opening to the
+  next, so the open-console list, scrolled to its end and opened again with fewer
+  consoles, opened empty with its entries above it. All five menus are scrolled back to
+  their top as they open (#408).
 - Under `LANG=C.UTF-8` (or `C`, `POSIX`) with `LANGUAGE` set, as `LANGUAGE=de`, GCM drew a
   window in two languages. It is English now, as glibc already ignored `LANGUAGE` there. To
   have another language, set `LANG` to a locale of it (#395).

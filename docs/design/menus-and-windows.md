@@ -38,6 +38,18 @@ monitor and scrolls it (read in `gtk_window_guess_default_size` and `gtk_menu_po
 measured, a menu of 30 items opened 1080 tall on a screen of 1080 on X11, and one of
 1233 opened 1068 tall on Weston 13).
 
+`reset_menu_scroll` runs after each opening, on the older `menu.popup` call too (#408).
+GTK keeps a menu's scroll position from one opening to the next and does not bring it
+back within a menu that has become shorter: the open-console list, scrolled to its end
+with 60 items and opened again with 8, opened with its first item at y=-1345 and none
+in view. A scroll event, direction `SMOOTH` and `delta_y` of -1e6, emitted on the menu
+(`menu.emit("scroll-event", ...)`) puts the first item at y=4 with 8 of 8 in view; GTK's
+own step stops at the top. Measured, it works only once the menu is open: `menu.event`,
+not `emit`, did nothing, and so did the same emit deferred to an idle. The other reset the
+issue found, `select_first(False)` then `deselect()`, would also work, and
+`select_first(True)` does not, as it leaves an insensitive heading out of view. Not
+measured under Wayland, nor whether a reset shows for a frame first.
+
 ## Why X11 hid it
 
 X11 hid the bug, as GTK flips and slides a menu itself. Under Wayland GTK sends flip,
