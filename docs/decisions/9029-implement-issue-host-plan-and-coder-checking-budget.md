@@ -19,7 +19,7 @@ Accepted
 1. **The host may write the plan.** Only when it posted a findings comment on the issue during the run (or posts one with the plan) and the plan cites it. "The change seems clear" does not qualify. In every other case the Planner subagent writes the plan.
 2. **A review pass before posting.** A host-written plan goes through the Plan-review brief, run as a subagent (`implement-planner` on Claude) or through another agent CLI. It reads the draft, the findings and the plan's own code locations (`Symbols:`, `Pattern:`, `Tests:`) within about 15 tool calls, a few of them beyond those locations, and it does not explore or probe. A second review runs only when the first changed the plan's design.
 3. **Findings are settled.** Findings passed to the Planner brief are not re-measured or re-probed; the Planner flags any the code contradicts. `multi-plan` passes none, so it behaves as before.
-4. **The Coder has a checking budget.** The tests covering the change, one revert check, what project rules require, `doit lint` and `doit type_check`. No `doit check`, no extra mutmut runs, no flakiness reruns unless the plan asks. Its summary lists every check command it ran.
+4. **The Coder has a checking budget.** The tests covering the change, one revert check, what project rules require, `doit lint` and `doit type_check`. No `doit check`, no extra mutmut runs, no flakiness reruns unless the plan asks. Its summary reports each budget item as run or skipped, and each extra check or read beyond the plan's pointers as a deviation, which Step 5 checks (amended by #1172).
 5. **The full suite runs once.** Step 5 runs the single `doit check` plus `doit docs_build`. The host does not rely on a subagent's "check passed" claim (`.claude/rules/verified-claims.md`).
 
 ## Rationale
@@ -32,4 +32,4 @@ Accepted
 - [AI Agent Walkthrough](../development/ai/first-5-minutes.md)
 - [Cross-Agent Delegation](../development/ai/cross-agent-delegation.md)
 
-Issue: #1128, #1156. Amends ADR-9024.
+Issue: #1128, #1156, #1172. Amends ADR-9024.

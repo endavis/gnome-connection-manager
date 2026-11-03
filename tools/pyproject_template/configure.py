@@ -71,6 +71,19 @@ def find_backup_pyproject() -> Path | None:
     return candidates[0]
 
 
+def print_migration_next_steps() -> None:
+    """Point at the migration steps the configurator does not do (#1180)."""
+    Logger.header("Migration Next Steps")
+    print("The configurator finished step 3 of the migration guide. Still to do:")
+    print("- Step 6, tests and coverage:")
+    print("  - Delete or rewrite the skeleton tests: tests/test_cli.py, tests/test_core.py,")
+    print("    tests/test_example.py, tests/test_logging.py, tests/template/test_properties.py")
+    print("  - Repoint pytest_add_cli_args_test_selection in [tool.mutmut]")
+    print("  - Merge tests/conftest.py: mock_subprocess, _no_unmocked_subprocess, _hermetic_path")
+    print("  - Repoint the skill references tests/test_documented_paths.py flags")
+    print("Guide: docs/template/migration.md (section: 6) Tests & Coverage)")
+
+
 def guess_github_user(pyproject_data: dict[str, object]) -> str:
     """Get GitHub user from pyproject data or git remote."""
     # First try from pyproject.toml repository URL
@@ -533,14 +546,9 @@ def run_configure(
     print("8. Start coding!")
     print("━" * 60)
 
-    # Self-destruct
-    print("\n🗑️  Removing configure.py (self-destruct)...")
-    try:
-        Path(__file__).unlink()
-        Logger.success("configure.py removed")
-    except Exception as e:
-        Logger.warning(f"Could not remove configure.py: {e}")
-        print("  → You can safely delete it manually")
+    if find_backup_pyproject() is not None:
+        print_migration_next_steps()
+        print("━" * 60)
 
     return 0
 

@@ -27,7 +27,7 @@ That membership test resolves the question `tests/template/` had grown ambiguous
 | test target | owner | why |
 | :--- | :--- | :--- |
 | `tools/pyproject_template/` | **template** | Both spawn routes delete the suite; a downstream that keeps it holds tests for a namespace that no longer exists. |
-| `configure.py`, `README.template.md` | **template** | Consumed by configuration itself — `configure.py` self-destructs, `README.template.md` is renamed onto `README.md`. |
+| `configure.py`, `README.template.md` | **template** | Consumed by configuration itself — `configure.py` is shed by `doit template_clean` rather than removing itself, `README.template.md` is renamed onto `README.md`. |
 | `tools/doit/`, `tools/hooks/` | **downstream** | This code ships to the spawned project, runs there (`doit check`, `doit pr`, the dangerous-command hook), and is measured by the project's own coverage gate. |
 | `.claude/`, `.agents/`, `.github/` assets | **downstream** | Ship with the project and are the project's to maintain. |
 

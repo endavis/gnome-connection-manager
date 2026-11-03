@@ -161,6 +161,9 @@ run that never fetched it has nothing to delete).
   This is the run's single full `doit check`, run once: the Coder does not run it, and the host does
   not rely on a subagent's "check passed" claim (`.claude/rules/verified-claims.md`).
 - Confirm ADR, nav (`mkdocs.yml`) and documentation updates landed if the plan called for them.
+- Read the Coder's two summary fields, **Checks run** and **Reads beyond the plan's pointers**
+  (inline coding fills the same two). A budget item missing from **Checks run** is unmet: run it or
+  report it. An extra check or an unexplained read is a deviation that Step 8 reports.
 
 ### Step 6: Commit and open the PR
 
@@ -193,7 +196,7 @@ push, skip `doit pr` and Step 7 and report the pushed branch.
 Report: the PR URL, a summary of the change, whether a plan was posted and why (or why not), who wrote
 it (host or Planner), how many times `doit check` ran this run, whether
 coding ran inline or in a subagent, a requirement-by-requirement met/unmet table (from Step 5's
-requirements list), any deviations from the plan, and the CI state (green, or the round-capped failures from Step 7).
+requirements list), any deviations from the plan (including the Coder's **Checks run** and **Reads beyond the plan's pointers** deviations), and the CI state (green, or the round-capped failures from Step 7).
 Also report the worktree path (`$WORKTREE`) and the merge command, which the user runs from the main
 checkout: `uv run doit pr_merge --pr=<pr> --auto-close`. It removes the worktree and its branch.
 
@@ -309,8 +312,12 @@ name, the worktree root as an absolute path, and any issue-specific notes:
    `property-tests` skills when they apply; `uv run doit lint`; `uv run doit type_check`. Run
    nothing beyond that unless the plan asks: no extra mutmut runs, no flakiness reruns. Do not run
    `uv run doit check`; the full `doit check` runs once, in Step 5. Fix failures.
-5. Return a summary: files created or modified, test results, every check command you ran, and any
-   deviations from the plan, including each read outside its pointers and why.
+5. Return a summary: files created or modified, test results, and two fixed fields.
+   **Checks run**: every check command you ran, with each budget item from step 4 (the touched
+   tests, the revert check, the rule-required skills if any, `doit lint`, `doit type_check`)
+   marked run or skipped with a reason, and every extra check, each marked as a deviation.
+   **Reads beyond the plan's pointers**: each read outside its pointers with its reason, or "none".
+   Skipping a budget item or running an extra check is a deviation from the plan.
 6. Never use a bare `git stash`: the stash stack is shared with the main checkout, every worktree
    and every session, so a `pop` can take another session's entry. To compare against unchanged
    code, write `git show HEAD:<path>` to a scratch file under the worktree's `tmp/`, or make a

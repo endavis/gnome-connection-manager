@@ -12,7 +12,7 @@ tags:
 
 Bring your existing Python project into the pyproject-template.
 
-> **How much of this is automated:** steps 2, 3 and 12. Copying is one `rsync` invocation,
+> **How much of this is automated:** steps 2, 3 and 12. Copying is two `rsync` invocations,
 > `manage.py configure` rewrites every placeholder and renames `src/package_name` to your
 > package, and `manage.py repo` applies the GitHub-side configuration a new project gets
 > automatically. The rest is judgement about your own code: which dependencies to carry
@@ -88,6 +88,16 @@ rsync -a \
     ../pyproject-template-src/ ./
 ```
 
+**Then copy the template's shipped tests**, without replacing any file you already have:
+
+```bash
+rsync -a --ignore-existing ../pyproject-template-src/tests/ ./tests/
+```
+
+The coverage gate measures `tools/`, which ships with the template, so the tests that
+cover it must come too (#731, #1175). `configure` in step 3 sheds the template-owned
+ones. Step 6 covers the leftovers.
+
 Your git history is untouched — this copies files into your existing repository rather
 than starting a new one.
 
@@ -97,7 +107,7 @@ than starting a new one.
 | :--- | :--- |
 | `.git/` | Your history. Copying the template's would replace it. |
 | `src/` | Your package. The template ships a skeleton you do not want. |
-| `tests/` | Your tests. Step 6 moves them into the new layout. |
+| `tests/` | Your tests. The second command above adds the template's without overwriting yours; step 6 moves yours into the new layout. |
 
 Everything else is copied, including the parts a hand-written list tends to miss:
 `tools/` (which `dodo.py` imports — without it `doit check` cannot run), the whole of
@@ -105,20 +115,21 @@ Everything else is copied, including the parts a hand-written list tends to miss
 `.editorconfig`.
 
 > **Windows:** Git Bash does not ship `rsync`. Use WSL, or copy the clone's contents by
-> hand and then delete the template's `src/` and `tests/` from your project before
-> continuing.
+> hand, but delete only the template's `src/`, and copy its `tests/` without overwriting
+> files you already have, before continuing.
 
 ### 3) Run the Template Manager
 - From your project root: `python tools/pyproject_template/manage.py`.
 - Select **[2] Configure project** to run the configurator.
 - Provide project name, package name (import), PyPI name, author, GitHub user, description.
 - **What it does:** Rewrites placeholders (badges/links/docs/workflows), renames `src/package_name → src/<your_package>`.
+- When it detects a migration backup in `tmp/`, the configurator prints pointers to the remaining steps (step 6 cleanup) at the end of its run.
 
 See [Template Management](manage.md) for full documentation on the management script.
 
 ### 4) Move Your Code
 - Move your existing package source into the newly renamed `src/<your_package>/`.
-- **Cleanup:** Delete the template's default `core.py` if not needed.
+- **Cleanup:** The template's skeleton package is never copied (step 2 excludes `src/`). Its skeleton tests are cleaned up in step 6.
 - **Type Hinting:** Ensure `py.typed` exists in `src/<your_package>/` to mark your package as typed.
 - **Versioning:** Leave `_version.py` as the stub; hatch-vcs generates it at build time from git tags.
 
@@ -132,6 +143,10 @@ See [Template Management](manage.md) for full documentation on the management sc
 
 ### 6) Tests & Coverage
 - Move your tests to `tests/`.
+- **Delete or rewrite the package-skeleton tests.** Step 2 brought in the template's tests for its skeleton package, which you did not copy: `tests/test_cli.py`, `tests/test_core.py`, `tests/test_example.py`, `tests/test_logging.py` and `tests/template/test_properties.py`. Delete them or rewrite them against your own package. A same-named test of yours (for example `tests/test_cli.py`) was kept by `--ignore-existing` and stands in for the skeleton one.
+- **Update `[tool.mutmut]`.** Point `pytest_add_cli_args_test_selection` in `pyproject.toml` at your own package tests; it lists the skeleton tests.
+- **Merge `tests/conftest.py` by hand.** If you have your own, `--ignore-existing` kept it. The shipped tests need the template's fixtures: `mock_subprocess` and the autouse `_no_unmocked_subprocess` and `_hermetic_path`. Copy them in from the template clone's `conftest.py`.
+- `tests/test_documented_paths.py` flags the `deprecate-api` and `property-tests` skills, which name `tests/test_core.py` and `tests/template/test_properties.py` as examples. Repoint those references at your own files.
 - If moving from a flat layout to `src/`, you may need to adjust imports in your tests.
 - Ensure `dodo.py` and workflows point coverage to the correct package (handled by `configure.py`, but worth double-checking).
 
@@ -149,8 +164,8 @@ See [Template Management](manage.md) for full documentation on the management sc
 ### 10) Verify Locally
 - Install environment: `uv sync --all-extras --dev`
 - Install hooks: `doit pre_commit_install`
-    - Already ran this in an earlier migration? Run it again. The config now declares four hook
-      types and `commit-msg` is newly among them, so an older install has no `commit-msg` hook
+    - Already ran this in an earlier migration? Run it again. The config now declares `commit-msg`
+      among its hook types, so an older install has no `commit-msg` hook
       and neither conventional-commit enforcement nor the branch/issue check fires. Verify with
       `ls .git/hooks/` — see [Consumer Notes](consumer-notes.md#re-run-doit-pre_commit_install).
 - Run checks: `doit check`

@@ -101,7 +101,7 @@ Read at least these. Cite them in the plan rather than paraphrasing from memory:
 
 | Fetch from `$RAW/` | What you need from it |
 | :--- | :--- |
-| `docs/template/migration.md` | The authoritative 15-step checklist your plan maps onto |
+| `docs/template/migration.md` | The authoritative numbered checklist your plan maps onto |
 | `docs/template/consumer-notes.md` | Breaking changes and one-off actions |
 | `AGENTS.md` | The workflow this project would be adopting |
 | `.github/python-versions.json` | Which Python versions the template supports |
@@ -139,12 +139,17 @@ Do not change anything. Establish:
   a direct collision; one that uses make or just has two task surfaces to reconcile. Either way it
   is a decision for the plan, not something to discover mid-copy.
 - **Agent configuration** — `AGENTS.md`, `CLAUDE.md`, `.claude/`, `.agents/`, `.github/skills/`,
-  `.github/instructions/`, `.cursor/`. These are the owner's instructions. The template ships its
+  `.github/instructions/`, `.copilot/`, `.codex/`, `.cursor/`. These are the owner's instructions. The template ships its
   own `AGENTS.md` and agent config; where both exist they have to be merged deliberately, and the
   owner's rules win unless they say otherwise.
 - **Entry points** — console scripts, plugin entry points.
 - **Versioning** — hardcoded `__version__`, `setup.py` version, setuptools-scm, bumpversion. The
-  template derives version from git tags via hatch-vcs, so any hardcoded version is going away.
+  template derives the version from git tags via hatch-vcs, but `doit release` also supports a
+  static version (`version_provider` other than `"scm"`, plus `version_files` in
+  `[tool.commitizen]`). Which one this project keeps is a Step 4 question.
+- **Changelog** — hand-written, generated, or none. The template sets
+  `update_changelog_on_bump = true`, so `doit release` regenerates `CHANGELOG.md` from commit
+  subjects; `false` keeps a hand-written one.
 - **Docs** — Sphinx, mkdocs, none. The template ships mkdocs.
 - **License and changelog** — both are merge-don't-overwrite files.
 
@@ -171,6 +176,12 @@ Ask about at least these, whenever the inventory leaves them open:
 - **Existing agent instructions**, if there are any. The template ships its own `AGENTS.md` and
   agent configuration. Ask whether to merge the template's rules into theirs, keep theirs untouched,
   or take the template's wholesale — and default to preserving theirs.
+- **Versioning.** Adopt the template's tag-derived version (hatch-vcs), or keep a static version
+  through `version_provider` and `version_files`? Both work with `doit release`; see the template's
+  `docs/development/release-and-automation.md`, section "Downstream opt-ins: static version and
+  hand-written changelog". Fetch it from `$RAW/` like the rest.
+- **Changelog.** Keep a hand-written `CHANGELOG.md` (`update_changelog_on_bump = false`), or let
+  `doit release` generate it from commit subjects (the template's default, which rewrites the file)?
 - **`authors` vs `maintainers`.** The template ships `authors` only and the configurator asks for
   one name. If the project distinguishes them, that split has to be restored by hand.
 - **The flat → `src/` move**, if applicable. It is the most invasive step and worth confirming they
@@ -199,7 +210,7 @@ Nothing in this repository has been changed.
 ## What migrating gives you
 ## Open questions and the answers given
 ## The plan
-   <the 15 steps from migration.md, each made concrete for this repository,
+   <every numbered step from migration.md, each made concrete for this repository,
     or marked "not applicable" with the reason>
 ## Irreversible steps and what to back up first
 ## What will break, and when you will notice
@@ -221,20 +232,32 @@ Requirements for the plan body:
   done
   ```
 - **Say what will break.** Flat → `src/` breaks imports in tests. Adopting ruff reformats
-  everything. Dropping a Python version breaks downstream users. Hardcoded `__version__` disappears
-  in favour of git tags.
+  everything. Dropping a Python version breaks downstream users. A hardcoded `__version__` disappears
+  if the owner adopts tag-derived versioning.
 - **Carry the traps** the checklist and consumer notes name:
-  - Version comes from git tags via hatch-vcs. Never edit the version in `pyproject.toml`.
+  - With the template's default versioning, the version comes from git tags via hatch-vcs. Never
+    edit the version in `pyproject.toml`. A project that keeps a static version sets
+    `version_provider` and `version_files` instead, and `doit release` bumps them.
+  - With `update_changelog_on_bump = true`, the template's default, `doit release` regenerates
+    `CHANGELOG.md`. A merged hand-written changelog needs that key set to `false`.
+  - `manage.py configure` installs the template's `README.template.md` as `README.md`. The
+    owner's README content, backed up to `README.md.old`, is merged into that file afterwards.
   - `merge-gate.yml` requires a `ready-to-merge` label. Without it every PR carries a permanently
     failing check.
   - `doit pre_commit_install` must be run — and re-run after any later config change, because the
-    config declares four hook types including `commit-msg`.
+    config declares `commit-msg` among its hook types, and an older install lacks it.
   - `manage.py repo` applies the GitHub-side configuration a migrated project does not get
     automatically; `doit publish_setup` handles PyPI trusted publishing. Both are separate steps
     after the migration commit.
-  - Record the template commit as the sync point, or `template-sync` has no baseline afterwards.
-- **`rsync` excludes `.git/`, `src/` and `tests/`.** Windows has no `rsync` — say so if the owner is
-  on Windows.
+  - Record the template commit as the sync point with
+    `python tools/pyproject_template/manage.py sync`, or `template-sync` has no baseline
+    afterwards.
+- **`rsync` excludes `.git/`, `src/` and `tests/`.** A second `rsync --ignore-existing` brings in
+  the template's shipped tests, because the coverage gate measures `tools/`. The plan must name the
+  skeleton tests to delete or rewrite (`tests/test_cli.py`, `test_core.py`, `test_example.py`,
+  `test_logging.py`, `tests/template/test_properties.py`), the `pytest_add_cli_args_test_selection`
+  update in `[tool.mutmut]`, and any same-named collisions, `tests/conftest.py` especially (merge its
+  fixtures by hand). Windows has no `rsync` — say so if the owner is on Windows.
 
 **Stop here.** Do not change a single file until the owner has read the plan and told you to
 proceed. The plan is the deliverable; migrating without it is the failure mode this skill exists to
