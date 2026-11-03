@@ -797,7 +797,7 @@ msgstr "Проверять обновления"
 #: ../gnome_connection_manager.py:661 ../gnome_connection_manager.py:858
 #: ../gnome_connection_manager.py:692 ../gnome_connection_manager.py:895
 msgid "Rename tab"
-msgstr "Переименовать закладку"
+msgstr "Переименовать вкладку"
 
 #: ../gnome_connection_manager.py:399 ../gnome_connection_manager.py:449
 #: ../gnome_connection_manager.py:483 ../gnome_connection_manager.py:590
