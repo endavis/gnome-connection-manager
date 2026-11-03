@@ -776,6 +776,9 @@ msgstr "Desconectado"
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
 msgstr "Se desconectó antes de mostrar el escritorio, sin dar ningún motivo. gtk-vnc se desconecta así cuando no admite ninguno de los tipos de seguridad del servidor."
 
+msgid "Disconnected before the desktop was shown: {reason}"
+msgstr "Se desconectó antes de mostrar el escritorio: {reason}"
+
 msgid "Hide input"
 msgstr "Ocultar entrada"
 

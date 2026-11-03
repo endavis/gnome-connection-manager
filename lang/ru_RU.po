@@ -1504,6 +1504,9 @@ msgstr "Отключено"
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
 msgstr "Отключено до показа рабочего стола, причина не указана. gtk-vnc отключается так, когда не поддерживает ни один из типов безопасности сервера."
 
+msgid "Disconnected before the desktop was shown: {reason}"
+msgstr "Отключено до показа рабочего стола: {reason}"
+
 msgid "Hide input"
 msgstr "Скрывать ввод"
 

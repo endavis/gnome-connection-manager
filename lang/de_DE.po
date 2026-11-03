@@ -1567,6 +1567,9 @@ msgstr "Getrennt"
 msgid "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
 msgstr "Getrennt, bevor der Desktop angezeigt wurde, ohne Angabe eines Grundes. gtk-vnc trennt die Verbindung auf diese Weise, wenn es keinen der Sicherheitstypen des Servers unterstützt."
 
+msgid "Disconnected before the desktop was shown: {reason}"
+msgstr "Getrennt, bevor der Desktop angezeigt wurde: {reason}"
+
 msgid "Hide input"
 msgstr "Eingabe verbergen"
 

@@ -9762,6 +9762,7 @@ class VncPage(Gtk.Box):
         self.ended = ended
         self.error = None
         self.initialized = False
+        self.login_tried = False
         self.closed_by_gcm = False
         self.status = Gtk.Label(xalign=0, margin=6)
         self.status.set_line_wrap(True)
@@ -9793,6 +9794,7 @@ class VncPage(Gtk.Box):
         self.status.show()
 
     def on_credential(self, display, credentials):
+        self.login_tried = True
         # A GObject.ValueArray, which PyGObject does not iterate. get_nth is deprecated,
         # and the way in.
         for index in range(credentials.n_values):
@@ -9835,6 +9837,15 @@ class VncPage(Gtk.Box):
                         "Disconnected before the desktop was shown, with no reason given. gtk-vnc disconnects so when it supports none of the server's security types."
                     )
                 )
+        elif not (self.initialized or self.login_tried):
+            # gtk-vnc 1.5 gives a reason for giving up before the desktop where 1.3 gives
+            # none, so both say that the desktop was never shown (#433). A failed login is
+            # the exception: the server asked for credentials, and gtk-vnc's own wording
+            # for it says enough. It also emits vnc-auth-failure for this case, measured,
+            # so that signal cannot tell the two apart.
+            self.say(
+                _("Disconnected before the desktop was shown: {reason}").format(reason=self.error)
+            )
         self.ended(0 if self.closed_by_gcm else 1)
 
 

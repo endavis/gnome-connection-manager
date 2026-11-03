@@ -273,9 +273,10 @@ elif scenario == "a-server-gtk-vnc-cannot-log-in-to":
     page, label = open_desk(server)
     assert until(ended(label)), page.status.get_text()
     text = page.status.get_text()
-    # gtk-vnc 1.3.1 gives no reason, so GCM says why; gtk-vnc 1.5.0 gives its own.
+    # gtk-vnc 1.3.1 gives no reason, so GCM says why; gtk-vnc 1.5.0 gives its own, which
+    # GCM follows its own words with (#433).
     own = text.startswith("Disconnected before the desktop was shown") and "security types" in text
-    assert own or text == "No supported auth types", text
+    assert own or text == "Disconnected before the desktop was shown: No supported auth types", text
     assert page.get_parent() is w.nbConsole, "the tab closed as if the end were clean"
     server.stop()
 elif scenario == "the-desktop-gets-every-key-while-it-has-the-keyboard":
