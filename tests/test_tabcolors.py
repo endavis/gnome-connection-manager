@@ -464,7 +464,9 @@ def test_the_tree_menu_offers_a_tab_colour_for_a_folders_row_alone(app_module):
     wmain = object.__new__(app_module.Wmain)
     items = ("mnuDel", "mnuEdit", "mnuCopyAddress", "mnuDup", "mnuRenameFolder", "mnuFolderColor")
     wmain.popupMenuFolder = types.SimpleNamespace(
-        **{name: MenuItem() for name in items}, popup=lambda *_args: None
+        **{name: MenuItem() for name in items},
+        popup=lambda *_args: None,
+        emit=lambda *_args: None,
     )
     clicked: list[bool | None] = []
     wmain.treeServers = types.SimpleNamespace(

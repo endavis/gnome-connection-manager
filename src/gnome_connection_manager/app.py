@@ -1891,6 +1891,23 @@ def menu_room(window: Gdk.Window) -> tuple[int, int] | None:
     return (low, high) if high > low else None
 
 
+def reset_menu_scroll(menu: Gtk.Menu) -> None:
+    """Scroll `menu` back to its top, which GTK does not (#408): it keeps a menu's scroll
+    position from one opening to the next, and a menu that has become shorter is then
+    opened with its items above its top.
+
+    Called once the menu is open, and it takes effect then: measured, it does nothing
+    before, or deferred to an idle. `menu.emit`, not `menu.event`, which did nothing. A
+    scroll event upwards by far more than the menu holds: GTK's own step stops at the top,
+    so this cannot go too far. `select_first(False)` then `deselect()` also works, and
+    `select_first(True)` does not, as it leaves an insensitive heading out of view.
+    """
+    scroll = Gdk.Event.new(Gdk.EventType.SCROLL)
+    scroll.direction = Gdk.ScrollDirection.SMOOTH
+    scroll.delta_y = -1e6
+    menu.emit("scroll-event", scroll)
+
+
 def popup_menu_at(
     menu: Gtk.Menu,
     event: Gdk.Event | None,
@@ -1929,6 +1946,7 @@ def popup_menu_at(
             getattr(event, "button", 0),
             Gtk.get_current_event_time() if stamp is None else stamp,
         )
+        reset_menu_scroll(menu)
         return
     if window is None:
         window = event.window
@@ -1955,6 +1973,7 @@ def popup_menu_at(
     menu.set_property("anchor-hints", hints)
     menu.set_property("rect-anchor-dy", placement.shift)
     menu.popup_at_rect(window, rect, rect_anchor, menu_anchor, event)
+    reset_menu_scroll(menu)
 
 
 def scroll_notebook_page(notebook, page):

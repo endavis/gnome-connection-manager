@@ -1734,6 +1734,7 @@ def test_ctrl_right_click_opens_the_menu_even_while_right_click_pastes(
         mnuSplitH=sensitive,
         mnuSplitV=sensitive,
         popup=lambda *args: popped.append(args),
+        emit=lambda *_args: None,
     )
     terminal = ClipboardTerminal()
     terminal.get_parent = NotebookAncestor

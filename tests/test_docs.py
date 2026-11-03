@@ -412,7 +412,11 @@ def _menu_modifiers(app_module, monkeypatch):
         set_sensitive=lambda _value: None, set_visible=lambda _value: None
     )
     wmain.popupMenu = types.SimpleNamespace(
-        mnuCopy=switch, mnuSplitH=switch, mnuSplitV=switch, popup=lambda *_args: None
+        mnuCopy=switch,
+        mnuSplitH=switch,
+        mnuSplitV=switch,
+        popup=lambda *_args: None,
+        emit=lambda *_args: None,
     )
     notebook = types.SimpleNamespace(get_n_pages=lambda: 1)
     notebook.get_parent = lambda: notebook
