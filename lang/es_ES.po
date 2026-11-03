@@ -1064,5 +1064,5 @@ msgstr "Escritorio remoto de Windows muestra el escritorio en una ventana propia
 msgid "GCM is not running on X11, so FreeRDP shows the desktop in a window of its own."
 msgstr "GCM no se está ejecutando en X11, así que FreeRDP muestra el escritorio en una ventana propia."
 
-msgid "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
-msgstr "WSLg no pudo abrir la memoria compartida con la que dibuja las ventanas, por lo que la ventana de GCM puede quedar en blanco. Ejecute `wsl --shutdown` en Windows y luego inicie GCM de nuevo. Consulte docs/WSL-SETUP.md, 'When something goes wrong'."
+msgid "WSLg could not open the shared memory it draws windows through, so GCM's window may stay blank, its title starting with [WARN:COPY MODE]. Run `wsl --shutdown` in Windows, then start GCM again. See docs/WSL-SETUP.md, 'When something goes wrong'."
+msgstr "WSLg no pudo abrir la memoria compartida con la que dibuja las ventanas, por lo que la ventana de GCM puede quedar en blanco, con un título que empieza por [WARN:COPY MODE]. Ejecute `wsl --shutdown` en Windows y luego inicie GCM de nuevo. Consulte docs/WSL-SETUP.md, 'When something goes wrong'."

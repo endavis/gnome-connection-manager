@@ -465,8 +465,12 @@ describes.
 
 ## When something goes wrong
 
-**GCM's window is blank, and its title starts with `[WARN] COPY MODE`.** WSLg has lost the
-shared memory it draws windows through, and marks every Linux window's title that way.
+**GCM's window is blank, and its title starts with `[WARN:COPY MODE]`.** WSLg has lost the
+shared memory it draws windows through, and marks every Linux window's title that way: the
+title reads `[WARN:COPY MODE] <window title> (<distro>)`. That spelling is measured, two
+ways: WSLg's source (`microsoft/weston-mirror`, `libweston/backend-rdp/rdprail.c`) builds the
+title as `"[WARN:COPY MODE] %s (%s)"`, and the installed `/usr/lib/libweston-9/rdp-backend.so`,
+read with `wsl --system -- grep -a -o -F "WARN:COPY"`, holds `WARN:COPY` and no `WARN]`.
 `/mnt/wslg/weston.log` shows `rdp_allocate_shared_memory` errors. Run `wsl --shutdown` in
 PowerShell, and start GCM again. Started from a terminal, GCM says so on its console
 when the log shows that failure.
