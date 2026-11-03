@@ -97,9 +97,12 @@ TEMPLATE_OWNED_TEST_FILES: list[str] = [
     "tests/template/test_bootstrap.py",
     "tests/template/test_utils.py",
     "tests/template/test_utils_properties.py",
-    # Targets consumed by configure.py itself: configure.py self-destructs at
-    # the end of its run, and README.template.md is renamed onto README.md.
+    # Targets consumed by configuration: configure.py is shed by cleanup (it
+    # does not remove itself, #1178), and README.template.md is renamed onto
+    # README.md.
     "tests/template/test_configure_paths.py",
+    "tests/template/test_configure_keeps_suite.py",
+    "tests/template/test_configure_migration_steps.py",
     "tests/template/test_readme_split.py",
     "tests/template/test_downstream_test_retention.py",
     # Targets docs/template/migration.md, which cleanup sheds in both modes.

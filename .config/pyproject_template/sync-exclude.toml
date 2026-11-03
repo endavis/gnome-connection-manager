@@ -34,14 +34,16 @@ exclude = [
     "tests/template/test_properties.py",
     "tests/test_mutmut_config.py",
 
-    # Releasing to PyPI and TestPyPI, a test matrix, API diffing and benchmarks: GCM releases
-    # by tag alone, as a wheel cannot supply GTK, and tests on the one Ubuntu whose PyGObject
-    # it is built for. Then GitHub's release-notes categories, for releases GCM does not make;
-    # the devcontainer, whose Python image has no GTK; and the shell completions, generated
-    # from the template's own task list, where `doit completions` writes GCM's.
+    # Releasing to PyPI and TestPyPI, a test matrix (on a label or nightly), API diffing and
+    # benchmarks: GCM releases by tag alone, as a wheel cannot supply GTK, and tests on the one
+    # Ubuntu whose PyGObject it is built for. Then GitHub's release-notes categories, for
+    # releases GCM does not make; the devcontainer, whose Python image has no GTK; and the shell
+    # completions, generated from the template's own task list, where `doit completions` writes
+    # GCM's.
     ".github/workflows/release.yml",
     ".github/workflows/testpypi.yml",
     ".github/workflows/ci-full-matrix.yml",
+    ".github/workflows/nightly-matrix.yml",
     ".github/workflows/breaking-change-detection.yml",
     ".github/workflows/benchmark.yml",
     ".github/release.yml",

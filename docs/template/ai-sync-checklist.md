@@ -275,7 +275,7 @@ For each workflow file flagged as **Modified** or **Missing**:
 ## Phase 7: Pre-commit & Other Config
 
 - [ ] After adopting `.pre-commit-config.yaml`, run `doit pre_commit_install` **again** —
-      the config declares four hook types and `commit-msg` is newly among them. An earlier
+      the config declares `commit-msg` among its hook types. An earlier
       install leaves it absent, and conventional-commit enforcement silently does not run.
       Verify with `ls .git/hooks/`.
 

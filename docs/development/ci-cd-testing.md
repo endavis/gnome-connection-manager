@@ -65,10 +65,14 @@ Older Python versions may continue to work but are not actively maintained:
 
 To balance test coverage with CI efficiency:
 
-| PR State | Python Versions Tested | Jobs |
-|----------|----------------------|------|
-| Default | Bookends only (oldest + newest) × 3 OSes | 6 |
-| `full-matrix` label | Middle versions only × 3 OSes | 3 per middle version |
+| Run | Python Versions Tested | Operating systems | Jobs |
+|-----|----------------------|-------------------|------|
+| Pull request (default) | Bookends (oldest + newest) | Linux on both; Windows on the newest only | 3 |
+| `full-matrix` label | Middle versions only | all 3 (`all_os: true`) | 3 per middle version |
+| Release and TestPyPI | Bookends | all 3 (`all_os: true`) | 6 |
+| Nightly (`nightly-matrix.yml`, on `main`) | Bookends | all 3 (`all_os: true`) | 6 |
+
+`ci.yml` takes an `all_os` boolean input (default `false`) beside `full_matrix`. A pull request leaves it off, so macOS and the older-Python Windows runs happen nightly and at release, not on every push. A nightly failure opens or updates an `automated` issue titled "Nightly OS matrix failed on main".
 
 The **bookend strategy** tests the oldest and newest supported versions. If both pass, intermediate versions are assumed compatible. Use the `full-matrix` label when:
 - Making changes that might affect version compatibility
@@ -112,7 +116,7 @@ runs, and it already does what a hand-rolled `tests.yml` would:
 | | |
 | :--- | :--- |
 | **Matrix** | derived from `.github/python-versions.json` via `.github/actions/python-versions`, not hardcoded — so a version policy change moves one file |
-| **Platforms** | `ubuntu-latest`, `windows-latest`, `macos-latest` |
+| **Platforms** | `ubuntu-latest` and `windows-latest` on pull requests, plus `macos-latest` when `all_os` is set (see [CI Matrix Strategy](#ci-matrix-strategy)) |
 | **Checks** | the `lint` and `docs` jobs run `doit` tasks, so CI and a local run cannot diverge; the `test` job calls `pytest` directly (see [Pipeline Jobs](#pipeline-jobs)) |
 | **Coverage** | `package_name` **and** `tools/`, gated by `fail_under` in `pyproject.toml` |
 | **Actions** | pinned to commit SHAs with a `# vX.Y.Z` comment (see [Action pinning](#action-pinning-and-workflow-permissions)) |
@@ -633,7 +637,7 @@ gh pr edit <PR-NUMBER> --add-label "full-matrix"
 Adding the label triggers the dedicated `.github/workflows/ci-full-matrix.yml`
 workflow. That workflow is a thin dispatcher: it fires only on the `labeled`
 event, confirms the label name is `full-matrix`, and then calls `ci.yml` via
-`workflow_call` with `full_matrix: true`. The main `ci.yml` no longer fires on
+`workflow_call` with `full_matrix: true` and `all_os: true`. The main `ci.yml` no longer fires on
 label events itself, which keeps the per-push `CI` check from being duplicated
 every time a label is added to a PR.
 
