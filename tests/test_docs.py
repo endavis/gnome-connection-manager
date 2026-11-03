@@ -1034,6 +1034,14 @@ def test_agents_md_describes_every_module():
     assert not missing, f"AGENTS.md does not mention: {missing}"
 
 
+def test_project_structure_names_every_module():
+    """The Project Layout tree in PROJECT_STRUCTURE.md went stale as AGENTS.md's did (#462)."""
+    text = (REPO / "docs" / "PROJECT_STRUCTURE.md").read_text()
+    missing = [str(path.relative_to(REPO)) for path in source_modules() if path.name not in text]
+
+    assert not missing, f"PROJECT_STRUCTURE.md does not mention: {missing}"
+
+
 SPEC = REPO / "docs" / "SPEC.md"
 
 # The figures are approximate by intent ("measured from the current tree"), so this
