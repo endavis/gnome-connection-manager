@@ -41,7 +41,7 @@ msgstr "Zaznacz wszystko"
 #: ../gnome_connection_manager.py:696 ../gnome_connection_manager.py:749
 #: ../gnome_connection_manager.py:786
 msgid "Save buffer to file"
-msgstr "Zapisz buffor do pliku"
+msgstr "Zapisz bufor do pliku"
 
 #: ../gnome_connection_manager.py:246 ../gnome_connection_manager.py:359
 #: ../gnome_connection_manager.py:1635 ../gnome_connection_manager.py:368
@@ -55,7 +55,7 @@ msgstr "Zapisz buffor do pliku"
 #: ../gnome_connection_manager.py:2797 ../gnome_connection_manager.py:819
 #: ../gnome_connection_manager.py:2575 ../gnome_connection_manager.py:2969
 msgid "Close console"
-msgstr "Zamknij konsole"
+msgstr "Zamknij konsolę"
 
 msgid "Connect"
 msgstr "Połącz"
@@ -234,7 +234,7 @@ msgstr "Eksportuj konfigurację"
 #: ../gnome_connection_manager.py:1527 ../gnome_connection_manager.py:1576
 #: ../gnome_connection_manager.py:1677 ../gnome_connection_manager.py:1846
 msgid "Do you really want to remove host"
-msgstr "Napewno chcesz usunąć hosta"
+msgstr "Czy na pewno chcesz usunąć hosta"
 
 #: ../gnome_connection_manager.py:608 ../gnome_connection_manager.py:997
 #: ../gnome_connection_manager.py:1008 ../gnome_connection_manager.py:1134
@@ -242,7 +242,7 @@ msgstr "Napewno chcesz usunąć hosta"
 #: ../gnome_connection_manager.py:1534 ../gnome_connection_manager.py:1583
 #: ../gnome_connection_manager.py:1684 ../gnome_connection_manager.py:1853
 msgid "Do you really want to remove all hosts in group"
-msgstr "Napewno chcesz usunąć wszystkie hosty z grupy"
+msgstr "Czy na pewno chcesz usunąć wszystkie hosty z grupy"
 
 #: ../gnome_connection_manager.py:1056 ../gnome_connection_manager.py:1065
 #: ../gnome-connection-manager.glade.h:53
@@ -381,7 +381,7 @@ msgstr "Separator słowa"
 #: ../gnome_connection_manager.py:2180 ../gnome_connection_manager.py:2281
 #: ../gnome_connection_manager.py:2399 ../gnome_connection_manager.py:2568
 msgid "Buffer size"
-msgstr "Rozmiar buffora"
+msgstr "Rozmiar bufora"
 
 #: ../gnome_connection_manager.py:942 ../gnome_connection_manager.py:1403
 #: ../gnome_connection_manager.py:1414 ../gnome_connection_manager.py:1613
@@ -413,7 +413,7 @@ msgstr "Potwierdź przy zamykaniu konsoli"
 #: ../gnome_connection_manager.py:2186 ../gnome_connection_manager.py:2287
 #: ../gnome_connection_manager.py:2406 ../gnome_connection_manager.py:2576
 msgid "Confirm on exit"
-msgstr "Potwierdź przy wyjśćiu"
+msgstr "Potwierdź przy wyjściu"
 
 #: ../gnome_connection_manager.py:1431 ../gnome_connection_manager.py:1443
 #: ../gnome_connection_manager.py:1642 ../gnome_connection_manager.py:1807
@@ -459,13 +459,13 @@ msgstr "Zaznacz kolor tła"
 #: ../gnome-connection-manager.glade:2956
 #: ../gnome-connection-manager.glade:3397
 msgid "Select foreground color"
-msgstr "Zaznacz kolo textu"
+msgstr "Wybierz kolor tekstu"
 
 #: ../gnome-connection-manager.glade.h:5 ../gnome-connection-manager.glade:180
 #: ../gnome-connection-manager.glade:192 ../gnome-connection-manager.glade:227
 #: ../gnome-connection-manager.glade:366
 msgid "Open local console"
-msgstr "Otwórz lokalną konsole"
+msgstr "Otwórz lokalną konsolę"
 
 msgid "Add"
 msgstr "Dodaj"
@@ -571,7 +571,7 @@ msgstr "Polecenia predefiniowane"
 #: ../gnome-connection-manager.glade:268 ../gnome-connection-manager.glade:280
 #: ../gnome-connection-manager.glade:315 ../gnome-connection-manager.glade:454
 msgid "Connect to selected host or all hosts in selected group"
-msgstr "Połąćż z wybranym hostem lub wybraną grupą"
+msgstr "Połącz z wybranym hostem lub wybraną grupą"
 
 msgid "Edit Host"
 msgstr "Edytuj hosta"
@@ -697,13 +697,13 @@ msgstr "Port zdalny"
 #: ../gnome-connection-manager.glade:639 ../gnome-connection-manager.glade:651
 #: ../gnome-connection-manager.glade:686 ../gnome-connection-manager.glade:825
 msgid "Split console horizontally"
-msgstr "Podziel konsole w poziomie"
+msgstr "Podziel konsolę w poziomie"
 
 #: ../gnome-connection-manager.glade.h:33
 #: ../gnome-connection-manager.glade:675 ../gnome-connection-manager.glade:687
 #: ../gnome-connection-manager.glade:722 ../gnome-connection-manager.glade:861
 msgid "Split console vertically"
-msgstr "Podziel konsole w pionie"
+msgstr "Podziel konsolę w pionie"
 
 #: ../gnome-connection-manager.glade.h:34
 #: ../gnome-connection-manager.glade:1440
@@ -762,7 +762,7 @@ msgstr "Domyślne kolory"
 #: ../gnome-connection-manager.glade:1680
 #: ../gnome-connection-manager.glade:1819
 msgid "User"
-msgstr "Urzytkownik"
+msgstr "Użytkownik"
 
 #. TRANSLATORS: Replace this string with your names, one name per line.
 #: ../gnome-connection-manager.glade.h:44
@@ -831,7 +831,7 @@ msgstr "Liczba sekund między pakietami keep-alive"
 #: ../gnome_connection_manager.py:759 ../gnome_connection_manager.py:864
 #: ../gnome_connection_manager.py:796 ../gnome_connection_manager.py:901
 msgid "Reset console"
-msgstr "Zresetuj konsole"
+msgstr "Zresetuj konsolę"
 
 #: ../gnome_connection_manager.py:506 ../gnome_connection_manager.py:581
 #: ../gnome_connection_manager.py:555 ../gnome_connection_manager.py:649
@@ -840,7 +840,7 @@ msgstr "Zresetuj konsole"
 #: ../gnome_connection_manager.py:765 ../gnome_connection_manager.py:870
 #: ../gnome_connection_manager.py:802 ../gnome_connection_manager.py:907
 msgid "Reset and Clear console"
-msgstr "Zresetuj i wyczyść konsole"
+msgstr "Zresetuj i wyczyść konsolę"
 
 #: ../gnome_connection_manager.py:1773 ../gnome_connection_manager.py:1905
 #: ../gnome_connection_manager.py:2188 ../gnome_connection_manager.py:2289
@@ -852,7 +852,7 @@ msgstr "Ukryj przycisk dotacji"
 #: ../gnome_connection_manager.py:2401 ../gnome_connection_manager.py:2502
 #: ../gnome_connection_manager.py:2633 ../gnome_connection_manager.py:2803
 msgid "Select font"
-msgstr "Wybierz czciąnkę"
+msgstr "Wybierz czcionkę"
 
 #: ../gnome-connection-manager.glade:1321
 #: ../gnome-connection-manager.glade:1423
@@ -879,7 +879,7 @@ msgstr "Przekierowanie X11"
 #: ../gnome-connection-manager.glade:3298
 #: ../gnome-connection-manager.glade:3437
 msgid "Use default fixed width font"
-msgstr "Użyj domyślnej szerokość czcionki"
+msgstr "Użyj domyślnej czcionki o stałej szerokości"
 
 #: ../gnome-connection-manager.glade:2579
 #: ../gnome-connection-manager.glade:2681
@@ -905,7 +905,7 @@ msgstr "Połącz ponownie"
 #: ../gnome_connection_manager.py:882 ../gnome_connection_manager.py:808
 #: ../gnome_connection_manager.py:919
 msgid "Clone console"
-msgstr "Klon konsole"
+msgstr "Sklonuj konsolę"
 
 msgid "No open consoles"
 msgstr "Brak otwartych konsol"
@@ -970,7 +970,7 @@ msgstr "Odwróć zaznaczenie"
 #: ../gnome-connection-manager.glade:3981
 #: ../gnome-connection-manager.glade:4120
 msgid "Enter text to send to hosts: "
-msgstr "Wpisz tekst do wysłanie do hostów: "
+msgstr "Wpisz tekst do wysłania do hostów: "
 
 #: ../gnome_connection_manager.py:2149 ../gnome_connection_manager.py:2433
 #: ../gnome_connection_manager.py:2534 ../gnome_connection_manager.py:2665
@@ -1006,7 +1006,7 @@ msgstr "Nie można otworzyć pliku log do zapisu"
 #: ../gnome_connection_manager.py:2182 ../gnome_connection_manager.py:2283
 #: ../gnome_connection_manager.py:2401 ../gnome_connection_manager.py:2570
 msgid "Logs path"
-msgstr "Log ścieżka"
+msgstr "Ścieżka logów"
 
 #: ../gnome-connection-manager.glade:1458
 #: ../gnome-connection-manager.glade:1507
@@ -1051,8 +1051,8 @@ msgid ""
 "<span size='smaller'>Use ##D=milliseconds to insert a delay.\n"
 "Eg: ##D=1000</span>"
 msgstr ""
-"<span size='smaller'>Użyj ##D=milisekund wprowadzić opóźnienie.\n"
-"Np: ##D=1000</span>"
+"<span size='smaller'>Użyj ##D=milisekund, aby wprowadzić opóźnienie.\n"
+"Np.: ##D=1000</span>"
 
 #: ../gnome-connection-manager.glade:3732
 #: ../gnome-connection-manager.glade:4043
@@ -1098,7 +1098,7 @@ msgstr "Dodatkowe argumenty"
 #: ../gnome-connection-manager.glade:2015
 #: ../gnome-connection-manager.glade:2154
 msgid "Extra arguments to pass to command line"
-msgstr "Dodatkowe argumenty przejść do wiersza poleceń"
+msgstr "Dodatkowe argumenty przekazywane do wiersza poleceń"
 
 #: ../gnome-connection-manager.glade:2851
 #: ../gnome-connection-manager.glade:2990

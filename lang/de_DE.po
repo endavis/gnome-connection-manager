@@ -167,7 +167,7 @@ msgstr "Öffnen"
 #: ../gnome_connection_manager.py:1400 ../gnome_connection_manager.py:1491
 #: ../gnome_connection_manager.py:1660
 msgid "There are"
-msgstr "Hallo"
+msgstr "Es gibt"
 
 #: ../gnome_connection_manager.py:530 ../gnome_connection_manager.py:820
 #: ../gnome_connection_manager.py:831 ../gnome_connection_manager.py:951
@@ -176,7 +176,7 @@ msgstr "Hallo"
 #: ../gnome_connection_manager.py:1400 ../gnome_connection_manager.py:1491
 #: ../gnome_connection_manager.py:1660
 msgid "open consoles, exit anyway?"
-msgstr "Es sind noch Terminals geöffnet. Trotzdem beenden?"
+msgstr "offene Terminals. Trotzdem beenden?"
 
 #: ../gnome_connection_manager.py:838 ../gnome_connection_manager.py:849
 #: ../gnome_connection_manager.py:969 ../gnome_connection_manager.py:1098
@@ -226,7 +226,7 @@ msgstr "Die Serverliste wird überschrieben. Sicher?"
 #: ../gnome_connection_manager.py:1538 ../gnome_connection_manager.py:1573
 #: ../gnome_connection_manager.py:1707 ../gnome_connection_manager.py:1742
 msgid "Invalid file"
-msgstr "Üngültige Datei"
+msgstr "Ungültige Datei"
 
 #: ../gnome_connection_manager.py:880 ../gnome_connection_manager.py:891
 #: ../gnome_connection_manager.py:1011 ../gnome_connection_manager.py:1144
@@ -952,7 +952,7 @@ msgstr "Erneut mit Server verbinden"
 #: ../gnome_connection_manager.py:882 ../gnome_connection_manager.py:808
 #: ../gnome_connection_manager.py:919
 msgid "Clone console"
-msgstr "Klonen terminal"
+msgstr "Terminal klonen"
 
 msgid "No open consoles"
 msgstr "Keine offenen Terminals"
@@ -1041,15 +1041,14 @@ msgstr "Kopieren und Einfügen"
 #: ../gnome-connection-manager.glade:1327
 #: ../gnome-connection-manager.glade:1466
 msgid "To create subgroups use format group1/group2/group3"
-msgstr ""
-"So erstellen sie untergruppen verwenden das format gruppen1/gruppen2/gruppen3"
+msgstr "Zum Erstellen von Untergruppen das Format gruppe1/gruppe2/gruppe3 verwenden"
 
 #: ../gnome_connection_manager.py:706 ../gnome_connection_manager.py:817
 #: ../gnome_connection_manager.py:724 ../gnome_connection_manager.py:835
 #: ../gnome_connection_manager.py:777 ../gnome_connection_manager.py:888
 #: ../gnome_connection_manager.py:814 ../gnome_connection_manager.py:925
 msgid "Enable logging"
-msgstr "Aktivieren log"
+msgstr "Protokollierung aktivieren"
 
 msgid "Add Host"
 msgstr "Server hinzufügen"
@@ -1086,7 +1085,7 @@ msgstr "Agent Forwarding"
 #: ../gnome-connection-manager.glade:2029
 #: ../gnome-connection-manager.glade:2168
 msgid "Enable Logging"
-msgstr "Aktivieren Log"
+msgstr "Protokollierung aktivieren"
 
 #: ../gnome-connection-manager.glade:2012
 #: ../gnome-connection-manager.glade:2085
@@ -1125,7 +1124,7 @@ msgstr ""
 #: ../gnome-connection-manager.glade:4043
 #: ../gnome-connection-manager.glade:4183
 msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN for history</span>"
-msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN für geschichte</span>"
+msgstr "<span size=\"smaller\">STRG+HOCH/STRG+RUNTER für Verlauf</span>"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Never"
@@ -1137,7 +1136,7 @@ msgstr "Immer"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Only on clean exit"
-msgstr "Nur auf sauberen ausstieg"
+msgstr "Nur bei fehlerfreiem Beenden"
 
 #: ../gnome-connection-manager.glade:1931
 #: ../gnome-connection-manager.glade:2070
@@ -1153,7 +1152,7 @@ msgid ""
 "9: max"
 msgstr ""
 "Komprimierungsstufe: \n"
-"leeren: default\n"
+"leer: Standardkomprimierung\n"
 "1: min\n"
 "9: max"
 
@@ -1184,7 +1183,7 @@ msgstr "Delete:"
 
 #: ../gnome_connection_manager.py:780 ../gnome-connection-manager.glade:231
 msgid "Copy all"
-msgstr "Kopieren alle"
+msgstr "Alles kopieren"
 
 #: ../gnome_connection_manager.py:2571
 msgid "Open local console on startup"

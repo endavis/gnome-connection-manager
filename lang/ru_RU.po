@@ -1108,7 +1108,7 @@ msgstr "Дополнительные параметры для передачи 
 #: ../gnome-connection-manager.glade:2851
 #: ../gnome-connection-manager.glade:2990
 msgid "Key sequences"
-msgstr "Ключи последовательности:"
+msgstr "Последовательности клавиш"
 
 #: ../gnome-connection-manager.glade:2880
 #: ../gnome-connection-manager.glade:3019
@@ -1733,7 +1733,7 @@ msgid "Windows Remote Desktop"
 msgstr "Удалённый рабочий стол Windows"
 
 msgid "Windows Remote Desktop asks for the password itself, and takes a host's Display and a size in pixels. Its own settings decide the rest."
-msgstr "Удалённый рабочий стол Windows сам запрашивает пароль и берёт у узла «Отображение» и размер в пикселях. Остальное определяют его собственные настройки."
+msgstr "Удалённый рабочий стол Windows сам запрашивает пароль и берёт у хоста «Отображение» и размер в пикселях. Остальное определяют его собственные настройки."
 
 msgid "GCM {new} is available. You are running {current}."
 msgstr "Доступен GCM {new}. Используемая версия: {current}."
