@@ -29,7 +29,13 @@ freeze the interface. `relay_command` starts it with `childpython.module_command
 `python -m` (#415). A change of the tab's size reaches it as SIGWINCH, and
 `on_sigwinch` passes the size on itself. Python retries a `select` a signal
 interrupted once the handler has run (PEP 475), so a size left for the loop reached an
-idle program only when a byte next went through, measured (#319). `relay` makes the
+idle program only when a byte next went through, measured (#319). Python runs a handler
+only when its eval loop next checks, so a SIGWINCH landing after the last check and
+before `select` entered the kernel left `select` blocked all the same: 4 of 48 first
+resizes lost under load (#478). `relay` therefore sets `signal.set_wakeup_fd` to a
+non-blocking pipe, watches its read end in `select` and drains it, so that the signal
+wakes the loop and the handler runs. The pipe is made only once the handler is set, which
+only the main thread can do. `relay` makes the
 program's pty itself, with `os.openpty`, and sizes it before it forks. `pty.fork` starts
 the program first, and measured under load, a program that read its size at once then
 read 0 by 0 (#339). It sends every OSC 52 write it finds, the two of a pair included:
@@ -51,6 +57,12 @@ once and 3 ms apart, and gives what arrives to the real `Wmain._apply_clipboard_
 with a clipboard that counts its sets (#393). It prints nothing, as `sys.stdout` stays a
 stand-in until teardown, and holds the clock still only once the relay has returned,
 since the relay's own limit reads it.
+`test_a_resize_that_lands_before_select_still_wakes_the_relay` sends the SIGWINCH from a
+helper thread with `signal.pthread_kill`, so that only the C handler runs, as when the
+signal lands before `select`, and no timer interrupts `select`: without the wakeup fd
+nothing wakes the relay until the program ends. `_IDLE_PROGRAM` in `tests/test_osc52.py`
+writes with `os.write` and sleeps in short steps, as a handler's `print` can reenter a
+print and a long sleep can lose the signal (#478).
 
 ## A session's files
 

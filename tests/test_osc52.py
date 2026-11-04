@@ -808,7 +808,8 @@ def test_the_relay_hands_on_the_argv_the_child_would_have_had():
 # Reports the size it starts at, and each SIGWINCH with the size it then reads, and
 # otherwise waits: after READY nothing it does passes through the relay. It writes with
 # os.write, not print: a SIGWINCH landing inside a buffered print re-entered it and
-# raised "reentrant call inside BufferedWriter", so the program died (#478).
+# raised "reentrant call inside BufferedWriter", so the program died (#478). It sleeps in
+# short steps: one long sleep can lose a SIGWINCH landing just before it (#478).
 _IDLE_PROGRAM = """
 import fcntl, os, signal, struct, sys, termios, time
 
@@ -821,7 +822,8 @@ def on_winch(*_):
 
 signal.signal(signal.SIGWINCH, on_winch)
 os.write(1, f"READY {size()}\\n".encode())
-time.sleep(60)
+while True:
+    time.sleep(0.05)
 """
 
 

@@ -92,6 +92,10 @@ def read_all(fd):
     return data
 
 
+def open_fd_count():
+    return len(list(Path("/proc/self/fd").iterdir()))
+
+
 def resize(fd, rows, cols):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
@@ -255,6 +259,56 @@ def test_a_resize_reaches_the_program(monkeypatch, fds):
     output = b"".join(seen) + read_all(master)
     assert status == 0, output
     assert re.search(rb"WINCH 30x100\r?\n", output), output
+
+
+def test_a_resize_that_lands_before_select_still_wakes_the_relay(monkeypatch, fds):
+    """A SIGWINCH Python has not yet run a handler for must still end the relay's wait
+    (#478). A helper thread resizes the terminal once the program is ready, then signals
+    itself: the signal reaches that thread only, so its C handler trips the flag and writes
+    the wakeup byte while the main thread's `select` is not interrupted, as when a signal
+    lands after the last check and before `select` blocks. No timer runs here, as its
+    SIGALRM would interrupt `select` and hide the race. Without the wakeup fd nothing wakes
+    the relay until the program ends, and the output lacks the size. The 0.2 s wait can
+    only let the test pass wrongly, never fail it."""
+    master, slave = fds.terminal()
+    resize(master, 24, 80)
+    seen = []
+
+    def resize_once_ready():
+        ready = b""
+        while b"READY" not in ready:
+            ready += os.read(master, 4096)
+        seen.append(ready)
+        time.sleep(0.2)
+        resize(master, 30, 100)
+        signal.pthread_kill(threading.get_ident(), signal.SIGWINCH)
+
+    helper = threading.Thread(target=resize_once_ready, daemon=True)
+    helper.start()
+    command = [sys.executable, "-I", "-c", WINCH_PROGRAM]
+    status = run_relay(monkeypatch, command, slave, slave)
+    helper.join(LIMIT)
+
+    output = b"".join(seen) + read_all(master)
+    assert status == 0, output
+    assert re.search(rb"WINCH 30x100\r?\n", output), output
+
+
+def test_the_wakeup_fd_is_given_back_and_no_pipe_is_left(monkeypatch, fds):
+    """What `set_wakeup_fd` held before the relay is what it holds after, and the relay's
+    pipe is closed."""
+    master, slave = fds.terminal()
+    before = signal.set_wakeup_fd(-1)
+    signal.set_wakeup_fd(before)
+    open_before = open_fd_count()
+
+    run_relay(monkeypatch, ["sh", "-c", "printf done"], slave, slave)
+
+    after = signal.set_wakeup_fd(-1)
+    signal.set_wakeup_fd(after)
+    assert after == before
+    assert open_fd_count() == open_before
+    assert read_all(master) == b"done"
 
 
 def test_what_is_typed_reaches_the_program_and_its_end_ends_only_input(monkeypatch, fds):
@@ -488,6 +542,7 @@ def test_off_the_main_thread_the_relay_runs_without_a_resize_handler(monkeypatch
     out_read, out_write = fds.pipe()
     own = put_in_place(monkeypatch, input_of(fds, b""), out_write)
     result = []
+    open_before = open_fd_count()
 
     def run():
         try:
@@ -504,6 +559,7 @@ def test_off_the_main_thread_the_relay_runs_without_a_resize_handler(monkeypatch
         thread.start()
         thread.join(LIMIT)
 
+    assert open_fd_count() == open_before  # no pipe left
     fds.close(out_write)
     assert result == [7]
     assert read_all(out_read) == b"off"

@@ -157,12 +157,37 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
     # The handler passes a resize on itself. The loop waits in select, which a signal does
     # not end (PEP 475), so a resize left to the loop reached an idle program only when a
     # byte next went through, in either direction (#319).
+    #
+    # Python runs a handler only when its eval loop next checks for one, so a signal that
+    # lands after the last check and before `select` enters the kernel leaves `select`
+    # blocked, not interrupted, until a byte comes, and the resize is lost for an idle
+    # program: measured under load, 4 of 48 first resizes (#478). The wakeup fd closes
+    # that window: the C-level handler writes a byte to a pipe whenever the signal
+    # arrives, `select` watches the pipe, and so it returns and the loop's next check
+    # runs the handler. The forked child keeps the C-level wakeup fd until it execs,
+    # which is harmless: a byte the relay drains, and the pipe's fds are not inherited.
     def on_sigwinch(_signum, _frame):
         set_window_size(master_fd, window_size(sys.stdout.fileno()))
 
     with_winch = False
+    wake_read = wake_write = previous_wakeup = -1
     try:
         signal.signal(signal.SIGWINCH, on_sigwinch)
+        # Off the main thread neither a handler nor a wakeup fd can be set, so the pipe
+        # is made only once the handler is, and the wakeup fd is the last that can fail.
+        read_end, write_end = os.pipe()
+        os.set_blocking(read_end, False)
+        os.set_blocking(write_end, False)
+        try:
+            previous_wakeup = signal.set_wakeup_fd(
+                write_end,
+                warn_on_full_buffer=False,  # pragma: no mutate - a full pipe is already a wake-up
+            )
+        except ValueError:
+            os.close(read_end)
+            os.close(write_end)
+            raise
+        wake_read, wake_write = read_end, write_end
         with_winch = True
     except ValueError:
         pass
@@ -199,6 +224,8 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
     try:
         while True:
             watched = [master_fd, stdin_fd] if stdin_open else [master_fd]
+            if with_winch:
+                watched.append(wake_read)
             try:
                 readable, _, _ = select.select(watched, [], [])
             except OSError as exc:
@@ -206,6 +233,12 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
                     # Never reached: Python retries a select a signal interrupts (PEP 475).
                     continue  # pragma: no mutate
                 break
+            if with_winch and wake_read in readable:
+                # Only a wake-up: the handler runs now that select has returned. Drained
+                # until the pipe is empty, so that no byte left do not wake it again.
+                with contextlib.suppress(BlockingIOError):
+                    while os.read(wake_read, BUFFER_SIZE):
+                        pass
             if master_fd in readable:
                 try:
                     chunk = os.read(master_fd, BUFFER_SIZE)
@@ -239,8 +272,12 @@ def relay(command, clipboard_socket=None, raw_log=None, timing_log=None):
         clipboard.close()
         recorder.close()
         if with_winch:
-            # The handler must not reach the pty's number once it is closed.
+            # The handler must not reach the pty's number once it is closed, nor the
+            # wakeup fd the pipe's.
+            signal.set_wakeup_fd(previous_wakeup)
             signal.signal(signal.SIGWINCH, signal.SIG_DFL)
+            os.close(wake_read)
+            os.close(wake_write)
         # Nothing closes the pty before this, so closing it does not fail (#337).
         with contextlib.suppress(OSError):  # pragma: no mutate
             os.close(master_fd)
