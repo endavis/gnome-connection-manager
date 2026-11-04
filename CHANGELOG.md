@@ -52,6 +52,10 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- **A menu taller than its room opens beside its button or click**, cut at the edge of the
+  screen (or under Wayland, of GCM's window), and scrolls, where it used to start at the top
+  of the room and cover what it opened from. Under Wayland it no longer runs past a short
+  window or into its shadow (#402).
 - **A menu opened near the right edge** of the window opens leftwards, or slides, instead of
   running off the screen under WSLg (#398).
 - **A menu opens at its top.** GTK kept a menu's scroll position from one opening to the

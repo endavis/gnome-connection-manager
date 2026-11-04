@@ -14,8 +14,8 @@ menu lands where it was asked for, past the bottom edge.
 
 So the placement is worked out here, from the menu's real height and the room it has, and
 GTK is asked for that: below the row, else above it, else slid along the room until it
-fits. A menu taller than the whole room starts at the top of it and scrolls, as GTK scrolls
-one taller than the monitor. Whether the room is the monitor or the window is `app.py`'s
+fits. A menu taller than the whole room hangs beside its row, cut to that side's space, and
+scrolls (#402); `app.py` cuts it, which GTK does only for a resizable toplevel. Whether the room is the monitor or the window is `app.py`'s
 to say: a Wayland client does not know where its window is on the output.
 
 The same is worked out across (#398): Weston does not flip or slide a menu sideways
@@ -50,11 +50,14 @@ class Placement(NamedTuple):
     stands on the row's top. `shift` moves it on from there, down when positive and up
     when negative: the slide, which is 0 for a menu that fits on its side of the row.
     `scrolls` is whether the menu is taller than the room, so that only part of it shows.
+    `height` is the height the menu is shown at: its own where it fits the room, else the
+    space on its side of the row, which the caller cuts it to (#402).
     """
 
     below: bool
     shift: int
     scrolls: bool
+    height: int
 
 
 def place_menu(top: int, bottom: int, height: int, low: int, high: int) -> Placement:
@@ -65,21 +68,34 @@ def place_menu(top: int, bottom: int, height: int, low: int, high: int) -> Place
     to the side with more room, below on a tie, and slides along the room until it is
     inside, and so covers the row: nothing else puts it on the screen. The menu is always
     inside the room, whichever way the row stands to it: one scrolled half out of sight
-    has an edge beyond it. A menu taller than the room is as tall as the room, and starts
-    at `low`: `scrolls` is True for it, and only for it, so a menu exactly as tall as the
-    room does not.
+    has an edge beyond it. A menu taller than the room hangs beside its row on the side
+    with more room, below on a tie, and is cut to that side's space (`height`): `scrolls`
+    is True for it, and only for it, so a menu exactly as tall as the room does not. Where
+    the row fills the room it has no side, and the menu is the whole room from `low`.
     """
     room = high - low
-    shown = min(height, room)
+    if height > room:
+        # Taller than the room: it hangs beside its row, on the side with more room (below
+        # on a tie), cut to that side's space, and scrolls (#402). Where the row fills the
+        # room there is no side, and it is the whole room from its top.
+        space_below = high - max(bottom, low)
+        space_above = min(top, high) - low
+        below = space_below >= space_above
+        shown = space_below if below else space_above
+        if shown <= 0:
+            return Placement(True, low - bottom, True, room)
+        hung = bottom if below else top - shown
+        start = max(bottom, low) if below else min(top, high) - shown
+        return Placement(below, start - hung, True, shown)
     space_below = high - bottom
     space_above = top - low
     # Below where it fits there. Where it does not, the side with more room, which is
     # above wherever it fits above, as then there is more room above than below, and
     # below on a tie.
-    below = shown <= space_below or space_below >= space_above
-    hung = bottom if below else top - shown
-    start = min(max(hung, low), high - shown)
-    return Placement(below, start - hung, height > room)
+    below = height <= space_below or space_below >= space_above
+    hung = bottom if below else top - height
+    start = min(max(hung, low), high - height)
+    return Placement(below, start - hung, False, height)
 
 
 class Across(NamedTuple):

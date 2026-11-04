@@ -878,6 +878,8 @@ FOREIGN_NAMES = {
     # GTK's C source, and a method PyGObject does not have
     "gtk_menu_position",
     "gtk_window_guess_default_size",
+    "gtk_window_compute_hints",
+    "gtkmenu.c",
     "Gdk.Window.add_filter",
     # The method a fake offered that the real Vte.Terminal lacks (#30)
     "select_none()",

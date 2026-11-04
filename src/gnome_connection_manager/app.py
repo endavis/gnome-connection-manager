@@ -1896,6 +1896,31 @@ def menu_width(menu: Gtk.Menu) -> int:
     return width
 
 
+def window_content(toplevel: Gdk.Window) -> tuple[int, int, int, int]:
+    """The span of the content of the `Gtk.Window` drawn in `toplevel`, as (left, top,
+    right, bottom) in root coordinates (#402).
+
+    Under Wayland a window with client-side decorations has an invisible shadow inside its
+    GdkWindow: measured on Weston 14, GCM's main window, not maximized, was 1920x282 with
+    its child at (26, 67, 1868, 186), so the GdkWindow counted 29 pixels of shadow below
+    the visible bottom edge. Maximized there is none, and on X11 the child is at
+    (0, 0, w, h). Falls back to the GdkWindow's own span where no `Gtk.Window` draws in
+    `toplevel`, or it has no child.
+    """
+    left, top = toplevel.get_root_coords(0, 0)
+    right, bottom = left + toplevel.get_width(), top + toplevel.get_height()
+    for candidate in Gtk.Window.list_toplevels():
+        if candidate.get_window() is not toplevel:
+            continue
+        child = candidate.get_child()
+        if child is None:
+            break
+        area = child.get_allocation()
+        left, top = toplevel.get_root_coords(area.x, area.y)
+        return left, top, left + area.width, top + area.height
+    return left, top, right, bottom
+
+
 def menu_room(window: Gdk.Window) -> tuple[int, int, int, int] | None:
     """The room, as (left, top, right, bottom), that a menu opened from `window` has to
     sit in, in the coordinates `Gdk.Window.get_root_coords` gives; None where either span
@@ -1906,13 +1931,13 @@ def menu_room(window: Gdk.Window) -> tuple[int, int, int, int] | None:
     every window with no parent at (0, 0), so a monitor's geometry means nothing there:
     read in `gdk_window_wayland_get_root_coords`, and measured on Weston 13 (#392). A menu
     that fits inside GCM's window stays inside it, on every compositor. A maximized window
-    fills the output, and then the two are the same.
+    fills the output, and then the two are the same. The window's span is its content's,
+    `window_content`, which leaves out the shadow of its decorations (#402).
     """
     display = window.get_display()
     if display.__gtype__.name == "GdkWaylandDisplay":
         toplevel = window.get_toplevel()
-        left, top = toplevel.get_root_coords(0, 0)
-        right, bottom = left + toplevel.get_width(), top + toplevel.get_height()
+        left, top, right, bottom = window_content(toplevel)
     else:
         monitor = display.get_monitor_at_window(window)
         if monitor is None:
@@ -2001,8 +2026,8 @@ def popup_menu_at(
     flip, slide and resize to the compositor, and Weston's, which WSLg's is built on,
     applies none of them (read in its source), so a menu opened low in the window ran off
     the bottom of the screen. The hints stay on for a compositor that does move a menu. A menu taller than the room is not
-    told it may resize in height, so that GTK makes it no taller than the monitor and
-    scrolls it. `east` means "prefer leftwards": the menu's right edge hangs from the
+    told it may resize in height, and is cut to the room beside its rectangle through its
+    toplevel's default size, which needs the toplevel resizable (#402), so that it scrolls. `east` means "prefer leftwards": the menu's right edge hangs from the
     rectangle's, as from a button at the right end of a strip, where it fits.
 
     The window is `event.window`, not the widget's: a terminal has no window of its own,
@@ -2032,7 +2057,7 @@ def popup_menu_at(
         rect.y = int(event.y)
         rect.width = 1
         rect.height = 1
-    placement = menuplacement.Placement(below=True, shift=0, scrolls=False)
+    placement = menuplacement.Placement(below=True, shift=0, scrolls=False, height=0)
     across = menuplacement.Across(leftwards=east, shift=0)
     room = menu_room(window)
     if room is not None:
@@ -2053,6 +2078,20 @@ def popup_menu_at(
     if not placement.scrolls:
         hints |= Gdk.AnchorHints.RESIZE_Y
     # Set at each opening: a menu is opened again, and the last placement must not stay.
+    # A menu is cut to a height only through its toplevel, which GTK makes non-resizable
+    # and so clamps to the monitor: resizable first, then a default size (#402). The
+    # toplevel is reused, so a menu that fits gets both back.
+    toplevel = menu.get_toplevel()
+    if placement.scrolls:
+        toplevel.set_resizable(True)
+        toplevel.set_default_size(-1, placement.height)
+        # Also the size now: measured on X11, a menu reopened with a cut of another height
+        # was placed by the size it had, and a menu that hangs from its bottom edge ended
+        # below where it was asked to (#402).
+        toplevel.resize(menu_width(menu), placement.height)
+    else:
+        toplevel.set_default_size(-1, -1)
+        toplevel.set_resizable(False)
     menu.set_property("anchor-hints", hints)
     menu.set_property("rect-anchor-dy", placement.shift)
     menu.set_property("rect-anchor-dx", across.shift)
