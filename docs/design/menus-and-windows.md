@@ -320,3 +320,10 @@ connected after `new()` and before the dialog is shown, so a new host's dialog r
 `on_cmbType_changed`. `tests/test_window_fit.py` records each dialog's size at its first
 map and holds it equal to the size it keeps, on the real work area and a small one.
 Cluster keeps its glade default size, which no fit touches; that was not changed.
+
+Measured on headless sway 1.11 (`WLR_BACKENDS=headless`, `GDK_BACKEND=wayland`, `WAYLAND_DEBUG=client`),
+opening Preferences, New host and Edit host eight times each, the window geometries each
+dialog's xdg_surface was given, a size listed again only when it changed. Before, on
+`main`: Preferences `289x245 -> 597x1013 -> 794x984` and a host dialog
+`544x453 -> 544x474`, every time. After: `794x984` and `544x474`, so each window's
+first set_window_geometry is its last. This was not measured on WSLg's Weston.
