@@ -106,6 +106,9 @@ class DummyMenu:
     def __init__(self):
         self.children = []
 
+    def connect(self, *_args):
+        return 0
+
     def foreach(self, callback):
         self.children.clear()
 
@@ -356,6 +359,7 @@ def make_wmain_for_tree(app_module, monkeypatch, groups=None):
     wmain.menuServers = DummyMenu()
     wmain.nbConsole = object()
     wmain.window = object()
+    wmain.wMain = object()
     wmain.update_row_color = lambda *args: None
     wmain.addTab = lambda nb, host: None
     wmain.writes = 0

@@ -74,6 +74,62 @@ issue found, `select_first(False)` then `deselect()`, would also work, and
 `select_first(True)` does not, as it leaves an insensitive heading out of view. Not
 measured under Wayland, nor whether a reset shows for a frame first.
 
+## Menus GTK places (#397)
+
+A folder's submenu in the menu bar's Hosts menu, the Hosts menu itself and the cluster
+window's Snippets `Gtk.MenuButton` are placed by GTK, not by `popup_menu_at`. Under
+Weston, which applies no constraint adjustment, a folder of 60 hosts at `GDK_DPI_SCALE=2`
+was 2592 pixels tall and its window ran to y=2635.
+
+Why the hints cannot be set ahead, as the issue suggested: GTK 3.24.52's
+`gtk_menu_item_real_popup_submenu` sets the submenu's `anchor-hints` (FLIP, SLIDE and
+RESIZE) and `rect-anchor-dy` at every opening, so anything set before is overwritten. What
+works, read in `gtkmenu.c`: `gtk_menu_popup_internal` shows the menu before
+`gtk_menu_position` reads those properties, so a handler of the menu's `show` runs after
+GTK has set them and before they are read; `gtk_menu_popdown` hides the menu, so `show`
+fires at every opening. And `gtk_menu_position` calls
+`gtk_window_set_unlimited_guessed_size` for a menu with RESIZE_Y, so its height is not
+capped at the monitor: GTK expects the compositor to resize it.
+
+`fit_placed_menu(menu, holder)` in `app.py` is that handler, connected for the Hosts menu
+(`menuServers`) and each folder's submenu with the main window as `holder`, and for the
+Snippets button's menu with the cluster window. A submenu opens beside its row, so
+`menuplacement.place_beside` slides it along the room, and cuts it to the room, from the
+room's top, where it is strictly taller; its shift is added to GTK's own `rect-anchor-dy`.
+A menu of the menu bar or a button hangs below its item or stands above it, which
+`place_menu` works out as for `popup_menu_at`, the offset being 0 for GTK there. A menu
+that scrolls loses RESIZE_Y from its hints, and `cut_menu`, the block `popup_menu_at` used,
+cuts its toplevel.
+
+Measured on Weston 14.0.2 nested (`--backend=x11`, 1920x1080), GTK 3.24.52,
+`GDK_BACKEND=wayland`, `GDK_DPI_SCALE=2`, 60 hosts: with the handler, maximized, the menu was
+1036 pixels, from y=39 to 1078, with a scroll arrow, and scrolling reached the last host;
+not maximized, 600 pixels, from 62 to 665, last host reached. Weston lands the menu about 5
+pixels higher than asked, still on the screen. `menu_height` overestimates a submenu by 8
+pixels (608 for 600 landed), so no test asserts an exact submenu height.
+
+Coordinates under Wayland: GDK reports a popup's root coordinates against the main window's
+content origin. `menu_room` of the submenu's own window is wrong, and cut it to 97 pixels.
+What works: the room is `menu_room` of the window holding the menu (`holder`), and where the
+item's GdkWindow has another toplevel than that window, which is so for an item of a
+submenu in a popup, `window_content(holder)[1]` is added to the item's top.
+
+Measured on a private Xvfb, with a handler connected after GCM's that sets `anchor-hints` to
+0, as Weston leaves them: 60 hosts, from 40 to 1120 without the fix and 0 to 1080 with it; a
+folder of 15 hosts low in the menu, 760 to 1360 without and 472 to 1072 with. With GTK's own
+hints left on, X11 is unchanged.
+
+Not included: Edit > Snippets' submenus and the terminal menu's Commands submenu; Terminal >
+Open Consoles (`menuConsoles`, which `popup_menu_at` also opens); the horizontal axis. The
+Snippets button was measured on the X11 stand-in only. Not measured on WSLg.
+
+The scenarios in `tests/test_menuplacement.py` are `a-tall-folder-submenu-stays-on-the-screen`,
+`a-low-folder-submenu-slides-onto-the-screen` (each also with GTK's hints kept),
+`a-hosts-menu-of-top-level-hosts-stays-on-the-screen` and
+`the-cluster-snippets-button-stays-on-the-screen`. The Hosts menu one passes without the fix
+too: with its hints at 0 GTK caps a menu itself on X11, which Weston's RESIZE_Y does not
+allow, so it holds the menu on the screen and not GCM's part; the fakes hold that.
+
 ## Why X11 hid it
 
 X11 hid the bug, as GTK flips and slides a menu itself. Under Wayland GTK sends flip,
@@ -129,8 +185,9 @@ against the guess, the terminal's menu opened 6 pixels from the pointer, measure
 the server tree, a tab's label and the Mounted list the two coincide, measured: the
 tree's bin window, where its cell areas are, stays where the tree's own window is as it
 scrolls, with its header hidden as GCM has it, and a tab label's event box has a window
-of its own. Not handled: the menu bar's Hosts submenu, which GTK places itself (#397), the submenus
-of the terminal's menu, which GTK places too. Under Wayland the room is the window's
+of its own. Not handled: the submenus of the terminal's menu and of Edit > Snippets, and Terminal >
+Open Consoles' list as a submenu, which GTK places too; the menu bar's Hosts menu and its
+folders' submenus are, in the next section (#397). Under Wayland the room is the window's
 content, `window_content`, the span of the `Gtk.Window`'s child, not its GdkWindow: measured
 on Weston 14, GCM's main window not maximized was 1920x282 with its child at
 (26, 67, 1868, 186), so the GdkWindow counted 29 pixels of invisible shadow below the
