@@ -13,15 +13,17 @@ from pathlib import Path
 import pytest
 
 from tests.test_connections import glib_complaints
+from tests.test_i18n import build_private_locale, catalog_entries
 
 REPO = Path(__file__).resolve().parents[1]
 
 _SCRIPT = r"""
 import json, os, sys, tempfile
-lang = sys.argv[1]
+import locale
 os.environ["HOME"] = tempfile.mkdtemp(); os.environ.pop("XDG_CONFIG_HOME", None)
-if lang != "C":
-    os.environ["LANGUAGE"] = lang
+# The locale is the test's own (LANG, LOCPATH and LANGUAGE come from the caller): glibc
+# ignores LANGUAGE while the locale is C, and GtkBuilder translates through glibc.
+locale.setlocale(locale.LC_ALL, "")
 sys.argv = ["gcm"]
 import gi
 gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
@@ -93,9 +95,10 @@ print("OK")
 """
 
 
-def run(script, *args):
+def run(script, env=None):
     result = subprocess.run(
-        [sys.executable, "-c", script, *args],
+        [sys.executable, "-c", script],
+        env=env,
         capture_output=True,
         text=True,
         cwd=REPO,
@@ -110,14 +113,59 @@ def run(script, *args):
 needs_display = pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs a display")
 
 
+# Every language with a catalog: its glibc locale, its language code and its source.
+LANGUAGES = {
+    "de": ("de_DE", "de_DE.po"),
+    "es": ("es_ES", "es_ES.po"),
+    "fr": ("fr_FR", "fr_FR.po"),
+    "it": ("it_IT", "it_IT.po"),
+    "ko": ("ko_KR", "ko_KO.po"),
+    "pl": ("pl_PL", "pl_PL.po"),
+    "pt": ("pt_BR", "pt_BR.po"),
+    "ru": ("ru_RU", "ru_RU.po"),
+}
+CHOICES = [
+    "ASCII Backspace \t[Ctrl+H 0x08]",
+    "ASCII Delete    \t[Ctrl+? 0x7F]",
+    "Delete Sequence \t[@7]",
+]
+
+
+def environment(lang, folder):
+    """The locale really set, as test_i18n's Spanish test sets it: a private locale of the
+    test's own under LOCPATH, since LANGUAGE alone is ignored under C."""
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {"LANG", "LANGUAGE", "LOCPATH", "GCM_DATA_DIR", "GCM_GLADE_DIR", "GCM_SCRIPTS_DIR"}
+        and not key.startswith("LC_")
+    }
+    if lang != "en":
+        name = LANGUAGES[lang][0] + ".UTF-8"
+        if not build_private_locale(name, folder):
+            pytest.skip(f"localedef cannot build {name} here")
+        env.update(LOCPATH=str(folder), LANG=name, LANGUAGE=lang)
+    return env
+
+
 @needs_display
-@pytest.mark.parametrize("lang", ["C", "de", "ru", "ko"])
-def test_hint_has_a_column_of_its_own(lang):
+@pytest.mark.parametrize("lang", ["en", *LANGUAGES])
+def test_hint_has_a_column_of_its_own(lang, tmp_path):
     pytest.importorskip("gi", reason="PyGObject not available")
-    out = json.loads(run(_SCRIPT, lang))
+    out = json.loads(run(_SCRIPT, environment(lang, tmp_path)))
+    if lang == "en":
+        expected = [text.split("\t") for text in CHOICES]
+    else:
+        entries = catalog_entries(REPO / "lang" / LANGUAGES[lang][1])
+        expected = [entries[text].split("\t") for text in CHOICES]
+        # The rows are the catalog's, not the msgids: every language translates a name.
+        assert [e[0].rstrip() for e in expected] != [t.split("\t")[0].rstrip() for t in CHOICES]
     for combo, found in out.items():
         rows = found["rows"]
         assert len(rows) == 5, combo
+        assert [name for name, _hint in rows[1:4]] == [e[0].rstrip() for e in expected], combo
+        assert [hint for _name, hint in rows[1:4]] == [e[1] for e in expected], combo
         for name, hint in rows[1:4]:
             assert name == name.rstrip() and "\t" not in name, (combo, name)
             assert hint.startswith("["), (combo, hint)
