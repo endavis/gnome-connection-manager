@@ -111,7 +111,7 @@ msgstr "Contrair tudo"
 #: ../gnome_connection_manager.py:985 ../gnome_connection_manager.py:1017
 #: ../gnome_connection_manager.py:1085 ../gnome_connection_manager.py:1179
 msgid "Error connecting to server"
-msgstr "Erro ao conectar ao servudor"
+msgstr "Erro ao conectar ao servidor"
 
 #: ../gnome_connection_manager.py:359 ../gnome_connection_manager.py:387
 #: ../gnome_connection_manager.py:517 ../gnome_connection_manager.py:587
@@ -170,7 +170,7 @@ msgstr "Existem"
 #: ../gnome_connection_manager.py:1356 ../gnome_connection_manager.py:1400
 #: ../gnome_connection_manager.py:1491 ../gnome_connection_manager.py:1660
 msgid "open consoles, exit anyway?"
-msgstr "consoles abertas, deseja realmente sair?"
+msgstr "consoles abertos, deseja realmente sair?"
 
 #: ../gnome_connection_manager.py:838 ../gnome_connection_manager.py:849
 #: ../gnome_connection_manager.py:969 ../gnome_connection_manager.py:1098
@@ -580,7 +580,7 @@ msgstr "Editar Host"
 #: ../gnome-connection-manager.glade:447 ../gnome-connection-manager.glade:459
 #: ../gnome-connection-manager.glade:494 ../gnome-connection-manager.glade:633
 msgid "Edit hosts properties"
-msgstr "Editar propriedados do host selecionado"
+msgstr "Editar propriedades do host selecionado"
 
 #: ../gnome-connection-manager.glade.h:18
 #: ../gnome-connection-manager.glade:536 ../gnome-connection-manager.glade:548
@@ -598,7 +598,7 @@ msgstr "Remover host selecionado"
 #: ../gnome-connection-manager.glade:2564
 #: ../gnome-connection-manager.glade:2703
 msgid "Send commands after login"
-msgstr "Enviar comandos ao iniviar sessão"
+msgstr "Enviar comandos ao iniciar sessão"
 
 #: ../gnome-connection-manager.glade.h:19
 #: ../gnome-connection-manager.glade:2147
@@ -946,7 +946,7 @@ msgstr "Cluster"
 #: ../gnome-connection-manager.glade:3650
 #: ../gnome-connection-manager.glade:3789
 msgid "Select consoles to use:"
-msgstr "Selecione as consoles e serem utilizadas:"
+msgstr "Selecione os consoles a serem utilizados:"
 
 #: ../gnome-connection-manager.glade:3201
 #: ../gnome-connection-manager.glade:3411
@@ -1006,7 +1006,7 @@ msgstr "Não é possível abrir arquivo de log para gravação"
 #: ../gnome_connection_manager.py:2182 ../gnome_connection_manager.py:2283
 #: ../gnome_connection_manager.py:2401 ../gnome_connection_manager.py:2570
 msgid "Logs path"
-msgstr "Caminho do logs"
+msgstr "Caminho dos logs"
 
 #: ../gnome-connection-manager.glade:1458
 #: ../gnome-connection-manager.glade:1507
@@ -1058,7 +1058,7 @@ msgstr ""
 #: ../gnome-connection-manager.glade:4043
 #: ../gnome-connection-manager.glade:4183
 msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN for history</span>"
-msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN para a história</span>"
+msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN para o histórico</span>"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Never"
@@ -1103,7 +1103,7 @@ msgstr "Argumentos extras para passar a linha de comando"
 #: ../gnome-connection-manager.glade:2851
 #: ../gnome-connection-manager.glade:2990
 msgid "Key sequences"
-msgstr "Seqüências de Teclas"
+msgstr "Sequências de Teclas"
 
 #: ../gnome-connection-manager.glade:2880
 #: ../gnome-connection-manager.glade:3019

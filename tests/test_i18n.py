@@ -496,6 +496,41 @@ def test_every_compiled_catalog_matches_its_source(po):
     assert not stale, f"{compiled(po).relative_to(REPO)} is behind {po.name}: {stale[:5]}"
 
 
+# -- the older translations #359's reviewers flagged, settled (#381) --
+
+# What each flagged translation said wrong, and what the compiled catalog must say now.
+SETTLED_OLDER = (
+    ("de", "There are", "Es gibt"),
+    ("de", "Invalid file", "Ungültige Datei"),
+    ("de", "Clone console", "Terminal klonen"),
+    ("de", "Enable logging", "Protokollierung aktivieren"),
+    ("fr", "Enter new name", "Entrez le nouveau nom"),
+    ("fr", "Invalid password", "Mot de passe incorrect"),
+    ("fr", "Paste on right click", "Coller au clic droit"),
+    (
+        "it",
+        "To create subgroups use format group1/group2/group3",
+        "Per creare sottogruppi utilizzare il formato gruppo1/gruppo2/gruppo3",
+    ),
+    ("ko", "There are", "열린 콘솔이"),
+    ("ko", "Enable logging", "로그 기록 활성화"),
+    ("ko", "Enable Logging", "로그 기록 활성화"),
+    ("pl", "Close console", "Zamknij konsolę"),
+    ("pl", "Buffer size", "Rozmiar bufora"),
+    ("pl", "User", "Użytkownik"),
+    ("pt", "Error connecting to server", "Erro ao conectar ao servidor"),
+    ("pt", "Key sequences", "Sequências de Teclas"),
+    ("ru", "Key sequences", "Последовательности клавиш"),
+)
+
+
+@pytest.mark.parametrize(("lang", "msgid", "msgstr"), SETTLED_OLDER)
+def test_a_flagged_older_translation_is_settled(lang: str, msgid: str, msgstr: str) -> None:
+    """The compiled catalog GCM loads gives the settled text, not the one reviewers flagged."""
+    with (PO_DIR / lang / "LC_MESSAGES" / "gcm-lang.mo").open("rb") as handle:
+        assert gettext.GNUTranslations(handle).gettext(msgid) == msgstr
+
+
 # -- one name for Preferences, and no entry left unused (#383) --
 
 # A label app.py gives the action that opens Preferences, wrapped or not.

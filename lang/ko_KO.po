@@ -180,7 +180,7 @@ msgstr "열기"
 #: ../gnome_connection_manager.py:1356 ../gnome_connection_manager.py:1400
 #: ../gnome_connection_manager.py:1491 ../gnome_connection_manager.py:1660
 msgid "There are"
-msgstr "저기요"
+msgstr "열린 콘솔이"
 
 #: ../gnome_connection_manager.py:530 ../gnome_connection_manager.py:820
 #: ../gnome_connection_manager.py:831 ../gnome_connection_manager.py:951
@@ -189,7 +189,7 @@ msgstr "저기요"
 #: ../gnome_connection_manager.py:1356 ../gnome_connection_manager.py:1400
 #: ../gnome_connection_manager.py:1491 ../gnome_connection_manager.py:1660
 msgid "open consoles, exit anyway?"
-msgstr "연결된 콘솔에서 나가게 됩니다?"
+msgstr "개 있습니다. 그래도 끝낼까요?"
 
 #: ../gnome_connection_manager.py:838 ../gnome_connection_manager.py:849
 #: ../gnome_connection_manager.py:969 ../gnome_connection_manager.py:1098
@@ -333,7 +333,7 @@ msgstr "원격지"
 #: ../gnome_connection_manager.py:1969 ../gnome_connection_manager.py:2062
 #: ../gnome_connection_manager.py:2168 ../gnome_connection_manager.py:2337
 msgid "Fields group, name and host are required"
-msgstr "구룹 생성을 위해 이름과 호스트를 넣어주세요."
+msgstr "그룹, 이름, 호스트 항목은 필수입니다."
 
 #: ../gnome_connection_manager.py:795 ../gnome_connection_manager.py:1246
 #: ../gnome_connection_manager.py:1257 ../gnome_connection_manager.py:1425
@@ -384,7 +384,7 @@ msgstr "호스트 이름"
 #: ../gnome_connection_manager.py:2354 ../gnome_connection_manager.py:2366
 #: ../gnome_connection_manager.py:2377
 msgid "already exists for group"
-msgstr "구룹이 이미 존재합니다."
+msgstr "이(가) 이미 다음 그룹에 있습니다:"
 
 #: ../gnome_connection_manager.py:851 ../gnome_connection_manager.py:1304
 #: ../gnome_connection_manager.py:1315 ../gnome_connection_manager.py:1489
@@ -447,7 +447,7 @@ msgstr "투명화"
 #: ../gnome_connection_manager.py:2183 ../gnome_connection_manager.py:2284
 #: ../gnome_connection_manager.py:2402 ../gnome_connection_manager.py:2572
 msgid "Paste on right click"
-msgstr "오른쪽 클릭으로 붙혀넣습니다."
+msgstr "오른쪽 클릭으로 붙여넣습니다."
 
 #: ../gnome_connection_manager.py:944 ../gnome_connection_manager.py:1405
 #: ../gnome_connection_manager.py:1416 ../gnome_connection_manager.py:1615
@@ -1119,7 +1119,7 @@ msgstr "활성화"
 #: ../gnome_connection_manager.py:737 ../gnome_connection_manager.py:768
 #: ../gnome-connection-manager.glade:193
 msgid "Copy and Paste"
-msgstr "복사하고 붙혀넣기"
+msgstr "복사하고 붙여넣기"
 
 #: ../gnome-connection-manager.glade:1348
 #: ../gnome-connection-manager.glade:1292
@@ -1133,7 +1133,7 @@ msgstr "하위 그룹을 만들기 위한 형태는 그룹1/그룹2/그룹3 사�
 #: ../gnome_connection_manager.py:777 ../gnome_connection_manager.py:888
 #: ../gnome_connection_manager.py:814 ../gnome_connection_manager.py:925
 msgid "Enable logging"
-msgstr "로그인 활성화"
+msgstr "로그 기록 활성화"
 
 #: ../gnome_connection_manager.py:861 ../gnome_connection_manager.py:879
 #: ../gnome_connection_manager.py:932 ../gnome_connection_manager.py:1026
@@ -1164,7 +1164,7 @@ msgstr "에이젼트 포워딩"
 #: ../gnome-connection-manager.glade:2029
 #: ../gnome-connection-manager.glade:2168
 msgid "Enable Logging"
-msgstr "로긴 활성화"
+msgstr "로그 기록 활성화"
 
 msgid "Description"
 msgstr "설명"
@@ -1224,7 +1224,7 @@ msgid ""
 msgstr ""
 "압축 레벨: \n"
 "값이 없으면 기본 압축\n"
-"1: 분\n"
+"1: 최소\n"
 "9: 최대"
 
 #: ../gnome-connection-manager.glade:1979

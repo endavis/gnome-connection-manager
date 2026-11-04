@@ -1061,7 +1061,7 @@ msgstr "Copia e incolla"
 #: ../gnome-connection-manager.glade:1327
 #: ../gnome-connection-manager.glade:1466
 msgid "To create subgroups use format group1/group2/group3"
-msgstr "Per creare sottogruppi utilizzare il formato gruppi1/gruppi2/gruppi3"
+msgstr "Per creare sottogruppi utilizzare il formato gruppo1/gruppo2/gruppo3"
 
 #: ../gnome_connection_manager.py:706 ../gnome_connection_manager.py:817
 #: ../gnome_connection_manager.py:724 ../gnome_connection_manager.py:835
@@ -1130,7 +1130,7 @@ msgstr ""
 #: ../gnome-connection-manager.glade:4043
 #: ../gnome-connection-manager.glade:4183
 msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN for history</span>"
-msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN per la storia</span>"
+msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN per la cronologia</span>"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Never"
@@ -1158,7 +1158,7 @@ msgid ""
 "9: max"
 msgstr ""
 "Livello di compressione: \n"
-"vuoto: predefiniti\n"
+"vuoto: compressione predefinita\n"
 "1: min\n"
 "9: max"
 

@@ -198,7 +198,7 @@ msgstr "Entrez mot de passe: "
 #: ../gnome_connection_manager.py:1430 ../gnome_connection_manager.py:1521
 #: ../gnome_connection_manager.py:1690
 msgid "Invalid password"
-msgstr "Mot de passe incorrecte"
+msgstr "Mot de passe incorrect"
 
 #: ../gnome_connection_manager.py:854 ../gnome_connection_manager.py:865
 #: ../gnome_connection_manager.py:985 ../gnome_connection_manager.py:1114
@@ -397,7 +397,7 @@ msgstr "Transparence"
 #: ../gnome_connection_manager.py:2183 ../gnome_connection_manager.py:2284
 #: ../gnome_connection_manager.py:2402 ../gnome_connection_manager.py:2572
 msgid "Paste on right click"
-msgstr "Coller sur clique droit"
+msgstr "Coller au clic droit"
 
 #: ../gnome_connection_manager.py:944 ../gnome_connection_manager.py:1405
 #: ../gnome_connection_manager.py:1416 ../gnome_connection_manager.py:1615
@@ -799,7 +799,7 @@ msgstr "Renommer onglet"
 #: ../gnome_connection_manager.py:608 ../gnome_connection_manager.py:661
 #: ../gnome_connection_manager.py:692
 msgid "Enter new name"
-msgstr "Entrez votre nom"
+msgstr "Entrez le nouveau nom"
 
 msgid "Copy Address"
 msgstr "Copier l'adresse"
@@ -861,8 +861,7 @@ msgstr "Sélectionnez la police"
 #: ../gnome-connection-manager.glade:1520
 #: ../gnome-connection-manager.glade:1659
 msgid "Leave blank for passwordless/public key authentication"
-msgstr ""
-"Laissez vide pour une authentification par clé publique ou de mot de passe"
+msgstr "Laissez vide pour une authentification sans mot de passe ou par clé publique"
 
 #: ../gnome-connection-manager.glade:1534
 #: ../gnome-connection-manager.glade:1636
@@ -1059,7 +1058,7 @@ msgstr ""
 #: ../gnome-connection-manager.glade:4043
 #: ../gnome-connection-manager.glade:4183
 msgid "<span size=\"smaller\">CTRL+UP/CTRL+DOWN for history</span>"
-msgstr "<span size=\"smaller\">CTRL+UP/CTRL+DOWN pour record</span>"
+msgstr "<span size=\"smaller\">CTRL+HAUT/CTRL+BAS pour l'historique</span>"
 
 #: ../gnome_connection_manager.py:2405 ../gnome_connection_manager.py:2575
 msgid "Never"

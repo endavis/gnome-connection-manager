@@ -273,8 +273,9 @@ ignore_names = [
 skip = "tmp,.venv,.git,*.lock,*.pyc,__pycache__,lang,*.mo,*.po,data"
 # The Spanish the guard in tests/test_i18n.py names, and the comments in app.py that are
 # still Spanish. Each of these is a correctly spelled Spanish word that happens to look like
-# an English typo.
-ignore-words-list = "comando,comandos,controles,direccion,historial,requiere,ser,sesion,varios,nd,pres"
+# an English typo. `mot` and `erro` are the French and Portuguese words, named in the
+# settled-translations check in tests/test_i18n.py.
+ignore-words-list = "comando,comandos,controles,direccion,erro,historial,mot,requiere,ser,sesion,varios,nd,pres"
 
 # Pytest - Testing framework
 [tool.pytest.ini_options]
