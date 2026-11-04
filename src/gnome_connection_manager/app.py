@@ -661,6 +661,29 @@ def sync_shortcut_accels():
         controller.refresh_menu_accels()
 
 
+def split_hint_column(combo: Gtk.ComboBoxText) -> None:
+    """Give a combo's rows a second column for the hint after a tab (#384).
+
+    The hint of "ASCII Backspace <tab>[Ctrl+H 0x08]" was lined up by trailing spaces and a
+    tab, which a proportional font in another language does not align. The rows keep their
+    order, so the active index, which is what a host stores, is unchanged, and the msgids
+    keep their tab, so no catalog changes."""
+    model = combo.get_model()
+    rows = []
+    for row in model:
+        name, _tab, hint = str(row[0]).partition("\t")
+        rows.append((name.rstrip(), hint))
+    active = combo.get_active()
+    combo.set_model(Gtk.ListStore(str, str))
+    for name, hint in rows:
+        combo.get_model().append([name, hint])
+    renderer = Gtk.CellRendererText()
+    renderer.set_property("xpad", 12)
+    combo.pack_start(renderer, False)
+    combo.add_attribute(renderer, "text", 1)
+    combo.set_active(active)
+
+
 def menu_label(text):
     """`text` for a menu built from a model, which reads `_` as a mnemonic, measured: a
     snippet named restart_service was drawn as restartservice (#240)."""
@@ -8007,6 +8030,8 @@ class Whost(GladeComponent):
         self.chkLogging = self.get_widget("chkLogging")
         self.cmbBackspace = self.get_widget("cmbBackspace")
         self.cmbDelete = self.get_widget("cmbDelete")
+        for combo in (self.cmbBackspace, self.cmbDelete):
+            split_hint_column(combo)
         self.txtTerm = self.get_widget("txtTerm")
         self.txtPrefixKeys = self.get_widget("txtPrefixKeys")
         for kind in connections.CONNECTION_TYPES:
