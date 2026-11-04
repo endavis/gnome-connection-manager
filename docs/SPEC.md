@@ -566,8 +566,8 @@ those improvements "in the rewrite instead" means building the substrate first.
 
 #### Effort
 
-Measured from the current tree: `app.py` is 10,948 lines with ~578 direct toolkit calls
-(421 `Gtk.`, 120 `Gdk.`, 37 `Vte.`), plus 2,612 lines of Glade and 54,384 lines of tests.
+Measured from the current tree: `app.py` is 10,948 lines with ~659 direct toolkit calls
+(468 `Gtk.`, 151 `Gdk.`, 40 `Vte.`), plus 2,612 lines of Glade and 54,384 lines of tests.
 The code that imports no toolkit — `relay.py`, the `utils` package and the entry points —
 is 4,818 lines, and the `conf` class inside `app.py` another 56. So about 69% of the
 application is rewritten, before the new scope this spec adds.

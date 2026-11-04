@@ -613,9 +613,10 @@ or beside another program. Three ways move it out:
 - **Move to New Window** in its tab's menu, or **View → Move to New Window** for the tab in
   use.
 - `Ctrl+Shift+M`, the `console_window` shortcut.
-- Dragging its tab off the tab strip and letting go anywhere but a tab strip: on the
-  desktop, or over a console. Under X11 the window opens where you let go; under Wayland
-  the desktop places it.
+- Dragging its tab off the tab strip and letting go outside every GCM window, on the
+  desktop. Under X11 the window opens where you let go; under Wayland the desktop places
+  it. Let go over another GCM window's console, or its tab strip, and the tab joins that
+  window instead.
 
 The console keeps its session, its tab's label and marks, and its log. Nothing reconnects.
 
@@ -633,7 +634,7 @@ one.
 To bring a console back:
 
 - `Ctrl+Shift+M` again, or **Move to Main Window** in its tab's menu.
-- Drag its tab into a tab strip in the main window.
+- Drag its tab into a tab strip in the main window, or let go over a console there.
 - Close the window, which brings back every console in it. Closing it ends none of them:
   to end a session, close its tab.
 - **View → Move All to Main Window**, or the toolbar button after Split Horizontal, Split

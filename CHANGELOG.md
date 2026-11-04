@@ -52,6 +52,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- A tab dragged onto another GCM window's console joins that window, the one under the
+  pointer, instead of opening a window of its own. A drop outside every GCM window still
+  opens one (#407).
 - **Backspace and Delete choices line up.** The host dialog's Backspace and Delete lists
   padded each name with spaces and a tab, which a proportional font, in German or Korean
   above all, did not align; the hint after each name is now a column of its own (#384).
