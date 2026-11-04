@@ -405,7 +405,7 @@ msgstr "Colar com o botão direito"
 #: ../gnome_connection_manager.py:2185 ../gnome_connection_manager.py:2286
 #: ../gnome_connection_manager.py:2404 ../gnome_connection_manager.py:2574
 msgid "Confirm on close console"
-msgstr "Confirmar ao fechar uma console"
+msgstr "Confirmar ao fechar um console"
 
 #: ../gnome_connection_manager.py:945 ../gnome_connection_manager.py:1406
 #: ../gnome_connection_manager.py:1417 ../gnome_connection_manager.py:1616
@@ -732,7 +732,7 @@ msgstr "Túnel"
 #: ../gnome-connection-manager.glade:711 ../gnome-connection-manager.glade:723
 #: ../gnome-connection-manager.glade:758 ../gnome-connection-manager.glade:897
 msgid "Unsplit all consoles"
-msgstr "Unir todas as consoles"
+msgstr "Unir todos os consoles"
 
 #: ../gnome-connection-manager.glade.h:37
 #: ../gnome-connection-manager.glade:2276
