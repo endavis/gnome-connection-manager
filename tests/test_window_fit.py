@@ -310,6 +310,128 @@ def test_a_dialog_left_below_the_screen_is_brought_back_against_real_gtk():
     assert "OK" in result.stdout
 
 
+# -- a dialog is mapped at the size it keeps (#424) ----------------------------
+
+_FIRST_SIZE_SCRIPT = """
+import os, sys, tempfile, time
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk, GObject
+from gnome_connection_manager import app
+
+SCREEN = [1024, 600]
+real_workarea = app.monitor_workarea
+def small(window=None):
+    area = real_workarea(window)
+    if area is None:
+        sys.exit("no monitor")
+    if SCREEN[0]:
+        area.x = area.y = 0
+        area.width, area.height = SCREEN
+    return area
+app.monitor_workarea = small
+
+first = {}
+def on_map(*args):
+    window = args[0]
+    if isinstance(window, Gtk.Dialog):
+        first.setdefault(window, window.get_size())
+    return True
+GObject.add_emission_hook(Gtk.Dialog, "map", on_map)
+
+def settle(seconds=1.5):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+
+def in_a_scroller(widget):
+    parent = widget.get_parent()
+    while parent is not None:
+        if isinstance(parent, Gtk.ScrolledWindow):
+            return True
+        parent = parent.get_parent()
+    return False
+
+def buttons(widget, found):
+    if isinstance(widget, Gtk.Button) and (widget.get_label() or "") in ("OK", "Cancel"):
+        found.append(widget)
+    if isinstance(widget, Gtk.Container):
+        for child in widget.get_children():
+            buttons(child, found)
+    return found
+
+app.conf.CHECK_UPDATES = False
+app.wMain = app.Wmain(application=None)
+settle()
+
+def make_host():
+    host = app.Host("g", "n", "", "example.test", "u", "", "", "22", "", "ssh")
+    host.keep_alive = "0"
+    host.commands = ""
+    host.font_color = host.back_color = ""
+    host.term = ""
+    return host
+
+def new_host():
+    dialog = app.Whost()
+    dialog.init("")
+    return dialog
+
+def edit_host():
+    dialog = app.Whost()
+    dialog.init("g", make_host())
+    return dialog
+
+builders = [
+    ("Settings", app.Wconfig),
+    ("New host", new_host),
+    ("Edit host", edit_host),
+    ("About", app.Wabout),
+    ("Cluster", lambda: app.Wcluster(terms=[])),
+]
+for label, screen in (("real", [0, 0]), ("small", [1024, 400])):
+    SCREEN[:] = screen
+    for name, build in builders:
+        first.clear()
+        component = build()
+        settle()
+        window = component.main_widget
+        assert window in first, "%s/%s: never mapped" % (label, name)
+        assert first[window] == window.get_size(), "%s/%s: mapped at %r, ended at %r" % (
+            label, name, first[window], window.get_size())
+        if label == "small":
+            # Cluster keeps its glade default size, 640x480, which no fit touches.
+            if name != "Cluster":
+                assert first[window][1] <= SCREEN[1], "%s: first height %r" % (name, first[window])
+            for button in buttons(window, []):
+                assert not in_a_scroller(button), "%s: %s scrolls" % (name, button.get_label())
+        window.destroy()
+print("FIRST-OK")
+"""
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"),
+    reason="needs a display for a real window",
+)
+def test_a_dialog_is_mapped_at_the_size_it_keeps_against_real_gtk():
+    """A dialog was presented empty and grown by new(), so the user saw it jump (#424)."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _FIRST_SIZE_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "GDK_BACKEND": "x11"},
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "FIRST-OK" in result.stdout
+
+
 # -- wrapping the pages must not move the selected tab (#89) ------------------
 
 # Same shape as the script above: a real GtkNotebook is the only thing that shows
@@ -350,7 +472,7 @@ app.wMain = app.Wmain(application=None)
 settle()
 
 # The dialog has already been through fit_window_to_monitor by the time this runs:
-# its constructor queues that on idle and settle() has run it, so this is the state
+# show_dialog queues that on idle and settle() has run it, so this is the state
 # the user is actually shown rather than a reconstruction of it.
 def check(name, component, window_id, expected_first):
     nb = notebook_of(component)
