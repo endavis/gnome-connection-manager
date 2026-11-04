@@ -493,6 +493,11 @@ distribution — so a PyPI install would not produce a working application.
 
 To cut a release, from an up-to-date `main`:
 
+Before step 1, open the release's issue with `doit issue`. GCM files one per release,
+though the PR checks no longer need one (a `release/v*` branch passes the issue-link check
+in `.github/workflows/pr-checks.yml`): it is the release's record, and the check after the
+tag is written on it.
+
 1. Create the branch `release/vX.Y.Z`. A branch so named needs no issue number.
 2. Write the version into the four files with `uv run cz bump --files-only --yes X.Y.Z`,
    then run `uv lock`. `uv.lock` records the version too, and the `uv-lock-check` hook
@@ -501,21 +506,42 @@ To cut a release, from an up-to-date `main`:
    empty `## [Unreleased]` above it.
 4. Commit as `chore: release X.Y.Z`, since the commit-msg hook refuses `release` as a
    commit's type. Open the PR with `doit pr --title="release: vX.Y.Z" --body-file=...`:
-   the PR checks accept `release` in a title. Its body names the release's issue,
-   `Addresses #N`, as the checks require an issue for any change outside the docs.
+   the PR checks accept `release` in a title. Its body names the release's issue as
+   `Addresses #N`, which closes nothing, with no closing keyword: none in the release
+   commit, and none anywhere in the PR's body, negated or not (see Pull Request Process).
+   Merge with `doit pr_merge` without `--auto-close`, which would close the issue `Addresses`
+   names, so the issue stays open through the merge.
 5. Once it is merged, run `doit release_tag` on `main`, before anything else is merged. It
    finds the merged `release/v*` PR, takes the version from its title, and tags the tip of
-   `main`, not the PR's merge commit. It ends by saying that nothing is built or
-   published, as there is no release workflow: the tag is the release.
+   `main`, not the PR's merge commit
+   ([pyproject-template#1192](https://github.com/endavis/pyproject-template/issues/1192)).
+   It ends by saying that nothing is built or published, as there is no release
+   workflow: the tag is the release.
+6. Check the tag, and say what was seen in a comment on the release's issue:
+   - `git ls-remote origin refs/tags/vX.Y.Z` should print the release PR's merge commit.
+     If it prints another, something was merged between the PR and the tag.
+   - The README's install line, run with a scratch home, should install the new release,
+     with `current` linking `versions/vX.Y.Z`. Run it under `env -i` with a scratch
+     `HOME`, under `setsid -w` (with no terminal, the script asks nothing) and
+     `set -o pipefail`, with fake `sudo` and `apt-get` first on `PATH` that only log what
+     they were asked, so that nothing outside the scratch home changes.
+7. Close the release's issue by hand. Nothing else closes it: step 4 kept every closing
+   keyword out of the PR.
 
 `uv run cz bump --get-next --yes` prints the version commitizen proposes from the commits
 since the last tag. Step 2 takes whichever version is chosen.
 
-**Not `doit release`.** It is the template's, and it assumes what GCM does not: it never
-writes the version into the files, and it runs `cz changelog --incremental`, which, tried
-on a copy of this repository, replaced the hand-written `## [Unreleased]` with generated
-commit subjects (#291). Teaching it both is
-[pyproject-template#971](https://github.com/endavis/pyproject-template/issues/971).
+**Not `doit release`, as yet.** It is the template's. Before #324 it never wrote the
+version into the files, and its `cz changelog --incremental`, tried on a copy of this
+repository, replaced the hand-written `## [Unreleased]` with generated commit subjects
+(#291). The version now vendored in `tools/doit/release.py` is meant to fit GCM: where
+`version_provider` is not `scm`, as `pep621` is here, it runs `cz bump --files-only` and
+`uv lock`; where `update_changelog_on_bump` is not true, as it is not here, it renames the
+hand-written `## [Unreleased]`; and `--issue=N` writes `Addresses #N` into the PR body,
+as step 4 does. It has not been run here, so
+whether it cuts a GCM release as the steps above do is not known. Only a person can try
+it: `tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent. See
+`docs/design/packaging.md` (Releases).
 `release.yml` and `testpypi.yml` stay deliberately absent; see
 [#115](https://github.com/endavis/gnome-connection-manager/issues/115) for what was
 skipped and why.
