@@ -348,6 +348,10 @@ RECONNECT_DELAY = 5
 # that drops sooner uses up an attempt, so a server that drops every login cannot keep
 # the attempts going for ever.
 RECONNECT_ESTABLISHED = 30
+# GtkNotebook's tab drag target, and the info a terminal gives it so that a tab dropped
+# on a console joins that console's notebook (#407).
+TAB_DROP_TARGET = "GTK_NOTEBOOK_TAB"
+TAB_DROP_INFO = 407
 # Keys that only change what another key types, or lock a mode, so that pressed alone
 # they are not typing: Alt on its way to Alt+Tab, or Shift before a capital. Asked by
 # keyval, since GDK's `is_modifier` cannot tell: measured under X11, it is False for
@@ -4454,12 +4458,67 @@ class Wmain(GladeComponent):
             return False
         return True
 
+    def on_terminal_drag_motion(self, widget, context, x, y, time):
+        """Say what a drag over a terminal would do: MOVE a tab, COPY text or a file (#407).
+
+        Only a tab drag from a notebook of this application, while `dragged_tab` is set,
+        is offered MOVE. Text and files are COPY whatever their source offers, and a drag
+        with neither gets 0.
+        """
+        names = [target.name() for target in context.list_targets()]
+        if TAB_DROP_TARGET in names and self.dragged_tab is not None:
+            action = Gdk.DragAction.MOVE
+        elif "text/uri-list" in names or any(
+            name in names for name in ("UTF8_STRING", "STRING", "TEXT", "text/plain")
+        ):
+            action = Gdk.DragAction.COPY
+        else:
+            action = 0
+        Gdk.drag_status(context, action, time)
+        if action:
+            widget.drag_highlight()
+        else:
+            widget.drag_unhighlight()
+        return True
+
+    def on_terminal_drag_leave(self, widget, _context, _time):
+        widget.drag_unhighlight()
+
+    def take_dropped_tab(self, terminal, context, drop_time):
+        """A tab dropped on a console goes into that console's notebook (#407).
+
+        The drop finishes first, then the move runs from an idle, as `move_out_after_drag`
+        does. A tab dropped on its own console stays, and finishes as a success so that
+        GTK opens no window for it.
+        """
+        page = self.dragged_tab
+        notebook = None
+        widget = terminal
+        while page is not None and widget is not None:
+            parent = widget.get_parent()
+            if hasattr(parent, "page_num"):
+                notebook = parent
+                break
+            widget = parent
+        Gtk.drag_finish(context, page is not None and notebook is not None, False, drop_time)
+        if page is not None and notebook is not None and page.get_parent() is not notebook:
+            GLib.idle_add(self.join_after_drop, page, notebook)
+
+    def join_after_drop(self, page, notebook):
+        if page.get_parent() is not None and page.get_parent() is not notebook:
+            self.move_page(page, notebook)
+            self.focus_console(notebook, page)
+        return False
+
     def on_terminal_drag_data_received(self, widget, context, x, y, data, info, drop_time):
         """Insert dropped paths at the prompt.
 
         No trailing newline: the text is left for the user to review and run, the same
-        reasoning as the paste policy.
+        reasoning as the paste policy. A tab dropped here joins this console's notebook.
         """
+        if info == TAB_DROP_INFO:
+            self.take_dropped_tab(widget, context, drop_time)
+            return True
         uris = data.get_uris() if hasattr(data, "get_uris") else None
         # A URI drop carries a usable path. A plain-text drop is text, not a path, so it
         # goes in exactly as it came -- quoting dragged prose would be wrong.
@@ -4910,9 +4969,19 @@ class Wmain(GladeComponent):
             v.connect("scroll-event", self.on_terminal_scroll)
             v.connect("window-title-changed", self.on_terminal_title_changed)
             # VTE registers no drag targets of its own, so a drop does nothing until now.
-            v.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+            # A tab dragged here is accepted too (#407): GTK stops at the first site that
+            # matches no target, so without it the notebook around the terminal never
+            # saw the drop and it opened a window. Motion is decided by
+            # on_terminal_drag_motion, so only a tab is ever offered MOVE.
+            v.drag_dest_set(
+                Gtk.DestDefaults.DROP,
+                [Gtk.TargetEntry.new(TAB_DROP_TARGET, Gtk.TargetFlags.SAME_APP, TAB_DROP_INFO)],
+                Gdk.DragAction.COPY | Gdk.DragAction.MOVE,
+            )
             v.drag_dest_add_uri_targets()
             v.drag_dest_add_text_targets()
+            v.connect("drag-motion", self.on_terminal_drag_motion)
+            v.connect("drag-leave", self.on_terminal_drag_leave)
             v.connect("drag-data-received", self.on_terminal_drag_data_received)
             # VTE never raises these on its own in 0.76, but they are the documented
             # way to ask for a zoom, so honour them if anything ever does.
@@ -6079,8 +6148,9 @@ class Wmain(GladeComponent):
         failed for want of a target. Measured with real pointer input under X11, that is
         a drop anywhere else but a tab strip, a terminal or the server tree, while Escape
         cancels the drag. Measured on sway with a virtual pointer, Wayland reports a drop
-        on the bare desktop or on a terminal as an error instead, and GTK put the tab
-        back. So there GCM moves it out itself, as Move to New Window does, once GTK has.
+        on the bare desktop as an error instead, and GTK put the tab back. A terminal
+        takes a tab dropped on it since #407, so an error is a drop outside every GCM
+        window. So there GCM moves it out itself, as Move to New Window does, once GTK has.
         """
         page = self.dragged_tab
         wayland = notebook.get_display().__gtype__.name == "GdkWaylandDisplay"

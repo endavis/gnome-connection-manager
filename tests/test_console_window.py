@@ -656,6 +656,53 @@ elif scenario == "a-tab-dropped-outside-every-notebook":
     assert label_of("B") is label and terminal("B") is kept
     run("B", "echo back-$KEPT", "back-yes")
 
+elif scenario == "a-tab-dropped-on-a-console-window-joins-it":
+    # On another window's terminal, which is where GTK used to stop looking (#407).
+    open_tabs("A", "B", "C")
+    run("B", "KEPT=yes; echo ready", "ready")
+    w.move_to_new_window(page_of("C"))
+    pump(0.5)
+    window = window_of("C")
+    window.move(1000, 300)
+    pump(0.5)
+    label, kept = label_of("B"), terminal("B")
+    drag(centre(label.label), centre(terminal("C")))
+    assert names() == [["A"], ["C", "B"]], names()
+    assert w.console_windows == (window,), names()
+    assert window_of("B") is window
+    assert label_of("B") is label and terminal("B") is kept
+    assert until(lambda: window.get_focus() is kept), window.get_focus()
+    run("B", "echo out-$KEPT", "out-yes")
+
+elif scenario == "a-tab-dropped-on-the-main-window-joins-it":
+    open_tabs("A", "B")
+    run("B", "KEPT=yes; echo ready", "ready")
+    w.move_to_new_window(page_of("B"))
+    pump(0.5)
+    window = window_of("B")
+    window.move(1100, 300)
+    pump(0.5)
+    label, kept = label_of("B"), terminal("B")
+    drag(centre(label.label), centre(terminal("A")))
+    assert until(lambda: w.console_windows == ()), names()
+    assert not window.get_visible()
+    assert sorted(names()[0]) == ["A", "B"], names()
+    assert label_of("B") is label and terminal("B") is kept
+    run("B", "echo back-$KEPT", "back-yes")
+
+elif scenario == "a-tab-dropped-on-its-own-console-stays":
+    open_tabs("A", "B")
+    w.move_to_new_window(page_of("B"))
+    pump(0.5)
+    window = window_of("B")
+    window.move(1000, 300)
+    pump(0.5)
+    page = page_of("B")
+    drag(centre(label_of("B").label), centre(terminal("B")))
+    assert names() == [["A"], ["B"]], names()
+    assert w.console_windows == (window,)
+    assert page_of("B") is page and page.get_parent() is window.notebook
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -714,6 +761,9 @@ def _holder(lock):
         "every-window-is-reached",
         "no-splits-in-a-console-window",
         "a-tab-dropped-outside-every-notebook",
+        "a-tab-dropped-on-a-console-window-joins-it",
+        "a-tab-dropped-on-the-main-window-joins-it",
+        "a-tab-dropped-on-its-own-console-stays",
     ],
 )
 def test_a_console_window_against_real_gtk(scenario, tmp_path):

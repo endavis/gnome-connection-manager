@@ -4601,6 +4601,180 @@ def test_drag_targets_are_registered_at_creation(app_module):
     assert "drag_dest_add_text_targets()" in body
     connections = _terminal_signal_connections(app_module)
     assert connections.get("drag-data-received") == "on_terminal_drag_data_received"
+    # A tab dropped on a console joins it (#407): the terminal takes the tab target, and
+    # decides its own motion so that only a tab is ever offered MOVE.
+    assert "TAB_DROP_TARGET" in body and "TAB_DROP_INFO" in body
+    assert "Gtk.DestDefaults.DROP," in body
+    assert connections.get("drag-motion") == "on_terminal_drag_motion"
+    assert connections.get("drag-leave") == "on_terminal_drag_leave"
+
+
+class TabDragContext:
+    def __init__(self, *names):
+        self._names = names
+
+    def list_targets(self):
+        return [types.SimpleNamespace(name=lambda n=n: n) for n in self._names]
+
+
+class HighlightWidget:
+    def __init__(self):
+        self.lit = None
+
+    def drag_highlight(self):
+        self.lit = True
+
+    def drag_unhighlight(self):
+        self.lit = False
+
+
+def _motion(app_module, monkeypatch, names, dragged):
+    statuses = []
+    monkeypatch.setattr(
+        app_module.Gdk, "drag_status", lambda ctx, action, t: statuses.append(action)
+    )
+    monkeypatch.setattr(
+        app_module.Gdk,
+        "DragAction",
+        types.SimpleNamespace(MOVE="move", COPY="copy"),
+    )
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = dragged
+    widget = HighlightWidget()
+    handled = wmain.on_terminal_drag_motion(widget, TabDragContext(*names), 0, 0, 5)
+    assert handled is True
+    return statuses, widget
+
+
+def test_a_tab_over_a_terminal_is_offered_move(app_module, monkeypatch):
+    statuses, widget = _motion(app_module, monkeypatch, ["GTK_NOTEBOOK_TAB"], object())
+
+    assert statuses == ["move"]
+    assert widget.lit is True
+
+
+def test_a_tab_target_without_a_dragged_tab_is_refused(app_module, monkeypatch):
+    statuses, widget = _motion(app_module, monkeypatch, ["GTK_NOTEBOOK_TAB"], None)
+
+    assert statuses == [0]
+    assert widget.lit is False
+
+
+@pytest.mark.parametrize("names", [["text/uri-list"], ["UTF8_STRING", "text/plain"]])
+def test_files_and_text_over_a_terminal_are_only_ever_copy(app_module, monkeypatch, names):
+    """Whatever the source offers, a drag that is not a tab never gets MOVE."""
+    statuses, _widget = _motion(app_module, monkeypatch, names, object())
+
+    assert statuses == ["copy"]
+
+
+def test_a_drag_of_something_else_over_a_terminal_gets_nothing(app_module, monkeypatch):
+    statuses, widget = _motion(app_module, monkeypatch, ["application/x-other"], object())
+
+    assert statuses == [0]
+    assert widget.lit is False
+
+
+def test_leaving_a_terminal_unhighlights_it(app_module):
+    wmain = object.__new__(app_module.Wmain)
+    widget = HighlightWidget()
+    widget.lit = True
+
+    wmain.on_terminal_drag_leave(widget, None, 0)
+
+    assert widget.lit is False
+
+
+class Parent:
+    """A widget in a tree: a notebook has page_num, as the real one does."""
+
+    def __init__(self, parent=None, notebook=False):
+        self._parent = parent
+        if notebook:
+            self.page_num = lambda page: 0
+
+    def get_parent(self):
+        return self._parent
+
+
+def _tab_drop(app_module, monkeypatch, dragged, target_notebook):
+    finished, scheduled = [], []
+    monkeypatch.setattr(
+        app_module.Gtk, "drag_finish", lambda ctx, ok, delete, t: finished.append(ok)
+    )
+    monkeypatch.setattr(
+        app_module.GLib, "idle_add", lambda callback, *args: scheduled.append((callback, args))
+    )
+    page = Parent(target_notebook)
+    terminal = Parent(page)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = dragged
+    handled = wmain.on_terminal_drag_data_received(
+        terminal, object(), 0, 0, DropData(), app_module.TAB_DROP_INFO, 0
+    )
+    assert handled is True
+    return wmain, finished, scheduled
+
+
+def test_a_tab_dropped_on_another_notebooks_terminal_is_moved_there(app_module, monkeypatch):
+    other = Parent(notebook=True)
+    own = Parent(Parent(notebook=True))
+    wmain, finished, scheduled = _tab_drop(app_module, monkeypatch, own, other)
+
+    assert finished == [True]
+    assert scheduled == [(wmain.join_after_drop, (own, other))]
+
+
+def test_a_tab_dropped_on_its_own_notebook_stays(app_module, monkeypatch):
+    notebook = Parent(notebook=True)
+    dragged = Parent(notebook)
+    _wmain, finished, scheduled = _tab_drop(app_module, monkeypatch, dragged, notebook)
+
+    assert finished == [True]
+    assert scheduled == []
+
+
+def test_a_tab_drop_with_no_dragged_tab_finishes_false(app_module, monkeypatch):
+    _wmain, finished, scheduled = _tab_drop(app_module, monkeypatch, None, Parent(notebook=True))
+
+    assert finished == [False]
+    assert scheduled == []
+
+
+def test_a_dropped_tab_joins_the_notebook_and_takes_the_keyboard(app_module, monkeypatch):
+    calls = []
+    wmain = object.__new__(app_module.Wmain)
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "move_page",
+        lambda self, page, nb: calls.append(("move", page, nb)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "focus_console",
+        lambda self, nb, page: calls.append(("focus", nb, page)),
+        raising=False,
+    )
+    target = Parent(notebook=True)
+    page = Parent(Parent(notebook=True))
+    gone = Parent(None)
+
+    assert wmain.join_after_drop(page, target) is False
+    assert wmain.join_after_drop(gone, target) is False
+    assert calls == [("move", page, target), ("focus", target, page)]
+
+
+def test_the_terminal_drag_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, Gtk
+
+    assert hasattr(Gtk.Widget, "drag_highlight") and hasattr(Gtk.Widget, "drag_unhighlight")
+    assert hasattr(Gtk.Notebook, "page_num")
+    assert hasattr(Gdk.DragContext, "list_targets")
+    assert hasattr(Gtk, "drag_finish") and hasattr(Gdk, "drag_status")
 
 
 # -- file:line links (#23) --------------------------------------------------

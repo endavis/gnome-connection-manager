@@ -139,3 +139,33 @@ use and ignores Dynamic title, which is about the window's title only.
 
 A bar's label is ellipsized by GTK where the window is too narrow, and the bar's tooltip
 carries the whole text. A bar is written only when its text changes.
+
+## Dragging a tab
+
+A tab dragged outside every notebook opens a console window (#255): under X11 GTK asks for one
+through `create-window`, and under Wayland, where GTK reports the drop as an error and puts
+the tab back, `on_notebook_drag_failed` moves it out itself.
+
+A tab let go over another window's console used to open a window too (#407). A terminal has a
+drag dest of its own for files and text, and in GTK 3 a site that matches no target answers
+status 0 and ends the search there, so the notebook around the terminal never saw the drop.
+So `addTab` gives each terminal the `GTK_NOTEBOOK_TAB` target as well, with the info
+`TAB_DROP_INFO`, and `Wmain.take_dropped_tab` moves the tab to the notebook holding the
+terminal's page, from an idle once the drop has finished, as `move_page` puts it.
+
+The terminal decides its own motion, `on_terminal_drag_motion`: MOVE for a tab while
+`dragged_tab` is set, COPY for files and text, 0 otherwise. The flags are
+`Gtk.DestDefaults.DROP`, not ALL, so GTK offers nothing itself and a text or file source is
+never offered MOVE. A tab dropped on its own console stays, and finishes as a success so that
+no window opens. A page that is not a terminal is out of scope and still opens a window.
+
+The target is found from the widget tree, not by asking GDK which window has the pointer when
+the drag fails: under Wayland the pointer belongs to the data device for the whole drag, so
+that is a timing question, and the drop would have failed already.
+
+Measured with a real pointer: under X11 (XTest on a private Xvfb) a tab dropped on a console
+window's terminal gets `drag-data-received` with `TAB_DROP_INFO` and joins that window, where
+before the change it opened a third. On sway 1.11, headless, with a virtual pointer, a drop on
+a console window's terminal, on the main window's, and on the tab's own terminal each did the
+same. A drop on the bare output there was not measured: the drag never ended, before the
+change or after it.
