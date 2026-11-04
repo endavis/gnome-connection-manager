@@ -806,16 +806,21 @@ def test_the_relay_hands_on_the_argv_the_child_would_have_had():
 # -- resizing (#319) ---------------------------------------------------------
 
 # Reports the size it starts at, and each SIGWINCH with the size it then reads, and
-# otherwise waits: after READY nothing it does passes through the relay.
+# otherwise waits: after READY nothing it does passes through the relay. It writes with
+# os.write, not print: a SIGWINCH landing inside a buffered print re-entered it and
+# raised "reentrant call inside BufferedWriter", so the program died (#478).
 _IDLE_PROGRAM = """
-import fcntl, signal, struct, sys, termios, time
+import fcntl, os, signal, struct, sys, termios, time
 
 def size():
     rows, cols = struct.unpack("HHHH", fcntl.ioctl(0, termios.TIOCGWINSZ, b"\\0" * 8))[:2]
     return f"{rows}x{cols}"
 
-signal.signal(signal.SIGWINCH, lambda *_: print("WINCH", size(), flush=True))
-print("READY", size(), flush=True)
+def on_winch(*_):
+    os.write(1, f"WINCH {size()}\\n".encode())
+
+signal.signal(signal.SIGWINCH, on_winch)
+os.write(1, f"READY {size()}\\n".encode())
 time.sleep(60)
 """
 
