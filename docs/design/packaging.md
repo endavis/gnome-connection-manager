@@ -99,8 +99,12 @@ notice the key go. Not `doit release`, as yet. Before #324 it wrote no version, 
 hid that. The version #324 synced is meant to bump a static version with
 `cz bump --files-only` and to keep a hand-written changelog (pyproject-template#992),
 which is GCM's case, but it has not been tried here. `doit release_tag` tags the tip of
-`main`, so run it straight after the release PR merges. A person runs it:
-`tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent.
+`main`, not the release PR's merge commit (pyproject-template#1192), so run it straight
+after the release PR merges, and check the tag with `git ls-remote`. A person runs it:
+`tools/hooks/ai/block-dangerous-commands.py` refuses it from an agent. GCM files an issue
+for each release though the PR checks no longer need one, and keeps it open through the
+merge, with no closing keyword in the PR, to close it by hand once the tag is checked:
+the check, and the install line run with a scratch home, are recorded on it.
 
 ## What the installer installs
 
