@@ -55,6 +55,10 @@ the git log.
 - **The Hosts menu's folder submenus** stay on the screen and scroll where a folder holds more
   hosts than fit, as do the Hosts menu and the cluster window's Snippets button, under WSLg's
   compositor, which leaves GTK's own placement of them unapplied (#397).
+- **A resize could be lost for an idle program** in a tab running under the relay (Let
+  applications write to the clipboard, or Record the raw session): a size change that came
+  just before the relay began to wait left the program at its old size until a byte next
+  went through (#478).
 - **A menu taller than its room opens beside its button or click**, cut at the edge of the
   screen (or under Wayland, of GCM's window), and scrolls, where it used to start at the top
   of the room and cover what it opened from. Under Wayland it no longer runs past a short
