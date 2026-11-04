@@ -880,6 +880,10 @@ FOREIGN_NAMES = {
     "gtk_window_guess_default_size",
     "gtk_window_compute_hints",
     "gtkmenu.c",
+    "gtk_menu_item_real_popup_submenu",
+    "gtk_menu_popup_internal",
+    "gtk_menu_popdown",
+    "gtk_window_set_unlimited_guessed_size",
     "Gdk.Window.add_filter",
     # The method a fake offered that the real Vte.Terminal lacks (#30)
     "select_none()",

@@ -2007,6 +2007,85 @@ def install_menu_wheel() -> None:
         _menu_wheel_installed = True
 
 
+def cut_menu(menu: Gtk.Menu, placement: menuplacement.Placement) -> None:
+    """Cut `menu` to `placement.height` where it scrolls, and give it its own size back
+    where it does not (#402).
+
+    A menu is cut to a height only through its toplevel, which GTK makes non-resizable
+    and so clamps to the monitor: resizable first, then a default size. The toplevel is
+    reused, so a menu that fits gets both back.
+    """
+    toplevel = menu.get_toplevel()
+    if placement.scrolls:
+        toplevel.set_resizable(True)
+        toplevel.set_default_size(-1, placement.height)
+        # Also the size now: measured on X11, a menu reopened with a cut of another height
+        # was placed by the size it had, and a menu that hangs from its bottom edge ended
+        # below where it was asked to (#402).
+        toplevel.resize(menu_width(menu), placement.height)
+    else:
+        toplevel.set_default_size(-1, -1)
+        toplevel.set_resizable(False)
+
+
+def fit_placed_menu(menu: Gtk.Menu, holder: Gtk.Window) -> None:
+    """Handler of a menu's `show`: keep a menu that GTK places on the screen, where the
+    compositor moves none (#397). `holder` is the window the menu is opened from.
+
+    GTK places a submenu, a menu bar's menu and a `Gtk.MenuButton`'s menu itself, and
+    sets the submenu's `anchor-hints` and `rect-anchor-dy` at every opening, so hints set
+    ahead are undone. It shows the menu before it reads them, so a handler of `show` runs
+    between the two (read in GTK 3.24.52's source; notes in the design note). With
+    RESIZE_Y among the hints GTK does not cap the menu's height at the monitor's and expects
+    the compositor to resize it, which Weston does not: a folder of 60 hosts at twice the
+    usual text size was 2592 pixels tall. So the placement is worked out as in
+    `popup_menu_at`: beside its row for a submenu (`menuplacement.place_beside`, the shift
+    added to GTK's own `rect-anchor-dy`), below its item or above it for the rest
+    (`place_menu`, GTK's offset being 0 there); RESIZE_Y is taken out of the hints and
+    `cut_menu` cuts the menu where it scrolls.
+
+    Measured on Weston 14 (nested, GTK 3.24.52, 60 hosts): maximized, 1036 pixels, on the
+    screen from 39 to 1078 with a scroll arrow; not maximized, 600 pixels, from 62 to 665.
+    Under Wayland GDK reports a popup's root coordinates against the main window's content,
+    so the item of a submenu, in a popup's GdkWindow, is read from there: its top has the
+    holder's content top added, and the room is the holder's, not the popup's (the popup's
+    gave 97 pixels). Weston lands the menu about 5 pixels higher than asked. `menu_height`
+    overestimates a submenu by 8 pixels (608 for 600): harmless. Where there is no item,
+    window or room, nothing is set.
+    """
+    item = menu.get_attach_widget()
+    holder_window = holder.get_window()
+    window = item.get_window() if item is not None else None
+    if item is None or window is None or holder_window is None:
+        return
+    room = menu_room(holder_window)
+    if room is None:
+        return
+    area = item.get_allocation()
+    _x, top = window.get_root_coords(area.x, area.y)
+    wayland = window.get_display().__gtype__.name == "GdkWaylandDisplay"
+    if wayland and window.get_toplevel() != holder_window:
+        top += window_content(holder_window)[1]
+    height = menu_height(menu)
+    beside = isinstance(item.get_parent(), Gtk.Menu)
+    hints = menu.get_property("anchor-hints")
+    if beside:
+        base = menu.get_property("rect-anchor-dy")
+        placement = menuplacement.place_beside(top + base, height, room[1], room[3])
+        dy = base + placement.shift
+    else:
+        placement = menuplacement.place_menu(top, top + area.height, height, room[1], room[3])
+        if placement.below:
+            dy = placement.shift
+        else:
+            dy = placement.shift - area.height - placement.height
+    if placement.scrolls:
+        hints &= ~Gdk.AnchorHints.RESIZE_Y
+    cut_menu(menu, placement)
+    menu.set_property("anchor-hints", hints)
+    menu.set_property("rect-anchor-dy", dy)
+
+
 def popup_menu_at(
     menu: Gtk.Menu,
     event: Gdk.Event | None,
@@ -2078,20 +2157,7 @@ def popup_menu_at(
     if not placement.scrolls:
         hints |= Gdk.AnchorHints.RESIZE_Y
     # Set at each opening: a menu is opened again, and the last placement must not stay.
-    # A menu is cut to a height only through its toplevel, which GTK makes non-resizable
-    # and so clamps to the monitor: resizable first, then a default size (#402). The
-    # toplevel is reused, so a menu that fits gets both back.
-    toplevel = menu.get_toplevel()
-    if placement.scrolls:
-        toplevel.set_resizable(True)
-        toplevel.set_default_size(-1, placement.height)
-        # Also the size now: measured on X11, a menu reopened with a cut of another height
-        # was placed by the size it had, and a menu that hangs from its bottom edge ended
-        # below where it was asked to (#402).
-        toplevel.resize(menu_width(menu), placement.height)
-    else:
-        toplevel.set_default_size(-1, -1)
-        toplevel.set_resizable(False)
+    cut_menu(menu, placement)
     menu.set_property("anchor-hints", hints)
     menu.set_property("rect-anchor-dy", placement.shift)
     menu.set_property("rect-anchor-dx", across.shift)
@@ -2986,6 +3052,7 @@ class Wmain(GladeComponent):
         # The host list is a nested widget menu rebuilt by updateTree, so it stays a
         # real Gtk.Menu rather than moving into the menu model.
         self.menuServers = Gtk.Menu()
+        self.menuServers.connect("show", fit_placed_menu, self.wMain)
         # Filled on the way open rather than kept live: see build_console_menu.
         self.menuConsoles = Gtk.Menu()
         self.menuConsoles.connect("show", self.build_console_menu)
@@ -5460,6 +5527,7 @@ class Wmain(GladeComponent):
                 item = Gtk.MenuItem(label="")
                 self.label_menu_item(item, child.name, tabcolors.folder_color(folders, child.id))
                 submenu = Gtk.Menu()
+                submenu.connect("show", fit_placed_menu, self.wMain)
                 item.set_submenu(submenu)
                 item.show()
                 parent_menu.append(item)
@@ -9292,6 +9360,7 @@ class Wcluster(GladeComponent):
         menu = Gtk.Menu()
         wMain.fill_snippet_menus(snippetlib.tree(snippets), menu, None, send=self.send_snippet)
         self.btnSnippets = Gtk.MenuButton(label=_("Snippets"), popup=menu)
+        menu.connect("show", fit_placed_menu, self.get_widget("wCluster"))
         # A label takes the place of the arrow that says it opens a menu, so it goes back.
         arrow = Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON)
         self.btnSnippets.set_image(arrow)

@@ -62,7 +62,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/menuplacement.py` – where a pop-up menu goes so that it
   stays on the screen on both axes, as WSLg's Weston moves none (#392, #398), and how far a
   wheel notch scrolls a long menu (#399). A new pop-up menu opens through
-  `popup_menu_at` in `app.py`, as the other five do. Notes: `docs/design/menus-and-windows.md`.
+  `popup_menu_at` in `app.py`, as the other five do; one GTK places, a submenu or a menu
+  bar's, gets `fit_placed_menu` on `show` (#397). Notes: `docs/design/menus-and-windows.md`.
 - `src/gnome_connection_manager/utils/shortcuts.py` – the shortcut decisions that need no
   widget. A key typed into a console is its program's, bar what `[shortcuts]` binds (#419),
   and the key after a prefix key is its program's whatever it is (#452).

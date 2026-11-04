@@ -42,6 +42,7 @@ from gnome_connection_manager.utils.menuplacement import (
     Across,
     Placement,
     place_across,
+    place_beside,
     place_menu,
     wheel_extra,
     wheel_row,
@@ -251,6 +252,47 @@ def test_a_placement_unpacks_as_it_is_named():
     assert (below, shift, scrolls, height) == (True, -140, False, 800)
 
 
+# -- a submenu, beside its row (#397) ------------------------------------------------------------
+
+
+def test_a_submenu_that_fits_stays_where_gtk_put_it():
+    assert place_beside(300, 200, 0, 1080) == Placement(True, 0, False, 200)
+
+
+def test_a_submenu_that_runs_past_the_room_slides_up_to_its_bottom_edge():
+    assert place_beside(900, 400, 0, 1080) == Placement(True, -220, False, 400)
+
+
+def test_a_submenu_above_the_room_slides_down_to_its_top_edge():
+    assert place_beside(-50, 400, 0, 1080) == Placement(True, 50, False, 400)
+
+
+def test_a_submenu_exactly_as_tall_as_the_room_fills_it_and_does_not_scroll():
+    assert place_beside(300, 1080, 0, 1080) == Placement(True, -300, False, 1080)
+
+
+def test_a_submenu_one_pixel_taller_than_the_room_scrolls_from_the_low_edge():
+    assert place_beside(300, 1081, 0, 1080) == Placement(True, -300, True, 1080)
+
+
+@pytest.mark.parametrize("offset", [0, 37, -500])
+def test_where_the_room_is_does_not_change_what_is_decided_beside(offset):
+    for top in range(-100, 1300, 50):
+        for height in (100, 700, 1080, 1500):
+            base = place_beside(top, height, 0, 1080)
+            moved_by = place_beside(top + offset, height, offset, 1080 + offset)
+            assert moved_by == base
+
+
+def test_every_submenu_lands_inside_the_room():
+    for top in range(-200, 1400, 17):
+        for height in range(1, 1500, 53):
+            placement = place_beside(top, height, 100, 1000)
+            start = top + placement.shift
+            assert start >= 100 and start + placement.height <= 1000, (top, height, placement)
+            assert placement.scrolls == (height > 900)
+
+
 # -- the decision across, with no display (#398) ----------------------------------------------
 
 
@@ -444,6 +486,7 @@ class FakeMenu:
         self.emitted = []
         self.log: list[object] = []
         self.toplevel = FakeMenuToplevel(self.log)
+        self.attach = None
         if popup_at_rect:
             self.popup_at_rect = self.record_popup_at_rect
 
@@ -452,6 +495,12 @@ class FakeMenu:
 
     def get_toplevel(self):
         return self.toplevel
+
+    def get_attach_widget(self):
+        return self.attach
+
+    def get_property(self, name):
+        return self.properties[name]
 
     def get_style_context(self):
         return self.style
@@ -995,6 +1044,210 @@ def test_under_wayland_the_window_is_the_room(popping, gtk_windows):
     assert properties["rect-anchor-dy"] == 0
 
 
+# -- a menu GTK places, with fakes (#397) ----------------------------------------------------
+
+
+class AttachItem:
+    """The widget a menu hangs from, as fit_placed_menu reads it: its window, where it is in
+    that window, and its parent."""
+
+    def __init__(self, window, y, height=30, parent=None):
+        self.window, self.area, self.parent = window, Allocation(0, y, 100, height), parent
+
+    def get_window(self):
+        return self.window
+
+    def get_allocation(self):
+        return self.area
+
+    def get_parent(self):
+        return self.parent
+
+
+@pytest.fixture
+def placed(popping, monkeypatch):
+    """`popping`, and a `Gtk.Menu` class a menu's parent can be an instance of."""
+
+    class GtkMenu:
+        @staticmethod
+        def do_get_preferred_width(menu):
+            return (0, menu.width)
+
+    monkeypatch.setattr(popping.Gtk, "Menu", GtkMenu, raising=False)
+    return popping
+
+
+def gtk_menu(app_module, height, dy=-8, hints=ALL_HINTS):
+    """A menu as GTK has just set it to open: its hints and offset, hung from nothing yet."""
+    menu = tall(height)
+    menu.properties.update({"anchor-hints": hints, "rect-anchor-dy": dy})
+    return menu
+
+
+def beside_item(app_module, window, y):
+    return AttachItem(window, y, parent=app_module.Gtk.Menu())
+
+
+def test_a_submenu_that_fits_keeps_what_gtk_set(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 200)
+    menu.attach = beside_item(placed, window, 300)
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    assert menu.properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": -8}
+    assert menu.log == [("set_default_size", -1, -1), ("set_resizable", False)]
+
+
+def test_a_submenu_that_runs_past_the_screen_is_slid_up_by_adding_to_gtks_offset(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 400)
+    menu.attach = beside_item(placed, window, 1000)
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    # GTK's -8 puts its top at 992, and 992 + 400 is past 1080: up by 312, to 680.
+    assert menu.properties["rect-anchor-dy"] == -8 - 312
+    assert menu.properties["anchor-hints"] == ALL_HINTS
+
+
+def test_a_submenu_taller_than_the_screen_is_cut_and_loses_resize_y(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 1500)
+    menu.attach = beside_item(placed, window, 300)
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    assert menu.properties == {
+        "anchor-hints": SCROLLING_HINTS,
+        # From the low edge: GTK's top is 292, so up by 292.
+        "rect-anchor-dy": -8 - 292,
+    }
+    assert menu.log == [
+        ("set_resizable", True),
+        ("set_default_size", -1, 1080),
+        ("resize", 200, 1080),
+    ]
+
+
+def test_a_submenu_cut_and_opened_again_as_a_short_one_gets_its_size_back(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 1500)
+    menu.attach = beside_item(placed, window, 300)
+    holder = FakeGtkWindow(window)
+    placed.fit_placed_menu(menu, holder)
+    menu.items[0].height = (100, 100)
+    menu.properties.update({"anchor-hints": ALL_HINTS, "rect-anchor-dy": -8})
+    menu.log.clear()
+
+    placed.fit_placed_menu(menu, holder)
+
+    assert menu.log == [("set_default_size", -1, -1), ("set_resizable", False)]
+    assert menu.properties == {"anchor-hints": ALL_HINTS, "rect-anchor-dy": -8}
+
+
+def wayland_holder(placed, monkeypatch, content_top=67):
+    """A holder under Wayland whose content starts `content_top` down its GdkWindow, and
+    spans 500 pixels: the room is 67 to 567."""
+    display = FakeDisplay(WAYLAND)
+    holder_window = FakeWindow(display, height=700, width=1000)
+    holder = FakeGtkWindow(holder_window, FakeChild(Allocation(26, content_top, 900, 500)))
+    monkeypatch.setattr(placed.Gtk.Window, "list_toplevels", lambda: [holder], raising=False)
+    return display, holder_window, holder
+
+
+def test_under_wayland_a_submenus_item_in_a_popup_has_the_content_top_added(placed, monkeypatch):
+    display, holder_window, holder = wayland_holder(placed, monkeypatch)
+    # The popup the parent menu is drawn in: its coordinates are against the content.
+    popup = FakeWindow(display, offset=(0, 10))
+    menu = gtk_menu(placed, 300)
+    menu.attach = beside_item(placed, popup, 400)
+
+    placed.fit_placed_menu(menu, holder)
+
+    # 10 + 400 + 67 = 477, GTK's offset -8 makes 469; 469 + 300 is past 567: up to 267.
+    assert menu.properties["rect-anchor-dy"] == -8 + (267 - 469)
+
+
+def test_under_wayland_an_item_in_the_holders_own_window_has_nothing_added(placed, monkeypatch):
+    _display, holder_window, holder = wayland_holder(placed, monkeypatch)
+    menu = gtk_menu(placed, 300)
+    menu.attach = beside_item(placed, holder_window, 400)
+
+    placed.fit_placed_menu(menu, holder)
+
+    # 400 - 8 = 392; 392 + 300 is past 567: up to 267.
+    assert menu.properties["rect-anchor-dy"] == -8 + (267 - 392)
+
+
+def test_a_menu_from_the_menu_bar_hangs_below_its_item_whatever_it_had_before(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 200, dy=-50)
+    menu.attach = AttachItem(window, 20, parent=object())
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    assert menu.properties["rect-anchor-dy"] == 0
+
+
+def test_a_menu_from_the_menu_bar_low_in_the_window_stands_above_its_item(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 200, dy=0)
+    menu.attach = AttachItem(window, 1050, parent=object())
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    # Hung from the item's bottom by GTK, so up by the item's height and the menu's.
+    assert menu.properties["rect-anchor-dy"] == -30 - 200
+
+
+def test_a_menu_from_the_menu_bar_taller_than_the_screen_is_cut_below_its_item(placed):
+    window = screen_window()
+    menu = gtk_menu(placed, 1500, dy=0)
+    menu.attach = AttachItem(window, 20, parent=object())
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    assert menu.properties["rect-anchor-dy"] == 0
+    assert menu.properties["anchor-hints"] == SCROLLING_HINTS
+    assert ("set_default_size", -1, 1030) in menu.log
+
+
+def test_a_menu_with_no_item_window_or_room_is_left_as_gtk_set_it(placed):
+    window = screen_window()
+    holder = FakeGtkWindow(window)
+    left = {"anchor-hints": ALL_HINTS, "rect-anchor-dy": -8}
+    # No widget it hangs from.
+    menu = gtk_menu(placed, 1500)
+    placed.fit_placed_menu(menu, holder)
+    assert (menu.properties, menu.log) == (left, [])
+    # The item has no window.
+    menu = gtk_menu(placed, 1500)
+    menu.attach = beside_item(placed, None, 300)
+    placed.fit_placed_menu(menu, holder)
+    assert (menu.properties, menu.log) == (left, [])
+    # The holder has none.
+    menu = gtk_menu(placed, 1500)
+    menu.attach = beside_item(placed, window, 300)
+    placed.fit_placed_menu(menu, FakeGtkWindow(None))
+    assert (menu.properties, menu.log) == (left, [])
+    # No room: the window is on no monitor.
+    nowhere = FakeWindow(FakeDisplay(X11, None))
+    menu = gtk_menu(placed, 1500)
+    menu.attach = beside_item(placed, nowhere, 300)
+    placed.fit_placed_menu(menu, FakeGtkWindow(nowhere))
+    assert (menu.properties, menu.log) == (left, [])
+
+
+def test_every_menu_gtk_places_is_given_the_handler(app_module):
+    """The Hosts menu, each folder's submenu and the cluster window's Snippets button: a
+    menu added without it runs off the screen under Weston again (#397)."""
+    source = Path(app_module.__file__).read_text()
+
+    assert len(re.findall(r'\.connect\("show", fit_placed_menu, ', source)) == 3
+    assert "def cut_menu(" in source
+
+
 def test_the_fakes_match_real_gtk():
     """conftest stubs gi, so a fake can offer what GTK does not have (#30, #41)."""
     gi = pytest.importorskip("gi", reason="PyGObject not available")
@@ -1009,6 +1262,8 @@ def test_the_fakes_match_real_gtk():
             (
                 "get_children",
                 "get_toplevel",
+                "get_attach_widget",
+                "get_property",
                 "get_style_context",
                 "get_border_width",
                 "set_property",
@@ -1028,6 +1283,7 @@ def test_the_fakes_match_real_gtk():
         (FakeMenuToplevel, Gtk.Window, ("set_resizable", "set_default_size", "resize")),
         (FakeGtkWindow, Gtk.Window, ("get_window", "get_child")),
         (FakeChild, Gtk.Widget, ("get_allocation",)),
+        (AttachItem, Gtk.Widget, ("get_window", "get_allocation", "get_parent")),
     ):
         for name in names:
             assert hasattr(fake, name), f"{fake.__name__} is missing {name}"
@@ -1351,6 +1607,8 @@ def recording(name):
         if not KEEP_HINTS:
             menu.set_property("anchor-hints", 0)
         return real(menu, *arguments)
+    # What a scenario that leaves the hints to its own stand-in opens a menu by.
+    opened.real = real
     return opened
 
 for call in ("popup_at_rect", "popup_at_pointer", "popup_at_widget"):
@@ -1471,6 +1729,57 @@ def open_menubar_item(label):
 def center_of_widget(widget):
     """Where the middle of a widget with a window of its own, or a menubar's item, is."""
     return on_screen(widget, widget.get_allocated_width() // 2, widget.get_allocated_height() // 2)
+
+def standin(menu):
+    """Weston's part, for a menu GTK places itself: a menu that is moved by no compositor
+    has no hints when GTK reads them, and GTK sets a submenu's hints at each opening, so this
+    runs after GCM's own handler of `show`, which runs before GTK reads them (#397)."""
+    if not KEEP_HINTS:
+        menu.connect_after("show", lambda opened: opened.set_property("anchor-hints", 0))
+
+def inside_screen(what, menu):
+    x, y, width, height = landed(menu)
+    assert SCREEN_TOP <= y and y + height <= SCREEN_BOTTOM, (
+        f"{what}: the menu runs from {y} to {y + height} on a screen from {SCREEN_TOP} to {SCREEN_BOTTOM}"
+    )
+    return x, y, width, height
+
+def reach_last(what, menu):
+    """Scroll the open `menu` until its last item is in sight, as the wheel does."""
+    last = menu.get_children()[-1]
+    shown = menu.get_toplevel().get_window()
+    for _ in range(600):
+        top = shown.get_origin()[2]
+        _, _, item_y = last.get_window().get_origin()
+        bottom = item_y + last.get_allocation().y + last.get_allocation().height - top
+        if bottom <= shown.get_height():
+            return
+        more = Gdk.Event.new(Gdk.EventType.SCROLL)
+        more.direction = Gdk.ScrollDirection.SMOOTH
+        more.delta_y = 1.0
+        menu.emit("scroll-event", more)
+        pump(0.01)
+    raise AssertionError(f"{what}: the last item cannot be scrolled into sight")
+
+def lab_folder(count, folders_before=0):
+    """A folder of `count` hosts, after `folders_before` folders of one, so low in the menu."""
+    app.groups.clear()
+    for number in range(folders_before):
+        name = f"F{number:02d}"
+        app.groups[name] = [ssh_host("x", "192.0.2.1", name)]
+    app.groups["Zulu"] = [ssh_host(f"host-{i:02d}", f"192.0.2.{i + 1}", "Zulu") for i in range(count)]
+    w.updateTree()
+    pump(0.4)
+
+def open_folder(hosts, which=-1):
+    folders = [item for item in hosts.get_children() if item.get_submenu() is not None]
+    folder = folders[which]
+    sub = folder.get_submenu()
+    standin(sub)
+    click(1, *center_of(folder))
+    assert until(sub.get_visible), "the folder did not open"
+    pump(0.5)
+    return folder, sub
 
 def long_list(count):
     app.snippets[:] = [app.snippetlib.Snippet(f"{n:08x}", f"snippet {n:02d}", "x") for n in range(count)]
@@ -2047,6 +2356,64 @@ elif scenario.startswith("wheel-"):
         close(menu)
         print("fits ok")
 
+elif scenario == "a-tall-folder-submenu-stays-on-the-screen":
+    lab_folder(60)
+    hosts = open_menubar_item("H_osts")
+    folder, sub = open_folder(hosts)
+    x, y, width, height = inside_screen("a folder of 60 hosts", sub)
+    assert height < app.menu_height(sub), (height, app.menu_height(sub))
+    reach_last("a folder of 60 hosts", sub)
+elif scenario == "a-low-folder-submenu-slides-onto-the-screen":
+    lab_folder(15, folders_before=24)
+    hosts = open_menubar_item("H_osts")
+    folder, sub = open_folder(hosts)
+    x, y, width, height = inside_screen("a low folder of 15 hosts", sub)
+    assert height >= app.menu_height(sub) - 10, (height, app.menu_height(sub))
+    assert center_of(folder)[1] > SCREEN_BOTTOM - height, "the folder is not low enough to test"
+elif scenario == "a-hosts-menu-of-top-level-hosts-stays-on-the-screen":
+    app.groups.clear()
+    app.groups[""] = [ssh_host(f"host-{i:02d}", f"192.0.2.{i + 1}") for i in range(60)]
+    w.updateTree()
+    pump(0.4)
+    item = w.find_menubar_item("H_osts")
+    hosts = item.get_submenu()
+    standin(hosts)
+    # Not the recording call, which takes the hints before GCM's handler runs.
+    Gtk.Menu.popup_at_widget.real(hosts, item, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+    assert until(hosts.get_visible), "the Hosts menu did not open"
+    pump(0.5)
+    x, y, width, height = inside_screen("60 hosts in the Hosts menu", hosts)
+    assert height < app.menu_height(hosts), (height, app.menu_height(hosts))
+    reach_last("60 hosts in the Hosts menu", hosts)
+elif scenario == "the-cluster-snippets-button-stays-on-the-screen":
+    long_list(60)
+    w.addTab(w.nbConsole, app.Host("", "shell"))
+    pump(0.5)
+    w.on_btnCluster_clicked(None)
+    window = w.wCluster
+    window.move(0, 0)
+    window.present()
+    pump(0.6)
+    found = []
+    def walk(widget):
+        if isinstance(widget, Gtk.MenuButton):
+            found.append(widget)
+        if hasattr(widget, "get_children"):
+            for child in widget.get_children():
+                walk(child)
+    walk(window)
+    button = [b for b in found if b.get_label() == "Snippets"][0]
+    menu = button.get_popup()
+    standin(menu)
+    _, window_x, window_y = window.get_window().get_origin()
+    inside_x, inside_y = button.translate_coordinates(window, button.get_allocated_width() // 2, button.get_allocated_height() // 2)
+    click(1, window_x + inside_x, window_y + inside_y)
+    assert until(menu.get_visible), "the button opened nothing"
+    pump(0.5)
+    x, y, width, height = inside_screen("the cluster's Snippets button", menu)
+    assert height < app.menu_height(menu), (height, app.menu_height(menu))
+    reach_last("the cluster's Snippets button", menu)
+
 else:
     raise SystemExit("no scenario " + scenario)
 w.wMain.destroy()
@@ -2097,6 +2464,12 @@ def run_scenario(scenario, tmp_path, display, dpi="2"):
         "a-menu-stays-inside-a-short-window",
         "a-menu-opens-at-its-top-once-it-is-shorter",
         "a-long-menu-opened-again-starts-at-its-top",
+        "a-tall-folder-submenu-stays-on-the-screen",
+        "a-tall-folder-submenu-stays-on-the-screen-with-its-hints",
+        "a-low-folder-submenu-slides-onto-the-screen",
+        "a-low-folder-submenu-slides-onto-the-screen-with-its-hints",
+        "a-hosts-menu-of-top-level-hosts-stays-on-the-screen",
+        "the-cluster-snippets-button-stays-on-the-screen",
     ],
 )
 def test_menus_stay_on_the_screen_against_real_gtk(scenario, tmp_path):

@@ -52,6 +52,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- **The Hosts menu's folder submenus** stay on the screen and scroll where a folder holds more
+  hosts than fit, as do the Hosts menu and the cluster window's Snippets button, under WSLg's
+  compositor, which leaves GTK's own placement of them unapplied (#397).
 - **A menu taller than its room opens beside its button or click**, cut at the edge of the
   screen (or under Wayland, of GCM's window), and scrolls, where it used to start at the top
   of the room and cover what it opened from. Under Wayland it no longer runs past a short

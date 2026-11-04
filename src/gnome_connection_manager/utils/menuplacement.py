@@ -27,6 +27,12 @@ A menu cut short scrolls 15 pixels for each notch of the wheel, however tall a r
 pixels alike. `wheel_extra` is what is added to that to make it a row, and `wheel_row`
 picks the row: the shortest, which is a single line's.
 
+A submenu, and the menus of the menu bar and of a `Gtk.MenuButton`, are placed by GTK itself,
+which sets their hints at every opening, so GCM changes what GTK has set just before it is
+read (#397). A submenu opens beside its row, level with it, not above or below: `place_beside`
+slides it along the room, and cuts it to the room where it is taller. Notes:
+`docs/design/menus-and-windows.md`.
+
 Pure: only numbers go in, on one axis at a time, all in the same coordinates.
 """
 
@@ -96,6 +102,22 @@ def place_menu(top: int, bottom: int, height: int, low: int, high: int) -> Place
     hung = bottom if below else top - height
     start = min(max(hung, low), high - height)
     return Placement(below, start - hung, False, height)
+
+
+def place_beside(top: int, height: int, low: int, high: int) -> Placement:
+    """Where a submenu `height` tall goes when GTK would put its top edge at `top`, in a
+    room spanning `low` to `high` (#397).
+
+    Where it is, if it fits there; else slid along the room until it is inside. A submenu
+    strictly taller than the room starts at `low`, is as tall as the room, and `scrolls`.
+    One exactly as tall as the room fills it and does not. Always `below`: the submenu
+    hangs from `top`, and `shift` is how far it moves on, down when positive.
+    """
+    room = high - low
+    if height > room:
+        return Placement(True, low - top, True, room)
+    start = min(max(top, low), high - height)
+    return Placement(True, start - top, False, height)
 
 
 class Across(NamedTuple):
