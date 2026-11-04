@@ -52,6 +52,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- **Dialogs open at the size they keep.** Preferences, Edit Host, About and the cluster
+  window were shown empty and grown a moment later, so they jumped on opening; each is now
+  shown once filled and sized to the screen (#424).
 - **The Hosts menu's folder submenus** stay on the screen and scroll where a folder holds more
   hosts than fit, as do the Hosts menu and the cluster window's Snippets button, under WSLg's
   compositor, which leaves GTK's own placement of them unapplied (#397).

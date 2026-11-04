@@ -440,6 +440,7 @@ def test_the_command_after_disconnecting_needs_a_session_to_end(app_module, ctyp
 def make_loadable_whost(app_module, monkeypatch):
     """A dialog stubbed just far enough to run `init` against a stored host."""
     dialog = app_module.Whost.__new__(app_module.Whost)
+    dialog.show_dialog = lambda: None  # the real one maps a window (#424)
     dialog.type_pages = {}  # as new() leaves them: no type here has settings (#228)
     for name in (
         "txtName",

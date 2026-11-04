@@ -880,10 +880,18 @@ class GladeComponent:
                     self.main_widget.set_transient_for(parent)
                 if application is not None:
                     self.main_widget.set_application(application)
-                self.main_widget.show_all()
-                self.main_widget.present()
-                while Gtk.events_pending():
-                    Gtk.main_iteration()
+                if isinstance(self.main_widget, Gtk.Dialog):
+                    # A dialog is shown once new() has filled it (show_dialog), so
+                    # its first size is its final one (#424). Its children are
+                    # shown now and the toplevel stays unmapped, so that new()
+                    # can still hide what a host's type does not use.
+                    for child in self.main_widget.get_children():
+                        child.show_all()
+                else:
+                    self.main_widget.show_all()
+                    self.main_widget.present()
+                    while Gtk.events_pending():
+                        Gtk.main_iteration()
         else:
             self.builder.add_from_file(self.glade_path)
             self.main_widget = None
@@ -892,11 +900,26 @@ class GladeComponent:
         self.new()
         self.builder.connect_signals(self)
 
-        # The dialogs are already on screen by now: they are presented before
-        # new() fills them, and Whost is filled later still by its init(). Wait
-        # for the size to settle before deciding whether it fits the monitor.
-        if isinstance(self.main_widget, Gtk.Dialog):
-            GLib.idle_add(fit_window_to_monitor, self.main_widget, priority=GLib.PRIORITY_LOW)
+        if isinstance(self.main_widget, Gtk.Dialog) and not self.SHOWN_BY_INIT:
+            self.show_dialog()
+
+    # True for a dialog that is filled after __init__ returns (Whost, by init()),
+    # which then calls show_dialog itself.
+    SHOWN_BY_INIT = False
+
+    def show_dialog(self):
+        """Show the dialog at the size it will keep, now that it is filled (#424).
+
+        It is sized to the monitor before it is mapped, so that the window manager
+        places it once. The idle then rescues a placement the manager got wrong.
+        """
+        window = self.main_widget
+        size_window_for_monitor(window)
+        window.show()
+        window.present()
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        GLib.idle_add(fit_window_to_monitor, window, priority=GLib.PRIORITY_LOW)
 
     def new(self):
         pass
@@ -2240,13 +2263,29 @@ def onscreen_position(window, workarea, width, height):
     return placed if placed != (x, y) else None
 
 
+def size_window_for_monitor(window):
+    """Cap `window` to the monitor work area, scrolling what is too tall; return the
+    size asked for, or None where no work area is known. It needs no mapped window:
+    before one is realized `monitor_workarea` reads the transient parent's monitor.
+    """
+    workarea = monitor_workarea(window)
+    if workarea is None:
+        return None
+    scroll_oversized_content(window, workarea)
+    _, width = window.get_preferred_width()
+    _, height = window.get_preferred_height()
+    capped = clamp_to_workarea(width, height, workarea, WINDOW_FRAME_ALLOWANCE)
+    if capped != (width, height):
+        window.resize(*capped)
+    return capped
+
+
 def fit_window_to_monitor(window):
     """Keep `window` within the monitor work area, buttons included.
 
-    A window that already fits keeps the size GTK would have given it. Placement
-    is corrected when it does not: the dialogs are presented, and so placed, while
-    still empty, then grow once new() has filled them in — which walks the bottom
-    edge, and with it the OK/Cancel row, off the screen.
+    A dialog is sized before it is shown (`GladeComponent.show_dialog`), so this
+    only rescues placement: a window manager may still put the bottom edge, and
+    with it the OK/Cancel row, off the screen.
     """
     if not window.get_visible():
         # Closed again before the idle ran; there is nothing left to fit.
@@ -2254,12 +2293,9 @@ def fit_window_to_monitor(window):
     workarea = monitor_workarea(window)
     if workarea is None:
         return
-    scroll_oversized_content(window, workarea)
-    _, width = window.get_preferred_width()
-    _, height = window.get_preferred_height()
-    capped = clamp_to_workarea(width, height, workarea, WINDOW_FRAME_ALLOWANCE)
-    if capped != (width, height):
-        window.resize(*capped)
+    capped = size_window_for_monitor(window)
+    if capped is None:
+        return
     # Nothing moves a window that grew after the window manager placed it, so
     # slide it back up itself. resize() is asynchronous, hence measuring against
     # the size just asked for rather than reading one back.
@@ -7872,6 +7908,10 @@ class Wmain(GladeComponent):
 
 
 class Whost(GladeComponent):
+    """The host dialog. It is shown by init(), once filled, not by __init__ (#424)."""
+
+    SHOWN_BY_INIT = True
+
     def __init__(
         self, path="gnome-connection-manager.glade", root="wHost", domain=domain_name, **kwargs
     ):
@@ -8074,6 +8114,11 @@ class Whost(GladeComponent):
         return values
 
     def init(self, group, host=None):
+        """Fill the dialog for `group` and `host`, then show it (#424)."""
+        self.fill(group, host)
+        self.show_dialog()
+
+    def fill(self, group, host=None):
         self.cmbGroup.get_children()[0].set_text(group)
         if host is None:
             self.isNew = True

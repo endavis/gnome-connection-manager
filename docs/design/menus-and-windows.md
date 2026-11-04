@@ -305,3 +305,18 @@ the main window when they were reported, so it may not be over it either; whethe
 message shows while its parent is minimized, as a mount's result can now be, where it
 appeared on its own before. The measurements and the scenarios are X11 with no window
 manager: they say what GCM asks for, not where a Wayland compositor puts a window.
+
+## A dialog is shown filled (#424)
+
+A dialog used to be presented by `GladeComponent.__init__` before `new()` filled it, so
+it opened small and grew, and the window manager placed it once at the small size and
+then again after `fit_window_to_monitor`. `GladeComponent` now shows a dialog's children
+only, so that `new()` can still hide what a type does not use, and `show_dialog` sizes
+the window with `size_window_for_monitor`, maps it, and queues `fit_window_to_monitor`
+for placement alone. Before a window is realized `monitor_workarea` reads the monitor of
+its transient parent. `Whost` is filled after `__init__` returns, so it sets
+`SHOWN_BY_INIT` and its `init` calls `fill` and then `show_dialog`. The signals are still
+connected after `new()` and before the dialog is shown, so a new host's dialog runs no
+`on_cmbType_changed`. `tests/test_window_fit.py` records each dialog's size at its first
+map and holds it equal to the size it keeps, on the real work area and a small one.
+Cluster keeps its glade default size, which no fit touches; that was not changed.
