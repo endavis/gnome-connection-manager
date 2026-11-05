@@ -91,6 +91,25 @@ doit launch
 uv run python -m gnome_connection_manager
 ```
 
+To try GCM without touching your own `~/.config/gcm`, run it against a throwaway
+configuration instead:
+
+```bash
+doit sandbox                          # a folder of 30 hosts and one of 3
+doit sandbox --fresh --many 5 --few 2 # rebuild it, with other counts
+doit sandbox --scale 2                # GDK_DPI_SCALE=2
+```
+
+Its HOME is `tmp/sandbox_cache` in the checkout, so each worktree has one and `doit pr_merge`
+removes it with the worktree. It is written once and kept; `--fresh` rebuilds it. The hosts
+point at 127.0.0.1 and only fill menus: opening one tries ssh. Update checks are off in it
+(turn them on in Preferences to try one). On a machine with no screen, or to check for
+tracebacks, give it a scratch display:
+
+```bash
+env -u WAYLAND_DISPLAY GDK_BACKEND=x11 timeout 12 xvfb-run -a uv run doit sandbox --fresh
+```
+
 ### Logging
 
 Logs are emitted via Python's `logging` module. Adjust verbosity by setting `GCM_LOG_LEVEL` before running:

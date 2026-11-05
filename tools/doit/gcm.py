@@ -37,6 +37,89 @@ def task_launch() -> dict[str, Any]:
     }
 
 
+def _run_sandbox(fresh: bool, many: int, few: int, scale: str) -> bool:
+    """Prepare the sandbox and run GCM against it. False when GCM could not start or failed."""
+    from tools import sandbox
+
+    python = Path(sandbox.command(REPO)[0])
+    if not python.exists():
+        print(f"No {python}: run `doit setup` first.")
+        return False
+    home = sandbox.sandbox_home(REPO)
+    try:
+        written = sandbox.prepare(home, fresh=fresh, many=many, few=few)
+        env = sandbox.environment(dict(os.environ), home, scale or None)
+    except ValueError as error:
+        print(error)
+        return False
+    if written:
+        print(f"Wrote {sandbox.config_file(home)}")
+    else:
+        print(f"Kept {home}; --fresh rebuilds it")
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()  # nosec B603 B607
+    print(
+        f"GCM {head or '(unknown commit)'}, GDK_DPI_SCALE={env.get('GDK_DPI_SCALE', '(unset)')}, HOME={home}"
+    )
+    done = subprocess.run(sandbox.command(REPO), env=env, cwd=REPO, check=False)  # nosec B603
+    return done.returncode == 0
+
+
+def task_sandbox() -> dict[str, Any]:
+    """Run the application against a throwaway configuration under tmp/.
+
+    Not `doit launch` or `uv run`: the HOME is a folder of the checkout's, holding a
+    folder of many hosts and one of a few, so your own ~/.config/gcm is never read or
+    written. GCM runs from the checkout's venv directly, as `uv run` would look for its
+    cache under the fake HOME. Update checks are off in it.
+
+    Options:
+        --fresh: Rebuild the sandbox.
+        --many: Hosts in the "Many hosts" folder (default 30).
+        --few: Hosts in the "Few hosts" folder (default 3).
+        --scale: GDK_DPI_SCALE for GCM, a positive number.
+    """
+    return {
+        "actions": [_run_sandbox],
+        "params": [
+            {
+                "name": "fresh",
+                "long": "fresh",
+                "type": bool,
+                "default": False,
+                "help": "Rebuild the sandbox.",
+            },
+            {
+                "name": "many",
+                "long": "many",
+                "type": int,
+                "default": 30,
+                "help": "Hosts in the 'Many hosts' folder.",
+            },
+            {
+                "name": "few",
+                "long": "few",
+                "type": int,
+                "default": 3,
+                "help": "Hosts in the 'Few hosts' folder.",
+            },
+            {
+                "name": "scale",
+                "long": "scale",
+                "default": "",
+                "help": "GDK_DPI_SCALE for GCM, a positive number.",
+            },
+        ],
+        "title": title_with_actions,
+        "verbosity": 2,
+    }
+
+
 def task_setup() -> dict[str, Any]:
     """Create the development environment.
 

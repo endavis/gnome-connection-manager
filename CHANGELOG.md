@@ -12,6 +12,9 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- **`doit sandbox`** runs the checkout's GCM against a throwaway configuration under `tmp/`,
+  a folder of many hosts and one of a few, so a menu or a tree can be tried without touching
+  `~/.config/gcm`. `--fresh`, `--many`, `--few` and `--scale` set it (#506).
 - **Prefix keys.** Name the keys a program takes a command after, as tmux takes `Ctrl+B`,
   and the key typed after one goes to the program in the console, not to GCM's shortcuts,
   `Ctrl+Shift+S` and `F11` included; the key after that is GCM's again. Preferences' Shortcuts
