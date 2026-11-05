@@ -1,7 +1,7 @@
 """`doit wslg_windows` (#510): the windows of WSLg's own msrdc.exe, listed from WSL.
 
 Nothing here reaches a real PowerShell: `subprocess.run` raises in both modules that could
-call it, and the lister's output is made up. It was not run on WSL.
+call it, and the lister's output is made up. Its run on WSL is recorded on #510.
 """
 
 from __future__ import annotations

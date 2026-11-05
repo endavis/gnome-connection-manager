@@ -258,7 +258,7 @@ def task_wslg_windows() -> dict[str, Any]:
 
     Shows each window's title, place, size, visibility, DPI and class, to find the grey
     rectangle a failed tab drag leaves on the Windows desktop (#401). Only WSL has them:
-    elsewhere the task says so and fails. This form has not been run on WSL.
+    elsewhere the task says so and fails.
     """
     return {
         "actions": [_list_wslg_windows],

@@ -14,8 +14,7 @@ the git log.
 ### Added
 - **`doit wslg_windows`** lists, from inside WSL, the windows of WSLg's own `msrdc.exe`
   through `powershell.exe`, matched by its full path so a Remote Desktop client is left out.
-  It is for finding the grey rectangle a failed tab drag leaves (#401). Not yet run on WSL
-  (#510).
+  It is for finding the grey rectangle a failed tab drag leaves (#401, #510).
 - **`doit sandbox --xvfb`** runs the sandbox's GCM in the foreground on an Xvfb of its own,
   with `GDK_BACKEND=x11` and no `WAYLAND_DISPLAY`, so a machine with no screen, or a check for
   tracebacks, needs no `xvfb-run`. The Xvfb and GCM stop however the task ends, `timeout`

@@ -10,10 +10,10 @@ its name: a Remote Desktop client is `msrdc.exe` too, and a filter on the name a
 client's window title (#401). Another `msrdc.exe` is never listed, but its path is shown when
 no WSLg one is found, so an install elsewhere can be seen.
 
-This form has NOT been run on WSL. It was built on an LXC container with no Windows, so
-every test here uses a fake PowerShell and fake output. The lister it carries was measured on
-WSLg in #401; this wrapper around it, and the changes made to it here (the path is matched in
-Python, hidden windows are listed with a `visible` column), were not.
+It was built on an LXC container with no Windows, so every test here uses a fake PowerShell
+and fake output. It was then run on WSL on 2026-11-05, with GCM open under WSLg (#510). It
+listed GCM's window as visible, the same window #401's lister listed beside it, and WSLg's
+hidden windows. It left out the Windows App's `msrdc.exe`, a Remote Desktop client.
 """
 
 from __future__ import annotations
