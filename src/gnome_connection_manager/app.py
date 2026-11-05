@@ -73,6 +73,7 @@ import time
 import tokenize
 import weakref
 from pathlib import Path
+from typing import Any
 
 
 def _configure_logging():
@@ -869,6 +870,16 @@ def carried_config():
         path.replace(aside)
         logger.warning("Kept %s as %s rather than write over it. %s", path.name, aside, error)
         return configparser.RawConfigParser()
+
+
+def trace_dropped_sections(cp):
+    """The names of the sections gcm.conf holds now that `cp`, about to replace it, lacks;
+    None where the file cannot be read. Names only, never a value (#513)."""
+    try:
+        before = configfile.load(Path(CONFIG_FILE)).config.sections()
+    except Exception:
+        return None
+    return [name for name in before if not cp.has_section(name)]
 
 
 def folder_contents():
@@ -1880,6 +1891,74 @@ _notebook_numbers = itertools.count(1)
 def trace_page_name(page: object) -> str:
     """What a trace line calls a tab: the name `add_page` kept on its page (#507)."""
     return str(getattr(page, "trace_name", "?"))
+
+
+def trace_terminal_name(terminal: object) -> str:
+    """What a trace line calls a console: its tab's name, else its host's, else "?" (#513)."""
+    page = terminal.get_parent() if hasattr(terminal, "get_parent") else None
+    if page is not None and hasattr(page, "trace_name"):
+        return trace_page_name(page)
+    host = getattr(terminal, "host", None)
+    return str(getattr(host, "name", "?")) if host is not None else "?"
+
+
+def own_key_command(event: Any) -> str | None:
+    """What GCM itself does with the key of `event`, named, or None for a key that is nobody's.
+
+    A `[shortcuts]` key is its command's name (a snippet's key is just "snippet": its text is
+    the user's), and any other key is named by the application's actions it is an
+    accelerator for. For a trace line (#513): the key itself is never returned.
+    """
+    command = shortcuts.get(get_key_name(event))
+    if isinstance(command, list) and command:
+        return str(command[0])
+    if command is not None:
+        return "snippet"
+    application = Gtk.Application.get_default()
+    if application is None:
+        return None
+    accel = Gtk.accelerator_name(event.keyval, event.state & Gtk.accelerator_get_default_mod_mask())
+    return ", ".join(application.get_actions_for_accel(accel)) or None
+
+
+def trace_key(route: str, where: object, event: Any, named_only: bool = True) -> None:
+    """Write a `keys` line for `event`: its route, where, and the action GCM runs for it.
+
+    With `named_only` a key GCM owns nothing for writes no line, so that typing leaves none
+    (#513). Never raises, and reads nothing while the area is off.
+    """
+    if not trace.enabled(trace.KEYS):
+        return
+    with contextlib.suppress(Exception):
+        action = own_key_command(event)
+        if named_only and action is None:
+            return
+        place_name = where if isinstance(where, str) else f"console {trace_terminal_name(where)}"
+        trace.note(trace.KEYS, lambda: trace.key_line(route, place_name, action))
+
+
+def notification_owners() -> dict[str, bool] | None:
+    """Whether each name in `trace.NOTIFICATION_NAMES` has an owner on the session bus, or
+    None where the bus is not reached; for a trace line, 500 ms at most (#513)."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        owners: dict[str, bool] = {}
+        for name in trace.NOTIFICATION_NAMES:
+            answer = bus.call_sync(
+                "org.freedesktop.DBus",
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "NameHasOwner",
+                GLib.Variant("(s)", (name,)),
+                GLib.VariantType.new("(b)"),
+                Gio.DBusCallFlags.NONE,
+                500,
+                None,
+            )
+            owners[name] = bool(answer.unpack()[0])
+        return owners
+    except Exception:
+        return None
 
 
 def monitor_index(display: Gdk.Display, monitor: Gdk.Monitor | None) -> int | None:
@@ -3295,6 +3374,19 @@ class Wmain(GladeComponent):
             and event.get_state() & Gdk.ModifierType.CONTROL_MASK
         ):
             url, tag = widget.match_check_event(event)
+            # The tag and the handler it goes to; never the text matched (#513).
+            trace.note(
+                trace.LINKS,
+                lambda: (
+                    f"ctrl+click: tag {tag}, handler "
+                    + (
+                        "open_file_location"
+                        if url and tag is not None and tag == getattr(widget, "tag_file", None)
+                        else "open_in_browser"
+                    )
+                    + f", console {trace_terminal_name(widget)}"
+                ),
+            )
             if url and tag is not None and tag == getattr(widget, "tag_file", None):
                 self.open_file_location(widget, url)
                 return True
@@ -3320,6 +3412,12 @@ class Wmain(GladeComponent):
             event.keyval not in MODIFIER_KEYS
         ):
             self.stop_reconnecting(widget)
+            trace.note(
+                trace.KEYS,
+                lambda: trace.key_line(
+                    "stopped a countdown to reconnecting", trace_terminal_name(widget)
+                ),
+            )
             return True
         # Custom sequences are consulted after the built-in commands and skipped for any
         # key a shortcut claims, so a [keys] entry can never shadow copy, paste or find --
@@ -3327,12 +3425,25 @@ class Wmain(GladeComponent):
         key_name = get_key_name(event)
         if key_name not in shortcuts and key_name in custom_keys:
             widget.feed_child(custom_keys[key_name])
+            # Neither the key nor what is sent: both are the user's (#513).
+            trace.note(
+                trace.KEYS,
+                lambda: trace.key_line("[keys] sequence sent", trace_terminal_name(widget)),
+            )
             return True
         # The key after a prefix key is the program's, so GCM's shortcuts are skipped for it
         # (#452); `on_window_key_press` sets this around the key it gives the console.
         passing = getattr(widget, "prefix_passing", False)
         if not passing and key_name in shortcuts:
             cmd = shortcuts[get_key_name(event)]
+            trace.note(
+                trace.KEYS,
+                lambda: trace.key_line(
+                    "[shortcuts] command run",
+                    trace_terminal_name(widget),
+                    str(cmd[0]) if isinstance(cmd, list) and cmd else "snippet",
+                ),
+            )
             if isinstance(cmd, list):
                 # comandos predefinidos
                 if cmd == _COPY:
@@ -3808,21 +3919,33 @@ class Wmain(GladeComponent):
         """
         focus = window.get_focus()
         if GtkVnc is not None and isinstance(focus, GtkVnc.Display):
+            trace_key("given to the remote desktop first", "vnc", event)
             return window.propagate_key_event(event)
         if not isinstance(focus, Vte.Terminal):
+            trace_key("left to the accelerators", "not a console", event)
             return False
         if getattr(focus, "child_pid", None) is None:
             focus.prefix_armed = False
+            trace_key("left to the accelerators", focus, event)
         else:
             prefixes = prefix_keys_of(focus)
             if prefixes or getattr(focus, "prefix_armed", False):
+                was_armed = getattr(focus, "prefix_armed", False)
                 give, focus.prefix_armed = prefix_step(
-                    getattr(focus, "prefix_armed", False),
+                    was_armed,
                     get_key_name(event),
                     keyval_name_of(event),
                     prefixes,
                 )
                 if give:
+                    # Neither the prefix key nor the key after it is named (#513).
+                    step = "prefix key" if focus.prefix_armed else "key after a prefix key"
+                    trace.note(
+                        trace.KEYS,
+                        lambda: trace.key_line(
+                            f"{step} given to the console", trace_terminal_name(focus)
+                        ),
+                    )
                     focus.prefix_passing = True
                     try:
                         window.propagate_key_event(event)
@@ -3830,7 +3953,9 @@ class Wmain(GladeComponent):
                         focus.prefix_passing = False
                     return True
             if get_key_name(event) in CONSOLE_FIRST_KEYS:
+                trace_key("fixed accelerator given to the console first", focus, event)
                 return window.propagate_key_event(event)
+            trace_key("left to the accelerators", focus, event)
         return False
 
     def current_notebook(self):
@@ -3957,6 +4082,10 @@ class Wmain(GladeComponent):
         if text == "" or text == _("search..."):
             # Only the search's own regex: the terminal's match regexes are its links (#498).
             terminal.search_set_regex(None, 0)
+            trace.note(
+                trace.LINKS,
+                lambda: f"search regex cleared, console {trace_terminal_name(terminal)}",
+            )
             return True
 
         self.search["terminal"] = terminal
@@ -3969,6 +4098,10 @@ class Wmain(GladeComponent):
             new_reg = Vte.Regex.new_for_search(r, len(r), urlregex.PCRE2_FLAGS)
             terminal.search_set_regex(new_reg, 0)
             terminal.search_set_wrap_around(True)
+            trace.note(
+                trace.LINKS,
+                lambda: f"search regex set, console {trace_terminal_name(terminal)}",
+            )
             self.search["pcre2"] = True
             return True
         except Exception:
@@ -4926,16 +5059,31 @@ class Wmain(GladeComponent):
         return True
 
     def registerUrlRegexes(self, terminal):
-        terminal.tag_direct = self.registerUrlRegex(terminal, urlregex.DIRECT)
-        terminal.tag_url = self.registerUrlRegex(terminal, urlregex.URL)
-        terminal.tag_email = self.registerUrlRegex(terminal, urlregex.EMAIL)
-        terminal.tag_file = self.registerUrlRegex(terminal, urlregex.FILE_LINE)
+        terminal.tag_direct = self.registerUrlRegex(terminal, urlregex.DIRECT, "direct")
+        terminal.tag_url = self.registerUrlRegex(terminal, urlregex.URL, "url")
+        terminal.tag_email = self.registerUrlRegex(terminal, urlregex.EMAIL, "email")
+        terminal.tag_file = self.registerUrlRegex(terminal, urlregex.FILE_LINE, "file")
 
-    def registerUrlRegex(self, terminal, regex):
+    def registerUrlRegex(self, terminal, regex, kind="?"):
+        """Add `regex` as one of `terminal`'s links and return its tag; `kind` names it for
+        the `links` trace, which never holds a pattern's match or a console's text (#513)."""
         try:
             new_reg_m = Vte.Regex.new_for_match(regex, len(regex), urlregex.PCRE2_FLAGS)
             tag = terminal.match_add_regex(new_reg_m, 0)
             terminal.match_set_cursor_name(tag, "pointer")
+            # Read here, not in the line's function, which `note` calls from its own frame.
+            callers = (
+                f"{sys._getframe(2).f_code.co_name} > {sys._getframe(1).f_code.co_name}"
+                if trace.enabled(trace.LINKS)
+                else ""
+            )
+            trace.note(
+                trace.LINKS,
+                lambda: (
+                    f"match added: {kind}, tag {tag}, console {trace_terminal_name(terminal)}, "
+                    f"by {callers}"
+                ),
+            )
             return tag
         except Exception:
             # Swallowing this is how a pattern that never compiled went unnoticed: the
@@ -5039,13 +5187,13 @@ class Wmain(GladeComponent):
             v = Vte.Terminal()
             if (Vte.MAJOR_VERSION, Vte.MINOR_VERSION) >= (0, 50):
                 v.set_allow_hyperlink(True)
-            self.registerUrlRegexes(v)
-
             # Before anything reads it. set_terminal_logger builds the log path from
             # terminal.host, so assigning this later -- as it used to be -- silently sent
             # every text log to <logs>/session/session-*.log instead of the host's own
-            # directory. Keep this the first thing done with the new terminal.
+            # directory. Keep this the first thing done with the new terminal. (The links
+            # trace names a console by it, #513.)
             v.host = host
+            self.registerUrlRegexes(v)
 
             self.apply_preferences_to_terminal(v)
 
@@ -5631,6 +5779,12 @@ class Wmain(GladeComponent):
                 read.append(host)
             except (configparser.Error, ValueError, AttributeError) as e:
                 logger.error("%s: %s", _("Invalid entry in configuration file"), e)
+                # The section and the error's class; its message may quote a value (#513).
+                error_class = type(e).__name__
+                # `note` runs the lambda at once, so the loop's `section` is still this one.
+                refusal = trace.refused_host_line
+                options = len(cp.options(section))
+                trace.note(trace.CONFIG, lambda: refusal(section, error_class, options))  # noqa: B023
                 unread_hosts.append(
                     configfile.UnreadHost(
                         section,
@@ -5935,7 +6089,7 @@ class Wmain(GladeComponent):
                 i += 1
         # Hosts gcm.conf has that GCM could not read, kept as they are (#499).
         configfile.put_back_hosts(cp, unread_hosts, i)
-
+        i_hosts = i
         cp.add_section("shortcuts")
         i = 1
         for s in shortcuts:
@@ -5958,6 +6112,17 @@ class Wmain(GladeComponent):
         # directory that is not there fails, and each of these failures ends at a modal
         # dialog nobody may be there to click (#118).
         configpaths.ensure(CONFIG_DIRECTORY.path)
+        host_count = i_hosts
+        trace.note(
+            trace.CONFIG,
+            lambda: trace.save_line(
+                host_count - 1,
+                len(unread_hosts),
+                len(unread_options),
+                [name for name in cp.sections() if not name.startswith(configfile.RECORD_PREFIXES)],
+                trace_dropped_sections(cp),
+            ),
+        )
         with Path(CONFIG_FILE + ".tmp").open("w") as f:
             cp.write(f)
         Path(CONFIG_FILE + ".tmp").rename(CONFIG_FILE)
@@ -6036,6 +6201,13 @@ class Wmain(GladeComponent):
         window = self.window_of(notebook)
         window_active = window.is_active()
         showing = notebook.get_current_page() == notebook.page_num(terminal.get_parent())
+        trace.note(
+            trace.NOTIFICATIONS,
+            lambda: (
+                f"attention: console {trace_terminal_name(terminal)}, mark {mark}, "
+                f"window active {window_active}, showing {showing}, notify {conf.BELL_NOTIFY}"
+            ),
+        )
         if window_active and showing:
             # Already being watched; marking it would only need clearing again.
             return
@@ -6050,11 +6222,16 @@ class Wmain(GladeComponent):
         """Raise a desktop notification. Silently does nothing without a notification service."""
         application = self.wMain.get_application()
         if application is None:
+            trace.note(trace.NOTIFICATIONS, lambda: trace.notification_line(False, None, False))
             return
         notification = Gio.Notification.new(_("The session requires attention"))
         notification.set_body(label.get_text().strip())
         # One id for every trigger, so a newer notification replaces an older one.
         application.send_notification("gcm-bell", notification)
+        # Which services answer, never the text (#513).
+        trace.note(
+            trace.NOTIFICATIONS, lambda: trace.notification_line(True, notification_owners())
+        )
 
     def is_watched(self, terminal):
         """True while the user can see this console: its window active, its tab current in
@@ -7785,18 +7962,26 @@ class Wmain(GladeComponent):
             self.clear_context_terminal()
             self.clear_context_tab_widget()
 
-    def confirm_exit(self) -> bool:
-        """Whether GCM may exit: asks first when Confirm on exit is set and a console is open (#497)."""
-        return not (
-            conf.CONFIRM_ON_EXIT
-            and self.count > 0
+    def confirm_exit(self, path: str = "?") -> bool:
+        """Whether GCM may exit: asks first when Confirm on exit is set and a console is open (#497).
+
+        `path` names the way in, for the `actions` trace (#513).
+        """
+        asks = bool(conf.CONFIRM_ON_EXIT and self.count > 0)
+        allowed = not (
+            asks
             and msgconfirm(f"{_('There are')} {self.count} {_('open consoles, exit anyway?')}")
             != Gtk.ResponseType.OK
         )
+        trace.note(
+            trace.ACTIONS,
+            lambda: f"confirm_exit via {path}: asked {asks}, {'quit' if allowed else 'stay'}",
+        )
+        return allowed
 
     def request_quit(self):
         (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
-        if not self.confirm_exit():
+        if not self.confirm_exit("request_quit"):
             return
         self.writeConfig()
         self.end_sessions()
@@ -7830,7 +8015,7 @@ class Wmain(GladeComponent):
     # -- Wmain.on_wMain_delete_event {
     def on_wMain_delete_event(self, widget, *args):
         (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
-        if not self.confirm_exit():
+        if not self.confirm_exit("delete-event"):
             return True
 
     # -- Wmain.on_wMain_delete_event }
@@ -11721,8 +11906,17 @@ class GcmApplication(Gtk.Application):
         )
         self._build_menus()
 
+    def _trace_activate(self, _action: Any, _parameter: Any, name: str) -> None:
+        """An `actions` line for an activation: the name, never the parameter (#513)."""
+        trace.note(trace.ACTIONS, lambda: f"activate app.{name}")
+
+    def _trace_change_state(self, _action: Any, _value: Any, name: str) -> None:
+        """An `actions` line for a state change: the name, never the state (#513)."""
+        trace.note(trace.ACTIONS, lambda: f"change-state app.{name}")
+
     def _create_action(self, name, callback, accels=None, parameter_type=None):
         action = Gio.SimpleAction.new(name, parameter_type)
+        action.connect("activate", self._trace_activate, name)
         action.connect("activate", callback)
         self.add_action(action)
         if accels:
@@ -11731,6 +11925,7 @@ class GcmApplication(Gtk.Application):
 
     def _create_stateful_action(self, name, initial_state, callback, accels=None):
         action = Gio.SimpleAction.new_stateful(name, None, GLib.Variant("b", initial_state))
+        action.connect("change-state", self._trace_change_state, name)
         action.connect("change-state", callback)
         self.add_action(action)
         if accels:

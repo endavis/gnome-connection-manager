@@ -21,8 +21,17 @@ GTK's signal handlers, run in the middle of a drag:
 
 Privacy. A line holds a notebook's number and place, a tab's name as the host is named,
 a button number, booleans, counts and pixel figures, a drag result's name, and the
-environment's facts. Never a menu item's label, a key, a console's text or title, a search
+environment's facts. Never a menu item's label, a console's text or title, a search
 or a configuration value.
+
+The areas of #513 add to that, and name no more. `keys`: a key GCM's accelerators own is
+named by the action it runs, a key typed into a console by nothing, so ordinary typing
+writes no line; never a key given to a console, a prefix key, the key after one, a `[keys]`
+sequence or a snippet's text. `actions`: an action's name, never its parameter or state.
+`links`: a matcher's kind and tag, never the text searched, a URL or a console's text.
+`config`: a section's or an option's name and counts, never a value, nor an exception's
+message, which may quote one (only its class). `notifications`: which services answer on the
+bus, never the notification's text.
 
 History. #401 and #406 were found by wrapping handlers from outside, and #505 (a join
 that ran while the drag it followed was still on) by a crash with no line to show the
@@ -43,7 +52,12 @@ if TYPE_CHECKING:
 
 DRAG = "drag"
 MENU = "menu"
-AREAS = (DRAG, MENU)
+KEYS = "keys"
+ACTIONS = "actions"
+LINKS = "links"
+CONFIG = "config"
+NOTIFICATIONS = "notifications"
+AREAS = (DRAG, MENU, KEYS, ACTIONS, LINKS, CONFIG, NOTIFICATIONS)
 
 ROOT_LOGGER = "gnome_connection_manager"
 STAMP_WRAP = 2**32
@@ -202,6 +216,60 @@ def tabs_line(
     else:
         tail = "stray labels: none"
     return "tabs " + " | ".join(parts + [tail])
+
+
+NOTIFICATION_NAMES = (
+    "org.freedesktop.Notifications",
+    "org.freedesktop.portal.Desktop",
+    "org.gtk.Notifications",
+)
+
+
+def key_line(route: str, where: str, action: str | None = None) -> str:
+    """A key's route and what took it: "key: <route> (<where>)", with the action when an
+    accelerator owns the key. Never the key itself (#513)."""
+    tail = f", action {action}" if action else ""
+    return f"key: {route} ({where}){tail}"
+
+
+def refused_host_line(section: str, error: str, options: int) -> str:
+    """A host section loadConfig could not read: its name, the error's class and how many
+    options it holds; no option's value and no message (#513)."""
+    return f"load: host section [{section}] refused, {error}, {options} option(s)"
+
+
+def save_line(
+    hosts: int,
+    refused: int,
+    unread: int,
+    carried: Sequence[str],
+    dropped: Sequence[str] | None = None,
+) -> str:
+    """What a save wrote, carried across and dropped; names and counts only (#513).
+
+    `dropped` is the sections the file had that the save leaves out, None where the file
+    could not be read for it."""
+    kept = ", ".join(carried) or "none"
+    gone = "not read" if dropped is None else (", ".join(dropped) or "none")
+    return (
+        f"save: {hosts} host(s) written, {refused} refused host(s) put back, "
+        f"{unread} unread option(s) put back, sections carried: {kept}, "
+        f"sections dropped: {gone}"
+    )
+
+
+def notification_line(
+    sent: bool, owners: Mapping[str, bool] | None, application: bool = True
+) -> str:
+    """Whether a desktop notification went out, and which services own their name on the
+    bus. Never its text (#513)."""
+    if not application:
+        return "notification: not sent, the window has no application"
+    state = "sent" if sent else "not sent"
+    if owners is None:
+        return f"notification: {state}, bus not reached"
+    named = ", ".join(f"{name} {'yes' if owned else 'no'}" for name, owned in owners.items())
+    return f"notification: {state}, services on the bus: {named}"
 
 
 def mark_line(label: str) -> str:

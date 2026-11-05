@@ -80,7 +80,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/wslg.py` – whether WSLg's log shows it cannot draw
   windows (#414), said on the console by `main()`. Notes: its docstrings.
 - `src/gnome_connection_manager/utils/trace.py` – `GCM_TRACE`'s areas (#507): a call site passes a lambda
-  to `trace.note`, which never raises, and logs no value, key or console text. Notes: its docstrings.
+  to `trace.note`, which never raises, and logs no value, key typed into a console, or console text (#513). Notes: its docstrings.
 - `src/gnome_connection_manager/utils/childpython.py` – how GCM starts its Python children,
   the relay and the update check (#415). Never `python -m`: under `install.sh`'s launcher a
   fresh interpreter cannot import GCM. Notes: its docstrings, and `tests/test_childpython.py`.
@@ -393,7 +393,7 @@ Practices below have each caught real bugs in this repo. They are worth the time
 - Password handling flows through `encrypt`/`decrypt` (`pyaes`, with a legacy XOR fallback).
   Changes must stay backward compatible by honoring `conf.VERSION`.
 - Diagnostic logging goes to stderr via Python's `logging`. `GCM_LOG_LEVEL` (e.g. `DEBUG`) sets
-  verbosity; `GCM_TRACE=drag,menu` apart from it traces an area (`docs/DEVELOPING.md`).
+  verbosity; `GCM_TRACE=drag,menu,keys,actions,links,config,notifications` apart from it traces areas (`docs/DEVELOPING.md`).
 
 ## UI, Theming & Localization
 - Modify UI in `data/ui/gnome-connection-manager.glade` and ensure widget IDs still match the

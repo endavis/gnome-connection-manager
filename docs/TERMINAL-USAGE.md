@@ -1314,7 +1314,8 @@ asks you for everything itself.
 
 ## Reporting a drag or menu problem
 
-If a tab drag misbehaves, or a menu opens in the wrong place, GCM can write what it did to a
+If a tab drag misbehaves, a menu opens in the wrong place, or a key, a link, a saved setting
+or a desktop notification does not do what it should, GCM can write what it did to a
 file. Start it from a terminal with the area named, reproduce the problem, quit GCM, and
 attach `gcm-trace.log` to the report:
 
@@ -1323,9 +1324,11 @@ GCM_TRACE=drag gnome-connection-manager 2> gcm-trace.log
 GCM_TRACE=menu gnome-connection-manager 2> gcm-trace.log
 ```
 
+The other areas are `keys`, `actions`, `links`, `config` and `notifications`, or `all`.
+
 The file lists the steps with their times, the tabs by the names of their hosts, and facts
-about the display, such as the scale and the font. It holds no password, key, menu entry or
-console text, so read it once before you attach it.
+about the display, such as the scale and the font. It holds no password, key you typed, search, menu entry,
+setting's value or console text, so read it once before you attach it.
 
 ## When GCM will not start
 

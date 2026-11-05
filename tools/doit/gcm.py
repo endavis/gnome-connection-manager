@@ -167,7 +167,8 @@ def task_sandbox() -> dict[str, Any]:
         --scale: GDK_DPI_SCALE for GCM, a positive number.
         --local: Hosts in the "Local hosts" folder, each a local shell (default 0).
         --wait: Keep GCM in the foreground, its output on the terminal.
-        --trace: GCM_TRACE for GCM, the areas to trace (drag, menu, all).
+        --trace: GCM_TRACE for GCM, the areas to trace (drag, menu, keys, actions, links,
+            config, notifications, all).
         --wayland-debug: WAYLAND_DEBUG=client, its lines in the same log as the trace.
         --xvfb: Run GCM on an Xvfb of this run's own, headless; implies --wait. The Xvfb
             and GCM end with the task, however it ends.
@@ -220,7 +221,10 @@ def task_sandbox() -> dict[str, Any]:
                 "name": "trace",
                 "long": "trace",
                 "default": "",
-                "help": "GCM_TRACE for GCM: the areas to trace (drag, menu, all).",
+                "help": (
+                    "GCM_TRACE for GCM: the areas to trace "
+                    "(drag, menu, keys, actions, links, config, notifications, all)."
+                ),
             },
             {
                 "name": "wayland_debug",

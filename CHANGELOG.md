@@ -20,6 +20,10 @@ the git log.
   stderr, stamped as `WAYLAND_DEBUG` stamps its own, with an environment line, a mark on
   `kill -USR1` and the Python stack on `kill -USR2`. `doit sandbox --trace` and
   `--wayland-debug` pass it on. Off unless set (#507).
+- **`GCM_TRACE`** also traces `keys`, `actions`, `links`, `config` and `notifications`: how a
+  key reached a console or an accelerator, each action and quit, each link matcher and the
+  search regex, a refused host and a save, and the notification services on the bus. No line
+  holds a key typed into a console, a search, console text or a setting's value (#513).
 - **`doit sandbox`** runs the checkout's GCM against a throwaway configuration under `tmp/`,
   a folder of many hosts and one of a few, so a menu or a tree can be tried without touching
   `~/.config/gcm`. `--fresh`, `--many`, `--few`, `--scale` and `--local` (a folder of local shells) set it;
