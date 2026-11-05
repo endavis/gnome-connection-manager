@@ -1473,6 +1473,12 @@ msgstr "Certains paramètres de gcm.conf n'ont pas pu être lus, chacun garde do
 msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
 msgstr "GCM laisse ces lignes telles quelles jusqu'à ce que vous changiez le paramètre dans les Préférences. Pour en corriger une plutôt dans le fichier, modifiez-le lorsque GCM est fermé."
 
+msgid "Some hosts in gcm.conf could not be read, so they are not in the list."
+msgstr "Certains hôtes de gcm.conf n'ont pas pu être lus, ils ne figurent donc pas dans la liste."
+
+msgid "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
+msgstr "GCM conserve ces hôtes tels quels dans le fichier. Pour en retrouver un, corrigez-le dans le fichier lorsque GCM est fermé."
+
 msgid "expects true or false"
 msgstr "attend true ou false"
 

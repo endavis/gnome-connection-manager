@@ -30,6 +30,11 @@ line, so the value was gone from the file with only a line on stderr to say so;
 `put_back_unread` writes the text back instead, for as long as the setting still holds the
 value used in its place.
 
+A host section HostUtils.load_host_from_ini refuses (#499) is kept the same way: loadConfig
+records it as an `UnreadHost`, and `put_back_hosts` writes it after the hosts in memory,
+under the next free number, with every option as the file had it. A save renumbers the
+hosts, so the section cannot stay where it was.
+
 Pure of GTK and of configuration globals, so it is tested directly.
 """
 
@@ -76,6 +81,23 @@ class Unread(NamedTuple):
     text: str  # the value as the file has it
     used: object  # the default read_option returned in its place
     reason: str  # configparser's or int()'s own words
+
+
+class UnreadHost(NamedTuple):
+    """A ``[host N]`` section HostUtils.load_host_from_ini refused, as the file has it."""
+
+    section: str
+    options: dict[str, str]
+    reason: str  # configparser's, int()'s or the attribute error's own words
+
+    @property
+    def label(self) -> str:
+        """What names the host in a notice: its group and name, else its section."""
+        name = self.options.get("name", "").strip()
+        group = self.options.get("group", "").strip()
+        if name:
+            return f"{group}/{name}" if group else name
+        return self.section
 
 
 def header(line: str) -> str | None:
@@ -225,6 +247,21 @@ def put_back_unread(
             config.set(record.section, record.option, record.text)
             kept.append(record)
     return kept
+
+
+def put_back_hosts(
+    config: configparser.RawConfigParser, hosts: list[UnreadHost], first: int
+) -> int:
+    """Write each refused host as ``[host N]``, numbered from `first`, with its options
+    as the file had them. Returns the next free number."""
+    number = first
+    for host in hosts:
+        section = f"{HOST_PREFIX}{number}"
+        config.add_section(section)
+        for option, value in host.options.items():
+            config.set(section, option, value)
+        number += 1
+    return number
 
 
 def aside_path(path: Path, stamp: str) -> Path:

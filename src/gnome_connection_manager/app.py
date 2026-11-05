@@ -745,6 +745,10 @@ snippets: list = []
 # default. writeConfig writes their text back rather than the default, until a setting
 # is changed (#173); the window reports them when it opens.
 unread_options: list = []
+# Each [host N] section HostUtils.load_host_from_ini refused, as gcm.conf has it. A save
+# renumbers the hosts in memory, so writeConfig writes these back after them rather than
+# dropping them from the file (#499); the window reports them when it opens.
+unread_hosts: list = []
 # Each host loadConfig renamed for repeating a name in its folder, with the name it had
 # (#351). The window reports them when it opens.
 renamed_hosts: list = []
@@ -5493,6 +5497,34 @@ class Wmain(GladeComponent):
         dialog.destroy()
         return False
 
+    def report_unread_hosts(self):
+        """Say which [host N] sections in gcm.conf could not be read (#499).
+
+        Each is left out of the server tree and kept in the file as it is. Run from an idle
+        once the window is up, hence the False.
+        """
+        if not unread_hosts:
+            return False
+        lines = [f"{unread.label}  ({unread.reason})" for unread in unread_hosts]
+        dialog = Gtk.MessageDialog(
+            parent=dialog_parent(self.wMain),
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK,
+            text=_("Some hosts in gcm.conf could not be read, so they are not in the list."),
+        )
+        dialog.format_secondary_text(
+            "{}\n\n{}".format(
+                "\n".join(lines),
+                _(
+                    "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
+                ),
+            )
+        )
+        dialog.run()
+        dialog.destroy()
+        return False
+
     def report_renamed_hosts(self, renamed):
         """Say which hosts were renamed for repeating a name in their folder (#351).
 
@@ -5525,7 +5557,7 @@ class Wmain(GladeComponent):
         return False
 
     def loadConfig(self):
-        global groups, folders, unread_options, renamed_hosts
+        global groups, folders, unread_options, unread_hosts, renamed_hosts
 
         # main() has already refused a file that cannot be read at all (#161). What is
         # left to handle is what a hand merge leaves behind, which reads without loss.
@@ -5582,6 +5614,7 @@ class Wmain(GladeComponent):
         # Leer lista de hosts
         groups = {}
         read = []
+        unread_hosts = []
         for section in cp.sections():
             if not section.startswith("host "):
                 continue
@@ -5598,6 +5631,13 @@ class Wmain(GladeComponent):
                 read.append(host)
             except (configparser.Error, ValueError, AttributeError) as e:
                 logger.error("%s: %s", _("Invalid entry in configuration file"), e)
+                unread_hosts.append(
+                    configfile.UnreadHost(
+                        section,
+                        {k: v for k, v in cp.items(section) if k not in cp.defaults()},
+                        str(e),
+                    )
+                )
 
         # Only now is the whole list known, so only now can a repeated id be seen. A
         # record with no id of its own already has one by this point -- Host mints it.
@@ -5893,6 +5933,8 @@ class Wmain(GladeComponent):
                 cp.add_section(section)
                 HostUtils.save_host_to_ini(cp, section, host, get_password())
                 i += 1
+        # Hosts gcm.conf has that GCM could not read, kept as they are (#499).
+        configfile.put_back_hosts(cp, unread_hosts, i)
 
         cp.add_section("shortcuts")
         i = 1
@@ -11858,6 +11900,8 @@ class GcmApplication(Gtk.Application):
             # asked for: addTab runs the main loop, and would run the notice mid-way.
             self._reported_unread = True
             GLib.idle_add(self._controller.report_unread_options)
+            if unread_hosts:
+                GLib.idle_add(self._controller.report_unread_hosts)
             if renamed_hosts:
                 GLib.idle_add(self._controller.report_renamed_hosts, renamed_hosts)
 

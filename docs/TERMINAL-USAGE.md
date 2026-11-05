@@ -1358,6 +1358,7 @@ something that is not a directory is in the way.
 |---|---|
 | The same section twice, from two copies merged by hand | Read. Each repeat is kept as an entry of its own, an exact duplicate is dropped, and a line on standard error says how many of each |
 | A value that cannot be read, such as `buffer-lines = lots` | That one setting stays at its default and the line is left as written. A notice lists them once the window is up |
+| A host that cannot be read, such as one with no `pass` line or a word for `backspace-key` | The host is left out of the server tree and its section stays in the file, with every option as written, after the others and under the next free number. A notice names each once the window is up. It is not in an export, and correcting it in the file with GCM closed brings it back |
 | `[keys]`, or any section GCM does not know | Carried across every save untouched |
 
 A save starts from the file as it is on disk rather than from memory, which is what lets

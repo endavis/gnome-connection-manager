@@ -749,6 +749,12 @@ msgstr "No se pudieron leer algunos ajustes de gcm.conf, así que cada uno tiene
 msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
 msgstr "GCM deja estas líneas como están hasta que usted cambie el ajuste en Preferencias. Para corregir una en el propio archivo, edítelo con GCM cerrado."
 
+msgid "Some hosts in gcm.conf could not be read, so they are not in the list."
+msgstr "No se pudieron leer algunos servidores de gcm.conf, así que no están en la lista."
+
+msgid "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
+msgstr "GCM conserva estos servidores en el archivo tal como están. Para recuperar uno, corríjalo en el archivo con GCM cerrado."
+
 msgid "expects true or false"
 msgstr "espera true o false"
 

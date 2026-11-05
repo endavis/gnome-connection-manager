@@ -437,3 +437,41 @@ def test_put_back_unread_leaves_a_setting_changed_since():
 
     assert config.get("options", "paste-confirm-lines") == "9"
     assert kept == []
+
+
+# -- a host section that could not be read (#499) ---------------------------------------
+
+
+def test_put_back_hosts_numbers_from_the_first_free_one_with_the_options_as_read():
+    config = configparser.RawConfigParser()
+    hosts = [
+        configfile.UnreadHost("host 2", {"name": "db", "backspace-key": "auto"}, "why"),
+        configfile.UnreadHost("host 3 (repeat)", {"name": "app"}, "why"),
+    ]
+
+    following = configfile.put_back_hosts(config, hosts, 4)
+
+    assert following == 6
+    assert config.sections() == ["host 4", "host 5"]
+    assert dict(config.items("host 4")) == {"name": "db", "backspace-key": "auto"}
+    assert dict(config.items("host 5")) == {"name": "app"}
+
+
+def test_put_back_hosts_with_none_writes_nothing():
+    config = configparser.RawConfigParser()
+
+    assert configfile.put_back_hosts(config, [], 3) == 3
+    assert config.sections() == []
+
+
+@pytest.mark.parametrize(
+    ("options", "label"),
+    [
+        ({"group": "ops", "name": "db"}, "ops/db"),
+        ({"name": "db"}, "db"),
+        ({"group": "ops"}, "host 2"),
+        ({}, "host 2"),
+    ],
+)
+def test_an_unread_host_is_named_by_group_and_name_else_by_section(options, label):
+    assert configfile.UnreadHost("host 2", options, "why").label == label

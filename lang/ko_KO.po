@@ -1610,6 +1610,12 @@ msgstr "gcm.conf의 일부 설정을 읽을 수 없어서 각각 기본값을 �
 msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
 msgstr "기본 설정에서 해당 설정을 바꿀 때까지 GCM은 이 줄들을 그대로 둡니다. 대신 파일에서 고치려면 GCM을 닫은 상태에서 편집하십시오."
 
+msgid "Some hosts in gcm.conf could not be read, so they are not in the list."
+msgstr "gcm.conf의 일부 호스트를 읽을 수 없어서 목록에 없습니다."
+
+msgid "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
+msgstr "GCM은 이 호스트들을 파일에 그대로 보관합니다. 하나를 다시 불러오려면 GCM을 닫은 상태에서 파일에서 고치십시오."
+
 msgid "expects true or false"
 msgstr "true 또는 false여야 합니다"
 
