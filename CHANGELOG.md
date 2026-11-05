@@ -61,6 +61,8 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- A tab dropped on another window's console under Wayland no longer crashes GCM: the move
+  waits for the drag to end, where it could run in the middle of it (#505).
 - Under Wayland, WSLg among them, a tab drag begins once. Its icon shows the tab's text
   and not a blank one (#406), and a tab dropped where nothing takes it opens its window and
   leaves no "pointer drag icon" window on the desktop (#401).

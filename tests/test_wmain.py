@@ -4724,16 +4724,46 @@ def test_a_tab_dropped_on_another_notebooks_terminal_is_moved_there(app_module, 
     wmain, finished, scheduled = _tab_drop(app_module, monkeypatch, own, other)
 
     assert finished == [True]
+    # Nothing is queued while the drag is on (#505): the join waits for drag-end.
+    assert scheduled == []
+    assert wmain.dragged_tab is own
+    assert wmain.pending_join == (own, other)
+
+    wmain.on_notebook_drag_end(Parent(notebook=True), None)
+
+    assert wmain.pending_join is None
     assert scheduled == [(wmain.join_after_drop, (own, other))]
+    wmain.on_notebook_drag_end(Parent(notebook=True), None)
+    assert len(scheduled) == 1
+
+
+def test_a_stale_drag_or_a_new_one_drops_the_pending_join(app_module, monkeypatch):
+    other = Parent(notebook=True)
+    own = Parent(Parent(notebook=True))
+    wmain, _finished, scheduled = _tab_drop(app_module, monkeypatch, own, other)
+    wmain.on_notebook_button_press(None, types.SimpleNamespace(button=1))
+    assert wmain.pending_join is None
+    wmain.on_notebook_drag_end(Parent(notebook=True), None)
+    assert scheduled == []
+
+    wmain, _finished, scheduled = _tab_drop(app_module, monkeypatch, own, other)
+    nb = types.SimpleNamespace(
+        get_nth_page=lambda n: own, get_current_page=lambda: 0, trace_number=1
+    )
+    wmain.on_notebook_drag_begin(nb, None)
+    assert wmain.pending_join is None
+    wmain.on_notebook_drag_end(nb, None)
+    assert scheduled == []
 
 
 def test_a_tab_dropped_on_its_own_notebook_stays(app_module, monkeypatch):
     notebook = Parent(notebook=True)
     dragged = Parent(notebook)
-    _wmain, finished, scheduled = _tab_drop(app_module, monkeypatch, dragged, notebook)
+    wmain, finished, scheduled = _tab_drop(app_module, monkeypatch, dragged, notebook)
 
     assert finished == [True]
     assert scheduled == []
+    assert wmain.pending_join is None
 
 
 def test_a_tab_drop_with_no_dragged_tab_finishes_false(app_module, monkeypatch):
