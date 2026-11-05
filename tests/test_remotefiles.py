@@ -234,6 +234,16 @@ def test_the_mount_tables_escapes_are_read():
     assert remotefiles.mount_at(MOUNTINFO, "/home/eric/mnt/back\\slash") == ("tmpfs", "a b")
 
 
+def test_every_mounted_folder_is_listed_unescaped_in_its_order():
+    assert remotefiles.mounted_folders(MOUNTINFO) == [
+        "/",
+        "/home/eric/mnt/web01",
+        "/home/eric/mnt/my files",
+        "/home/eric/mnt/back\\slash",
+    ]
+    assert remotefiles.mounted_folders("") == []
+
+
 def test_nothing_mounted_at_a_folder_is_none():
     assert remotefiles.mount_at(MOUNTINFO, "/home/eric/mnt/web02") is None
     assert remotefiles.mount_at(MOUNTINFO, "/home/eric/mnt/my\\040files") is None

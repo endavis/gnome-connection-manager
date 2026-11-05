@@ -50,7 +50,7 @@ def test_the_generated_config_loads_through_gcms_own_reader(tmp_path: Path) -> N
     for host in hosts:
         by_group.setdefault(host.group, []).append(host)
         assert host.password == ""
-        assert host.host == "127.0.0.1"
+        assert host.host == f"{host.name}.invalid"
         assert tree.path_for(host.folder) == host.group
     assert {group: len(found) for group, found in by_group.items()} == {
         "Many hosts": 30,
@@ -212,10 +212,11 @@ def test_the_task_takes_its_options() -> None:
     task = gcm.task_sandbox()
 
     params = {param["name"]: param for param in task["params"]}
-    assert set(params) == {"fresh", "many", "few", "scale"}
+    assert set(params) == {"fresh", "many", "few", "scale", "local", "wait"}
     assert (params["many"]["default"], params["few"]["default"]) == (30, 3)
     assert params["fresh"]["default"] is False
     assert not params["scale"]["default"]
+    assert (params["local"]["default"], params["wait"]["default"]) == (0, False)
     assert task["actions"] == [gcm._run_sandbox]
 
 
@@ -232,7 +233,7 @@ def checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_the_task_runs_gcm_in_the_sandbox(checkout: Path) -> None:
     with patch.object(gcm.subprocess, "run", return_value=MagicMock(returncode=0)) as run:
-        assert gcm._run_sandbox(False, 2, 1, "1.5") is True
+        assert gcm._run_sandbox(False, 2, 1, "1.5", 0, True) is True
 
     args, kwargs = run.call_args
     assert args[0] == sandbox.command(checkout)
@@ -245,7 +246,7 @@ def test_the_task_runs_gcm_in_the_sandbox(checkout: Path) -> None:
 
 def test_the_task_fails_when_gcm_does(checkout: Path) -> None:
     with patch.object(gcm.subprocess, "run", return_value=MagicMock(returncode=3)):
-        assert gcm._run_sandbox(False, 1, 1, "") is False
+        assert gcm._run_sandbox(False, 1, 1, "", 0, True) is False
 
 
 def test_the_task_says_when_there_is_no_venv(
@@ -270,12 +271,162 @@ def test_the_task_fails_on_a_bad_scale(checkout: Path) -> None:
 def test_the_task_says_when_it_kept_the_sandbox(
     checkout: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with patch.object(gcm.subprocess, "run", return_value=MagicMock(returncode=0)):
+    with (
+        patch.object(gcm.subprocess, "Popen", return_value=MagicMock(pid=1)),
+        patch.object(gcm.subprocess, "run"),
+    ):
         gcm._run_sandbox(False, 1, 1, "")
         capsys.readouterr()
         gcm._run_sandbox(False, 1, 1, "")
 
     assert "--fresh rebuilds it" in capsys.readouterr().out
+
+
+def test_the_task_detaches_gcm_and_logs_its_output(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with (
+        patch.object(gcm.subprocess, "Popen", return_value=MagicMock(pid=4242)) as popen,
+        patch.object(gcm.subprocess, "run") as run,
+    ):
+        assert gcm._run_sandbox(False, 1, 1, "", 2) is True
+
+    run_calls = [call for call in run.call_args_list if call.args[0][0] != "git"]
+    assert run_calls == []
+    args, kwargs = popen.call_args
+    assert args[0] == sandbox.command(checkout)
+    assert kwargs["start_new_session"] is True
+    assert kwargs["env"]["HOME"] == str(checkout / "tmp" / "sandbox_cache")
+    assert kwargs["stderr"] == subprocess.STDOUT
+    stream = kwargs["stdout"]
+    assert stream.closed
+    log = Path(stream.name)
+    assert log.parent == checkout / "tmp" / "sandbox_cache" / "logs"
+    assert log.is_file()
+    out = capsys.readouterr().out
+    assert "4242" in out
+    assert str(log) in out
+
+
+def test_wait_keeps_gcm_in_the_foreground(checkout: Path) -> None:
+    with (
+        patch.object(gcm.subprocess, "Popen") as popen,
+        patch.object(gcm.subprocess, "run", return_value=MagicMock(returncode=0)),
+    ):
+        assert gcm._run_sandbox(False, 1, 1, "", 0, True) is True
+
+    popen.assert_not_called()
+
+
+def test_every_remote_host_has_an_address_that_cannot_resolve(tmp_path: Path) -> None:
+    path = tmp_path / "gcm.conf"
+    sandbox.write_config(path, 4, 2)
+
+    for host in hosts_of(path)[0]:
+        assert host.host.endswith(".invalid")
+        assert host.host != "127.0.0.1"
+
+
+def test_the_ssh_agent_is_removed_and_a_crash_prints_its_stack(tmp_path: Path) -> None:
+    base = {"SSH_AUTH_SOCK": "/run/agent", "SSH_AGENT_PID": "7", "PATH": "/bin"}
+
+    env = sandbox.environment(base, tmp_path, None)
+
+    assert "SSH_AUTH_SOCK" not in env
+    assert "SSH_AGENT_PID" not in env
+    assert env["PYTHONFAULTHANDLER"] == "1"
+    assert env["PATH"] == "/bin"
+
+
+def test_local_hosts_open_a_local_shell_and_are_not_the_local_console(tmp_path: Path) -> None:
+    from gnome_connection_manager.app import is_local_console
+    from gnome_connection_manager.utils import connections
+
+    path = tmp_path / "gcm.conf"
+    sandbox.write_config(path, 0, 0, 3)
+
+    hosts = hosts_of(path)[0]
+
+    assert [host.name for host in hosts] == ["alpha", "bravo", "charlie"]
+    for host in hosts:
+        assert host.host == ""
+        assert host.group == "Local hosts"
+        assert connections.for_host(host) is connections.LOCAL
+        assert not is_local_console(host, hosts)
+
+
+def test_no_local_hosts_write_no_folder(tmp_path: Path) -> None:
+    path = tmp_path / "gcm.conf"
+    sandbox.write_config(path, 1, 1, 0)
+
+    assert "Local hosts" not in {host.group for host in hosts_of(path)[0]}
+
+
+def test_more_local_hosts_than_the_alphabet_holds_stay_unique(tmp_path: Path) -> None:
+    path = tmp_path / "gcm.conf"
+    sandbox.write_config(path, 0, 0, 60)
+
+    names = [host.name for host in hosts_of(path)[0]]
+
+    assert len(set(names)) == 60
+    assert "alpha-2" in names
+
+
+def test_the_sandbox_titles_its_window(tmp_path: Path) -> None:
+    path = tmp_path / "gcm.conf"
+    sandbox.write_config(path, 1, 0)
+
+    options = configfile.load(path).config["options"]
+
+    assert options["app-title"] == "GCM sandbox"
+    assert options["update-title"] == "True"
+
+
+MOUNTINFO = (
+    "30 1 8:1 / / rw - ext4 /dev/sda1 rw\n"
+    "31 30 0:30 / {parent} rw - tmpfs tmpfs rw\n"
+    "32 30 0:31 / {home}/mnt/web rw - fuse.sshfs me@web: rw\n"
+    "33 30 0:32 / {home} rw - tmpfs tmpfs rw\n"
+    "34 30 0:33 / {home}2/mnt rw - fuse.sshfs me@web: rw\n"
+)
+
+
+def mountinfo_for(home: Path) -> str:
+    return MOUNTINFO.format(parent=home.parent, home=home).replace("\\n", "\n")
+
+
+def test_mounts_below_finds_the_home_and_below_but_not_a_sibling_or_parent(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "tmp" / "sandbox_cache"
+
+    found = sandbox.mounts_below(home, mountinfo_for(home))
+
+    assert found == [home / "mnt" / "web", home]
+
+
+def test_fresh_with_a_mount_below_raises_and_removes_nothing(tmp_path: Path) -> None:
+    home = tmp_path / "tmp" / "sandbox_cache"
+    sandbox.prepare(home, fresh=False, many=1, few=0)
+    marker = home / "keep"
+    marker.write_text("x")
+
+    with pytest.raises(ValueError, match="fusermount -u"):
+        sandbox.prepare(home, fresh=True, many=1, few=0, mountinfo=mountinfo_for(home))
+
+    assert marker.is_file()
+
+
+def test_fresh_with_no_mount_below_goes_ahead(tmp_path: Path) -> None:
+    home = tmp_path / "tmp" / "sandbox_cache"
+    sandbox.prepare(home, fresh=False, many=1, few=0)
+    (home / "keep").write_text("x")
+
+    sandbox.prepare(
+        home, fresh=True, many=1, few=0, mountinfo="30 1 8:1 / / rw - ext4 /dev/sda1 rw\n"
+    )
+
+    assert not (home / "keep").exists()
 
 
 def test_gcm_stays_up_against_a_prepared_sandbox(tmp_path: Path) -> None:

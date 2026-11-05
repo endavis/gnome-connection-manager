@@ -314,7 +314,7 @@ Practices below have each caught real bugs in this repo. They are worth the time
   signal is lost still looks alive. The glade rebuild in df18e0a lost the server tree's and
   the About dialog's (#257, #261), and moving the menus to actions left ten behind (#256).
   `test_every_on_handler_is_connected` fails on an `on_*` method that nothing connects.
-- **Run the app for tracebacks** with `timeout 12 uv run doit sandbox`: a throwaway HOME
+- **Run the app for tracebacks** with `timeout 12 uv run doit sandbox --wait`: a throwaway HOME
   under `tmp/`, with `XDG_CONFIG_HOME` unset, as HOME alone no longer settles which
   configuration directory is read. Never point it at a real one. Give it a scratch `DISPLAY`
   too — a real one puts a GCM window over whatever the developer is doing and steals focus

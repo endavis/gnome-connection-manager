@@ -97,18 +97,37 @@ configuration instead:
 ```bash
 doit sandbox                          # a folder of 30 hosts and one of 3
 doit sandbox --fresh --many 5 --few 2 # rebuild it, with other counts
+doit sandbox --local 3                # a "Local hosts" folder of 3 local shells
 doit sandbox --scale 2                # GDK_DPI_SCALE=2
+doit sandbox --wait                   # GCM in the foreground, its output on the terminal
 ```
 
 Its HOME is `tmp/sandbox_cache` in the checkout, so each worktree has one and `doit pr_merge`
-removes it with the worktree. It is written once and kept; `--fresh` rebuilds it. The hosts
-point at 127.0.0.1 and only fill menus: opening one tries ssh. Update checks are off in it
-(turn them on in Preferences to try one). On a machine with no screen, or to check for
-tracebacks, give it a scratch display:
+removes it with the worktree. It is written once and kept; `--fresh` rebuilds it. A fresh
+sandbox opens with a `local` tab. The remote hosts have `<name>.invalid` addresses and the
+ssh agent is dropped from GCM's environment, so none reaches a machine; they only fill menus.
+The `--local` hosts have no address and each opens a shell. Update checks are off in it (turn
+them on in Preferences to try one). Its windows are titled `GCM sandbox`, and it runs beside
+your own GCM (`NON_UNIQUE`); check which you are quitting. A check of titles starts from a
+changed Dynamic title.
+
+By default GCM runs detached: the task prints its PID and a log, and returns, so other doit
+tasks work meanwhile. The log is `tmp/sandbox_cache/logs/gcm-<time>.log`, with a Python stack
+on a crash (`PYTHONFAULTHANDLER=1`); a sandbox kept without `--fresh` keeps its old logs, and
+`doit pr_merge` removes them with the worktree, so copy what you need first. `--wait` keeps
+GCM in the foreground and gives the task its exit status, but then the checkout's other doit
+tasks fail with `DatabaseException` until GCM quits. Quit GCM and unmount anything mounted in
+the sandbox (Mounted tab, or `fusermount -u`) before `doit pr_merge`: `git worktree remove`
+deletes through a mount, and `--fresh` refuses while one is there.
+
+On a machine with no screen, or to check for tracebacks, give it a scratch display:
 
 ```bash
-env -u WAYLAND_DISPLAY GDK_BACKEND=x11 timeout 12 xvfb-run -a uv run doit sandbox --fresh
+env -u WAYLAND_DISPLAY GDK_BACKEND=x11 timeout 12 xvfb-run -a uv run doit sandbox --wait --fresh
 ```
+
+Agents: say before starting one on a real display, as it opens over the developer's work and
+takes the focus, and batch what you check.
 
 ### Logging
 
