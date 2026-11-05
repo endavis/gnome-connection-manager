@@ -16,6 +16,7 @@ pointer's position.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,7 +31,7 @@ from tests.test_connections import glib_complaints
 REPO = Path(__file__).resolve().parents[1]
 
 _SCRIPT = r'''
-import ctypes, faulthandler, os, sys, tempfile, time
+import ctypes, faulthandler, os, signal, sys, tempfile, time
 faulthandler.dump_traceback_later(100, exit=True)
 scenario, scratch = sys.argv[1], sys.argv[2]
 os.environ["HOME"] = tempfile.mkdtemp(); os.environ["SHELL"] = "/bin/sh"; sys.argv = ["gcm"]
@@ -722,6 +723,36 @@ elif scenario == "a-tab-reorders-after-a-drag-that-never-ended":
     assert names() == [["B", "C", "A"]], names()
     assert w.dragged_tab is None
 
+elif scenario == "untraced-catches-no-user-signal":
+    # GCM_TRACE is unset: no handler for SIGUSR1 or SIGUSR2 is installed, which only the
+    # process's own table of caught signals shows (#507).
+    caught = int([l for l in open("/proc/self/status") if l.startswith("SigCgt")][0].split()[1], 16)
+    assert not caught & (1 << (signal.SIGUSR1 - 1)), hex(caught)
+    assert not caught & (1 << (signal.SIGUSR2 - 1)), hex(caught)
+
+elif scenario == "a-drag-is-traced":
+    caught = int([l for l in open("/proc/self/status") if l.startswith("SigCgt")][0].split()[1], 16)
+    assert caught & (1 << (signal.SIGUSR1 - 1)), hex(caught)
+    assert caught & (1 << (signal.SIGUSR2 - 1)), hex(caught)
+    open_tabs("A", "B", "C")
+    run("B", "KEPT=yes; echo ready", "ready")
+    w.move_to_new_window(page_of("C"))
+    pump(0.5)
+    window = window_of("C")
+    window.move(1000, 300)
+    pump(0.5)
+    drag(centre(label_of("B").label), centre(terminal("C")))
+    assert names() == [["A"], ["C", "B"]], names()
+    pump(0.5)
+    # Then a tab dropped on the bare root window.
+    drag(centre(label_of("A").label), (100, 900))
+    pump(0.5)
+    open(os.path.join(app.CONFIG_DIR, "trace-mark"), "w").write("after the drops\nsecond line\n")
+    os.kill(os.getpid(), signal.SIGUSR1)
+    pump(0.5)
+    os.kill(os.getpid(), signal.SIGUSR2)
+    pump(0.5)
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -767,6 +798,29 @@ def _holder(lock):
         return None
 
 
+def _run_scenario(scenario, tmp_path, **extra):
+    """Run `scenario` of _SCRIPT on a display of its own; the result, GCM_TRACE as `extra`
+    gives it and otherwise unset."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    process, display = _private_display()
+    environment = dict(os.environ, DISPLAY=display, GDK_BACKEND="x11")
+    for name in ("WAYLAND_DISPLAY", "GDK_SCALE", "GDK_DPI_SCALE", "XDG_CONFIG_HOME", "GCM_TRACE"):
+        environment.pop(name, None)
+    environment.update(extra)
+    try:
+        return subprocess.run(
+            [sys.executable, "-c", _SCRIPT, scenario, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            cwd=REPO,
+            env=environment,
+            timeout=120,
+        )
+    finally:
+        process.terminate()
+        process.wait()
+
+
 @pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
 @pytest.mark.parametrize(
     "scenario",
@@ -785,29 +839,52 @@ def _holder(lock):
         "a-tab-dropped-on-its-own-console-stays",
         "a-tab-reorders-in-its-strip",
         "a-tab-reorders-after-a-drag-that-never-ended",
+        "untraced-catches-no-user-signal",
     ],
 )
 def test_a_console_window_against_real_gtk(scenario, tmp_path):
-    pytest.importorskip("gi", reason="PyGObject not available")
-    process, display = _private_display()
-    environment = dict(os.environ, DISPLAY=display, GDK_BACKEND="x11")
-    for name in ("WAYLAND_DISPLAY", "GDK_SCALE", "GDK_DPI_SCALE", "XDG_CONFIG_HOME"):
-        environment.pop(name, None)
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", _SCRIPT, scenario, str(tmp_path)],
-            capture_output=True,
-            text=True,
-            cwd=REPO,
-            env=environment,
-            timeout=120,
-        )
-    finally:
-        process.terminate()
-        process.wait()
+    result = _run_scenario(scenario, tmp_path)
 
     assert result.returncode == 0, result.stderr[-3000:]
     assert "OK" in result.stdout
     # PyGObject prints what a signal handler raises, and carries on.
     assert "Traceback" not in result.stderr, result.stderr[-3000:]
     assert glib_complaints(result.stderr) == []
+
+
+@pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb for a display of its own")
+def test_a_traced_drag_against_real_gtk(tmp_path):
+    """GCM_TRACE=drag writes the drag's lines in order, to stderr, and GCM goes on (#507)."""
+    result = _run_scenario("a-drag-is-traced", tmp_path, GCM_TRACE="drag")
+
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert "OK" in result.stdout
+    assert "Traceback" not in result.stderr.replace("most recent call first", "")
+    assert glib_complaints(result.stderr) == []
+    lines = [line for line in result.stderr.splitlines() if " drag: " in line]
+    stamp = re.compile(r"^\[\s*\d+\.\d{3}\] drag: ")
+    assert all(stamp.match(line) for line in lines), lines
+    assert sum(" drag: environment " in line for line in lines) == 1
+    assert "KEPT" not in "\n".join(lines)
+
+    def position(text, start=0):
+        found = [i for i, line in enumerate(lines) if i >= start and text in line]
+        assert found, (text, lines)
+        return found[0]
+
+    # The first drag, in order: press, begin, the drop's two moves, end.
+    press = position("button-press: button 1")
+    begin = position("drag-begin: B from notebook 1", press)
+    take = position("take_dropped_tab: B dropped on notebook 2", begin)
+    end = position("drag-end: B", take)
+    join = position("join_after_drop: B to notebook 2, drag is over", end)
+    tabs = position("tabs notebook 1 (pane 1 of 1): A | notebook 2 (window 1): C, B", join)
+    assert "stray labels: none" in lines[tabs]
+    # Dropped on the bare root window, X11 asks for a window: measured, it emits no
+    # drag-failed there, so none is asserted.
+    created = position("create-window: A from notebook 1", tabs)
+    assert not any("drag-failed" in line for line in lines)
+    position("tabs notebook 1", created)
+    mark = position("=== MARK after the drops ===", created)
+    assert "tabs notebook 1" in lines[mark + 1]
+    assert "most recent call first" in result.stderr

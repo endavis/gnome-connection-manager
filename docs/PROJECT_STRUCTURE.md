@@ -49,6 +49,7 @@ gnome-connection-manager/
 │           ├── snippets.py       # The snippet library
 │           ├── tabcolors.py      # The colour a host's tabs and tree row are marked with
 │           ├── tabnames.py       # What a host's tab is called
+│           ├── trace.py          # GCM_TRACE: trace lines for drags and menus
 │           ├── transcript.py     # A readable transcript from a raw recording
 │           ├── updates.py        # Whether a newer GCM has been released
 │           ├── urlregex.py       # Link and file:line patterns

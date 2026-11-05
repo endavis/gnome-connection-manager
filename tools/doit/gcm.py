@@ -39,7 +39,14 @@ def task_launch() -> dict[str, Any]:
 
 
 def _run_sandbox(
-    fresh: bool, many: int, few: int, scale: str, local: int = 0, wait: bool = False
+    fresh: bool,
+    many: int,
+    few: int,
+    scale: str,
+    local: int = 0,
+    wait: bool = False,
+    trace: str = "",
+    wayland_debug: bool = False,
 ) -> bool:
     """Prepare the sandbox and run GCM against it. False when GCM could not start or failed.
 
@@ -55,7 +62,7 @@ def _run_sandbox(
     home = sandbox.sandbox_home(REPO)
     try:
         written = sandbox.prepare(home, fresh=fresh, many=many, few=few, local=local)
-        env = sandbox.environment(dict(os.environ), home, scale or None)
+        env = sandbox.environment(dict(os.environ), home, scale or None, trace, wayland_debug)
     except ValueError as error:
         print(error)
         return False
@@ -70,9 +77,10 @@ def _run_sandbox(
         text=True,
         check=False,
     ).stdout.strip()  # nosec B603 B607
-    print(
-        f"GCM {head or '(unknown commit)'}, GDK_DPI_SCALE={env.get('GDK_DPI_SCALE', '(unset)')}, HOME={home}"
-    )
+    status = f"GCM {head or '(unknown commit)'}, GDK_DPI_SCALE={env.get('GDK_DPI_SCALE', '(unset)')}, HOME={home}"
+    if "GCM_TRACE" in env:
+        status += f", GCM_TRACE={env['GCM_TRACE']}"
+    print(status)
     if wait:
         done = subprocess.run(sandbox.command(REPO), env=env, cwd=REPO, check=False)  # nosec B603
         return done.returncode == 0
@@ -107,6 +115,8 @@ def task_sandbox() -> dict[str, Any]:
         --scale: GDK_DPI_SCALE for GCM, a positive number.
         --local: Hosts in the "Local hosts" folder, each a local shell (default 0).
         --wait: Keep GCM in the foreground, its output on the terminal.
+        --trace: GCM_TRACE for GCM, the areas to trace (drag, menu, all).
+        --wayland-debug: WAYLAND_DEBUG=client, its lines in the same log as the trace.
     """
     return {
         "actions": [_run_sandbox],
@@ -151,6 +161,19 @@ def task_sandbox() -> dict[str, Any]:
                 "type": bool,
                 "default": False,
                 "help": "Keep GCM in the foreground.",
+            },
+            {
+                "name": "trace",
+                "long": "trace",
+                "default": "",
+                "help": "GCM_TRACE for GCM: the areas to trace (drag, menu, all).",
+            },
+            {
+                "name": "wayland_debug",
+                "long": "wayland-debug",
+                "type": bool,
+                "default": False,
+                "help": "WAYLAND_DEBUG=client, in the same log as the trace.",
             },
         ],
         "title": title_with_actions,

@@ -100,6 +100,7 @@ doit sandbox --fresh --many 5 --few 2 # rebuild it, with other counts
 doit sandbox --local 3                # a "Local hosts" folder of 3 local shells
 doit sandbox --scale 2                # GDK_DPI_SCALE=2
 doit sandbox --wait                   # GCM in the foreground, its output on the terminal
+doit sandbox --trace=drag,menu --wayland-debug   # GCM_TRACE and WAYLAND_DEBUG=client, in its log
 ```
 
 Its HOME is `tmp/sandbox_cache` in the checkout, so each worktree has one and `doit pr_merge`
@@ -136,6 +137,40 @@ Logs are emitted via Python's `logging` module. Adjust verbosity by setting `GCM
 ```bash
 GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
 ```
+
+#### Tracing a drag or a menu
+
+`GCM_TRACE` switches on trace lines for the areas it names, `drag` and `menu`, or `all`
+(`GCM_TRACE=drag,menu`). It is apart from `GCM_LOG_LEVEL`: that never turns a trace on, and
+a trace never changes it. With it unset nothing is written and nothing is installed. A name
+that is no area is warned of once.
+
+```bash
+GCM_TRACE=drag uv run python -m gnome_connection_manager 2> gcm-trace.log
+doit sandbox --trace=drag,menu --wayland-debug   # one log: tmp/sandbox_cache/logs/gcm-<time>.log
+```
+
+Each line starts with the stamp `WAYLAND_DEBUG` uses, `[%7u.%03u]`: the realtime clock in
+microseconds modulo 2**32, so it wraps every 71.6 minutes. With `--wayland-debug` (or
+`WAYLAND_DEBUG=client`) the protocol's lines and GCM's fall in the order they were written, in
+one stream. A trace starts with one `environment` line: GTK's version, the display, the
+scale, the theme, the font asked for and the family found, `GDK_BACKEND`, `GDK_SCALE`,
+`GDK_DPI_SCALE`, `WAYLAND_DEBUG`, the configuration directory and the checkout's commit.
+
+- **A mark.** Write a label on the first line of `trace-mark` beside `gcm.conf`, then
+  `kill -USR1 <pid>` (the sandbox prints the PID): a `=== MARK <label> ===` line, then every
+  notebook's tabs. Tabs whose label is not in their notebook are listed unless a drag is on.
+- **The Python stack.** `kill -USR2 <pid>` prints every thread's stack to stderr and GCM goes
+  on. It is written by `faulthandler` in C, so it answers a hung main loop, which
+  `py-spy dump --pid` does not on a machine at Yama `ptrace_scope` 1.
+- **A crash under WSL** leaves a core in `%LOCALAPPDATA%\Temp\wsl-crashes\`. Read the Python
+  stack with `uvx --from py-spy py-spy dump --core <file>`, and the native one with gdb.
+
+A line holds a notebook's number and place, a tab's name as its host is named, a button
+number, counts and pixel figures, a drag result's name, and the facts above. It never holds a
+menu item's label, a key, a console's text or title, a search or a setting's value. A call
+site passes `trace.note` a lambda, which is not called while the area is off and whose
+failure is caught, so a trace changes no handler's result.
 
 ### Code Quality
 

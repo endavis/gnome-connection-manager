@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import configparser
 import inspect
+import io
+import logging
 import os
 import re
 import shutil
@@ -5473,7 +5475,14 @@ def test_a_console_notebook_watches_its_tab_drags(app_module):
 
     wmain.watch_tab_drags(notebook)
 
+    assert isinstance(notebook.trace_number, int)
+    other = types.SimpleNamespace(connect=lambda *args: None)
+    wmain.watch_tab_drags(other)
+    assert other.trace_number == notebook.trace_number + 1
     assert connected == [
+        ("page-added", wmain.on_notebook_page_added),
+        ("page-removed", wmain.on_notebook_page_removed),
+        ("page-reordered", wmain.on_notebook_page_reordered),
         ("create-window", wmain.on_notebook_create_window),
         ("drag-begin", wmain.on_notebook_drag_begin),
         ("drag-failed", wmain.on_notebook_drag_failed),
@@ -6985,3 +6994,211 @@ def test_the_key_window_fake_offers_only_what_gtk_has():
         assert hasattr(KeyWindow, name) and hasattr(Gtk.Window, name), name
     # What a console's focus is: GCM adds nothing to the class, it uses Vte's own.
     assert issubclass(Vte.Terminal, Gtk.Widget)
+
+
+# --- GCM_TRACE's drag lines (#507) ---------------------------------------------------------
+
+
+@pytest.fixture
+def drag_trace():
+    """Drag tracing on, written to a buffer, and off again after."""
+    from gnome_connection_manager.utils import trace
+
+    out = io.StringIO()
+    trace.configure({"GCM_TRACE": "drag"}, stream=out)
+    yield out
+    trace.configure({})
+
+
+class TracedNotebook(DraggingNotebook):
+    def __init__(self, number, pages=(), backend="GdkX11Display"):
+        super().__init__(list(pages), backend)
+        self.trace_number = number
+
+
+class ExplodingNotebook:
+    @property
+    def trace_number(self):
+        raise RuntimeError("destroyed widget")
+
+
+def _page(name):
+    return types.SimpleNamespace(trace_name=name, get_parent=lambda: None)
+
+
+def test_a_swallowed_motion_names_its_notebook_and_whether_it_is_the_source(
+    app_module, monkeypatch, drag_trace
+):
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    wmain.dragged_tab = object()
+    wmain.dragged_from = 1
+    motion = types.SimpleNamespace(state=BUTTON1)
+
+    assert wmain.on_notebook_motion(TracedNotebook(1), motion) is True
+    assert wmain.on_notebook_motion(TracedNotebook(2), motion) is True
+    assert wmain.on_notebook_motion(TracedNotebook(2), types.SimpleNamespace(state=0)) is False
+
+    lines = drag_trace.getvalue().splitlines()
+    assert len(lines) == 2
+    assert "motion swallowed on notebook 1 (own drag source 1)" in lines[0]
+    assert "motion swallowed on notebook 2 (other drag source 1)" in lines[1]
+
+
+class RaisingHandler(logging.Handler):
+    def emit(self, record):
+        raise OSError("stderr closed")
+
+
+@pytest.mark.parametrize("failing", ["handler", "notebook"])
+@pytest.mark.parametrize(
+    ("dragged", "state", "swallowed"),
+    [(object(), BUTTON1, True), (object(), 0, False), (None, BUTTON1, False)],
+)
+def test_a_failing_trace_changes_no_result(
+    app_module, monkeypatch, drag_trace, failing, dragged, state, swallowed
+):
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    wmain.dragged_tab = dragged
+    notebook = TracedNotebook(1)
+    if failing == "handler":
+        logger = logging.getLogger("gnome_connection_manager.drag")
+        monkeypatch.setattr(logger, "handlers", [RaisingHandler()])
+    else:
+        notebook = ExplodingNotebook()
+
+    assert wmain.on_notebook_motion(notebook, types.SimpleNamespace(state=state)) is swallowed
+    assert wmain.on_notebook_button_press(notebook, types.SimpleNamespace(button=1)) is False
+    assert wmain.dragged_tab is None
+
+
+def test_a_press_is_logged_and_a_stale_drag_it_ends_is_named(app_module, monkeypatch, drag_trace):
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    wmain.dragged_tab = _page("web01")
+
+    wmain.on_notebook_button_press(TracedNotebook(3), types.SimpleNamespace(button=1))
+    wmain.on_notebook_button_press(TracedNotebook(3), types.SimpleNamespace(button=3))
+
+    text = drag_trace.getvalue()
+    assert "button-press: button 1 on notebook 3" in text
+    assert "button-press: button 3 on notebook 3" in text
+    assert text.count("stale drag ended: web01") == 1
+
+
+def test_begin_end_and_failed_are_logged(app_module, monkeypatch, drag_trace):
+    results = types.SimpleNamespace(ERROR=types.SimpleNamespace(value_nick="error"))
+    monkeypatch.setattr(app_module.Gtk, "DragResult", results)
+    scheduled = []
+    monkeypatch.setattr(
+        app_module.GLib, "idle_add", lambda callback, *args: scheduled.append((callback, args))
+    )
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = None
+    wmain.console_windows = ()
+    wmain.collect_notebooks = lambda _widget: []
+    wmain.console_side = lambda: None
+    notebook = TracedNotebook(4, [_page("db01")], "GdkWaylandDisplay")
+
+    wmain.on_notebook_drag_begin(notebook, None)
+    wmain.on_notebook_drag_failed(notebook, None, results.ERROR)
+    wmain.on_notebook_drag_end(notebook, None)
+
+    text = drag_trace.getvalue()
+    assert "drag-begin: db01 from notebook 4, place not read during a drag" in text
+    assert "drag-failed: db01, result error, wayland True, move out queued True" in text
+    assert "drag-end: db01 on notebook 4" in text
+    assert [callback for callback, _ in scheduled] == [
+        wmain.move_out_after_drag,
+        wmain.trace_tabs_after_drag,
+    ]
+
+
+def test_no_idle_is_queued_when_drag_tracing_is_off(app_module, monkeypatch):
+    scheduled = []
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda *args: scheduled.append(args))
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = None
+
+    wmain.on_notebook_drag_end(TracedNotebook(1), None)
+
+    assert scheduled == []
+
+
+@pytest.mark.parametrize(("still_on", "word"), [(True, "STILL ON"), (False, "over")])
+def test_the_moves_after_a_drop_say_whether_the_drag_is_still_on(
+    app_module, monkeypatch, drag_trace, still_on, word
+):
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = object() if still_on else None
+    page = _page("app01")
+
+    assert wmain.join_after_drop(page, TracedNotebook(2)) is False
+    assert wmain.move_out_after_drag(page) is False
+
+    text = drag_trace.getvalue()
+    assert f"join_after_drop: app01 to notebook 2, drag is {word}" in text
+    assert f"move_out_after_drag: app01, drag is {word}" in text
+
+
+def test_a_join_logs_the_tab_and_never_the_console(app_module, monkeypatch, drag_trace):
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = None
+    page = _page("app01")
+    page.terminal = types.SimpleNamespace(screen="secret-text")
+    page.get_parent = lambda: object()
+    wmain.move_page = lambda *_args: None
+    wmain.focus_console = lambda *_args: None
+
+    wmain.join_after_drop(page, TracedNotebook(2))
+
+    assert "app01" in drag_trace.getvalue()
+    assert "secret-text" not in drag_trace.getvalue()
+
+
+class TabsNotebook(TracedNotebook):
+    def __init__(self, number, pages, label_parent_ok=True):
+        super().__init__(number, pages)
+        self.label_parent_ok = label_parent_ok
+
+    def get_n_pages(self):
+        return len(self.pages)
+
+    def get_tab_label(self, page):
+        return types.SimpleNamespace(get_parent=lambda: self if self.label_parent_ok else None)
+
+
+def test_the_tabs_after_a_drag_list_a_stray_label_and_wait_for_the_drag(app_module, drag_trace):
+    wmain = object.__new__(app_module.Wmain)
+    wmain.console_windows = ()
+    first = TabsNotebook(1, [_page("a"), _page("b")])
+    second = TabsNotebook(2, [_page("c")], label_parent_ok=False)
+    wmain.collect_notebooks = lambda _widget: [first, second]
+    wmain.console_side = lambda: None
+    wmain.console_notebooks = lambda: [first, second]
+    wmain.dragged_tab = object()
+
+    assert wmain.trace_tabs_after_drag() is False
+    assert drag_trace.getvalue() == ""
+
+    wmain.dragged_tab = None
+    assert wmain.trace_tabs_after_drag() is False
+
+    text = drag_trace.getvalue()
+    assert "notebook 1 (pane 1 of 2): a, b" in text
+    assert "notebook 2 (pane 2 of 2): c" in text
+    assert "stray labels: c" in text
+
+
+def test_every_trace_note_in_app_passes_a_function():
+    """A message built at the call site would run while the area is off (#507)."""
+    source = Path(__file__).parent.parent / "src" / "gnome_connection_manager" / "app.py"
+    calls = [
+        node
+        for node in ast.walk(ast.parse(source.read_text()))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "note"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "trace"
+    ]
+    assert len(calls) >= 10
+    assert all(len(c.args) == 2 and isinstance(c.args[1], ast.Lambda) for c in calls)

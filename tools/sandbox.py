@@ -177,11 +177,21 @@ def prepare(
     return True
 
 
-def environment(base: dict[str, str], home: Path, scale: str | None) -> dict[str, str]:
+def environment(
+    base: dict[str, str],
+    home: Path,
+    scale: str | None,
+    trace: str = "",
+    wayland_debug: bool = False,
+) -> dict[str, str]:
     """`base` with HOME set to the sandbox and what points elsewhere removed.
 
     `scale` becomes GDK_DPI_SCALE, as typed; without it the caller's own is left alone.
     DISPLAY, WAYLAND_DISPLAY and GDK_BACKEND are the caller's.
+
+    `trace` becomes GCM_TRACE, and `wayland_debug` sets WAYLAND_DEBUG=client, so that the
+    protocol and GCM's trace lines share the one log (#507). Without them GCM_TRACE and
+    WAYLAND_DEBUG are the caller's, as DISPLAY is.
     """
     env = {key: value for key, value in base.items() if key not in UNSET + AGENT}
     env["HOME"] = str(home)
@@ -194,6 +204,10 @@ def environment(base: dict[str, str], home: Path, scale: str | None) -> dict[str
         if not math.isfinite(number) or number <= 0:
             raise ValueError(f"--scale must be a positive number, not {scale!r}")
         env["GDK_DPI_SCALE"] = scale
+    if trace:
+        env["GCM_TRACE"] = trace
+    if wayland_debug:
+        env["WAYLAND_DEBUG"] = "client"
     return env
 
 

@@ -212,12 +212,47 @@ def test_the_task_takes_its_options() -> None:
     task = gcm.task_sandbox()
 
     params = {param["name"]: param for param in task["params"]}
-    assert set(params) == {"fresh", "many", "few", "scale", "local", "wait"}
+    assert set(params) == {
+        "fresh",
+        "many",
+        "few",
+        "scale",
+        "local",
+        "wait",
+        "trace",
+        "wayland_debug",
+    }
     assert (params["many"]["default"], params["few"]["default"]) == (30, 3)
     assert params["fresh"]["default"] is False
     assert not params["scale"]["default"]
     assert (params["local"]["default"], params["wait"]["default"]) == (0, False)
+    assert (params["trace"]["default"], params["wayland_debug"]["default"]) == ("", False)
     assert task["actions"] == [gcm._run_sandbox]
+
+
+def test_trace_and_wayland_debug_reach_gcm_and_otherwise_pass_through(tmp_path: Path) -> None:
+    traced = sandbox.environment({}, tmp_path, None, trace="drag,menu", wayland_debug=True)
+    assert (traced["GCM_TRACE"], traced["WAYLAND_DEBUG"]) == ("drag,menu", "client")
+
+    plain = sandbox.environment({}, tmp_path, None)
+    assert "GCM_TRACE" not in plain
+    assert "WAYLAND_DEBUG" not in plain
+    theirs = sandbox.environment({"GCM_TRACE": "menu", "WAYLAND_DEBUG": "1"}, tmp_path, None)
+    assert (theirs["GCM_TRACE"], theirs["WAYLAND_DEBUG"]) == ("menu", "1")
+
+
+def test_the_task_gives_gcm_the_trace_one_stream_with_the_protocol(checkout: Path) -> None:
+    head = MagicMock(stdout="abc\n")
+    with (
+        patch.object(gcm.subprocess, "run", return_value=head),
+        patch.object(gcm.subprocess, "Popen", return_value=MagicMock(pid=7)) as popen,
+    ):
+        assert gcm._run_sandbox(False, 1, 1, "", 0, False, "drag", True) is True
+
+    kwargs = popen.call_args.kwargs
+    assert kwargs["env"]["GCM_TRACE"] == "drag"
+    assert kwargs["env"]["WAYLAND_DEBUG"] == "client"
+    assert kwargs["stderr"] == gcm.subprocess.STDOUT
 
 
 @pytest.fixture
