@@ -169,3 +169,40 @@ before the change it opened a third. On sway 1.11, headless, with a virtual poin
 a console window's terminal, on the main window's, and on the tab's own terminal each did the
 same. A drop on the bare output there was not measured: the drag never ended, before the
 change or after it.
+
+### A drag begins once (#401, #406)
+
+Under Wayland, WSLg among it, GtkNotebook began more than one drag for a tab. After
+GTK's start_drag, gtk_notebook_motion_notify begins another for each button-1 motion that
+reaches the notebook before the compositor's `wl_pointer.leave`. The extra drags did two
+things, as both issues' findings measured on WSLg:
+
+- They take the tab label out of the first drag's icon, which left #406's blank icon.
+- They replace GTK's dnd_source, so GTK drops the compositor's `cancelled` for the real
+  drag. That drag never ends, and its icon surface stays as WSLg's "pointer drag icon"
+  window (#401). A successful drop was not affected.
+
+`Wmain.watch_tab_drags` connects two handlers. `Wmain.on_notebook_motion` returns True,
+which swallows the event, while `dragged_tab` is set and button 1 is held. It is not
+gated on Wayland: under X11, GDK grabs the pointer for a drag and no motion reached a
+notebook mid-drag (measured on #406), so it does nothing there. A reorder within the strip
+emits no `drag-begin`, so `dragged_tab` is None and its motion passes.
+
+`Wmain.on_notebook_button_press` clears `dragged_tab` on a button-1 press and always
+returns False. During a drag no press reaches a notebook, and the press that starts one
+comes before `drag-begin`, so a press seen while `dragged_tab` is set means that drag is
+over. Without it a drag whose `drag-end` never came would leave the next drag's first
+motion swallowed, and no tab could be dragged or reordered until GCM restarted. Clearing
+on `drag-failed` was rejected: a failed drag emits `drag-end` anyway, and the stuck case
+gets neither. A time window after `drag-begin` was rejected as fragile: bystander motion
+came 26 ms in, and the gap reached 29.9 ms.
+
+Measured under X11 (XTest on a private Xvfb, `tests/test_console_window.py`): dragging
+tab A onto C's label in a strip of A, B, C leaves the order B, C, A with no `drag-begin`,
+also when `dragged_tab` was left set beforehand.
+
+This is a workaround for an upstream fault: [microsoft/wslg#1527](https://github.com/microsoft/wslg/issues/1527)
+and [GTK issue 3143](https://gitlab.gnome.org/GNOME/gtk/-/issues/3143).
+
+Not measured: WSLg by hand with this change, and sway, so whether this bug is why the drop
+on the bare output above never ended there is not known.

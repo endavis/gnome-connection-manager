@@ -6127,11 +6127,44 @@ class Wmain(GladeComponent):
         return window.notebook
 
     def watch_tab_drags(self, notebook):
-        """Move a tab dropped outside every notebook to a window of its own (#255)."""
+        """Move a tab dropped outside every notebook to a window of its own (#255).
+
+        It also makes a tab drag begin once (#401, #406). Under Wayland, WSLg among them,
+        GtkNotebook begins another drag for each button-1 motion that reaches it before
+        the compositor's `wl_pointer.leave`. The extra drags take the tab label out of
+        the first icon (a blank one, #406) and replace GTK's drag source, so it drops the
+        compositor's `cancelled` for the real drag, which never ends and leaves its icon
+        as a "pointer drag icon" window (#401). `on_notebook_motion` swallows that motion
+        while a drag is on, and `on_notebook_button_press` ends a drag that never did.
+        """
         notebook.connect("create-window", self.on_notebook_create_window)
         notebook.connect("drag-begin", self.on_notebook_drag_begin)
         notebook.connect("drag-failed", self.on_notebook_drag_failed)
         notebook.connect("drag-end", self.on_notebook_drag_end)
+        notebook.connect("button-press-event", self.on_notebook_button_press)
+        notebook.connect("motion-notify-event", self.on_notebook_motion)
+
+    def on_notebook_motion(self, _notebook, event) -> bool:
+        """Swallow button-1 motion while a tab drag is on, so GTK begins no second (#401).
+
+        A reorder within the strip emits no `drag-begin`, so `dragged_tab` is None then
+        and the motion passes. Under X11 GDK grabs the pointer for a drag and none
+        reaches a notebook, so this does nothing there.
+        """
+        return self.dragged_tab is not None and bool(event.state & Gdk.ModifierType.BUTTON1_MASK)
+
+    def on_notebook_button_press(self, _notebook, event) -> bool:
+        """A button-1 press means the drag that set `dragged_tab` is over (#401).
+
+        During a drag the pointer belongs to X11's grab or the Wayland data device, so no
+        press reaches a notebook, and the press that starts a drag comes before
+        `drag-begin`. A drag whose `drag-end` never came would otherwise leave
+        `on_notebook_motion` swallowing the next drag's start for good. Returns False
+        always, so `on_double_click` and GtkNotebook still see the press.
+        """
+        if event.button == 1:
+            self.dragged_tab = None
+        return False
 
     def on_notebook_drag_begin(self, notebook, _context):
         # GTK shows a tab as it is pressed, so the one showing as a drag begins is the
