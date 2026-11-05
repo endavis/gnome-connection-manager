@@ -137,6 +137,15 @@ timeout 12 uv run doit sandbox --xvfb --fresh
 Agents: say before starting one on a real display, as it opens over the developer's work and
 takes the focus, and batch what you check.
 
+### Listing WSLg's windows
+
+Under WSL, `doit wslg_windows` lists the windows of WSLg's own `msrdc.exe` through
+`powershell.exe`: title, place, size, visible or hidden, DPI and class (#510). It is for the
+grey rectangle a failed tab drag can leave on the Windows desktop (#401). The process is
+matched by its whole path, `C:\Program Files\WSL\msrdc.exe`, since a Remote Desktop client
+is `msrdc.exe` too. Anywhere but WSL it prints `Not WSL` and exits non-zero. This form was
+built without WSL and has not been run on it; only #401's earlier form was measured there.
+
 ### Logging
 
 Logs are emitted via Python's `logging` module. Adjust verbosity by setting `GCM_LOG_LEVEL` before running:

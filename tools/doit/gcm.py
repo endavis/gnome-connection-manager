@@ -246,6 +246,27 @@ def task_sandbox() -> dict[str, Any]:
     }
 
 
+def _list_wslg_windows() -> bool:
+    """Print the windows of WSLg's msrdc.exe; False off WSL or on a failure."""
+    from tools import wslg_windows
+
+    return wslg_windows.main([]) == 0
+
+
+def task_wslg_windows() -> dict[str, Any]:
+    """List the windows WSLg's own msrdc.exe holds, from inside WSL (#510).
+
+    Shows each window's title, place, size, visibility, DPI and class, to find the grey
+    rectangle a failed tab drag leaves on the Windows desktop (#401). Only WSL has them:
+    elsewhere the task says so and fails. This form has not been run on WSL.
+    """
+    return {
+        "actions": [_list_wslg_windows],
+        "title": title_with_actions,
+        "verbosity": 2,
+    }
+
+
 def task_setup() -> dict[str, Any]:
     """Create the development environment.
 
