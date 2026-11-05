@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- **`GCM_TRACE=drag,menu`** (or `all`) writes trace lines for tab drags and pop-up menus to
+  stderr, stamped as `WAYLAND_DEBUG` stamps its own, with an environment line, a mark on
+  `kill -USR1` and the Python stack on `kill -USR2`. `doit sandbox --trace` and
+  `--wayland-debug` pass it on. Off unless set (#507).
 - **`doit sandbox`** runs the checkout's GCM against a throwaway configuration under `tmp/`,
   a folder of many hosts and one of a few, so a menu or a tree can be tried without touching
   `~/.config/gcm`. `--fresh`, `--many`, `--few`, `--scale` and `--local` (a folder of local shells) set it;

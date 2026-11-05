@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import re
+import signal
 import types
 from pathlib import Path
+
+import pytest
 
 
 class TerminalStub:
@@ -708,3 +712,94 @@ def test_closing_a_console_closes_the_tab_in_use_through_the_real_wiring(app_mod
     assert notebook.pages == [other], "the tab in use was not closed"
     assert showing.destroyed and not other.destroyed, "the closed tab's page lived on"
     assert controller._context_tab_widget is None, "the context outlived the action"
+
+
+# --- start_trace (#507) ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def trace_spies(app_module, monkeypatch):
+    from gnome_connection_manager.utils import trace
+
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(
+        app_module.GLib,
+        "unix_signal_add",
+        lambda *args: calls.append(("unix_signal_add", args)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app_module.faulthandler,
+        "register",
+        lambda *args, **kwargs: calls.append(("register", args)),
+    )
+    monkeypatch.setattr(app_module, "trace_environment", lambda _window: "environment test")
+    yield calls
+    trace.configure({})
+
+
+def test_start_trace_with_no_variable_writes_and_installs_nothing(
+    app_module, monkeypatch, trace_spies, capsys
+):
+    monkeypatch.delenv("GCM_TRACE", raising=False)
+
+    app_module.start_trace(object(), object())
+
+    assert trace_spies == []
+    assert capsys.readouterr().err == ""
+
+
+def test_start_trace_installs_both_signals_and_writes_one_environment_line(
+    app_module, monkeypatch, trace_spies, capsys
+):
+    monkeypatch.setenv("GCM_TRACE", "drag,menu")
+    controller = object()
+
+    app_module.start_trace(controller, object())
+
+    names = [name for name, _ in trace_spies]
+    assert names == ["unix_signal_add", "register"]
+    assert signal.SIGUSR1 in trace_spies[0][1]
+    assert controller in trace_spies[0][1]
+    assert trace_spies[1][1] == (signal.SIGUSR2,)
+    assert capsys.readouterr().err.count("environment test") == 1
+
+
+def test_an_unknown_area_is_reported_once_and_installs_nothing(
+    app_module, monkeypatch, trace_spies, caplog
+):
+    monkeypatch.setenv("GCM_TRACE", "bogus")
+
+    with caplog.at_level(logging.WARNING):
+        app_module.start_trace(object(), object())
+
+    warnings = [r for r in caplog.records if "bogus" in r.getMessage()]
+    assert len(warnings) == 1
+    assert trace_spies == []
+
+
+def test_all_enables_every_area(app_module, monkeypatch, trace_spies):
+    from gnome_connection_manager.utils import trace
+
+    monkeypatch.setenv("GCM_TRACE", "all")
+
+    app_module.start_trace(object(), object())
+
+    assert all(trace.enabled(area) for area in trace.AREAS)
+
+
+def test_a_mark_writes_the_label_then_the_tabs_and_stays_installed(
+    app_module, monkeypatch, tmp_path, trace_spies, capsys
+):
+    monkeypatch.setenv("GCM_TRACE", "drag")
+    monkeypatch.setattr(app_module, "CONFIG_DIR", str(tmp_path))
+    (tmp_path / "trace-mark").write_text("after the drop\n")
+    app_module.start_trace(object(), object())
+    controller = types.SimpleNamespace(
+        dragged_tab=None, trace_tabs=lambda check_labels: f"tabs checked {check_labels}"
+    )
+
+    assert app_module.write_trace_mark(controller) is True
+
+    err = capsys.readouterr().err
+    assert err.index("=== MARK after the drop ===") < err.index("tabs checked True")

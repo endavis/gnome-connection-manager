@@ -28,6 +28,7 @@ and the terminal's 821. Each runs on a display of its own, with real clicks thro
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import shutil
@@ -566,6 +567,12 @@ class FakeDisplay:
 
     def get_monitor_at_window(self, window):
         self.asked.append(window)
+        return self.monitor
+
+    def get_n_monitors(self):
+        return 0 if self.monitor is None else 1
+
+    def get_monitor(self, number):
         return self.monitor
 
 
@@ -2550,3 +2557,105 @@ def test_a_menu_cut_short_by_a_short_screen_scrolls_a_row_against_real_gtk(tmp_p
     finally:
         process.terminate()
         process.wait()
+
+
+# -- GCM_TRACE's menu lines (#507) ---------------------------------------------------------
+
+
+@pytest.fixture
+def menu_trace():
+    from gnome_connection_manager.utils import trace
+
+    out = io.StringIO()
+    trace.configure({"GCM_TRACE": "menu"}, stream=out)
+    yield out
+    trace.configure({})
+
+
+def test_popup_menu_at_traces_the_room_the_rule_and_the_cut(popping, menu_trace):
+    popping.popup_menu_at(tall(1500), click(screen_window(), y=300))
+
+    [line] = menu_trace.getvalue().splitlines()
+    assert "menu: popup_menu_at: room (0, 0, 1920, 1080)" in line
+    assert "rule x11: monitor 0 work area" in line
+    assert "height 1500, width 200, items 1" in line
+    assert "scrolls=True" in line
+    assert "cut to 779" in line
+
+
+def test_a_menu_that_fits_is_traced_with_no_cut(popping, menu_trace):
+    popping.popup_menu_at(tall(100), click(screen_window(), y=300))
+
+    [line] = menu_trace.getvalue().splitlines()
+    assert "below=True" in line
+    assert "cut to" not in line
+
+
+def test_popup_menu_at_traces_no_room_and_the_older_call(popping, menu_trace):
+    popping.popup_menu_at(FakeMenu(popup_at_rect=False), click(screen_window()))
+    window = FakeWindow(FakeDisplay(X11, None))
+    popping.popup_menu_at(tall(100), click(window))
+
+    first, second = menu_trace.getvalue().splitlines()
+    assert "older popup call" in first
+    assert "popup_menu_at: no room" in second
+
+
+def test_a_menu_trace_names_no_item_label(popping, menu_trace):
+    menu = tall(100)
+    menu.get_children()[0].label = "Secret host"
+
+    popping.popup_menu_at(menu, click(screen_window()))
+
+    assert "Secret host" not in menu_trace.getvalue()
+
+
+def test_with_menu_tracing_off_nothing_is_written(popping, capsys):
+    popping.popup_menu_at(tall(100), click(screen_window()))
+
+    assert capsys.readouterr().err == ""
+
+
+def test_fit_placed_menu_traces_its_placement(placed, menu_trace):
+    window = screen_window()
+    menu = gtk_menu(placed, 1500)
+    menu.attach = beside_item(placed, window, 300)
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(window))
+
+    [line] = menu_trace.getvalue().splitlines()
+    assert "fit_placed_menu: room (0, 0, 1920, 1080)" in line
+    assert "beside" in line
+    assert "dy -300" in line
+    assert "resize_y removed True" in line
+
+
+def test_fit_placed_menu_traces_why_it_did_nothing(placed, menu_trace):
+    menu = gtk_menu(placed, 100)
+    menu.attach = None
+
+    placed.fit_placed_menu(menu, FakeGtkWindow(screen_window()))
+
+    assert "fit_placed_menu: no item, window or holder window" in menu_trace.getvalue()
+
+
+def test_the_wheel_hook_traces_its_notch_and_still_returns_true(wheel, menu_trace):
+    menu = wheel_menu(40, 67, 40)
+
+    assert wheel.scroll_menu_by_rows(menu, notch(DIRECTION.DOWN)) is True
+
+    [line] = menu_trace.getvalue().splitlines()
+    assert "scroll_menu_by_rows: delta 1.0, row 40, extra" in line
+
+
+def test_monitor_workarea_traces_the_rule_that_chose(app_module, menu_trace, monkeypatch):
+    monitor = FakeMonitor(types.SimpleNamespace(x=0, y=0, width=1920, height=1080))
+    display = FakeDisplay(X11, monitor)
+    display.get_primary_monitor = lambda: None
+    monkeypatch.setattr(app_module.Gdk.Display, "get_default", lambda: display, raising=False)
+    monkeypatch.setattr(app_module, "monitor_showing", lambda _display, _window: None)
+
+    assert app_module.monitor_workarea(None) is monitor.workarea
+
+    [line] = menu_trace.getvalue().splitlines()
+    assert "monitor_workarea: rule monitor 0, monitor 0, work area 0,0 1920x1080" in line

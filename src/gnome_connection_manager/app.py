@@ -55,6 +55,8 @@ import configparser
 import contextlib
 import ctypes
 import dataclasses
+import faulthandler
+import itertools
 import json
 import logging
 import os
@@ -153,6 +155,7 @@ from gnome_connection_manager.utils import (  # noqa: E402
     remotefiles,
     tabcolors,
     tabnames,
+    trace,
     transcript,
     updates,
     urlregex,
@@ -1865,24 +1868,64 @@ def monitor_showing(display, window):
     return best
 
 
+# Numbers the console notebooks for GCM_TRACE's lines, in the order they first pass
+# `Wmain.watch_tab_drags`; module-level so that a Wmain built without `__init__` has them (#507).
+_notebook_numbers = itertools.count(1)
+
+
+def trace_page_name(page: object) -> str:
+    """What a trace line calls a tab: the name `add_page` kept on its page (#507)."""
+    return str(getattr(page, "trace_name", "?"))
+
+
+def monitor_index(display: Gdk.Display, monitor: Gdk.Monitor | None) -> int | None:
+    """The number of `monitor` among `display`'s, or None; for a trace line (#507)."""
+    for index in range(display.get_n_monitors()):
+        if display.get_monitor(index) == monitor:
+            return index
+    return None
+
+
+def menu_room_rule(window: Gdk.Window) -> str:
+    """Which rule `menu_room` gave `window` its room by; for a trace line (#507)."""
+    display = window.get_display()
+    if display.__gtype__.name == "GdkWaylandDisplay":
+        return "wayland: window content"
+    monitor = display.get_monitor_at_window(window)
+    return f"x11: monitor {monitor_index(display, monitor)} work area"
+
+
 def monitor_workarea(window=None):
     """Usable area of the monitor showing `window`, or of the primary one."""
     display = Gdk.Display.get_default()
     if display is None:
         return None
+    rule = "showing"
     monitor = monitor_showing(display, window)
     if monitor is None and window is not None:
         # A dialog measured on the idle after it is shown is often not placed yet.
         # It opens on its parent's monitor, and the parent is placed, so ask that
         # rather than let the guesses below pick an arbitrary screen.
         monitor = monitor_showing(display, window.get_transient_for())
+        rule = "parent"
     if monitor is None:
         monitor = display.get_primary_monitor()
+        rule = "primary"
     if monitor is None and display.get_n_monitors() > 0:
         monitor = display.get_monitor(0)
+        rule = "monitor 0"
     if monitor is None:
+        trace.note(trace.MENU, lambda: "monitor_workarea: no monitor, rule none")
         return None
-    return monitor.get_workarea()
+    workarea = monitor.get_workarea()
+    trace.note(
+        trace.MENU,
+        lambda: (
+            f"monitor_workarea: rule {rule}, monitor {monitor_index(display, monitor)}, "
+            f"work area {workarea.x},{workarea.y} {workarea.width}x{workarea.height}"
+        ),
+    )
+    return workarea
 
 
 def clamp_to_workarea(width, height, workarea, allowance=0):
@@ -2037,7 +2080,9 @@ def scroll_menu_by_rows(widget: Gtk.Widget, event: Gdk.Event, *_rest: object) ->
             delta = -1.0
         elif ok and direction == Gdk.ScrollDirection.DOWN:
             delta = 1.0
-    extra = menuplacement.wheel_extra(delta, menu_row_height(widget))
+    row = menu_row_height(widget)
+    extra = menuplacement.wheel_extra(delta, row)
+    trace.note(trace.MENU, lambda: f"scroll_menu_by_rows: delta {delta}, row {row}, extra {extra}")
     if extra:
         more = Gdk.Event.new(Gdk.EventType.SCROLL)
         more.direction = Gdk.ScrollDirection.SMOOTH
@@ -2107,9 +2152,11 @@ def fit_placed_menu(menu: Gtk.Menu, holder: Gtk.Window) -> None:
     holder_window = holder.get_window()
     window = item.get_window() if item is not None else None
     if item is None or window is None or holder_window is None:
+        trace.note(trace.MENU, lambda: "fit_placed_menu: no item, window or holder window")
         return
     room = menu_room(holder_window)
     if room is None:
+        trace.note(trace.MENU, lambda: "fit_placed_menu: no room")
         return
     area = item.get_allocation()
     _x, top = window.get_root_coords(area.x, area.y)
@@ -2131,6 +2178,14 @@ def fit_placed_menu(menu: Gtk.Menu, holder: Gtk.Window) -> None:
             dy = placement.shift - area.height - placement.height
     if placement.scrolls:
         hints &= ~Gdk.AnchorHints.RESIZE_Y
+    trace.note(
+        trace.MENU,
+        lambda: (
+            f"fit_placed_menu: room {room}, rule {menu_room_rule(holder_window)}, item top {top}, "
+            f"height {height}, {'beside' if beside else 'below'}, {placement}, dy {dy}, "
+            f"resize_y removed {placement.scrolls}"
+        ),
+    )
     cut_menu(menu, placement)
     menu.set_property("anchor-hints", hints)
     menu.set_property("rect-anchor-dy", dy)
@@ -2168,6 +2223,7 @@ def popup_menu_at(
     """
     if not hasattr(menu, "popup_at_rect"):
         stamp = getattr(event, "time", None)
+        trace.note(trace.MENU, lambda: "popup_menu_at: older popup call")
         menu.popup(
             None,
             None,
@@ -2189,15 +2245,30 @@ def popup_menu_at(
     placement = menuplacement.Placement(below=True, shift=0, scrolls=False, height=0)
     across = menuplacement.Across(leftwards=east, shift=0)
     room = menu_room(window)
+    traced: tuple[int, int, int, int] | None = None
     if room is not None:
         room_left, room_top, room_right, room_bottom = room
         x, top = window.get_root_coords(rect.x, rect.y)
-        placement = menuplacement.place_menu(
-            top, top + rect.height, menu_height(menu), room_top, room_bottom
-        )
+        height, width = menu_height(menu), menu_width(menu)
+        placement = menuplacement.place_menu(top, top + rect.height, height, room_top, room_bottom)
         across = menuplacement.place_across(
-            x, x + rect.width, menu_width(menu), room_left, room_right, leftwards=east
+            x, x + rect.width, width, room_left, room_right, leftwards=east
         )
+        traced = (top, top + rect.height, height, width)
+    trace.note(
+        trace.MENU,
+        lambda: (
+            "popup_menu_at: no room"
+            if room is None or traced is None
+            else (
+                f"popup_menu_at: room {room}, rule {menu_room_rule(window)}, "
+                f"row {traced[0]}-{traced[1]}, height {traced[2]}, width {traced[3]}, "
+                f"items {sum(bool(item.get_visible()) for item in menu.get_children())}, "
+                f"{placement}, {across}"
+                + (f", cut to {placement.height}" if placement.scrolls else "")
+            )
+        ),
+    )
     if across.leftwards:
         south, north = Gdk.Gravity.SOUTH_EAST, Gdk.Gravity.NORTH_EAST
     else:
@@ -3136,6 +3207,8 @@ class Wmain(GladeComponent):
         self.window_in_use = None
         # The tab a drag between notebooks carries, while it does (#255).
         self.dragged_tab = None
+        # The number of the notebook that tab was dragged from, for a trace (#507).
+        self.dragged_from = None
         # The folders sshfs is mounting a host at, until it exits (#267).
         self.mounting = frozenset()
         self.count = 0
@@ -4500,11 +4573,28 @@ class Wmain(GladeComponent):
                 notebook = parent
                 break
             widget = parent
-        Gtk.drag_finish(context, page is not None and notebook is not None, False, drop_time)
+        success = page is not None and notebook is not None
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"take_dropped_tab: {trace_page_name(page)} dropped on notebook "
+                f"{getattr(notebook, 'trace_number', None)}, finished as "
+                f"{'success' if success else 'failure'}"
+            ),
+        )
+        Gtk.drag_finish(context, success, False, drop_time)
         if page is not None and notebook is not None and page.get_parent() is not notebook:
             GLib.idle_add(self.join_after_drop, page, notebook)
 
     def join_after_drop(self, page, notebook):
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"join_after_drop: {trace_page_name(page)} to notebook "
+                f"{getattr(notebook, 'trace_number', None)}, drag is "
+                f"{'STILL ON' if self.dragged_tab is not None else 'over'}"
+            ),
+        )
         if page.get_parent() is not None and page.get_parent() is not notebook:
             self.move_page(page, notebook)
             self.focus_console(notebook, page)
@@ -4852,6 +4942,8 @@ class Wmain(GladeComponent):
         (#350).
         """
         tab = NotebookTabLabel(f"  {title}  ", notebook, page, self.popupMenuTab)
+        # What a trace line calls this tab, kept so that a line reads no widget (#507).
+        page.trace_name = (host.name if host is not None else title).strip()
         tab.host = host
         if host is not None:
             tab.set_name(title, host_path(host))
@@ -6113,6 +6205,12 @@ class Wmain(GladeComponent):
         real pointer drag under X11, dropped on the bare root window: it asks with the
         pointer's position, and the tab takes its label along, as between panes.
         """
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"create-window: {trace_page_name(page)} from notebook {notebook.trace_number} at {x},{y}"
+            ),
+        )
         allocation = notebook.get_allocation()
         window = self.open_console_window(allocation.width, allocation.height)
         window.move(x, y)
@@ -6136,7 +6234,15 @@ class Wmain(GladeComponent):
         compositor's `cancelled` for the real drag, which never ends and leaves its icon
         as a "pointer drag icon" window (#401). `on_notebook_motion` swallows that motion
         while a drag is on, and `on_notebook_button_press` ends a drag that never did.
+
+        Every console notebook passes here once, so it is numbered here, for `GCM_TRACE`'s
+        lines (#507), whether a trace is on or not: a number then does not depend on when a
+        trace started. Its pages coming, going and moving are traced too.
         """
+        notebook.trace_number = next(_notebook_numbers)
+        notebook.connect("page-added", self.on_notebook_page_added)
+        notebook.connect("page-removed", self.on_notebook_page_removed)
+        notebook.connect("page-reordered", self.on_notebook_page_reordered)
         notebook.connect("create-window", self.on_notebook_create_window)
         notebook.connect("drag-begin", self.on_notebook_drag_begin)
         notebook.connect("drag-failed", self.on_notebook_drag_failed)
@@ -6144,16 +6250,52 @@ class Wmain(GladeComponent):
         notebook.connect("button-press-event", self.on_notebook_button_press)
         notebook.connect("motion-notify-event", self.on_notebook_motion)
 
-    def on_notebook_motion(self, _notebook, event) -> bool:
+    def on_notebook_page_added(self, notebook, page, number):
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"page-added: {trace_page_name(page)} in notebook {notebook.trace_number} at {number}"
+            ),
+        )
+
+    def on_notebook_page_removed(self, notebook, page, number):
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"page-removed: {trace_page_name(page)} from notebook {notebook.trace_number} at {number}"
+            ),
+        )
+
+    def on_notebook_page_reordered(self, notebook, page, number):
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"page-reordered: {trace_page_name(page)} in notebook {notebook.trace_number} to {number}"
+            ),
+        )
+
+    def on_notebook_motion(self, notebook, event) -> bool:
         """Swallow button-1 motion while a tab drag is on, so GTK begins no second (#401).
 
         A reorder within the strip emits no `drag-begin`, so `dragged_tab` is None then
         and the motion passes. Under X11 GDK grabs the pointer for a drag and none
         reaches a notebook, so this does nothing there.
         """
-        return self.dragged_tab is not None and bool(event.state & Gdk.ModifierType.BUTTON1_MASK)
+        swallowed = self.dragged_tab is not None and bool(
+            event.state & Gdk.ModifierType.BUTTON1_MASK
+        )
+        if swallowed:
+            trace.note(
+                trace.DRAG,
+                lambda: (
+                    f"motion swallowed on notebook {notebook.trace_number} ("
+                    f"{'own' if notebook.trace_number == self.dragged_from else 'other'} "
+                    f"drag source {self.dragged_from})"
+                ),
+            )
+        return swallowed
 
-    def on_notebook_button_press(self, _notebook, event) -> bool:
+    def on_notebook_button_press(self, notebook, event) -> bool:
         """A button-1 press means the drag that set `dragged_tab` is over (#401).
 
         During a drag the pointer belongs to X11's grab or the Wayland data device, so no
@@ -6162,17 +6304,80 @@ class Wmain(GladeComponent):
         `on_notebook_motion` swallowing the next drag's start for good. Returns False
         always, so `on_double_click` and GtkNotebook still see the press.
         """
+        stale = self.dragged_tab
+        trace.note(
+            trace.DRAG,
+            lambda: f"button-press: button {event.button} on notebook {notebook.trace_number}",
+        )
         if event.button == 1:
             self.dragged_tab = None
+            if stale is not None:
+                trace.note(trace.DRAG, lambda: f"stale drag ended: {trace_page_name(stale)}")
         return False
 
     def on_notebook_drag_begin(self, notebook, _context):
         # GTK shows a tab as it is pressed, so the one showing as a drag begins is the
         # one dragged: measured on sway, dragging a tab that was not showing.
         self.dragged_tab = notebook.get_nth_page(notebook.get_current_page())
+        self.dragged_from = getattr(notebook, "trace_number", None)
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"drag-begin: {trace_page_name(self.dragged_tab)} from notebook "
+                f"{self.dragged_from}, {self.trace_place(notebook)}"
+            ),
+        )
 
-    def on_notebook_drag_end(self, _notebook, _context):
+    def on_notebook_drag_end(self, notebook, _context):
+        page = self.dragged_tab
         self.dragged_tab = None
+        self.dragged_from = None
+        trace.note(
+            trace.DRAG,
+            lambda: f"drag-end: {trace_page_name(page)} on notebook {notebook.trace_number}",
+        )
+        if trace.enabled(trace.DRAG):
+            GLib.idle_add(self.trace_tabs_after_drag)
+
+    def trace_place(self, notebook) -> str:
+        """Where `notebook` is, for a trace line: not read while a drag is on, as its
+        widgets may be mid-move (#507)."""
+        window = self.console_window_of(notebook)
+        if window is not None:
+            return trace.place(None, 0, self.console_windows.index(window) + 1)
+        if self.dragged_tab is not None:
+            return trace.place(None, 0, None)
+        panes = self.collect_notebooks(self.console_side())
+        if notebook in panes:
+            return trace.place(panes.index(notebook) + 1, len(panes), None)
+        return trace.place(None, len(panes), None)
+
+    def trace_tabs(self, check_labels: bool) -> str:
+        """Every console notebook's tabs as a trace line (#507). With `check_labels`, the
+        tabs whose label is not in their notebook too; a caller asks for that only when no
+        drag is on."""
+        notebooks = []
+        strays = []
+        for notebook in self.console_notebooks():
+            names = []
+            for index in range(notebook.get_n_pages()):
+                page = notebook.get_nth_page(index)
+                names.append(trace_page_name(page))
+                if check_labels:
+                    label = notebook.get_tab_label(page)
+                    if label is None or label.get_parent() is not notebook:
+                        strays.append(trace_page_name(page))
+            notebooks.append(
+                (getattr(notebook, "trace_number", 0), self.trace_place(notebook), names)
+            )
+        return trace.tabs_line(notebooks, strays, checked=check_labels)
+
+    def trace_tabs_after_drag(self) -> bool:
+        """An idle queued by `on_notebook_drag_end`, after the moves it queued: the tabs as
+        they are once the drag is over. A new drag by now skips it (#507)."""
+        if self.dragged_tab is None:
+            trace.note(trace.DRAG, lambda: self.trace_tabs(check_labels=True))
+        return False
 
     def on_notebook_drag_failed(self, notebook, _context, result):
         """A tab dropped outside every notebook under Wayland, which GTK puts back (#255).
@@ -6187,11 +6392,27 @@ class Wmain(GladeComponent):
         """
         page = self.dragged_tab
         wayland = notebook.get_display().__gtype__.name == "GdkWaylandDisplay"
-        if result == Gtk.DragResult.ERROR and wayland and page is not None:
+        queued = result == Gtk.DragResult.ERROR and wayland and page is not None
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"drag-failed: {trace_page_name(page)}, result "
+                f"{getattr(result, 'value_nick', None) or int(result)}, wayland {wayland}, "
+                f"move out queued {queued}"
+            ),
+        )
+        if queued:
             GLib.idle_add(self.move_out_after_drag, page)
         return False
 
     def move_out_after_drag(self, page):
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"move_out_after_drag: {trace_page_name(page)}, drag is "
+                f"{'STILL ON' if self.dragged_tab is not None else 'over'}"
+            ),
+        )
         if page.get_parent() is not None:
             self.move_to_new_window(page)
         return False
@@ -11286,6 +11507,68 @@ class EntryDialog(Gtk.Dialog):
         self.response(Gtk.ResponseType.OK)
 
 
+def trace_environment(window: Gtk.Window) -> str:
+    """The environment line of a trace (#507): the facts a report of a drag or a menu needs.
+
+    Read inside the line's function, so that a fact GTK cannot give costs the line and
+    nothing else.
+    """
+    settings = Gtk.Settings.get_default()
+    font = settings.props.gtk_font_name
+    family = (
+        window.get_pango_context()
+        .load_font(Pango.FontDescription.from_string(font))
+        .describe()
+        .get_family()
+    )
+    facts = {
+        "gtk": f"{Gtk.get_major_version()}.{Gtk.get_minor_version()}.{Gtk.get_micro_version()}",
+        "display": Gdk.Display.get_default().__gtype__.name,
+        "scale": str(window.get_scale_factor()),
+        "theme": settings.props.gtk_theme_name,
+        "font": font,
+        "font_family": family,
+        "config_dir": str(CONFIG_DIR),
+        "commit": trace.checkout_commit(Path(__file__).parent),
+    }
+    for name in ("GDK_BACKEND", "GDK_SCALE", "GDK_DPI_SCALE", "WAYLAND_DEBUG"):
+        facts[name] = os.environ.get(name)
+    return trace.environment_line(facts)
+
+
+def write_trace_mark(controller: Wmain) -> bool:
+    """SIGUSR1's handler, run by the main loop: a mark with the label in `trace-mark`
+    beside gcm.conf, then every notebook's tabs (#507). True keeps the signal's source."""
+    area = trace.first_enabled()
+    if area is not None:
+        trace.note(
+            area, lambda: trace.mark_line(trace.read_mark_label(Path(CONFIG_DIR) / "trace-mark"))
+        )
+        trace.note(area, lambda: controller.trace_tabs(check_labels=controller.dragged_tab is None))
+    return True
+
+
+def start_trace(controller: Wmain, window: Gtk.Window) -> None:
+    """Start `GCM_TRACE`'s areas, once the window is shown (#507).
+
+    With the variable unset this returns before it writes or installs anything. Otherwise:
+    the environment line, SIGUSR1 for a mark (a source of the main loop, as the mark walks
+    widgets) and SIGUSR2 for the Python stack (`faulthandler`, in C, which answers a hung
+    main loop).
+    """
+    areas, unknown = trace.configure(os.environ)
+    if unknown:
+        logger.warning(
+            "GCM_TRACE names no area %s; areas are %s", ", ".join(unknown), ", ".join(trace.AREAS)
+        )
+    area = trace.first_enabled()
+    if not areas or area is None:
+        return
+    trace.note(area, lambda: trace_environment(window))
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, write_trace_mark, controller)
+    faulthandler.register(signal.SIGUSR2, all_threads=True)
+
+
 class GcmApplication(Gtk.Application):
     """GtkApplication bootstrap that owns the main window."""
 
@@ -11297,6 +11580,7 @@ class GcmApplication(Gtk.Application):
         self._controller = None
         self._pending_cli = []
         self._reported_unread = False
+        self._trace_started = False
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -11547,6 +11831,9 @@ class GcmApplication(Gtk.Application):
         if isinstance(main_window, Gtk.Window):
             main_window.set_application(self)
             main_window.present()
+            if not self._trace_started:
+                self._trace_started = True
+                start_trace(self._controller, main_window)
         if self._pending_cli:
             self._controller.open_cli_targets(self._pending_cli)
             self._pending_cli.clear()

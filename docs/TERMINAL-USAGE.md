@@ -1312,6 +1312,21 @@ A question that shows what you type looks to GCM like ssh still connecting, and 
 on waiting for the password. For a host that asks one, leave the password out, and ssh
 asks you for everything itself.
 
+## Reporting a drag or menu problem
+
+If a tab drag misbehaves, or a menu opens in the wrong place, GCM can write what it did to a
+file. Start it from a terminal with the area named, reproduce the problem, quit GCM, and
+attach `gcm-trace.log` to the report:
+
+```bash
+GCM_TRACE=drag gnome-connection-manager 2> gcm-trace.log
+GCM_TRACE=menu gnome-connection-manager 2> gcm-trace.log
+```
+
+The file lists the steps with their times, the tabs by the names of their hosts, and facts
+about the display, such as the scale and the font. It holds no password, key, menu entry or
+console text, so read it once before you attach it.
+
 ## When GCM will not start
 
 GCM refuses to start on a `gcm.conf` it cannot read in full, and says so:

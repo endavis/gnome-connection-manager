@@ -358,6 +358,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_snippets.py",
     "tests/test_tabcolors.py",
     "tests/test_tabnames.py",
+    "tests/test_trace.py",
     "tests/test_transcript.py",
     "tests/test_updates.py",
     "tests/test_urlregex.py",
