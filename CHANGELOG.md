@@ -69,6 +69,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- The error GCM logs for a host section it cannot read names the section and the kind of
+  error, no longer the error's text, which quoted the value it choked on, a password
+  among them (#511).
 - Searching a console no longer takes its links away or makes a searched word a link: an empty
   search (Escape, or Find Next with the box empty) used to remove every link until the tab was
   closed, and each searched word could be Ctrl+clicked into `xdg-open`. The search regex also

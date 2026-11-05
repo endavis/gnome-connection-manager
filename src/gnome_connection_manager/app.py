@@ -5780,9 +5780,12 @@ class Wmain(GladeComponent):
                 # The section only: a host's name and fields are values (#513).
                 trace.note(trace.CONFIG, lambda: f"load: host section [{section}] read")  # noqa: B023
             except (configparser.Error, ValueError, AttributeError) as e:
-                logger.error("%s: %s", _("Invalid entry in configuration file"), e)
-                # The section and the error's class; its message may quote a value (#513).
+                # The section and the error's class; its message may quote a value, a
+                # password among them (#511, #513).
                 error_class = type(e).__name__
+                logger.error(
+                    "%s: [%s] %s", _("Invalid entry in configuration file"), section, error_class
+                )
                 # `note` runs the lambda at once, so the loop's `section` is still this one.
                 refusal = trace.refused_host_line
                 options = len(cp.options(section))
