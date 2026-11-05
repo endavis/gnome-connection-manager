@@ -1233,6 +1233,148 @@ def test_activation_reports_the_renamed_hosts_once(app_module, monkeypatch):
     ]
 
 
+# -- a host gcm.conf has that cannot be read (#499) ---------------------------------
+
+
+def without_pass_and_with_a_word(tmp_path):
+    """Three hosts: the second has no `pass` line, the third a word for backspace-key."""
+    path = write_minimal_hosts_config(tmp_path, [{}, {}, {"backspace-key": "auto"}])
+    config = configparser.RawConfigParser()
+    config.read(path)
+    config.remove_option("host 2", "pass")
+    with path.open("w") as handle:
+        config.write(handle)
+    return path
+
+
+def test_a_host_gcm_cannot_read_survives_saves(tmp_path, app_module, monkeypatch):
+    """Measured before the fix: the host was skipped with a line on stderr and the first
+    save deleted its section, password and all."""
+    path = without_pass_and_with_a_word(tmp_path)
+    loaded = load_hosts(app_module, monkeypatch, path)
+    assert [host.name for host in loaded] == ["router1"]
+    assert [unread.section for unread in app_module.unread_hosts] == ["host 2", "host 3"]
+
+    save_config(app_module)
+    save_config(app_module)
+
+    saved = saved_sections(path)
+    assert saved.sections().count("host 1") == 1
+    assert saved.get("host 1", "name") == "router1"
+    assert saved.get("host 2", "name") == "router2"
+    assert not saved.has_option("host 2", "pass")
+    assert saved.get("host 2", "host") == "router2.example.com"
+    assert saved.get("host 3", "name") == "router3"
+    assert saved.get("host 3", "backspace-key") == "auto"
+    assert saved.get("host 3", "pass") == "plaintext"
+
+
+def test_a_save_after_a_reload_keeps_the_unread_host_once(tmp_path, app_module, monkeypatch):
+    path = without_pass_and_with_a_word(tmp_path)
+    load_hosts(app_module, monkeypatch, path)
+    save_config(app_module)
+
+    load_hosts(app_module, monkeypatch, path)
+    save_config(app_module)
+
+    saved = saved_sections(path)
+    assert [s for s in saved.sections() if s.startswith("host ")] == ["host 1", "host 2", "host 3"]
+    assert [unread.section for unread in app_module.unread_hosts] == ["host 2", "host 3"]
+
+
+def test_an_unread_host_does_not_take_a_number_a_host_in_memory_needs(
+    tmp_path, app_module, monkeypatch
+):
+    """Hosts in memory are numbered first; a repeated section is written as a plain number."""
+    path = write_minimal_hosts_config(tmp_path, [{}, {}])
+    with path.open("a") as handle:
+        handle.write("\n[host 2]\ngroup = ops\nname = broken\n")
+    loaded = load_hosts(app_module, monkeypatch, path)
+    assert [host.name for host in loaded] == ["router1", "router2"]
+    assert [unread.section for unread in app_module.unread_hosts] == ["host 2 (repeat)"]
+    new = make_host(app_module)
+    new.group, new.name = "ops", "added"
+    app_module.groups["ops"].append(new)
+
+    save_config(app_module)
+
+    saved = saved_sections(path)
+    assert [saved.get(s, "name") for s in ("host 1", "host 2", "host 3", "host 4")] == [
+        "router1",
+        "router2",
+        "added",
+        "broken",
+    ]
+    assert len(saved.sections()) == len(set(saved.sections()))
+
+
+def test_a_corrected_host_loads_and_is_no_longer_carried(tmp_path, app_module, monkeypatch):
+    path = without_pass_and_with_a_word(tmp_path)
+    load_hosts(app_module, monkeypatch, path)
+    save_config(app_module)
+    config = configparser.RawConfigParser()
+    config.read(path)
+    config.set("host 2", "pass", "plaintext")
+    config.set("host 3", "backspace-key", "0")
+    with path.open("w") as handle:
+        config.write(handle)
+
+    loaded = load_hosts(app_module, monkeypatch, path)
+
+    assert sorted(host.name for host in loaded) == ["router1", "router2", "router3"]
+    assert app_module.unread_hosts == []
+
+
+def test_the_window_reports_each_host_it_could_not_read(tmp_path, app_module, monkeypatch):
+    load_hosts(app_module, monkeypatch, without_pass_and_with_a_word(tmp_path))
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = object()
+
+    assert wmain.report_unread_hosts() is False
+
+    [dialog] = RefusalDialog.shown
+    assert dialog.parent is wmain.wMain
+    assert dialog.message_type == app_module.Gtk.MessageType.WARNING
+    assert "could not be read" in dialog.text
+    assert "ops/router2  (No option 'pass' in section: 'host 2')" in dialog.detail
+    assert "ops/router3" in dialog.detail
+    assert "Preferences" not in dialog.detail
+
+
+def test_the_window_says_nothing_when_every_host_reads(tmp_path, app_module, monkeypatch):
+    load_hosts(app_module, monkeypatch, write_minimal_hosts_config(tmp_path, [{}]))
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+
+    assert object.__new__(app_module.Wmain).report_unread_hosts() is False
+    assert RefusalDialog.shown == []
+
+
+def test_activation_reports_the_unread_hosts_once(app_module, monkeypatch):
+    scheduled = []
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda func, *args: scheduled.append(func))
+    monkeypatch.setattr(app_module, "sync_shortcut_accels", lambda: None)
+    monkeypatch.setattr(
+        app_module, "unread_hosts", [app_module.configfile.UnreadHost("host 2", {}, "why")]
+    )
+    application = app_module.GcmApplication()
+    application._controller = types.SimpleNamespace(
+        get_widget=lambda _name: None,
+        report_unread_options=lambda: False,
+        report_unread_hosts=lambda: False,
+    )
+
+    application.do_activate()
+    application.do_activate()
+
+    assert scheduled == [
+        application._controller.report_unread_options,
+        application._controller.report_unread_hosts,
+    ]
+
+
 # -- a command without a key, and the keys a console is not taken from (#419) ---------
 
 

@@ -63,6 +63,9 @@ the git log.
 ### Fixed
 - A tab dropped on another window's console under Wayland no longer crashes GCM: the move
   waits for the drag to end, where it could run in the middle of it (#505).
+- A host in gcm.conf that GCM cannot read, such as one with no `pass` line or a word for
+  `backspace-key`, stays in the file when GCM saves, as it is, and a notice names it when
+  GCM starts. The save used to delete its section, password included (#499).
 - Under Wayland, WSLg among them, a tab drag begins once. Its icon shows the tab's text
   and not a blank one (#406), and a tab dropped where nothing takes it opens its window and
   leaves no "pointer drag icon" window on the desktop (#401).

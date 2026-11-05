@@ -1539,6 +1539,12 @@ msgstr "Einige Einstellungen in gcm.conf konnten nicht gelesen werden und haben 
 msgid "GCM leaves these lines as they are until you change the setting in Preferences. To correct one in the file instead, edit it with GCM closed."
 msgstr "GCM lässt diese Zeilen unverändert, bis Sie den jeweiligen Wert in den Einstellungen ändern. Um eine stattdessen in der Datei zu korrigieren, bearbeiten Sie sie, während GCM geschlossen ist."
 
+msgid "Some hosts in gcm.conf could not be read, so they are not in the list."
+msgstr "Einige Hosts in gcm.conf konnten nicht gelesen werden und stehen daher nicht in der Liste."
+
+msgid "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
+msgstr "GCM behält diese Hosts unverändert in der Datei. Um einen wieder zu erhalten, korrigieren Sie ihn in der Datei, während GCM geschlossen ist."
+
 msgid "expects true or false"
 msgstr "erwartet true oder false"
 
