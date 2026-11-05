@@ -3955,8 +3955,8 @@ class Wmain(GladeComponent):
         self.search = {}
         text = self.search_box().get_text()
         if text == "" or text == _("search..."):
+            # Only the search's own regex: the terminal's match regexes are its links (#498).
             terminal.search_set_regex(None, 0)
-            terminal.match_remove_all()
             return True
 
         self.search["terminal"] = terminal
@@ -3964,11 +3964,11 @@ class Wmain(GladeComponent):
 
         r = re.escape(text)
         try:
-            new_reg = Vte.Regex.new_for_search(r, len(r), 0)
-            new_reg_m = Vte.Regex.new_for_match(r, len(r), 0)
+            # VTE wants PCRE2_MULTILINE, which PCRE2_FLAGS has. A search is not a match
+            # regex: those are the terminal's links, and a searched word is none (#498).
+            new_reg = Vte.Regex.new_for_search(r, len(r), urlregex.PCRE2_FLAGS)
             terminal.search_set_regex(new_reg, 0)
             terminal.search_set_wrap_around(True)
-            terminal.match_add_regex(new_reg_m, 0)
             self.search["pcre2"] = True
             return True
         except Exception:

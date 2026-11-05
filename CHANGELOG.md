@@ -61,6 +61,10 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- Searching a console no longer takes its links away or makes a searched word a link: an empty
+  search (Escape, or Find Next with the box empty) used to remove every link until the tab was
+  closed, and each searched word could be Ctrl+clicked into `xdg-open`. The search regex also
+  has the flag VTE asks for, so VTE no longer warns at each search (#498).
 - A tab dropped on another window's console under Wayland no longer crashes GCM: the move
   waits for the drag to end, where it could run in the middle of it (#505).
 - A host in gcm.conf that GCM cannot read, such as one with no `pass` line or a word for
