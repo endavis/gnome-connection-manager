@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess  # nosec B404  # required to run msgfmt and the app
 import sys
 import tempfile
@@ -47,11 +48,13 @@ def _run_sandbox(
     wait: bool = False,
     trace: str = "",
     wayland_debug: bool = False,
+    xvfb: bool = False,
 ) -> bool:
     """Prepare the sandbox and run GCM against it. False when GCM could not start or failed.
 
     GCM runs detached, its output in a log, so doit's database is released while it runs;
     `wait` keeps it in the foreground with its output on the terminal and its exit status.
+    `xvfb` runs it so on an Xvfb of the run's own (#509), which it stops on every way out.
     """
     from tools import sandbox
 
@@ -60,10 +63,26 @@ def _run_sandbox(
         print(f"No {python}: run `doit setup` first.")
         return False
     home = sandbox.sandbox_home(REPO)
+    started = None
+    display = None
     try:
         written = sandbox.prepare(home, fresh=fresh, many=many, few=few, local=local)
-        env = sandbox.environment(dict(os.environ), home, scale or None, trace, wayland_debug)
+        if xvfb:
+            # Checked after the arguments, so a bad one starts no server.
+            sandbox.environment({}, home, scale or None)
+            from tests import xdisplay
+
+            started = xdisplay.start()
+            if started is None:
+                print("No Xvfb came up: sudo apt install xvfb")
+                return False
+            display = started[1]
+        env = sandbox.environment(
+            dict(os.environ), home, scale or None, trace, wayland_debug, display
+        )
     except ValueError as error:
+        if started is not None:
+            xdisplay.stop(started[0])
         print(error)
         return False
     if written:
@@ -81,6 +100,9 @@ def _run_sandbox(
     if "GCM_TRACE" in env:
         status += f", GCM_TRACE={env['GCM_TRACE']}"
     print(status)
+    if started is not None:
+        print(f"DISPLAY={started[1]} (Xvfb PID {started[0].pid})")
+        return _run_on_display(sandbox.command(REPO), env, started[0])
     if wait:
         done = subprocess.run(sandbox.command(REPO), env=env, cwd=REPO, check=False)  # nosec B603
         return done.returncode == 0
@@ -100,6 +122,36 @@ def _run_sandbox(
     return True
 
 
+def _run_on_display(command: list[str], env: dict[str, str], xvfb_process: Any) -> bool:
+    """Run GCM in the foreground on the run's Xvfb; True when it exits 0 (#509).
+
+    GCM and Xvfb stay in doit's process group, so `timeout` and a terminal's Ctrl+C reach
+    them as they reach doit. A SIGTERM to doit alone does not, so a handler for the run
+    ends both; it is idempotent, as `timeout` has been measured to deliver the signal twice
+    through `uv run`. Whatever the way out, GCM is then waited for and killed if it will
+    not go, and the Xvfb stopped.
+    """
+    from tests import xdisplay
+
+    process: subprocess.Popen[bytes] | None = None
+
+    def end_both(_signum: int, _frame: Any) -> None:
+        for child in (process, xvfb_process):
+            if child is not None and child.poll() is None:
+                child.terminate()
+
+    previous = signal.signal(signal.SIGTERM, end_both)
+    try:
+        process = subprocess.Popen(command, env=env, cwd=REPO)  # nosec B603
+        process.wait()
+        return process.returncode == 0
+    finally:
+        if process is not None:
+            xdisplay.stop(process)
+        xdisplay.stop(xvfb_process)
+        signal.signal(signal.SIGTERM, previous)
+
+
 def task_sandbox() -> dict[str, Any]:
     """Run the application against a throwaway configuration under tmp/.
 
@@ -117,6 +169,8 @@ def task_sandbox() -> dict[str, Any]:
         --wait: Keep GCM in the foreground, its output on the terminal.
         --trace: GCM_TRACE for GCM, the areas to trace (drag, menu, all).
         --wayland-debug: WAYLAND_DEBUG=client, its lines in the same log as the trace.
+        --xvfb: Run GCM on an Xvfb of this run's own, headless; implies --wait. The Xvfb
+            and GCM end with the task, however it ends.
     """
     return {
         "actions": [_run_sandbox],
@@ -174,6 +228,13 @@ def task_sandbox() -> dict[str, Any]:
                 "type": bool,
                 "default": False,
                 "help": "WAYLAND_DEBUG=client, in the same log as the trace.",
+            },
+            {
+                "name": "xvfb",
+                "long": "xvfb",
+                "type": bool,
+                "default": False,
+                "help": "Run GCM on an Xvfb of its own, in the foreground (implies --wait).",
             },
         ],
         "title": title_with_actions,

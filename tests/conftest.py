@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import importlib
 import os
-import shutil
-import socket
-import subprocess
 import sys
-import time
 import types
 from pathlib import Path
 
 import pytest
+
+from tests import xdisplay
 
 # The tests taken from pyproject-template import their helper as `agent_roster`. That works
 # there because the template's tests/ is not a package, so pytest puts the folder itself on
@@ -35,63 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # Set GCM_TEST_REAL_DISPLAY=1 to keep the real desktop, which is what you want when
 # measuring against the compositor GCM actually ships on.
 
-_XVFB_SCREEN = "1920x1080x24"
 _xvfb_process = None
-
-
-def _x_display_is_up(number):
-    """True once display :number accepts a connection.
-
-    Checks the abstract socket first. WSLg mounts /tmp/.X11-unix read-only, so Xvfb
-    cannot create the filesystem socket there at all and only the abstract one appears;
-    waiting for the path would wait forever. Xvfb's own -displayfd never reports back
-    under that same condition, which is why readiness is probed rather than asked for.
-    """
-    for address in (f"\0/tmp/.X11-unix/X{number}", f"/tmp/.X11-unix/X{number}"):
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            sock.connect(address)
-            return True
-        except OSError:
-            continue
-        finally:
-            sock.close()
-    return False
-
-
-def _free_display():
-    for number in range(90, 200):
-        if Path(f"/tmp/.X{number}-lock").exists() or _x_display_is_up(number):
-            continue
-        return number
-    return None
-
-
-def _start_xvfb():
-    """Spawn an Xvfb and return (process, display), or None if it cannot be used."""
-    xvfb = shutil.which("Xvfb")
-    if xvfb is None:
-        return None
-    number = _free_display()
-    if number is None:
-        return None
-    try:
-        process = subprocess.Popen(
-            [xvfb, f":{number}", "-screen", "0", _XVFB_SCREEN, "-nolisten", "tcp"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError:
-        return None
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        if _x_display_is_up(number):
-            return process, f":{number}"
-        if process.poll() is not None:
-            return None
-        time.sleep(0.02)
-    process.terminate()
-    return None
 
 
 def pytest_configure(config):
@@ -117,7 +59,7 @@ def pytest_configure(config):
         # scenarios deselected, nothing there draws on one, measured. And mutmut ends a
         # mutant that runs too long with SIGXCPU, then SIGKILL, so pytest_unconfigure never
         # ran, and each such mutant left its Xvfb running: a day of local runs left 109, on
-        # all but one of the display numbers _free_display tries (#341). Nor the
+        # all but one of the display numbers xdisplay.free_number tries (#341). Nor the
         # developer's display: a selected test that reached it would open a window there
         # for every mutant. A pytest a test starts has no mutmut in it, and starts an Xvfb
         # of its own.
@@ -134,7 +76,7 @@ def pytest_configure(config):
     # back to the developer's real desktop -- the exact thing this exists to prevent.
     if os.environ.get("PYTEST_XDIST_WORKER"):
         return
-    started = _start_xvfb()
+    started = xdisplay.start()
     if started is None:
         # No Xvfb, or it failed to come up. Fall back to whatever display is already
         # there rather than turning a focus annoyance into a broken test run.
@@ -157,11 +99,7 @@ def pytest_unconfigure(config):
     global _xvfb_process
     if _xvfb_process is None:
         return
-    _xvfb_process.terminate()
-    try:
-        _xvfb_process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        _xvfb_process.kill()
+    xdisplay.stop(_xvfb_process)
     _xvfb_process = None
 
 

@@ -183,11 +183,15 @@ def environment(
     scale: str | None,
     trace: str = "",
     wayland_debug: bool = False,
+    display: str | None = None,
 ) -> dict[str, str]:
     """`base` with HOME set to the sandbox and what points elsewhere removed.
 
     `scale` becomes GDK_DPI_SCALE, as typed; without it the caller's own is left alone.
-    DISPLAY, WAYLAND_DISPLAY and GDK_BACKEND are the caller's.
+    DISPLAY, WAYLAND_DISPLAY and GDK_BACKEND are the caller's, unless `display` is given, an
+    X display of the run's own (#509): then DISPLAY is it, GDK_BACKEND is x11, and
+    WAYLAND_DISPLAY and the caller's GDK_DPI_SCALE are removed, as the test suite does for
+    its own Xvfb, so GTK cannot go back to the caller's desktop. `scale` still applies.
 
     `trace` becomes GCM_TRACE, and `wayland_debug` sets WAYLAND_DEBUG=client, so that the
     protocol and GCM's trace lines share the one log (#507). Without them GCM_TRACE and
@@ -196,6 +200,11 @@ def environment(
     env = {key: value for key, value in base.items() if key not in UNSET + AGENT}
     env["HOME"] = str(home)
     env["PYTHONFAULTHANDLER"] = "1"
+    if display is not None:
+        env["DISPLAY"] = display
+        env["GDK_BACKEND"] = "x11"
+        env.pop("WAYLAND_DISPLAY", None)
+        env.pop("GDK_DPI_SCALE", None)
     if scale:
         try:
             number = float(scale)

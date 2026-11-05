@@ -108,7 +108,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   prompt, from `GCM_PASSWORD`, refusing the host key question above all (#216). A test
   checks that the Makefile installs every script here executable. Notes: its comments.
 - `data/style.css`, `data/icon.png`, `data/ui/donate.gif` – assets.
-- `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`.
+- `tests/` – the automated suite (see below). `tests/conftest.py` stubs all of `gi`;
+  `tests/xdisplay.py` starts an Xvfb of a run's own, `doit sandbox --xvfb` too (#509).
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
   `<lang>/LC_MESSAGES/gcm-lang.mo`, for de, es, fr, it, ko, pl, pt and ru. English has none:
   the msgids are English (ADR-0003, #390). Notes: `docs/design/translations.md`.
@@ -324,8 +325,8 @@ Practices below have each caught real bugs in this repo. They are worth the time
   screen stays black (measured: `xwininfo -root -tree` reported `0 children` for thirty
   seconds). Unset `WAYLAND_DISPLAY` and set `GDK_BACKEND=x11`, as `pytest_configure` does,
   and `GDK_DPI_SCALE` too if you are measuring geometry. `pytest` starts its own Xvfb
-  (`tests/conftest.py`); do the same, and use `:0` only for probes that must measure the
-  real compositor.
+  (`tests/conftest.py`); do the same, or `timeout 12 uv run doit sandbox --xvfb --fresh`
+  (#509), and use `:0` only for probes that must measure the real compositor.
 
 ## Configuration & Data Flow
 - User data lives in `~/.config/gcm/`, or in `~/.gcm/` where that was already there --

@@ -20,12 +20,11 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
-from tests.conftest import _free_display, _x_display_is_up
+from tests import xdisplay
 from tests.test_connections import glib_complaints
 
 REPO = Path(__file__).resolve().parents[1]
@@ -770,32 +769,10 @@ def _private_display(size="1920x1080x24"):
     1 and no word why. So a display counts as its own only once the lock file Xvfb
     writes names its own process.
     """
-    for _attempt in range(10):
-        number = _free_display()
-        if number is None:
-            break
-        process = subprocess.Popen(
-            ["Xvfb", f":{number}", "-screen", "0", size, "-nolisten", "tcp"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        lock = Path(f"/tmp/.X{number}-lock")
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and process.poll() is None:
-            if _x_display_is_up(number) and _holder(lock) == process.pid:
-                return process, f":{number}"
-            time.sleep(0.02)
-        process.kill()
-        process.wait()
-    pytest.fail("no Xvfb of its own came up")
-
-
-def _holder(lock):
-    """The process a display's lock file names, or None while it names none yet."""
-    try:
-        return int(lock.read_text().strip())
-    except (OSError, ValueError):
-        return None
+    started = xdisplay.start(size)
+    if started is None:
+        pytest.fail("no Xvfb of its own came up")
+    return started
 
 
 def _run_scenario(scenario, tmp_path, **extra):
