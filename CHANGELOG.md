@@ -52,6 +52,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- Under Wayland, WSLg among them, a tab drag begins once. Its icon shows the tab's text
+  and not a blank one (#406), and a tab dropped where nothing takes it opens its window and
+  leaves no "pointer drag icon" window on the desktop (#401).
 - A tab dragged onto another GCM window's console joins that window, the one under the
   pointer, instead of opening a window of its own. A drop outside every GCM window still
   opens one (#407).

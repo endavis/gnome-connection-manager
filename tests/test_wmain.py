@@ -5478,7 +5478,89 @@ def test_a_console_notebook_watches_its_tab_drags(app_module):
         ("drag-begin", wmain.on_notebook_drag_begin),
         ("drag-failed", wmain.on_notebook_drag_failed),
         ("drag-end", wmain.on_notebook_drag_end),
+        ("button-press-event", wmain.on_notebook_button_press),
+        ("motion-notify-event", wmain.on_notebook_motion),
     ]
+
+
+BUTTON1 = 256  # Gdk.ModifierType.BUTTON1_MASK in real GDK; the conftest stub lacks it.
+
+
+def _pointer_wmain(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.Gdk.ModifierType, "BUTTON1_MASK", BUTTON1, raising=False)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = None
+    return wmain
+
+
+def test_pointer_fakes_match_real_gdk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk
+
+    assert int(Gdk.ModifierType.BUTTON1_MASK) == BUTTON1
+    assert hasattr(Gdk.EventMotion, "state")
+    assert hasattr(Gdk.EventButton, "button")
+
+
+@pytest.mark.parametrize(
+    ("dragged", "state", "swallowed"),
+    [
+        (object(), BUTTON1, True),
+        (object(), BUTTON1 | 1, True),  # with Ctrl as well
+        (object(), 0, False),  # button 1 not held
+        (object(), 1, False),
+        (None, BUTTON1, False),  # no drag on: a reorder, or any other motion
+        (None, 0, False),
+    ],
+)
+def test_notebook_motion_is_swallowed_only_during_a_drag(
+    app_module, monkeypatch, dragged, state, swallowed
+):
+    """GTK begins no second drag from the motion of the first (#401, #406)."""
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    wmain.dragged_tab = dragged
+
+    event = types.SimpleNamespace(state=state)
+
+    assert wmain.on_notebook_motion(None, event) is swallowed
+
+
+@pytest.mark.parametrize(("button", "cleared"), [(1, True), (2, False), (3, False)])
+def test_notebook_button_press_ends_a_stale_drag_and_never_swallows(
+    app_module, monkeypatch, button, cleared
+):
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    page = object()
+    wmain.dragged_tab = page
+
+    assert wmain.on_notebook_button_press(None, types.SimpleNamespace(button=button)) is False
+
+    assert wmain.dragged_tab is (None if cleared else page)
+
+
+def test_a_drag_swallows_motion_until_it_ends(app_module, monkeypatch):
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    notebook = DraggingNotebook([object()], "GdkWaylandDisplay")
+    motion = types.SimpleNamespace(state=BUTTON1)
+
+    assert wmain.on_notebook_motion(notebook, motion) is False
+    wmain.on_notebook_drag_begin(notebook, None)
+    assert wmain.on_notebook_motion(notebook, motion) is True
+    wmain.on_notebook_drag_end(notebook, None)
+    assert wmain.on_notebook_motion(notebook, motion) is False
+
+
+def test_a_drag_that_never_ended_does_not_block_the_next(app_module, monkeypatch):
+    """The failure the press handler bounds: no drag-end, and every drag stays dead."""
+    wmain = _pointer_wmain(app_module, monkeypatch)
+    wmain.on_notebook_drag_begin(DraggingNotebook([object()], "GdkWaylandDisplay"), None)
+    motion = types.SimpleNamespace(state=BUTTON1)
+    assert wmain.on_notebook_motion(None, motion) is True
+
+    wmain.on_notebook_button_press(None, types.SimpleNamespace(button=1))
+
+    assert wmain.on_notebook_motion(None, motion) is False
 
 
 def _failed_drag(app_module, monkeypatch, backend, result):

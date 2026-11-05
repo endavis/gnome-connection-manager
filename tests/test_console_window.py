@@ -703,6 +703,25 @@ elif scenario == "a-tab-dropped-on-its-own-console-stays":
     assert w.console_windows == (window,)
     assert page_of("B") is page and page.get_parent() is window.notebook
 
+elif scenario == "a-tab-reorders-in-its-strip":
+    # A reorder within the strip begins no drag, so the handler on motion leaves it alone.
+    open_tabs("A", "B", "C")
+    begun = []
+    w.nbConsole.connect("drag-begin", lambda *_args: begun.append(1))
+    drag(centre(label_of("A").label), centre(label_of("C").label))
+    assert names() == [["B", "C", "A"]], names()
+    assert begun == [], begun
+    assert w.dragged_tab is None
+
+elif scenario == "a-tab-reorders-after-a-drag-that-never-ended":
+    # A drag whose drag-end never came leaves dragged_tab set. The press that starts the
+    # next one ends it, or its motion would be swallowed and no tab could be moved again.
+    open_tabs("A", "B", "C")
+    w.dragged_tab = page_of("B")
+    drag(centre(label_of("A").label), centre(label_of("C").label))
+    assert names() == [["B", "C", "A"]], names()
+    assert w.dragged_tab is None
+
 else:
     raise SystemExit("no scenario " + scenario)
 print("OK")
@@ -764,6 +783,8 @@ def _holder(lock):
         "a-tab-dropped-on-a-console-window-joins-it",
         "a-tab-dropped-on-the-main-window-joins-it",
         "a-tab-dropped-on-its-own-console-stays",
+        "a-tab-reorders-in-its-strip",
+        "a-tab-reorders-after-a-drag-that-never-ended",
     ],
 )
 def test_a_console_window_against_real_gtk(scenario, tmp_path):
