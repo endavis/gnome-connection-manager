@@ -302,6 +302,12 @@ addopts = [
 [tool.coverage.run]
 source = ["src"]
 branch = true
+# Not sysmon, coverage's default on Python 3.14. `app_module` imports app.py afresh for
+# each test that takes it, and under sysmon each import's memory stayed: measured, one
+# process over tests/test_wmain.py's first 200 tests peaked at 533 MB under sysmon, 239 MB
+# under ctrace and 216 MB without coverage. Every xdist worker grew so, and two `doit
+# check` runs filled a 10 GiB container (#523). Python 3.12, CI's, defaults to ctrace.
+core = "ctrace"
 
 [tool.coverage.report]
 exclude_lines = [
