@@ -150,7 +150,9 @@ GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
 `GCM_TRACE` switches on trace lines for the areas it names, `drag`, `menu`, `keys`, `actions`,
 `links`, `config`, `notifications`, or `all` (`GCM_TRACE=drag,menu`). It is apart from `GCM_LOG_LEVEL`: that never turns a trace on, and
 a trace never changes it. With it unset nothing is written and nothing is installed. A name
-that is no area is warned of once.
+that is no area is warned of once. The areas are switched on when the application activates,
+before the main window reads `gcm.conf`, so the `config` area's reads and refusals are traced;
+the `environment` line and the signals follow once the window is shown.
 
 ```bash
 GCM_TRACE=drag uv run python -m gnome_connection_manager 2> gcm-trace.log

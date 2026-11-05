@@ -5777,6 +5777,8 @@ class Wmain(GladeComponent):
 
                 groups[host.group].append(host)
                 read.append(host)
+                # The section only: a host's name and fields are values (#513).
+                trace.note(trace.CONFIG, lambda: f"load: host section [{section}] read")  # noqa: B023
             except (configparser.Error, ValueError, AttributeError) as e:
                 logger.error("%s: %s", _("Invalid entry in configuration file"), e)
                 # The section and the error's class; its message may quote a value (#513).
@@ -11797,21 +11799,30 @@ def write_trace_mark(controller: Wmain) -> bool:
     return True
 
 
-def start_trace(controller: Wmain, window: Gtk.Window) -> None:
-    """Start `GCM_TRACE`'s areas, once the window is shown (#507).
+def configure_trace() -> None:
+    """Switch on `GCM_TRACE`'s areas, before `Wmain` is built (#513).
 
-    With the variable unset this returns before it writes or installs anything. Otherwise:
-    the environment line, SIGUSR1 for a mark (a source of the main loop, as the mark walks
-    widgets) and SIGUSR2 for the Python stack (`faulthandler`, in C, which answers a hung
-    main loop).
+    `Wmain.__init__` runs `loadConfig`, so the config area's read and refusal lines exist
+    only if the areas are on by then. Idempotent (`trace.configure` is), so a second
+    activation is harmless. Writes and installs nothing; a name that is no area is warned of.
     """
-    areas, unknown = trace.configure(os.environ)
+    _areas, unknown = trace.configure(os.environ)
     if unknown:
         logger.warning(
             "GCM_TRACE names no area %s; areas are %s", ", ".join(unknown), ", ".join(trace.AREAS)
         )
+
+
+def start_trace(controller: Wmain, window: Gtk.Window) -> None:
+    """Start `GCM_TRACE`'s environment line and signals, once the window is shown (#507).
+
+    The areas were switched on by `configure_trace`, which `do_activate` runs first. With
+    none on this returns before it writes or installs anything. Otherwise: the environment
+    line, SIGUSR1 for a mark (a source of the main loop, as the mark walks widgets) and
+    SIGUSR2 for the Python stack (`faulthandler`, in C, which answers a hung main loop).
+    """
     area = trace.first_enabled()
-    if not areas or area is None:
+    if area is None:
         return
     trace.note(area, lambda: trace_environment(window))
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, write_trace_mark, controller)
@@ -12083,6 +12094,7 @@ class GcmApplication(Gtk.Application):
         self.set_menubar(menubar)
 
     def do_activate(self):
+        configure_trace()
         if self._controller is None:
             self._controller = Wmain(application=self)
         sync_shortcut_accels()

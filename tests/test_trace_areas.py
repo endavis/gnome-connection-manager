@@ -462,3 +462,55 @@ def test_a_save_names_the_sections_it_writes_and_drops_and_no_value(
     assert saves[0].endswith("sections dropped: host 5")
     assert "options" in saves[0].split("sections dropped:")[0]
     assert SECRET not in out.getvalue()
+
+
+def test_gcm_started_with_the_config_area_traces_its_own_load(
+    app_module, monkeypatch, tmp_path, capsys
+) -> None:
+    """`do_activate` builds `Wmain`, whose `__init__` loads gcm.conf, so the areas must be
+    on before that: they used to start after the window was shown, and the load went
+    unseen (#513)."""
+    from tests.test_config import without_pass_and_with_a_word
+
+    path = without_pass_and_with_a_word(tmp_path)
+    monkeypatch.setattr(app_module, "CONFIG_FILE", str(path))
+    monkeypatch.setattr(app_module, "groups", {})
+    monkeypatch.setattr(app_module, "shortcuts", {})
+    monkeypatch.setattr(app_module.crypto, "decrypt", lambda _pwd, value, **_kw: value)
+    monkeypatch.setattr(app_module, "sync_folders", lambda: {})
+    monkeypatch.setattr(app_module, "sync_shortcut_accels", lambda: None)
+    monkeypatch.setattr(app_module, "start_trace", lambda *_a: None)
+    monkeypatch.setenv("GCM_TRACE", "config")
+
+    class LoadingOnly(app_module.Wmain):
+        def __init__(self, application=None):
+            self.loadConfig()
+
+        def get_widget(self, _name):
+            return None
+
+        def report_unread_options(self):
+            pass
+
+        def report_unread_hosts(self):
+            pass
+
+    monkeypatch.setattr(app_module, "Wmain", LoadingOnly)
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda *_a: 0, raising=False)
+    application = object.__new__(app_module.GcmApplication)
+    application._controller = None
+    application._pending_cli = []
+    application._reported_unread = False
+    application._trace_started = False
+    try:
+        application.do_activate()
+    finally:
+        trace.configure({})
+
+    written = capsys.readouterr().err
+    assert "host section [host 2] refused" in written
+    assert "host section [host 3] refused, ValueError" in written
+    assert "host section [host 1] read" in written
+    assert "[host 1] refused" not in written
+    assert "router1" not in written and "netops" not in written and "plaintext" not in written
+    assert "auto" not in written
