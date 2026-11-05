@@ -66,6 +66,8 @@ the git log.
 - A host in gcm.conf that GCM cannot read, such as one with no `pass` line or a word for
   `backspace-key`, stays in the file when GCM saves, as it is, and a notice names it when
   GCM starts. The save used to delete its section, password included (#499).
+- **File → Quit** and `Ctrl+Q` outside a console ask first when **Confirm on exit** is set
+  and a console is open, as closing the main window does (#497).
 - Under Wayland, WSLg among them, a tab drag begins once. Its icon shows the tab's text
   and not a blank one (#406), and a tab dropped where nothing takes it opens its window and
   leaves no "pointer drag icon" window on the desktop (#401).

@@ -7785,8 +7785,19 @@ class Wmain(GladeComponent):
             self.clear_context_terminal()
             self.clear_context_tab_widget()
 
+    def confirm_exit(self) -> bool:
+        """Whether GCM may exit: asks first when Confirm on exit is set and a console is open (#497)."""
+        return not (
+            conf.CONFIRM_ON_EXIT
+            and self.count > 0
+            and msgconfirm(f"{_('There are')} {self.count} {_('open consoles, exit anyway?')}")
+            != Gtk.ResponseType.OK
+        )
+
     def request_quit(self):
         (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
+        if not self.confirm_exit():
+            return
         self.writeConfig()
         self.end_sessions()
         self.quit_application()
@@ -7819,12 +7830,7 @@ class Wmain(GladeComponent):
     # -- Wmain.on_wMain_delete_event {
     def on_wMain_delete_event(self, widget, *args):
         (conf.WINDOW_WIDTH, conf.WINDOW_HEIGHT) = self.get_widget("wMain").get_size()
-        if (
-            conf.CONFIRM_ON_EXIT
-            and self.count > 0
-            and msgconfirm(f"{_('There are')} {self.count} {_('open consoles, exit anyway?')}")
-            != Gtk.ResponseType.OK
-        ):
+        if not self.confirm_exit():
             return True
 
     # -- Wmain.on_wMain_delete_event }
