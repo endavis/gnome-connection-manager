@@ -101,6 +101,7 @@ doit sandbox --local 3                # a "Local hosts" folder of 3 local shells
 doit sandbox --scale 2                # GDK_DPI_SCALE=2
 doit sandbox --wait                   # GCM in the foreground, its output on the terminal
 doit sandbox --trace=drag,menu --wayland-debug   # GCM_TRACE and WAYLAND_DEBUG=client, in its log
+doit sandbox --xvfb                   # GCM on an Xvfb of its own, in the foreground (implies --wait)
 ```
 
 Its HOME is `tmp/sandbox_cache` in the checkout, so each worktree has one and `doit pr_merge`
@@ -121,10 +122,16 @@ tasks fail with `DatabaseException` until GCM quits. Quit GCM and unmount anythi
 the sandbox (Mounted tab, or `fusermount -u`) before `doit pr_merge`: `git worktree remove`
 deletes through a mount, and `--fresh` refuses while one is there.
 
-On a machine with no screen, or to check for tracebacks, give it a scratch display:
+`--xvfb` is for a machine with no screen, or a check for tracebacks (#509). The task starts an
+Xvfb that only this run uses, prints `DISPLAY=:N (Xvfb PID p)`, and runs GCM on it in the
+foreground with `DISPLAY` set, `GDK_BACKEND=x11`, and `WAYLAND_DISPLAY` and your
+`GDK_DPI_SCALE` removed (`--scale` still applies), so no window reaches your desktop. It implies
+`--wait`, so the checkout's other doit tasks fail while it runs, and the task's status is GCM's.
+GCM and the Xvfb are both stopped however the task ends: GCM quits, Ctrl+C, `kill` of the
+task, or `timeout`. It needs the `xvfb` package.
 
 ```bash
-env -u WAYLAND_DISPLAY GDK_BACKEND=x11 timeout 12 xvfb-run -a uv run doit sandbox --wait --fresh
+timeout 12 uv run doit sandbox --xvfb --fresh
 ```
 
 Agents: say before starting one on a real display, as it opens over the developer's work and

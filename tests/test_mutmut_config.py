@@ -479,6 +479,10 @@ def _run_pytest_as(
         pytest.skip("needs Xvfb, which tests/conftest.py starts for each run")
     pytest.importorskip("gi", reason="PyGObject not available")
     shutil.copy(TESTS / "conftest.py", tmp_path / "conftest.py")
+    # conftest.py imports `tests.xdisplay`, so the copy needs a `tests` package to find it in.
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "__init__.py").touch()
+    shutil.copy(TESTS / "xdisplay.py", tmp_path / "tests" / "xdisplay.py")
     (tmp_path / "test_draws.py").write_text(test)
     env = {
         key: value

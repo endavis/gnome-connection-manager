@@ -12,6 +12,10 @@ the git log.
 ## [Unreleased]
 
 ### Added
+- **`doit sandbox --xvfb`** runs the sandbox's GCM in the foreground on an Xvfb of its own,
+  with `GDK_BACKEND=x11` and no `WAYLAND_DISPLAY`, so a machine with no screen, or a check for
+  tracebacks, needs no `xvfb-run`. The Xvfb and GCM stop however the task ends, `timeout`
+  included. The test suite's Xvfb start-up moved to `tests/xdisplay.py` to share it (#509).
 - **`GCM_TRACE=drag,menu`** (or `all`) writes trace lines for tab drags and pop-up menus to
   stderr, stamped as `WAYLAND_DEBUG` stamps its own, with an environment line, a mark on
   `kill -USR1` and the Python stack on `kill -USR2`. `doit sandbox --trace` and

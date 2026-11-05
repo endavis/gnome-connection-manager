@@ -7,6 +7,9 @@ reach the real ~/.config/gcm, and GCM is started once against a prepared sandbox
 from __future__ import annotations
 
 import os
+import re
+import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -18,6 +21,7 @@ import pytest
 from gnome_connection_manager.utils import configfile, configpaths, crypto
 from gnome_connection_manager.utils.folders import FolderTree
 from gnome_connection_manager.utils.hosts import HostUtils
+from tests import xdisplay
 from tests.test_connections import glib_complaints
 from tools import sandbox
 from tools.doit import gcm
@@ -221,12 +225,14 @@ def test_the_task_takes_its_options() -> None:
         "wait",
         "trace",
         "wayland_debug",
+        "xvfb",
     }
     assert (params["many"]["default"], params["few"]["default"]) == (30, 3)
     assert params["fresh"]["default"] is False
     assert not params["scale"]["default"]
     assert (params["local"]["default"], params["wait"]["default"]) == (0, False)
     assert (params["trace"]["default"], params["wayland_debug"]["default"]) == ("", False)
+    assert params["xvfb"]["default"] is False
     assert task["actions"] == [gcm._run_sandbox]
 
 
@@ -496,3 +502,178 @@ def test_gcm_stays_up_against_a_prepared_sandbox(tmp_path: Path) -> None:
     after = {path.name for path in (home / ".config" / "gcm").iterdir()}
     assert before <= after
     assert {path.name for path in home.iterdir()} <= {".config", ".cache", ".local"}
+
+
+def test_a_display_of_its_own_replaces_the_callers_desktop(tmp_path: Path) -> None:
+    base = {
+        "DISPLAY": ":0",
+        "WAYLAND_DISPLAY": "wayland-0",
+        "GDK_BACKEND": "wayland",
+        "GDK_DPI_SCALE": "3",
+    }
+
+    env = sandbox.environment(base, tmp_path, None, display=":97")
+    scaled = sandbox.environment(base, tmp_path, "2", display=":97")
+
+    assert (env["DISPLAY"], env["GDK_BACKEND"]) == (":97", "x11")
+    assert "WAYLAND_DISPLAY" not in env
+    assert "GDK_DPI_SCALE" not in env, "the caller's scale is not the sandbox's"
+    assert scaled["GDK_DPI_SCALE"] == "2", "--scale still wins"
+    assert base["DISPLAY"] == ":0", "the caller's own mapping is left alone"
+
+
+# --- --xvfb (#509): a display of the run's own, and nothing left once it ends ----------
+
+needs_xvfb = pytest.mark.skipif(shutil.which("Xvfb") is None, reason="needs Xvfb")
+
+FAKE_GCM = """#!/bin/sh
+{
+echo "pid=$$"
+echo "display=$DISPLAY"
+echo "backend=$GDK_BACKEND"
+echo "wayland=${WAYLAND_DISPLAY-unset}"
+} > "$FAKE_RECORD"
+case "$FAKE_MODE" in
+exit) exit 0 ;;
+fail) exit 3 ;;
+sleep) exec sleep 60 ;;
+term) kill -TERM $PPID; exec sleep 60 ;;
+int) kill -INT $PPID; exec sleep 60 ;;
+esac
+"""
+
+# What the subprocess tests run: the task in a process of its own, against a fake checkout.
+DRIVER = """
+import sys
+from pathlib import Path
+from tools.doit import gcm
+gcm.REPO = Path(sys.argv[1])
+sys.exit(0 if gcm._run_sandbox(False, 1, 1, "", 0, False, "", False, True) else 1)
+"""
+
+
+def fake_gcm(checkout: Path, monkeypatch: pytest.MonkeyPatch, mode: str) -> Path:
+    """Make the checkout's python a script that records itself and acts as `mode` says."""
+    python = checkout / ".venv" / "bin" / "python"
+    python.write_text(FAKE_GCM)
+    python.chmod(0o755)
+    record = checkout / "record.txt"
+    monkeypatch.setenv("FAKE_RECORD", str(record))
+    monkeypatch.setenv("FAKE_MODE", mode)
+    return record
+
+
+def read_record(record: Path) -> dict[str, str]:
+    return dict(line.split("=", 1) for line in record.read_text().splitlines())
+
+
+def is_running(pid: int) -> bool:
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except OSError:
+        return False
+    return state != "Z"
+
+
+def kill_leftovers(pids: list[int]) -> None:
+    for pid in pids:
+        if is_running(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def nothing_left(out: str, record: Path) -> tuple[list[int], int]:
+    """The pids of GCM and Xvfb, and the display number, once a run's output is in."""
+    xvfb = re.search(r"DISPLAY=:(\d+) \(Xvfb PID (\d+)\)", out)
+    assert xvfb, out
+    return [int(read_record(record)["pid"]), int(xvfb.group(2))], int(xvfb.group(1))
+
+
+def test_xvfb_without_one_starts_no_gcm(checkout: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        patch.object(xdisplay, "start", return_value=None),
+        patch.object(gcm.subprocess, "Popen") as popen,
+        patch.object(gcm.subprocess, "run", return_value=MagicMock(stdout="abc")),
+    ):
+        assert gcm._run_sandbox(False, 1, 1, "", 0, False, "", False, True) is False
+
+    popen.assert_not_called()
+    assert "sudo apt install xvfb" in capsys.readouterr().out
+
+
+def test_xvfb_with_a_bad_scale_starts_no_server(checkout: Path) -> None:
+    with patch.object(xdisplay, "start") as start:
+        assert gcm._run_sandbox(False, 1, 1, "zero", 0, False, "", False, True) is False
+
+    start.assert_not_called()
+
+
+@needs_xvfb
+@pytest.mark.parametrize(("mode", "result"), [("exit", True), ("fail", False)])
+def test_xvfb_leaves_nothing_once_gcm_exits(
+    checkout: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    result: bool,
+) -> None:
+    record = fake_gcm(checkout, monkeypatch, mode)
+    pids: list[int] = []
+    try:
+        with patch.object(gcm.subprocess, "run", return_value=MagicMock(stdout="abc")):
+            assert gcm._run_sandbox(False, 1, 1, "", 0, False, "", False, True) is result
+        pids, number = nothing_left(capsys.readouterr().out, record)
+
+        got = read_record(record)
+        assert (got["display"], got["backend"], got["wayland"]) == (f":{number}", "x11", "unset")
+        assert not any(is_running(pid) for pid in pids)
+        assert not xdisplay.is_up(number)
+    finally:
+        kill_leftovers(pids)
+
+
+@needs_xvfb
+def test_xvfb_leaves_nothing_under_timeout(checkout: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    record = fake_gcm(checkout, monkeypatch, "sleep")
+    pids: list[int] = []
+    try:
+        done = subprocess.run(  # noqa: S603
+            ["timeout", "4", sys.executable, "-c", DRIVER, str(checkout)],  # noqa: S607
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert done.returncode == 124, done.stderr
+        pids, number = nothing_left(done.stdout, record)
+
+        assert not any(is_running(pid) for pid in pids)
+        assert not xdisplay.is_up(number)
+    finally:
+        kill_leftovers(pids)
+
+
+@needs_xvfb
+@pytest.mark.parametrize("mode", ["term", "int"])
+def test_xvfb_leaves_nothing_when_only_doit_is_signalled(
+    checkout: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    # The fake signals its parent, doit, alone: no process group is signalled. SIGINT is
+    # Ctrl+C, which GCM's own terminal would also have sent to GCM.
+    record = fake_gcm(checkout, monkeypatch, mode)
+    pids: list[int] = []
+    try:
+        done = subprocess.run(  # noqa: S603
+            [sys.executable, "-c", DRIVER, str(checkout)],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        pids, number = nothing_left(done.stdout, record)
+
+        assert not any(is_running(pid) for pid in pids)
+        assert not xdisplay.is_up(number)
+    finally:
+        kill_leftovers(pids)
