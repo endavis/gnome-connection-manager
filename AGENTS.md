@@ -92,8 +92,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/transcript.py` – rebuilds a readable transcript from a
   raw recording, replayed by `TranscriptReplayer` in `app.py`, which reads rows by the cursor,
   never by the vertical adjustment (#344). Notes: `docs/design/recording.md`.
-- `tools/sandbox.py` – the throwaway HOME `doit sandbox` runs GCM against (#506), written
-  with GCM's own writers, under `tmp/sandbox_cache` so a worktree stays removable (#332).
+- `tools/sandbox.py` – `doit sandbox`'s throwaway HOME (#506), in `tmp/sandbox_cache` (#332).
+- `tools/wslg_windows.py` – `doit wslg_windows`: WSLg's msrdc.exe windows (#510), not yet run on WSL.
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's
