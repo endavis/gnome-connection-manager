@@ -434,6 +434,37 @@ def test_a_notification_names_the_services_and_not_its_text(app_module, monkeypa
     assert SECRET not in out.getvalue()
 
 
+def test_a_missing_notification_service_is_not_checked_for_beforehand(
+    app_module, monkeypatch
+) -> None:
+    trace.configure({})
+    probes: list[int] = []
+
+    def nobody_owns() -> dict[str, bool]:
+        probes.append(1)
+        return {"org.freedesktop.Notifications": False}
+
+    monkeypatch.setattr(app_module, "notification_owners", nobody_owns)
+    sent: list[str] = []
+    application = types.SimpleNamespace(send_notification=lambda i, n: sent.append(i))
+    app_module.Gio.Notification = types.SimpleNamespace(
+        new=lambda _t: types.SimpleNamespace(set_body=lambda _b: None)
+    )
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = types.SimpleNamespace(get_application=lambda: application)
+    label = types.SimpleNamespace(get_text=lambda: SECRET)
+
+    for _ in range(3):
+        wmain.notify_attention(label)
+
+    # Sent every time, whoever owns the names; and with tracing off the bus is not probed.
+    assert sent == ["gcm-bell"] * 3
+    assert probes == []
+    doc = app_module.Wmain.notify_attention.__doc__
+    assert "ServiceUnknown" in doc
+    assert "once" in doc
+
+
 def test_an_unreachable_bus_says_so(app_module, out) -> None:
     def no_bus(*_a):
         raise RuntimeError(SECRET)

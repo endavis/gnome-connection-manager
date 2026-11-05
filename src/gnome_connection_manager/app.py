@@ -6224,7 +6224,12 @@ class Wmain(GladeComponent):
             self.notify_attention(label)
 
     def notify_attention(self, label):
-        """Raise a desktop notification. Silently does nothing without a notification service."""
+        """Raise a desktop notification.
+
+        Without a notification service it goes nowhere: GLib warns once on stderr at the
+        first one (GLib-GIO-WARNING, ServiceUnknown) and is silent for later ones. GCM does
+        not check beforehand; ``GCM_TRACE=notifications`` shows which services own their names.
+        """
         application = self.wMain.get_application()
         if application is None:
             trace.note(trace.NOTIFICATIONS, lambda: trace.notification_line(False, None, False))
