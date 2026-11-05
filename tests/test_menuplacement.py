@@ -1953,9 +1953,30 @@ elif scenario == "a-menu-stays-inside-a-short-window":
     column = w.treeServers.get_column(0)
     rows = []
     w.treeModel.foreach(lambda model, path, it: rows.append(path.copy()) or False)
+    # The seven rows end above the window's foot only in a font whose rows are as short as
+    # DejaVu Sans's: Noto Sans's are taller, and the last was below the window, so the click on
+    # it missed (#500). So the row is scrolled into sight, as a person would, whatever the font.
+    w.treeServers.scroll_to_cell(rows[-1], None, False, 0, 0)
+
+    def last_row_span():
+        """The last row's background area from top to foot, and the height the tree shows, in the
+        bin window's coordinates. The area, not the cell inside it: that is in sight one pixel
+        before the scroll ends."""
+        row = w.treeServers.get_background_area(rows[-1], column)
+        return row.y, row.y + row.height, w.treeServers.get_visible_rect().height
+
+    def last_row_in_sight():
+        top, bottom, shown = last_row_span()
+        return 0 <= top and bottom <= shown
+
+    assert until(last_row_in_sight), ("the tree's last row did not scroll into sight", last_row_span())
+    pump(0.3)
     area = w.treeServers.get_cell_area(rows[-1], column)
     _, bin_x, bin_y = w.treeServers.get_bin_window().get_origin()
     row_top, row_bottom = bin_y + area.y, bin_y + area.y + area.height
+    assert win_top <= row_top and row_bottom <= win_bottom, (
+        "the tree's last row is not in the window", row_top, row_bottom, win_top, win_bottom
+    )
     menu = w.popupMenuFolder
     box = open_at(menu, bin_x + area.x + 20, bin_y + area.y + area.height // 2)
     inside_window("the tree's menu on its last row", menu, row_top, row_bottom, box)
@@ -2364,7 +2385,17 @@ elif scenario == "a-tall-folder-submenu-stays-on-the-screen":
     assert height < app.menu_height(sub), (height, app.menu_height(sub))
     reach_last("a folder of 60 hosts", sub)
 elif scenario == "a-low-folder-submenu-slides-onto-the-screen":
-    lab_folder(15, folders_before=24)
+    # The Hosts menu has as many folders before Zulu as fit above the screen's foot with a row
+    # to spare, so that it is not cut and Zulu is low in it: 24 with DejaVu Sans's rows, 21 with
+    # Noto Sans's, which are taller. With 24 of those the menu was cut to the screen and Zulu
+    # was off it (#500). Its top and its row are read from the menu with Zulu alone.
+    lab_folder(15)
+    hosts = open_menubar_item("H_osts")
+    top = landed(hosts)[1]
+    row = app.menu_row_height(hosts)
+    assert row and row > 15, row
+    close(hosts)
+    lab_folder(15, folders_before=(SCREEN_BOTTOM - top) // row - 2)
     hosts = open_menubar_item("H_osts")
     folder, sub = open_folder(hosts)
     x, y, width, height = inside_screen("a low folder of 15 hosts", sub)
