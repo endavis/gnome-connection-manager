@@ -187,6 +187,11 @@ def _mounts(mountinfo: str) -> Iterator[tuple[str, str, str]]:
             yield _unescape(fields[4]), rest[0], _unescape(rest[1])
 
 
+def mounted_folders(mountinfo: str) -> list[str]:
+    """The folder of every mount in the text of /proc/self/mountinfo, in its order."""
+    return [mounted for mounted, _kind, _source in _mounts(mountinfo)]
+
+
 def mount_at(mountinfo: str, folder: str | Path) -> tuple[str, str] | None:
     """The type and source of what is mounted at `folder`, from the text of
     /proc/self/mountinfo, or None. The last of several, which is the one on top."""

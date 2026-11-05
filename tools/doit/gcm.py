@@ -11,6 +11,7 @@ import shutil
 import subprocess  # nosec B404  # required to run msgfmt and the app
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,126 @@ def task_launch() -> dict[str, Any]:
     """
     return {
         "actions": ["uv run python -m gnome_connection_manager"],
+        "title": title_with_actions,
+        "verbosity": 2,
+    }
+
+
+def _run_sandbox(
+    fresh: bool, many: int, few: int, scale: str, local: int = 0, wait: bool = False
+) -> bool:
+    """Prepare the sandbox and run GCM against it. False when GCM could not start or failed.
+
+    GCM runs detached, its output in a log, so doit's database is released while it runs;
+    `wait` keeps it in the foreground with its output on the terminal and its exit status.
+    """
+    from tools import sandbox
+
+    python = Path(sandbox.command(REPO)[0])
+    if not python.exists():
+        print(f"No {python}: run `doit setup` first.")
+        return False
+    home = sandbox.sandbox_home(REPO)
+    try:
+        written = sandbox.prepare(home, fresh=fresh, many=many, few=few, local=local)
+        env = sandbox.environment(dict(os.environ), home, scale or None)
+    except ValueError as error:
+        print(error)
+        return False
+    if written:
+        print(f"Wrote {sandbox.config_file(home)}")
+    else:
+        print(f"Kept {home}; --fresh rebuilds it")
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()  # nosec B603 B607
+    print(
+        f"GCM {head or '(unknown commit)'}, GDK_DPI_SCALE={env.get('GDK_DPI_SCALE', '(unset)')}, HOME={home}"
+    )
+    if wait:
+        done = subprocess.run(sandbox.command(REPO), env=env, cwd=REPO, check=False)  # nosec B603
+        return done.returncode == 0
+    log = sandbox.log_file(home, datetime.now())
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("ab") as stream:
+        process = subprocess.Popen(  # nosec B603
+            sandbox.command(REPO),
+            env=env,
+            cwd=REPO,
+            stdin=subprocess.DEVNULL,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    print(f"GCM runs as PID {process.pid}, its output in {log}")
+    return True
+
+
+def task_sandbox() -> dict[str, Any]:
+    """Run the application against a throwaway configuration under tmp/.
+
+    Not `doit launch` or `uv run`: the HOME is a folder of the checkout's, holding a
+    folder of many hosts and one of a few, so your own ~/.config/gcm is never read or
+    written. GCM runs from the checkout's venv directly, as `uv run` would look for its
+    cache under the fake HOME. Update checks are off in it.
+
+    Options:
+        --fresh: Rebuild the sandbox.
+        --many: Hosts in the "Many hosts" folder (default 30).
+        --few: Hosts in the "Few hosts" folder (default 3).
+        --scale: GDK_DPI_SCALE for GCM, a positive number.
+        --local: Hosts in the "Local hosts" folder, each a local shell (default 0).
+        --wait: Keep GCM in the foreground, its output on the terminal.
+    """
+    return {
+        "actions": [_run_sandbox],
+        "params": [
+            {
+                "name": "fresh",
+                "long": "fresh",
+                "type": bool,
+                "default": False,
+                "help": "Rebuild the sandbox.",
+            },
+            {
+                "name": "many",
+                "long": "many",
+                "type": int,
+                "default": 30,
+                "help": "Hosts in the 'Many hosts' folder.",
+            },
+            {
+                "name": "few",
+                "long": "few",
+                "type": int,
+                "default": 3,
+                "help": "Hosts in the 'Few hosts' folder.",
+            },
+            {
+                "name": "scale",
+                "long": "scale",
+                "default": "",
+                "help": "GDK_DPI_SCALE for GCM, a positive number.",
+            },
+            {
+                "name": "local",
+                "long": "local",
+                "type": int,
+                "default": 0,
+                "help": "Hosts in the 'Local hosts' folder.",
+            },
+            {
+                "name": "wait",
+                "long": "wait",
+                "type": bool,
+                "default": False,
+                "help": "Keep GCM in the foreground.",
+            },
+        ],
         "title": title_with_actions,
         "verbosity": 2,
     }

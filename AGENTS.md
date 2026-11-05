@@ -90,6 +90,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - `src/gnome_connection_manager/utils/transcript.py` – rebuilds a readable transcript from a
   raw recording, replayed by `TranscriptReplayer` in `app.py`, which reads rows by the cursor,
   never by the vertical adjustment (#344). Notes: `docs/design/recording.md`.
+- `tools/sandbox.py` – the throwaway HOME `doit sandbox` runs GCM against (#506), written
+  with GCM's own writers, under `tmp/sandbox_cache` so a worktree stays removable (#332).
 - `tools/build_mo.py` – compiles a `.po` into a `.mo` without gettext. `doit translate` is the
   canonical path; this exists because `msgfmt` is not installed everywhere.
 - `tools/packages.py` – what the `.deb` and the `.rpm` declare, read from the Makefile's
@@ -185,7 +187,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   for the `ar` fpm builds a `.deb` with, and `rpm` for `rpmbuild`. CI's `package` job
   installs them on ubuntu-24.04, fpm 1.18.0 among them, and `desktop-file-validate` for
   the desktop entry.
-- Preferred tooling: the doit tasks — `doit launch`, `doit test`, `doit lint`,
+- Preferred tooling: the doit tasks — `doit launch`, `doit sandbox`, `doit test`, `doit lint`,
   `doit type_check`, `doit translate`. `doit list` shows them all. Project-specific
   tasks live in `tools/doit/gcm.py`; the rest of `tools/doit/` is vendored from
   pyproject-template and is replaced wholesale on a sync. Where GCM's needs differ,
@@ -312,20 +314,17 @@ Practices below have each caught real bugs in this repo. They are worth the time
   signal is lost still looks alive. The glade rebuild in df18e0a lost the server tree's and
   the About dialog's (#257, #261), and moving the menus to actions left ten behind (#256).
   `test_every_on_handler_is_connected` fails on an `on_*` method that nothing connects.
-- **Run the app for tracebacks** with a throwaway HOME:
-  `HOME=<tmpdir> timeout 12 uv run python -m gnome_connection_manager`. Never point it at a
-  real configuration directory -- and note that HOME alone no longer settles which one
-  that is, so unset `XDG_CONFIG_HOME` along with it. Give it a scratch `DISPLAY` too — a
-  real one puts a GCM window over whatever the developer is doing and steals focus for the
-  whole timeout. **`DISPLAY` alone is not enough under WSLg**: GTK prefers Wayland whenever
-  `WAYLAND_DISPLAY` is set, so the window opens on the real desktop and the Xvfb screen
-  stays black. Measured while taking the README screenshot -- `xwininfo -root -tree` on the
-  scratch display reported `0 children` for thirty seconds. Unset `WAYLAND_DISPLAY` and set
-  `GDK_BACKEND=x11`, which is what `pytest_configure` does for the same reason, and unset
-  `GDK_SCALE`/`GDK_DPI_SCALE` with them if you are measuring geometry. `pytest` already
-  starts its own Xvfb (`pytest_configure` in
-  `tests/conftest.py`); do the same here rather than reusing `:0`, which is only for
-  probes that must measure the real compositor.
+- **Run the app for tracebacks** with `timeout 12 uv run doit sandbox --wait`: a throwaway HOME
+  under `tmp/`, with `XDG_CONFIG_HOME` unset, as HOME alone no longer settles which
+  configuration directory is read. Never point it at a real one. Give it a scratch `DISPLAY`
+  too — a real one puts a GCM window over whatever the developer is doing and steals focus
+  for the whole timeout. **`DISPLAY` alone is not enough under WSLg**: GTK prefers Wayland
+  whenever `WAYLAND_DISPLAY` is set, so the window opens on the real desktop and the Xvfb
+  screen stays black (measured: `xwininfo -root -tree` reported `0 children` for thirty
+  seconds). Unset `WAYLAND_DISPLAY` and set `GDK_BACKEND=x11`, as `pytest_configure` does,
+  and `GDK_DPI_SCALE` too if you are measuring geometry. `pytest` starts its own Xvfb
+  (`tests/conftest.py`); do the same, and use `:0` only for probes that must measure the
+  real compositor.
 
 ## Configuration & Data Flow
 - User data lives in `~/.config/gcm/`, or in `~/.gcm/` where that was already there --

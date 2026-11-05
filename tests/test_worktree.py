@@ -224,3 +224,12 @@ def test_a_failed_export_or_audit_fails_the_task_and_leaves_nothing(exporting_uv
     assert not Path(commands[0][-1]).parent.exists(), "the export's folder must go anyway"
     if failing == "export":
         assert len(commands) == 1, "pip-audit must not run without an export"
+
+
+def test_a_sandbox_under_tmp_does_not_keep_the_worktree(scratch):
+    """`doit sandbox` (#506) keeps its HOME in tmp/sandbox_cache, which `*_cache` covers."""
+    home = scratch / "tmp" / "sandbox_cache"
+    (home / ".config" / "gcm").mkdir(parents=True)
+    (home / ".config" / "gcm" / "gcm.conf").write_text("[options]\n")
+
+    assert git._worktree_leftovers(scratch) == []

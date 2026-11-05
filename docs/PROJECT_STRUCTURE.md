@@ -66,7 +66,7 @@ gnome-connection-manager/
 │   └── icon.png
 ├── docs/                  # The guides, this page, the design notes and decision records
 ├── tests/                 # The pytest suite
-├── tools/                 # build_mo.py, packages.py, generate_doc_toc.py, the doit tasks
+├── tools/                 # build_mo.py, packages.py, sandbox.py, generate_doc_toc.py, the doit tasks
 │                          # (GCM's in doit/gcm.py), and the vendored hooks and template tooling
 └── lang/                  # Translations
 ```
