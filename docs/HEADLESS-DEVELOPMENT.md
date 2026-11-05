@@ -244,7 +244,9 @@ uv run doit check
 - **Hand checks stay on the Windows machine.** Fetch the PR's branch there and run it, as for
   PR #423.
 - **Plan for two full runs at once.** `implement-issues` runs two issues at a time by
-  default. Each runs a full `doit check`, which uses every core (`pytest -n auto`).
+  default. Each runs a full `doit check`, which uses every core (`pytest -n auto`). Two
+  once filled the container's 10 GB, while coverage traced with its `sysmon` core, the
+  default on Python 3.14; `pyproject.toml` now sets `ctrace` (#523). See Sizing.
 
 ## What stays on the Windows machine
 
@@ -271,7 +273,9 @@ None of these was tried:
 - **The Windows machine:** a full `doit check` took 6 min 8 s and 5 min 57 s on 4 cores, for
   the branches of #419 and #403.
 - **CI:** the `test` job took 4 min 9 s and 4 min 29 s for the same two PRs.
-- **Memory:** the container has 10 GB. What a run and an agent use was not measured.
+- **Memory:** the container has 10 GB. One `doit test`'s pytest processes, summed, peaked
+  at 3,888 MiB with coverage's `sysmon` core and at 1,713 and 1,808 MiB with `ctrace`, in
+  220 s either way (#523). Two runs at once were not measured since; nor was an agent.
 
 ## A 24.04 container instead
 
@@ -285,4 +289,4 @@ needs step 1 for FUSE; whether 24.04's AppArmor profiles need step 3 was not mea
 - Whether the `force-complain` links hold across a restart.
 - Whether the doit tasks work with gh 2.46.
 - Whether GitHub offers an `ubuntu-26.04` runner, for a CI job on 26.04 beside the 24.04 one.
-- How much memory an agent and a full run need.
+- How much memory an agent needs.
