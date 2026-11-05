@@ -1247,6 +1247,22 @@ def without_pass_and_with_a_word(tmp_path):
     return path
 
 
+def test_the_error_for_a_refused_host_names_its_section_and_no_value(
+    tmp_path, app_module, monkeypatch, caplog
+):
+    """The exception's text quotes the value it choked on, which may be a password (#511)."""
+    path = write_minimal_hosts_config(tmp_path, [{"backspace-key": "hunter2-secret"}])
+    with caplog.at_level(logging.ERROR, logger="gnome_connection_manager"):
+        load_hosts(app_module, monkeypatch, path)
+
+    records = [r for r in caplog.records if "Invalid entry" in r.getMessage()]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "[host 1]" in message
+    assert "ValueError" in message
+    assert "hunter2-secret" not in caplog.text
+
+
 def test_a_host_gcm_cannot_read_survives_saves(tmp_path, app_module, monkeypatch):
     """Measured before the fix: the host was skipped with a line on stderr and the first
     save deleted its section, password and all."""
