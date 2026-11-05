@@ -743,6 +743,7 @@ def test_start_trace_with_no_variable_writes_and_installs_nothing(
 ):
     monkeypatch.delenv("GCM_TRACE", raising=False)
 
+    app_module.configure_trace()
     app_module.start_trace(object(), object())
 
     assert trace_spies == []
@@ -755,6 +756,7 @@ def test_start_trace_installs_both_signals_and_writes_one_environment_line(
     monkeypatch.setenv("GCM_TRACE", "drag,menu")
     controller = object()
 
+    app_module.configure_trace()
     app_module.start_trace(controller, object())
 
     names = [name for name, _ in trace_spies]
@@ -771,6 +773,7 @@ def test_an_unknown_area_is_reported_once_and_installs_nothing(
     monkeypatch.setenv("GCM_TRACE", "bogus")
 
     with caplog.at_level(logging.WARNING):
+        app_module.configure_trace()
         app_module.start_trace(object(), object())
 
     warnings = [r for r in caplog.records if "bogus" in r.getMessage()]
@@ -783,6 +786,7 @@ def test_all_enables_every_area(app_module, monkeypatch, trace_spies):
 
     monkeypatch.setenv("GCM_TRACE", "all")
 
+    app_module.configure_trace()
     app_module.start_trace(object(), object())
 
     assert all(trace.enabled(area) for area in trace.AREAS)
@@ -794,6 +798,7 @@ def test_a_mark_writes_the_label_then_the_tabs_and_stays_installed(
     monkeypatch.setenv("GCM_TRACE", "drag")
     monkeypatch.setattr(app_module, "CONFIG_DIR", str(tmp_path))
     (tmp_path / "trace-mark").write_text("after the drop\n")
+    app_module.configure_trace()
     app_module.start_trace(object(), object())
     controller = types.SimpleNamespace(
         dragged_tab=None, trace_tabs=lambda check_labels: f"tabs checked {check_labels}"

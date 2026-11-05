@@ -147,10 +147,12 @@ GCM_LOG_LEVEL=DEBUG uv run python -m gnome_connection_manager
 
 #### Tracing a drag or a menu
 
-`GCM_TRACE` switches on trace lines for the areas it names, `drag` and `menu`, or `all`
-(`GCM_TRACE=drag,menu`). It is apart from `GCM_LOG_LEVEL`: that never turns a trace on, and
+`GCM_TRACE` switches on trace lines for the areas it names, `drag`, `menu`, `keys`, `actions`,
+`links`, `config`, `notifications`, or `all` (`GCM_TRACE=drag,menu`). It is apart from `GCM_LOG_LEVEL`: that never turns a trace on, and
 a trace never changes it. With it unset nothing is written and nothing is installed. A name
-that is no area is warned of once.
+that is no area is warned of once. The areas are switched on when the application activates,
+before the main window reads `gcm.conf`, so the `config` area's reads and refusals are traced;
+the `environment` line and the signals follow once the window is shown.
 
 ```bash
 GCM_TRACE=drag uv run python -m gnome_connection_manager 2> gcm-trace.log
@@ -178,6 +180,22 @@ number, counts and pixel figures, a drag result's name, and the facts above. It 
 menu item's label, a key, a console's text or title, a search or a setting's value. A call
 site passes `trace.note` a lambda, which is not called while the area is off and whose
 failure is caught, so a trace changes no handler's result.
+
+The areas of #513, and what each never holds:
+
+- **`keys`**: the route of a key at the window (a remote desktop, a console given it first,
+  left to the accelerators), the console's name, and the action or `[shortcuts]` command a
+  key runs. A key that is nobody's, which is ordinary typing, writes no line. Never a key
+  given to a console, a prefix key, the key after one, a `[keys]` sequence or what it sends,
+  or a snippet's text.
+- **`actions`**: each application action activated or changed, by name, and the way a quit
+  came (`request_quit` or `delete-event`) with whether it asked. Never a parameter or state.
+- **`links`**: each link matcher added (kind, tag, console, caller), the search regex set and
+  cleared, and a Ctrl+click's tag and handler. Never the search, a URL or console text.
+- **`config`**: a host section gcm.conf refused (its name, the error's class, its number of
+  options), and what a save wrote and carried. Never a value or an error's message.
+- **`notifications`**: each attention (bell, quiet, ended) and which notification services
+  own their name on the session bus, or `bus not reached`. Never the notification's text.
 
 ### Code Quality
 
