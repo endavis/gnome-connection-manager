@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -581,6 +582,33 @@ def kill_leftovers(pids: list[int]) -> None:
             os.kill(pid, signal.SIGKILL)
 
 
+def kill_run(record: Path, out: str) -> None:
+    """Kill what a run started, however the test ended: GCM by its record, Xvfb by its PID.
+
+    Read from the files and the output the run left, not from a parse the test may not
+    have reached (#527): a leak under load must show in the test's own assertions, and
+    never stay behind for want of a pid.
+    """
+    pids: list[int] = []
+    if record.exists():
+        got = dict(line.split("=", 1) for line in record.read_text().splitlines() if "=" in line)
+        if got.get("pid", "").isdigit():
+            pids.append(int(got["pid"]))
+    xvfb = re.search(r"Xvfb PID (\d+)", out)
+    if xvfb:
+        pids.append(int(xvfb.group(1)))
+    # The fake writes its record before it execs sleep, so one ended before then has no pid
+    # in it yet, and its sleep, which keeps FAKE_RECORD in its environment, would be missed.
+    mark = f"FAKE_RECORD={record}".encode()
+    for entry in Path("/proc").glob("[0-9]*/environ"):
+        try:
+            if mark in entry.read_bytes().split(b"\0"):
+                pids.append(int(entry.parent.name))
+        except OSError:
+            continue
+    kill_leftovers(pids)
+
+
 def nothing_left(out: str, record: Path) -> tuple[list[int], int]:
     """The pids of GCM and Xvfb, and the display number, once a run's output is in."""
     xvfb = re.search(r"DISPLAY=:(\d+) \(Xvfb PID (\d+)\)", out)
@@ -617,40 +645,58 @@ def test_xvfb_leaves_nothing_once_gcm_exits(
     result: bool,
 ) -> None:
     record = fake_gcm(checkout, monkeypatch, mode)
-    pids: list[int] = []
+    out = ""
     try:
         with patch.object(gcm.subprocess, "run", return_value=MagicMock(stdout="abc")):
             assert gcm._run_sandbox(False, 1, 1, "", 0, False, "", False, True) is result
-        pids, number = nothing_left(capsys.readouterr().out, record)
+        out = capsys.readouterr().out
+        pids, number = nothing_left(out, record)
 
         got = read_record(record)
         assert (got["display"], got["backend"], got["wayland"]) == (f":{number}", "x11", "unset")
         assert not any(is_running(pid) for pid in pids)
         assert not xdisplay.is_up(number)
     finally:
-        kill_leftovers(pids)
+        kill_run(record, out + capsys.readouterr().out)
 
 
 @needs_xvfb
 def test_xvfb_leaves_nothing_under_timeout(checkout: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     record = fake_gcm(checkout, monkeypatch, "sleep")
-    pids: list[int] = []
+    out = ""
     try:
-        done = subprocess.run(  # noqa: S603
-            ["timeout", "4", sys.executable, "-c", DRIVER, str(checkout)],  # noqa: S607
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        done = run_driver(checkout, ["timeout", "4"])
+        out = done.stdout
         assert done.returncode == 124, done.stderr
-        pids, number = nothing_left(done.stdout, record)
+        pids, number = nothing_left(out, record)
 
         assert not any(is_running(pid) for pid in pids)
         assert not xdisplay.is_up(number)
     finally:
-        kill_leftovers(pids)
+        kill_run(record, out)
+
+
+def run_driver(checkout: Path, prefix: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run DRIVER in a session of its own, and end the whole group if it overruns (#527).
+
+    GCM and Xvfb stay in the driver's process group, so a timeout that killed only the driver
+    left both running, with no pid recorded yet for the test's cleanup to find.
+    """
+    driver = subprocess.Popen(  # noqa: S603
+        [*(prefix or []), sys.executable, "-c", DRIVER, str(checkout)],
+        cwd=REPO,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        out, err = driver.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        os.killpg(driver.pid, signal.SIGKILL)
+        driver.communicate()
+        raise
+    return subprocess.CompletedProcess(driver.args, driver.returncode, out, err)
 
 
 @needs_xvfb
@@ -661,19 +707,56 @@ def test_xvfb_leaves_nothing_when_only_doit_is_signalled(
     # The fake signals its parent, doit, alone: no process group is signalled. SIGINT is
     # Ctrl+C, which GCM's own terminal would also have sent to GCM.
     record = fake_gcm(checkout, monkeypatch, mode)
-    pids: list[int] = []
+    out = ""
     try:
-        done = subprocess.run(  # noqa: S603
-            [sys.executable, "-c", DRIVER, str(checkout)],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-        pids, number = nothing_left(done.stdout, record)
+        out = run_driver(checkout).stdout
+        pids, number = nothing_left(out, record)
 
         assert not any(is_running(pid) for pid in pids)
         assert not xdisplay.is_up(number)
     finally:
-        kill_leftovers(pids)
+        kill_run(record, out)
+
+
+@needs_xvfb
+@pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
+def test_xvfb_leaves_nothing_when_the_signal_comes_before_popen_returns(
+    checkout: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    signum: signal.Signals,
+) -> None:
+    # Under load the fake's signal reached doit before Popen had returned, so `process` was
+    # still None and GCM was never stopped (#527). Here it is sent after the real Popen has
+    # started GCM and before it returns, which is that moment without the load.
+    record = fake_gcm(checkout, monkeypatch, "sleep")
+    real_popen = subprocess.Popen
+    out = ""
+
+    def popen_then_signal(command: list[str], *args: Any, **kwargs: Any) -> Any:
+        child = real_popen(command, *args, **kwargs)
+        if command[0].endswith(".venv/bin/python"):
+            deadline = time.monotonic() + 10
+            while not record.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            os.kill(os.getpid(), signum)
+            time.sleep(0.05)  # the handler runs here, with Popen not yet returned
+        return child
+
+    try:
+        with (
+            patch.object(gcm.subprocess, "Popen", popen_then_signal),
+            patch.object(gcm.subprocess, "run", return_value=MagicMock(stdout="abc")),
+        ):
+            try:
+                result = gcm._run_sandbox(False, 1, 1, "", 0, False, "", False, True)
+            except KeyboardInterrupt:
+                result = None
+        out = capsys.readouterr().out
+        pids, number = nothing_left(out, record)
+
+        assert result is False
+        assert not any(is_running(pid) for pid in pids)
+        assert not xdisplay.is_up(number)
+    finally:
+        kill_run(record, out + capsys.readouterr().out)
