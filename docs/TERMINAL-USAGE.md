@@ -739,7 +739,10 @@ open-console list once it has scrolled off the tab strip. The tab that was showi
 was in the background has nothing to switch to; a click in its terminal clears it.
 
 The desktop notification needs a notification service to be running. Without one nothing
-is raised and nothing is said about it. WSLg, for instance, has no notifications daemon, so
+is raised, and GLib writes one warning (`GLib-GIO-WARNING`, `ServiceUnknown`) to the terminal
+GCM was started from, at the first notification of the session and not again.
+`GCM_TRACE=notifications` (see below) shows whether a service is present. WSLg, for
+instance, has no notifications daemon, so
 **Notify when a console needs attention** has no effect there and the tab mark is what you
 have.
 

@@ -459,7 +459,8 @@ console. [Pasting](TERMINAL-USAGE.md#pasting) and
 [OSC 52](TERMINAL-USAGE.md#letting-applications-set-the-clipboard-osc-52) cover the rest.
 
 WSLg has no notification service, so **Notify when a console needs attention** shows
-nothing. The tab's mark is what you have, as
+nothing, and GLib prints one warning on the console GCM was started from, at the first bell.
+The tab's mark is what you have, as
 [When a tab needs your attention](TERMINAL-USAGE.md#when-a-tab-needs-your-attention)
 describes.
 
