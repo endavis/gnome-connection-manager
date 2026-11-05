@@ -143,8 +143,9 @@ Under WSL, `doit wslg_windows` lists the windows of WSLg's own `msrdc.exe` throu
 `powershell.exe`: title, place, size, visible or hidden, DPI and class (#510). It is for the
 grey rectangle a failed tab drag can leave on the Windows desktop (#401). The process is
 matched by its whole path, `C:\Program Files\WSL\msrdc.exe`, since a Remote Desktop client
-is `msrdc.exe` too. Anywhere but WSL it prints `Not WSL` and exits non-zero. This form was
-built without WSL and has not been run on it; only #401's earlier form was measured there.
+is `msrdc.exe` too. Anywhere but WSL it prints `Not WSL` and exits non-zero. Run on WSL
+with GCM open (#510), it listed GCM's window, as #401's lister did, and left out the Windows
+App's `msrdc.exe`, a Remote Desktop client.
 
 ### Logging
 

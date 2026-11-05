@@ -481,8 +481,8 @@ WSLg keeps for a drag's icon (#401). From a GCM checkout in WSL, `doit wslg_wind
 windows of WSLg's `msrdc.exe` with their size and whether each is visible. It matches
 `C:\Program Files\WSL\msrdc.exe` by its whole path, so a Remote Desktop client's window is
 never listed; an `msrdc.exe` installed elsewhere is not matched either, but its path is shown
-when none is found. This form of the lister has not been run on WSL, only #401's earlier form
-was measured there.
+when none is found. Measured with GCM open (#510), it listed GCM's window and left out the
+Windows App's `msrdc.exe`, a Remote Desktop client.
 
 **The pointer never changes shape.** There is no text cursor over a console, and no arrows
 at a window's edge or at the server pane's divider, though dragging there still works. The
