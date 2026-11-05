@@ -636,6 +636,7 @@ elif scenario == "closing-the-window":
 elif scenario == "quitting":
     pids = [open_host()[2], open_host(user="me")[2]]
     # Ctrl+Q destroys no tab: GCM's exit is what hangs up their sessions.
+    app.conf.CONFIRM_ON_EXIT = False  # no modal question in a scenario
     w.request_quit()
     assert all(asked_first(pid) for pid in pids), said()
 elif scenario == "reconnecting":

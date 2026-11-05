@@ -173,6 +173,7 @@ elif scenario == "closing-the-tab-runs-the-command-after":
 
 elif scenario == "ctrl-q-runs-the-command-after-once":
     app.Wmain.quit_application = lambda self: None  # the rest of quitting, not the exit
+    app.conf.CONFIRM_ON_EXIT = False  # Ctrl+Q asks first (#497); this is about the command
     open_host(after=f"echo after >> {MARKS}")
     [page] = pages()
     until(lambda: marks() == ["session"])

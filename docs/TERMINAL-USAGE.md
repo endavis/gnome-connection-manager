@@ -652,8 +652,8 @@ too, under the headings Window 1, Window 2 and so on. The
 [cluster window](#typing-into-several-consoles-at-once) lists them, and Preferences applies
 to them as it does to the rest. Quitting GCM, by **File → Quit**, by `Ctrl+Q` with the
 keyboard outside a console, or by closing the main window, ends every session in every
-window. Closing the main window asks first when **Confirm on exit** is set, and counts the
-consoles in every window.
+window. Closing the main window, **File → Quit** and `Ctrl+Q` outside a console all ask first when
+**Confirm on exit** is set and a console is open, and count the consoles in every window.
 
 ## Typing into several consoles at once
 

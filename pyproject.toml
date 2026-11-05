@@ -350,6 +350,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_osc52.py",
     "tests/test_package.py",
     "tests/test_placeholders.py",
+    "tests/test_quit_confirm.py",
     "tests/test_rdp.py",
     "tests/test_rdp_tab.py",
     "tests/test_relay.py",
