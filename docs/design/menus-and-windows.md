@@ -236,15 +236,24 @@ A menu that fits does not move, with the hook and without it (six notches).
 ## Tests of menu placement
 
 `tests/test_menuplacement.py` tests `place_menu` and `place_across` with no display, the
-helpers with fakes, and fourteen scenarios against real GTK on a display of their own, at twice the usual
+helpers with fakes, and scenarios against real GTK on a display of their own, at twice the usual
 text size, with real clicks through XTest. Eight take the hints from a menu just before it
 opens, `anchor-hints` 0, which leaves it where GCM asked, as a compositor that moves
 nothing does. Five of them fail against the guess, two (`-at-the-right-edge`) fail against code that
 only opens rightwards, and one holds `menu_height` and `menu_width` to the size GTK gives
 each menu. `a-menu-stays-inside-a-short-window` stands in for Wayland's room with
-`window_content` in a window 400 pixels tall (#402). The three `-with-its-hints` scenarios keep GCM's hints, so
+`window_content` in a window 400 pixels tall (#402). The `-with-its-hints` scenarios keep GCM's hints, so
 that what GCM works out is not undone by the flipping and sliding X11 does itself. They
 are named `against_real_gtk`, which mutmut deselects.
+
+A scenario takes where it clicks from the font in use, not from a count of the rows that fit
+(#500). On a WSL2 Ubuntu 24.04 machine with `fonts-noto-core`, GTK's default font, Sans,
+resolved to Noto Sans, whose rows are taller than DejaVu Sans's. Scenarios that had counted the shorter font's rows
+failed there every time: the tree's last row fell below the short window, and the Hosts menu's
+last folder off the screen. GCM did what #397 and #402 made it do in both. So a scenario
+scrolls the row it clicks into sight, and gives a menu as many items as fit by its measured
+row, `menu_row_height`. Pinning a font was rejected: the scenarios would test one font's
+metrics, and need that font installed.
 
 Seven more scenarios hold the wheel (#399), six of them at both text sizes: the console list
 from the tab strip, Terminal > Open Consoles, a Hosts folder, the menubar's Snippets, the
