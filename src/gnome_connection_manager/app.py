@@ -3012,6 +3012,7 @@ class Wmain(GladeComponent):
     console_windows: tuple = ()
     window_in_use: object = None
     dragged_tab: object = None
+    pending_join: tuple | None = None
     mounting: frozenset = frozenset()
     application: object = None
     count: int = 0
@@ -3207,6 +3208,8 @@ class Wmain(GladeComponent):
         self.window_in_use = None
         # The tab a drag between notebooks carries, while it does (#255).
         self.dragged_tab = None
+        # The (page, notebook) a drop asked for, joined once the drag has ended (#505).
+        self.pending_join = None
         # The number of the notebook that tab was dragged from, for a trace (#507).
         self.dragged_from = None
         # The folders sshfs is mounting a host at, until it exits (#267).
@@ -4560,9 +4563,11 @@ class Wmain(GladeComponent):
     def take_dropped_tab(self, terminal, context, drop_time):
         """A tab dropped on a console goes into that console's notebook (#407).
 
-        The drop finishes first, then the move runs from an idle, as `move_out_after_drag`
-        does. A tab dropped on its own console stays, and finishes as a success so that
-        GTK opens no window for it.
+        The drop finishes first, and the move waits for the source notebook's `drag-end`
+        (`on_notebook_drag_end` queues it), as an idle queued here can run before it under
+        Wayland: the page is then moved mid-drag, GTK cancels the drag and crashes (#505).
+        A tab dropped on its own console stays, and finishes as a success so that GTK
+        opens no window for it.
         """
         page = self.dragged_tab
         notebook = None
@@ -4584,7 +4589,11 @@ class Wmain(GladeComponent):
         )
         Gtk.drag_finish(context, success, False, drop_time)
         if page is not None and notebook is not None and page.get_parent() is not notebook:
-            GLib.idle_add(self.join_after_drop, page, notebook)
+            self.pending_join = (page, notebook)
+            trace.note(
+                trace.DRAG,
+                lambda: f"take_dropped_tab: join of {trace_page_name(page)} waits for drag-end",
+            )
 
     def join_after_drop(self, page, notebook):
         trace.note(
@@ -6311,6 +6320,7 @@ class Wmain(GladeComponent):
         )
         if event.button == 1:
             self.dragged_tab = None
+            self.pending_join = None
             if stale is not None:
                 trace.note(trace.DRAG, lambda: f"stale drag ended: {trace_page_name(stale)}")
         return False
@@ -6319,6 +6329,7 @@ class Wmain(GladeComponent):
         # GTK shows a tab as it is pressed, so the one showing as a drag begins is the
         # one dragged: measured on sway, dragging a tab that was not showing.
         self.dragged_tab = notebook.get_nth_page(notebook.get_current_page())
+        self.pending_join = None
         self.dragged_from = getattr(notebook, "trace_number", None)
         trace.note(
             trace.DRAG,
@@ -6332,10 +6343,15 @@ class Wmain(GladeComponent):
         page = self.dragged_tab
         self.dragged_tab = None
         self.dragged_from = None
+        join, self.pending_join = self.pending_join, None
         trace.note(
             trace.DRAG,
             lambda: f"drag-end: {trace_page_name(page)} on notebook {notebook.trace_number}",
         )
+        if join is not None:
+            # An idle queued here runs after GTK's own drag-end has finished (#505).
+            trace.note(trace.DRAG, lambda: f"drag-end: queuing join of {trace_page_name(join[0])}")
+            GLib.idle_add(self.join_after_drop, *join)
         if trace.enabled(trace.DRAG):
             GLib.idle_add(self.trace_tabs_after_drag)
 
