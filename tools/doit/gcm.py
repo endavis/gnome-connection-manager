@@ -127,29 +127,40 @@ def _run_on_display(command: list[str], env: dict[str, str], xvfb_process: Any) 
 
     GCM and Xvfb stay in doit's process group, so `timeout` and a terminal's Ctrl+C reach
     them as they reach doit. A SIGTERM to doit alone does not, so a handler for the run
-    ends both; it is idempotent, as `timeout` has been measured to deliver the signal twice
-    through `uv run`. Whatever the way out, GCM is then waited for and killed if it will
+    ends both, SIGINT's as well as SIGTERM's (#527); it is idempotent, as `timeout` has been
+    measured to deliver the signal twice through `uv run`. Whatever the way out, GCM is then waited for and killed if it will
     not go, and the Xvfb stopped.
     """
     from tests import xdisplay
 
     process: subprocess.Popen[bytes] | None = None
+    signalled = False
 
     def end_both(_signum: int, _frame: Any) -> None:
+        nonlocal signalled
+        signalled = True
         for child in (process, xvfb_process):
             if child is not None and child.poll() is None:
                 child.terminate()
 
-    previous = signal.signal(signal.SIGTERM, end_both)
+    # SIGINT too, not a KeyboardInterrupt: one that lands before Popen returns leaves
+    # `process` None, and GCM, started all the same, would never be stopped (#527). A
+    # signal that comes in that window is acted on once `process` is set, below.
+    previous = {
+        number: signal.signal(number, end_both) for number in (signal.SIGTERM, signal.SIGINT)
+    }
     try:
         process = subprocess.Popen(command, env=env, cwd=REPO)  # nosec B603
+        if signalled:
+            process.terminate()
         process.wait()
         return process.returncode == 0
     finally:
         if process is not None:
             xdisplay.stop(process)
         xdisplay.stop(xvfb_process)
-        signal.signal(signal.SIGTERM, previous)
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 def task_sandbox() -> dict[str, Any]:
