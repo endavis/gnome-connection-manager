@@ -79,7 +79,7 @@ the git log.
   over its own notebook, tab strip or console, and joins another console notebook it is over,
   in a pane or a console window, as a drop there does. A window still opens for a tab let go
   outside every notebook. Measured under X11 with the pointer put by XTest and the move-out
-  called by hand; not yet checked by hand on WSLg (#538).
+  called by hand, and checked by hand on WSLg (#538).
 - A tab drag that never gets an answer no longer leaves its tab bar hiding tabs. One came in
   30 drags under WSLg, and the bar then hid tabs, the dragged one among them, until something
   else ended GTK's drag: here a console opened in that pane two minutes later. The tab's label

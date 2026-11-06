@@ -296,13 +296,31 @@ joins a console window's notebook over its console and over its tab strip; and a
 over the toolbar and over the server tree. The tab, its label and its session come through each
 move unchanged.
 
-Not measured: WSLg by hand with this change; a console window under WSLg, as the 15 drags above
-were all let go in the main window, so the position read against a console window's toplevel under
-Wayland is the source's reading; whether those 15 were let go over a tab strip or over a console,
-which the reading against a bar does not say, and which does not matter here as both count; and
-sway.
+Checked by hand on WSLg on 2026-11-06, by Eric. There were two runs of this change, each with
+`GCM_TRACE=drag`, Split V and GTK 3.24.41, one at `--scale=2` and one at `--scale=3`.
 
-Checked by hand on WSLg: pending.
+- 92 drags began, and the compositor cancelled 10 of them before any target answered.
+  `notebook_under_pointer` read a place in the main window for each of the 10:
+    - 4 were let go over the tab's own notebook, and the tab stayed;
+    - 2 were let go over the other pane, and the tab joined it;
+    - 4 were let go left of the consoles, over the server pane, and each opened a window. The
+      bar readings put the consoles' left edge at x 627 and 758 in the two runs. These 4 were
+      let go at x 388 to 471.
+- One stuck drag ended at its release (#537).
+- 11 tabs were let go on a split's bar. Each was a slow drop that the paned took (#534), and the
+  tab stayed where it was. 4 of these tabs came from a console window, so each went back to that
+  window. Whether such a tab should join the main window is a separate question, not #538's.
+- Neither run logged a traceback or a Gtk-CRITICAL.
+
+Not measured:
+
+- **A cancelled drag that starts in a console window or ends over one, under WSLg.** None of the
+  10 did. So the position read against a console window's toplevel under Wayland is the
+  source's reading.
+- **A flick onto a bar.** All 11 drops on a bar were slow.
+- **Whether the 15 drags in #538's report were let go over a tab strip or over a console.** The
+  reading against a bar does not say, but the answer does not matter here, as both count.
+- **sway.**
 
 ### A drag begins once (#401, #406)
 
