@@ -1483,6 +1483,12 @@ msgstr "Некоторые хосты в gcm.conf не удалось прочи
 msgid "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
 msgstr "GCM сохраняет эти хосты в файле как есть. Чтобы вернуть один из них, исправьте его в файле при закрытом GCM."
 
+msgid "the {option} line is missing"
+msgstr "строка {option} отсутствует"
+
+msgid "the value of {option} is not a whole number"
+msgstr "значение {option} не является целым числом"
+
 msgid "expects true or false"
 msgstr "ожидается true или false"
 

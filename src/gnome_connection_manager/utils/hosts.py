@@ -230,6 +230,29 @@ class Host:
         return copy
 
 
+class NotAWholeNumber(ValueError):  # noqa: N818 -- named for what is wrong, as the log and tests show it
+    """An option that holds a whole number holds something else (#522).
+
+    Carries the option's name and never the value: ``int()``'s own message quotes it.
+    """
+
+    def __init__(self, option: str) -> None:
+        super().__init__(option)
+        self.option = option
+
+
+def whole_number(cp, section, option, default):
+    """An option read as a whole number, or `default` when the file has none.
+
+    Raises `NotAWholeNumber` from None, so that no traceback prints the value `int()` quoted (#522).
+    """
+    value = HostUtils.get_val(cp, section, option, default)
+    try:
+        return int(value)
+    except ValueError:
+        raise NotAWholeNumber(option) from None
+
+
 class HostUtils:
     @staticmethod
     def get_val(cp, section, name, default):
@@ -272,8 +295,8 @@ class HostUtils:
         compressionLevel = HostUtils.get_val(cp, section, "compression-level", "")
         extra_params = HostUtils.get_val(cp, section, "extra_params", "")
         log = HostUtils.get_val(cp, section, "log", False)
-        backspace_key = int(HostUtils.get_val(cp, section, "backspace-key", ERASE_BINDING_AUTO))
-        delete_key = int(HostUtils.get_val(cp, section, "delete-key", ERASE_BINDING_AUTO))
+        backspace_key = whole_number(cp, section, "backspace-key", ERASE_BINDING_AUTO)
+        delete_key = whole_number(cp, section, "delete-key", ERASE_BINDING_AUTO)
         term = HostUtils.get_val(cp, section, "term", "")
         # Written since #151. Before it the text was the flag -- the dialog cleared
         # `commands` when the box was unticked -- so an entry with no key predates the

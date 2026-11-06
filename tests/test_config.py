@@ -1259,8 +1259,62 @@ def test_the_error_for_a_refused_host_names_its_section_and_no_value(
     assert len(records) == 1
     message = records[0].getMessage()
     assert "[host 1]" in message
-    assert "ValueError" in message
+    assert "NotAWholeNumber" in message
     assert "hunter2-secret" not in caplog.text
+
+
+def test_the_error_for_an_unreadable_option_names_its_class_and_no_value(
+    tmp_path, app_module, caplog
+):
+    """`int()` quotes what it was given; the log line must not (#522)."""
+    config = configparser.RawConfigParser()
+    config.add_section("options")
+    config.set("options", "font-size", "hunter2")
+    with caplog.at_level(logging.ERROR, logger="gnome_connection_manager"):
+        value, unread = app_module.read_config_option(config, "options", "font-size", int, 10)
+
+    assert value == 10
+    assert unread is not None
+    [message] = [r.getMessage() for r in caplog.records if "Invalid entry" in r.getMessage()]
+    assert "[options] font-size: ValueError" in message
+    assert "hunter2" not in caplog.text
+
+
+def test_the_dialog_for_a_word_in_a_number_names_the_option_and_no_value(
+    tmp_path, app_module, monkeypatch
+):
+    load_hosts(
+        app_module,
+        monkeypatch,
+        write_minimal_hosts_config(tmp_path, [{"backspace-key": "hunter2"}]),
+    )
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = object()
+
+    wmain.report_unread_hosts()
+
+    [dialog] = RefusalDialog.shown
+    assert "ops/router1  (the value of backspace-key is not a whole number)" in dialog.detail
+    assert "hunter2" not in dialog.detail
+
+
+def test_the_dialog_shows_any_other_error_as_its_class(app_module, monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "unread_hosts",
+        [app_module.configfile.UnreadHost("host 4", {"name": "x"}, "AttributeError")],
+    )
+    monkeypatch.setattr(RefusalDialog, "shown", [])
+    monkeypatch.setattr(app_module.Gtk, "MessageDialog", RefusalDialog)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = object()
+
+    wmain.report_unread_hosts()
+
+    [dialog] = RefusalDialog.shown
+    assert "(AttributeError)" in dialog.detail
 
 
 def test_a_host_gcm_cannot_read_survives_saves(tmp_path, app_module, monkeypatch):
@@ -1354,7 +1408,7 @@ def test_the_window_reports_each_host_it_could_not_read(tmp_path, app_module, mo
     assert dialog.parent is wmain.wMain
     assert dialog.message_type == app_module.Gtk.MessageType.WARNING
     assert "could not be read" in dialog.text
-    assert "ops/router2  (No option 'pass' in section: 'host 2')" in dialog.detail
+    assert "ops/router2  (the pass line is missing)" in dialog.detail
     assert "ops/router3" in dialog.detail
     assert "Preferences" not in dialog.detail
 

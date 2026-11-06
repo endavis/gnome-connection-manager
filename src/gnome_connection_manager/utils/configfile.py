@@ -80,7 +80,7 @@ class Unread(NamedTuple):
     option: str
     text: str  # the value as the file has it
     used: object  # the default read_option returned in its place
-    reason: str  # configparser's or int()'s own words
+    reason: str  # the error's class name: its text may quote the value (#522)
 
 
 class UnreadHost(NamedTuple):
@@ -88,7 +88,8 @@ class UnreadHost(NamedTuple):
 
     section: str
     options: dict[str, str]
-    reason: str  # configparser's, int()'s or the attribute error's own words
+    reason: str  # the error's class name: its text may quote a value (#522)
+    option: str = ""  # the option at fault, where the code knows it
 
     @property
     def label(self) -> str:
@@ -226,7 +227,9 @@ def read_option(
     except (configparser.NoSectionError, configparser.NoOptionError):
         return default, None
     except (configparser.Error, ValueError) as error:
-        return default, Unread(section, option, config.get(section, option), default, str(error))
+        return default, Unread(
+            section, option, config.get(section, option), default, type(error).__name__
+        )
 
 
 def put_back_unread(
