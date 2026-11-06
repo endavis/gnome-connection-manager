@@ -5206,9 +5206,195 @@ def test_a_paned_with_no_handle_yet_is_passed_over(app_module, monkeypatch):
     assert wmain.pointer_on_split_bar() is True
 
 
-def _move_out(app_module, monkeypatch, on_bar):
-    """A Wmain whose pointer check answers `on_bar`, and a tab that is still open: the
-    wmain, the tab and the list of tabs moved to a window."""
+class Toplevel:
+    """A toplevel Gdk.Window: where the pointer is in it, and who asked."""
+
+    def __init__(self, pointer=(0, 0)):
+        self.pointer = pointer
+        self.asked = []
+
+    def get_device_position(self, device):
+        self.asked.append(device)
+        return None, *self.pointer, 0
+
+
+class PointerNotebook(PaneNotebook):
+    """A console notebook as `notebook_under_pointer` measures it: its number, where it
+    lies in its window, and its size. One that is not `reachable` is a widget
+    `translate_coordinates` cannot take a place to."""
+
+    def __init__(self, number, left, top, width, height, reachable=True):
+        super().__init__()
+        self.trace_number = number
+        self.left, self.top, self.width, self.height = left, top, width, height
+        self.reachable = reachable
+
+    def get_allocated_width(self):
+        return self.width
+
+    def get_allocated_height(self):
+        return self.height
+
+
+class PointerWindow:
+    """A Gtk.Window of GCM's: its Gdk.Window, and where its notebooks lie in it."""
+
+    def __init__(self, toplevel, notebook=None, display=None):
+        self.toplevel = toplevel
+        self.notebook = notebook
+        self.display = display
+
+    def get_display(self):
+        return self.display
+
+    def get_window(self):
+        return self.toplevel
+
+    def translate_coordinates(self, widget, x, y):
+        """As PyGObject answers it, measured under X11 in tests/test_console_window.py: the
+        place in `widget` as (x, y), and None where it cannot take one."""
+        if not widget.reachable:
+            return None
+        return x - widget.left, y - widget.top
+
+
+# The main window has two panes right of the server pane, one above the other with a bar of
+# 10 pixels between; a console window has its notebook below a search bar.
+PANES = ((1, 200, 50, 800, 300), (2, 200, 360, 800, 300))
+IN_WINDOW = (0, 40, 600, 400)
+
+
+def _pointed(app_module, monkeypatch, over="main", at=(0, 0), seat=True):
+    """A Wmain with two console windows, whose pointer is `at` in `over`: "main", "console
+    1", "console 2", "other" (a window that is none of GCM's consoles) or None (no window).
+
+    The notebooks are numbered 1 and 2 in the main window, and 3 and 4 in the console
+    windows. Back: the wmain, the pointer, and each window's toplevel by name, which every
+    one reports the pointer at `at` and records who asked.
+    """
+    monkeypatch.setattr(app_module.Gtk, "Notebook", PaneNotebook)
+    toplevels = {name: Toplevel(at) for name in ("main", "console 1", "console 2", "other")}
+    panes = SplitPaned()
+    panes.children = [PointerNotebook(*layout) for layout in PANES]
+    windows = tuple(
+        PointerWindow(toplevels[f"console {n}"], PointerNotebook(n + 2, *IN_WINDOW)) for n in (1, 2)
+    )
+    pointer = FakePointer(None if over is None else UnderPointer(toplevels[over]))
+    found = types.SimpleNamespace(get_pointer=lambda: pointer) if seat else None
+    display = types.SimpleNamespace(get_default_seat=lambda: found)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = PointerWindow(toplevels["main"], display=display)
+    wmain.console_windows = windows
+    wmain.console_side = lambda: panes
+    return wmain, pointer, toplevels
+
+
+def _number(notebook):
+    return None if notebook is None else notebook.trace_number
+
+
+@pytest.mark.parametrize(
+    ("at", "number"),
+    [
+        ((300, 100), 1),
+        ((200, 50), 1),
+        ((999, 349), 1),
+        ((300, 360), 2),
+        ((200, 360), 2),
+        ((999, 659), 2),
+        # A pixel beyond each edge, the bar between the panes, and the server pane.
+        ((1000, 100), None),
+        ((200, 49), None),
+        ((199, 100), None),
+        ((300, 350), None),
+        ((300, 359), None),
+        ((300, 660), None),
+        ((100, 400), None),
+    ],
+)
+def test_the_pointer_over_a_pane_is_over_its_notebook(app_module, monkeypatch, at, number):
+    """A notebook is its whole allocation, from its first pixel to its last, strip and
+    console alike (#538)."""
+    wmain, pointer, toplevels = _pointed(app_module, monkeypatch, at=at)
+
+    assert _number(wmain.notebook_under_pointer()) == number
+    assert toplevels["main"].asked == [pointer]
+
+
+@pytest.mark.parametrize(
+    ("over", "at", "number"),
+    [
+        ("console 1", (10, 50), 3),
+        ("console 1", (0, 40), 3),
+        ("console 1", (599, 439), 3),
+        ("console 2", (10, 50), 4),
+        ("console 2", (599, 439), 4),
+        ("console 1", (600, 50), None),
+        ("console 1", (10, 440), None),
+        ("console 1", (10, 39), None),
+        ("console 2", (10, 39), None),
+    ],
+)
+def test_the_pointer_over_a_console_window_is_over_its_notebook(
+    app_module, monkeypatch, over, at, number
+):
+    """Each console window has its notebook, and the one the pointer is over is asked."""
+    wmain, pointer, toplevels = _pointed(app_module, monkeypatch, over=over, at=at)
+
+    assert _number(wmain.notebook_under_pointer()) == number
+    assert toplevels[over].asked == [pointer]
+    assert [top.asked for name, top in toplevels.items() if name != over] == [[], [], []]
+
+
+@pytest.mark.parametrize("over", ["other", None])
+def test_the_pointer_over_another_window_or_none_is_over_no_notebook(app_module, monkeypatch, over):
+    """Wayland works a window-relative position out from the pointer's focus surface, so
+    none is read unless the pointer is over a window that holds a console."""
+    wmain, _, toplevels = _pointed(app_module, monkeypatch, over=over, at=(300, 100))
+
+    assert wmain.notebook_under_pointer() is None
+    assert [top.asked for top in toplevels.values()] == [[], [], [], []]
+
+
+def test_with_no_seat_the_pointer_is_over_no_notebook(app_module, monkeypatch):
+    wmain, _, toplevels = _pointed(app_module, monkeypatch, at=(300, 100), seat=False)
+
+    assert wmain.notebook_under_pointer() is None
+    assert [top.asked for top in toplevels.values()] == [[], [], [], []]
+
+
+def test_a_notebook_that_cannot_be_reached_is_passed_over(app_module, monkeypatch):
+    wmain, _, _ = _pointed(app_module, monkeypatch, at=(300, 400))
+    first, second = wmain.console_side().children
+    second.reachable = False
+
+    assert wmain.notebook_under_pointer() is None
+    second.reachable = True
+    first.reachable = False
+    assert wmain.notebook_under_pointer() is second
+
+
+def test_the_notebooks_of_a_nested_split_are_asked(app_module, monkeypatch):
+    """`console_side()` holds the panes a split made, nested as splitting nests them."""
+    wmain, _, _ = _pointed(app_module, monkeypatch, at=(900, 500))
+    inner = SplitPaned()
+    inner.children = [
+        PointerNotebook(2, 200, 360, 400, 300),
+        PointerNotebook(3, 610, 360, 390, 300),
+    ]
+    outer = SplitPaned()
+    outer.children = [PointerNotebook(1, 200, 50, 800, 300), inner]
+    wmain.console_side = lambda: outer
+
+    assert _number(wmain.notebook_under_pointer()) == 3
+
+
+def _move_out(app_module, monkeypatch, on_bar, under="none"):
+    """A Wmain whose pointer checks answer `on_bar` and, for the notebook under the pointer,
+    `under`: "none", "own" (the tab's notebook), "other" (a second notebook) or a function
+    to call. And a tab that is still open: the wmain, the tab and the list of tabs moved to
+    a window. `wmain.joined` has the (tab, notebook) pairs joined to a notebook, and
+    `wmain.other` is the second notebook. Neither question reaches the real GDK."""
     moved = []
     monkeypatch.setattr(
         app_module.Wmain,
@@ -5219,8 +5405,14 @@ def _move_out(app_module, monkeypatch, on_bar):
     wmain = object.__new__(app_module.Wmain)
     wmain.dragged_tab = None
     wmain.pointer_on_split_bar = on_bar
+    own = PointerNotebook(1, 0, 0, 10, 10)
+    wmain.other = PointerNotebook(2, 0, 0, 10, 10)
+    answers = {"none": None, "own": own, "other": wmain.other}
+    wmain.notebook_under_pointer = under if callable(under) else lambda: answers[under]
+    wmain.joined = []
+    wmain.join_after_drop = lambda page, notebook: wmain.joined.append((page, notebook)) or False
     page = _page("app01")
-    page.get_parent = lambda: object()
+    page.get_parent = lambda: own
     return wmain, page, moved
 
 
@@ -5229,7 +5421,7 @@ def test_a_tab_stays_when_the_pointer_is_on_a_splits_bar(app_module, monkeypatch
 
     assert wmain.move_out_after_drag(page) is False
 
-    assert moved == []
+    assert moved == [] and wmain.joined == []
 
 
 def test_a_tab_moves_out_when_the_pointer_is_not_on_a_bar(app_module, monkeypatch):
@@ -5255,12 +5447,79 @@ def test_a_tab_moves_out_when_the_pointer_cannot_be_read(app_module, monkeypatch
 
 def test_the_pointer_is_not_asked_about_a_tab_that_has_closed(app_module, monkeypatch):
     asked = []
-    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: asked.append(1) or True)
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: asked.append("bar") or False)
+    wmain.notebook_under_pointer = lambda: asked.append("notebook") or wmain.other
     page.get_parent = lambda: None
 
     assert wmain.move_out_after_drag(page) is False
 
-    assert asked == [] and moved == []
+    assert asked == [] and moved == [] and wmain.joined == []
+
+
+def test_a_tab_stays_when_the_pointer_is_over_its_own_notebook(app_module, monkeypatch):
+    """What a drop there would have done (#538): nothing moves, and no window opens."""
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: False, under="own")
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert moved == [] and wmain.joined == []
+
+
+def test_a_tab_joins_the_notebook_the_pointer_is_over(app_module, monkeypatch):
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: False, under="other")
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert wmain.joined == [(page, wmain.other)]
+    assert moved == []
+
+
+def test_a_tab_moves_out_when_the_pointer_is_over_no_notebook(app_module, monkeypatch):
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: False, under="none")
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert moved == [page] and wmain.joined == []
+
+
+def test_a_tab_moves_out_when_the_notebook_under_the_pointer_cannot_be_found(
+    app_module, monkeypatch
+):
+    """As with the bar: what GDK knows of the pointer must not stop a tab moving out."""
+
+    def broken():
+        raise RuntimeError("no pointer")
+
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: False, under=broken)
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert moved == [page] and wmain.joined == []
+
+
+def test_the_notebook_is_asked_when_the_bar_cannot_be_read(app_module, monkeypatch):
+    """A bar that cannot be read counts as no bar, and the notebook decides."""
+
+    def broken():
+        raise RuntimeError("no pointer")
+
+    wmain, page, moved = _move_out(app_module, monkeypatch, broken, under="other")
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert wmain.joined == [(page, wmain.other)] and moved == []
+
+
+@pytest.mark.parametrize("under", ["own", "other", "none"])
+def test_the_notebook_is_not_asked_when_the_pointer_is_on_a_bar(app_module, monkeypatch, under):
+    asked = []
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: True, under=under)
+    answer = wmain.notebook_under_pointer
+    wmain.notebook_under_pointer = lambda: asked.append(under) or answer()
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert asked == [] and moved == [] and wmain.joined == []
 
 
 @pytest.mark.parametrize(
@@ -5307,6 +5566,63 @@ def test_a_tab_that_stays_is_traced_by_name_and_never_by_console(
     assert "secret-text" not in text
 
 
+@pytest.mark.parametrize(
+    ("under", "said"),
+    [
+        ("own", "move_out_after_drag: app01 stays, the pointer is over its own notebook 1"),
+        ("other", "move_out_after_drag: app01 joins notebook 2, which is under the pointer"),
+        (
+            "none",
+            "move_out_after_drag: app01 moves to a window, the pointer is over no console notebook",
+        ),
+    ],
+)
+def test_a_tab_put_by_its_notebook_is_traced_by_name_and_never_by_console(
+    app_module, monkeypatch, drag_trace, under, said
+):
+    wmain, page, _ = _move_out(app_module, monkeypatch, lambda: False, under=under)
+    page.terminal = types.SimpleNamespace(screen="secret-text")
+
+    wmain.move_out_after_drag(page)
+
+    text = drag_trace.getvalue()
+    assert "move_out_after_drag: app01, drag is over" in text
+    assert said in text
+    assert "on a bar" not in text
+    assert "secret-text" not in text
+
+
+@pytest.mark.parametrize(
+    ("over", "at", "read"),
+    [
+        ("main", (300, 100), "window under the pointer is main, pointer at 300,100, notebook 1"),
+        ("main", (300, 400), "window under the pointer is main, pointer at 300,400, notebook 2"),
+        ("main", (300, 355), "window under the pointer is main, pointer at 300,355, notebook none"),
+        (
+            "console 2",
+            (10, 50),
+            "window under the pointer is console window 2, pointer at 10,50, notebook 4",
+        ),
+        ("other", (10, 50), "window under the pointer is other, no position read, notebook none"),
+        (None, (10, 50), "window under the pointer is none, no position read, notebook none"),
+    ],
+)
+def test_what_was_read_of_the_notebooks_is_traced(
+    app_module, monkeypatch, drag_trace, over, at, read
+):
+    wmain, _, _ = _pointed(app_module, monkeypatch, over=over, at=at)
+    for notebook in wmain.console_side().children:
+        notebook.pages = [
+            types.SimpleNamespace(terminal=types.SimpleNamespace(screen="secret-text"))
+        ]
+
+    wmain.notebook_under_pointer()
+
+    text = drag_trace.getvalue()
+    assert f"notebook_under_pointer: {read}" in text
+    assert "secret-text" not in text
+
+
 def test_the_pointer_fakes_match_real_gtk():
     gi = pytest.importorskip("gi", reason="PyGObject not available")
     gi.require_version("Gtk", "3.0")
@@ -5323,6 +5639,13 @@ def test_the_pointer_fakes_match_real_gtk():
     for fake in (SplitPaned, PaneNotebook):
         assert hasattr(fake, "get_children")
     assert hasattr(Gtk.Container, "get_children")
+    # What `notebook_under_pointer` asks of a toplevel, a window of GCM's and a notebook (#538).
+    assert hasattr(Toplevel, "get_device_position")
+    for name in ("get_display", "get_window", "translate_coordinates"):
+        assert hasattr(PointerWindow, name) and hasattr(Gtk.Widget, name), name
+    for name in ("get_allocated_width", "get_allocated_height"):
+        assert hasattr(PointerNotebook, name) and hasattr(Gtk.Widget, name), name
+    assert issubclass(Gtk.Notebook, Gtk.Container) and issubclass(Gtk.Window, Gtk.Container)
 
 
 # -- file:line links (#23) --------------------------------------------------
@@ -6410,6 +6733,7 @@ def test_a_tab_moves_out_after_its_drag_only_while_still_open(app_module, monkey
     )
     wmain = object.__new__(app_module.Wmain)
     wmain.pointer_on_split_bar = lambda: False  # asked only for a tab still open (#534)
+    wmain.notebook_under_pointer = lambda: None  # and so is this (#538)
     still_open = types.SimpleNamespace(get_parent=lambda: object())
     closed = types.SimpleNamespace(get_parent=lambda: None)
 
@@ -8084,6 +8408,9 @@ def test_the_moves_after_a_drop_say_whether_the_drag_is_still_on(
 ):
     wmain = object.__new__(app_module.Wmain)
     wmain.dragged_tab = object() if still_on else None
+    # The page is closed, so neither question about the pointer is asked (#534, #538).
+    wmain.pointer_on_split_bar = lambda: False
+    wmain.notebook_under_pointer = lambda: None
     page = _page("app01")
 
     assert wmain.join_after_drop(page, TracedNotebook(2)) is False

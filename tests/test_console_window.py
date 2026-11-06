@@ -859,8 +859,10 @@ elif scenario == "a-tab-moved-out-with-the-pointer-on-a-splits-bar-stays":
     pump(0.5)
     assert not on_a_bar(centre(terminal("C")))
 
-    # With the pointer over a console of the main window, the tab moves out as it did.
-    point(*centre(showing()))
+    # With the pointer outside every notebook, on the toolbar, the tab moves out as it did.
+    # Over a console of the main window it no longer does: B joins that pane (#538), which the
+    # scenario below measures.
+    point(*middle(w.get_widget("toolbar1")))
     pump(0.3)
     assert w.move_out_after_drag(page) is False
     moved = window_of("B")
@@ -868,6 +870,126 @@ elif scenario == "a-tab-moved-out-with-the-pointer-on-a-splits-bar-stays":
     assert w.console_windows == (other, moved), names()
     assert label_of("B") is label and terminal("B") is kept
     run("B", "echo out-$KEPT", "out-yes")
+
+elif scenario == "a-tab-moved-out-over-a-notebook-stays-or-joins-it":
+    # Under Wayland a release made before any drop target has answered is cancelled, and an
+    # idle then puts the tab where the pointer is: it stays over its own notebook and joins
+    # another, and a window opens only for a tab let go outside every notebook (#538). X11
+    # never queues that idle, so it is called by hand here with the pointer put where it would
+    # be, through XTest. The GDK calls it makes are real; Wayland's answers to them are not.
+    open_tabs("A", "B", "C", "D", "E")
+    run("B", "KEPT=yes; echo ready", "ready")
+    split_off("B", vertical=True)
+    assert names() == [["A", "C", "D", "E"], ["B"]], names()
+    counted = []
+
+    def bounded(notebook):
+        """The pointer is over `notebook` on its first pixel and its last, and not a pixel
+        beyond (where a window that lies against it has its own notebook). Where it lies on
+        the screen comes from its allocation and the window it is drawn in, not from the
+        `translate_coordinates` that is measured."""
+        allocation = notebook.get_allocation()
+        _, left, above = notebook.get_window().get_origin()
+        x, y = left + allocation.x, above + allocation.y
+        last = (x + allocation.width - 1, y + allocation.height - 1)
+
+        def over(where):
+            point(*where)
+            pump(0.1)
+            return w.notebook_under_pointer()
+
+        assert over((x, y)) is notebook and over(last) is notebook
+        assert over((last[0], y)) is notebook and over((x, last[1])) is notebook
+        assert over((x - 1, y)) is not notebook and over((x, y - 1)) is not notebook
+        assert over((last[0] + 1, y)) is not notebook and over((x, last[1] + 1)) is not notebook
+
+    top, bottom = page_of("A").get_parent(), page_of("B").get_parent()
+    bounded(top)
+    bounded(bottom)
+
+    def shown(notebook):
+        """The console `notebook` shows: a page not showing has no window to aim at."""
+        return notebook.get_nth_page(notebook.get_current_page()).get_children()[0]
+
+    def let_go(name, where):
+        """Put the pointer at `where`, run the idle for `name`'s tab, and see the tab, its
+        label and its console come through as they were, however far it went."""
+        page, label, kept = page_of(name), label_of(name), terminal(name)
+        point(*where)
+        pump(0.3)
+        assert w.move_out_after_drag(page) is False
+        pump(0.3)
+        assert page_of(name) is page and label_of(name) is label and terminal(name) is kept
+        assert page.get_parent().get_tab_label(page) is label and label.get_parent() is page.get_parent()
+        counted.append(name)
+        tag = f"alive{len(counted)}"
+        run(name, f"echo {tag}-$((6*7))", f"{tag}-42")
+        return page
+
+    def stays(name, where):
+        before, notebook = names(), page_of(name).get_parent()
+        assert let_go(name, where).get_parent() is notebook
+        assert names() == before, names()
+
+    # Over its own notebook, B stays: over its console, and over its tab.
+    stays("B", centre(terminal("B")))
+    assert w.console_windows == (), names()
+    stays("B", centre(label_of("B").label))
+    assert w.console_windows == (), names()
+    assert w.collect_paneds(w.console_side()) != [] and bottom.get_parent() is not None
+
+    # Over the other pane's console, B joins that notebook. Its own pane, emptied, goes, as
+    # it does when a tab is dropped out of it.
+    assert let_go("B", centre(shown(top))).get_parent() is top
+    assert names() == [["A", "C", "D", "E", "B"]], names()
+    assert w.console_windows == (), names()
+    assert w.collect_paneds(w.console_side()) == [] and bottom.get_parent() is None
+    assert until(lambda: w.wMain.get_focus() is terminal("B")), w.wMain.get_focus()
+
+    # Over the other pane's tab strip, too.
+    split_off("B", vertical=True)
+    assert names() == [["A", "C", "D", "E"], ["B"]], names()
+    top = page_of("A").get_parent()
+    assert let_go("B", centre(label_of("A").label)).get_parent() is top
+    assert names() == [["A", "C", "D", "E", "B"]], names()
+    assert w.console_windows == (), names()
+    assert w.collect_paneds(w.console_side()) == []
+
+    # Over a console window, a tab of the main window joins that window's notebook: over its
+    # console, and over its tab strip.
+    w.move_to_new_window(page_of("C"))
+    window = window_of("C")
+    window.move(1000, 300)
+    pump(0.5)
+    assert names() == [["A", "D", "E", "B"], ["C"]], names()
+    bounded(window.notebook)
+    assert let_go("D", centre(shown(window.notebook))).get_parent() is window.notebook
+    assert names() == [["A", "E", "B"], ["C", "D"]], names()
+    assert let_go("E", centre(label_of("C").label)).get_parent() is window.notebook
+    assert names() == [["A", "B"], ["C", "D", "E"]], names()
+    assert w.console_windows == (window,), names()
+    assert until(lambda: window.get_focus() is terminal("E")), window.get_focus()
+
+    # And over its own console window's notebook, a tab stays.
+    stays("C", centre(shown(window.notebook)))
+    stays("C", centre(label_of("C").label))
+    assert w.console_windows == (window,), names()
+
+    # Outside every notebook, a window opens as it did: on the toolbar for a tab of the main
+    # window, and on the server tree for one of a console window.
+    let_go("A", middle(w.get_widget("toolbar1")))
+    toolbar_window = window_of("A")
+    assert toolbar_window is not None and toolbar_window is not window, names()
+    assert w.console_windows == (window, toolbar_window), names()
+    assert names() == [["B"], ["C", "D", "E"], ["A"]], names()
+    # With no window manager a new window opens at 0,0, over the main window and its tree.
+    toolbar_window.move(1000, 0)
+    pump(0.5)
+    let_go("D", middle(w.get_widget("treeServers")))
+    tree_window = window_of("D")
+    assert tree_window is not None and tree_window not in (window, toolbar_window), names()
+    assert w.console_windows == (window, toolbar_window, tree_window), names()
+    assert names() == [["B"], ["C", "E"], ["A"], ["D"]], names()
 
 elif scenario == "a-tab-reorders-in-its-strip":
     # A reorder within the strip begins no drag, so the handler on motion leaves it alone.
@@ -1139,6 +1261,7 @@ def _run_scenario(scenario, tmp_path, **extra):
         "a-tab-dropped-on-its-own-console-stays",
         "a-tab-dropped-on-a-splits-bar-stays",
         "a-tab-moved-out-with-the-pointer-on-a-splits-bar-stays",
+        "a-tab-moved-out-over-a-notebook-stays-or-joins-it",
         "a-tab-reorders-in-its-strip",
         "a-tab-reorders-after-a-drag-that-never-ended",
         "a-tab-comes-back-from-a-drag-that-never-ended",
