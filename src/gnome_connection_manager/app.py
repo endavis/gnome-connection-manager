@@ -6504,7 +6504,8 @@ class Wmain(GladeComponent):
         the first icon (a blank one, #406) and replace GTK's drag source, so it drops the
         compositor's `cancelled` for the real drag, which never ends and leaves its icon
         as a "pointer drag icon" window (#401). `on_notebook_motion` swallows that motion
-        while a drag is on, and `on_notebook_button_press` ends a drag that never did.
+        while a drag is on, and `on_notebook_button_release` or `on_notebook_button_press`
+        ends a drag that never did (#533, #537).
 
         Every console notebook passes here once, so it is numbered here, for `GCM_TRACE`'s
         lines (#507), whether a trace is on or not: a number then does not depend on when a
@@ -6519,6 +6520,7 @@ class Wmain(GladeComponent):
         notebook.connect("drag-failed", self.on_notebook_drag_failed)
         notebook.connect("drag-end", self.on_notebook_drag_end)
         notebook.connect("button-press-event", self.on_notebook_button_press)
+        notebook.connect("button-release-event", self.on_notebook_button_release)
         notebook.connect("motion-notify-event", self.on_notebook_motion)
 
     def on_notebook_page_added(self, notebook, page, number):
@@ -6574,40 +6576,82 @@ class Wmain(GladeComponent):
         `drag-begin`. A drag whose `drag-end` never came would otherwise leave
         `on_notebook_motion` swallowing the next drag's start for good.
 
-        GTK's drag is ended too, with the context `on_notebook_drag_begin` kept (#533).
-        GtkNotebook holds the dragged tab's label in the drag's icon, draws no current tab
-        while it does, and puts the label back only on `drag-end`: a drag left running
-        left its bar hiding tabs until something else ended it. The state is cleared
-        before the cancel, so the `drag-failed` the cancel emits finds no `dragged_tab`
-        and queues no window (`on_notebook_drag_failed`). With no context kept, only
-        GCM's side ends, as before #533. Returns False always, so `on_double_click` and
-        GtkNotebook still see the press.
+        `end_stale_drag` ends it, GTK's drag too (#533). GtkNotebook holds the dragged tab's
+        label in the drag's icon, draws no current tab while it does, and puts the label
+        back only on `drag-end`: a drag left running left its bar hiding tabs until
+        something else ended it. Since #537 the button's release ends such a drag as it
+        goes up (`on_notebook_button_release`), so this press ends one whose release
+        reached no notebook. Returns False always, so `on_double_click` and GtkNotebook
+        still see the press.
         """
-        stale = self.dragged_tab
-        context = self.dragged_context
         trace.note(
             trace.DRAG,
             lambda: f"button-press: button {event.button} on notebook {notebook.trace_number}",
         )
         if event.button == 1:
-            self.dragged_tab = None
-            self.dragged_context = None
-            self.pending_join = None
-            if stale is not None:
-                trace.note(
-                    trace.DRAG,
-                    lambda: (
-                        f"stale drag ended: {trace_page_name(stale)}, "
-                        + (
-                            "cancelling GTK's drag"
-                            if context is not None
-                            else "GTK's drag not cancelled, no context kept"
-                        )
-                    ),
-                )
-                if context is not None:
-                    Gtk.drag_cancel(context)
+            self.end_stale_drag("stale drag ended")
         return False
+
+    def on_notebook_button_release(self, notebook, event) -> bool:
+        """A button-1 release while `dragged_tab` is set means the compositor never took
+        the drag, and ends it as the button goes up (#537).
+
+        During a drag the compositor takes, the pointer belongs to the Wayland data device
+        or to X11's grab, so no release reaches a notebook. Measured on WSLg (#537), every
+        drag that got no answer had one reach a notebook within 32 ms of `drag-begin`, and
+        no drag the compositor took did. So such a release ends the drag through
+        `end_stale_drag`, and the tab shows again then, not at the next press on a tab bar
+        (#533). A reorder within the strip begins no drag, so `dragged_tab` is None and its
+        release passes. Any other button, and a release with no drag on, only trace.
+        Returns False always, so GtkNotebook still sees the release.
+        """
+        drag_on = self.dragged_tab is not None
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"button-release: button {event.button} on notebook {notebook.trace_number}, "
+                + (f"drag of {trace_page_name(self.dragged_tab)} on" if drag_on else "no drag on")
+            ),
+        )
+        if event.button == 1 and drag_on:
+            self.end_stale_drag("stale drag ended at a release")
+        return False
+
+    def end_stale_drag(self, trace_text: str) -> None:
+        """End a tab drag whose `drag-end` has not come, on GCM's side and on GTK's (#533, #537).
+
+        For `on_notebook_button_press` and `on_notebook_button_release`: a button-1 event
+        that reaches a notebook while `dragged_tab` is set means the compositor never took
+        that drag. `dragged_tab`, `dragged_context` and `pending_join` are cleared first, and
+        then GTK's drag is cancelled with the context `on_notebook_drag_begin` kept. The
+        cancel has the notebook emit `drag-failed` with ERROR and then `drag-end`, and
+        GtkNotebook's `drag-end` puts the tab's label back. With `dragged_tab` still set,
+        the `drag-failed` would queue `move_out_after_drag` under Wayland
+        (`on_notebook_drag_failed`) and a console window would open for a tab never dropped
+        anywhere. With no context kept, as where a test sets `dragged_tab` by hand, only
+        GCM's side ends, as before #533. `trace_text` is the start of the trace line that
+        names the tab, and says which handler found the drag.
+        """
+        stale = self.dragged_tab
+        context = self.dragged_context
+        self.dragged_tab = None
+        self.dragged_context = None
+        self.pending_join = None
+        if stale is None:
+            return
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"{trace_text}: {trace_page_name(stale)}, "
+                + (
+                    "cancelling GTK's drag"
+                    if context is not None
+                    else "GTK's drag not cancelled, no context kept"
+                )
+            ),
+        )
+        if context is not None:
+            Gtk.drag_cancel(context)
 
     def on_notebook_drag_begin(self, notebook, context):
         # GTK shows a tab as it is pressed, so the one showing as a drag begins is the

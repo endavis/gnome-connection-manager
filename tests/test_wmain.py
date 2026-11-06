@@ -6034,6 +6034,7 @@ def test_a_console_notebook_watches_its_tab_drags(app_module):
         ("drag-failed", wmain.on_notebook_drag_failed),
         ("drag-end", wmain.on_notebook_drag_end),
         ("button-press-event", wmain.on_notebook_button_press),
+        ("button-release-event", wmain.on_notebook_button_release),
         ("motion-notify-event", wmain.on_notebook_motion),
     ]
 
@@ -6227,13 +6228,15 @@ def test_another_button_neither_ends_a_drag_nor_cancels_it(app_module, monkeypat
     assert (wmain.dragged_tab, wmain.dragged_context, wmain.pending_join) == (page, context, join)
 
 
-def test_the_drag_failed_a_cancel_emits_opens_no_window(app_module, monkeypatch):
+@pytest.mark.parametrize("handler", ["on_notebook_button_press", "on_notebook_button_release"])
+def test_the_drag_failed_a_cancel_emits_opens_no_window(app_module, monkeypatch, handler):
     """Under Wayland an error moves the dragged tab out, and a cancel's is one (#533).
 
     GTK's `gtk_drag_cancel` has the source emit `drag-failed` with ERROR and then `drag-end`,
     as read from its source (3.24.41) and measured under X11 by `tests/test_console_window.py`.
-    The fake does so inside the call. So the press clears the tab first, or the cancel would
-    open a window for a tab whose drag was never dropped anywhere.
+    The fake does so inside the call. So the press, or the release that ends the drag
+    sooner (#537), clears the tab first, or the cancel would open a window for a tab whose
+    drag was never dropped anywhere.
     """
     results = types.SimpleNamespace(ERROR="error")
     monkeypatch.setattr(app_module.Gtk, "DragResult", results)
@@ -6255,7 +6258,7 @@ def test_the_drag_failed_a_cancel_emits_opens_no_window(app_module, monkeypatch)
     context = object()
     wmain.on_notebook_drag_begin(notebook, context)
 
-    wmain.on_notebook_button_press(notebook, types.SimpleNamespace(button=1))
+    getattr(wmain, handler)(notebook, types.SimpleNamespace(button=1))
 
     assert emitted == [("drag-failed", context), ("drag-end", context)]
     assert scheduled == []
@@ -6274,6 +6277,85 @@ def test_the_drag_cancel_fake_matches_real_gtk():
     assert hasattr(Gtk, "drag_cancel") and hasattr(Gdk, "DragContext")
     assert Gtk.drag_cancel.__doc__ == "drag_cancel(context:Gdk.DragContext)"
     assert list(inspect.signature(DragCancel.__call__).parameters) == ["self", "context"]
+
+
+# -- A release ends the drag it finds on, as the press does (#537) --------------------------
+
+
+def test_a_release_cancels_the_drag_after_clearing_gcms_side(app_module, monkeypatch):
+    """Under WSLg every drag the compositor never took had its button-1 release reach a
+    notebook (#537). The cancel emits drag-failed and then drag-end, so GCM's side must be
+    over by then."""
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    notebook = DraggingNotebook([object()], "GdkWaylandDisplay")
+    context = object()
+    wmain.on_notebook_drag_begin(notebook, context)
+    wmain.pending_join = (object(), object())
+
+    assert wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1)) is False
+
+    # Once, with the drag's own context, and with nothing of the drag left to find.
+    assert cancel.calls == [(context, None, None, None)]
+    assert wmain.dragged_tab is None
+    assert wmain.dragged_context is None
+    assert wmain.pending_join is None
+
+
+def test_a_release_with_no_drag_on_cancels_nothing(app_module, monkeypatch):
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    notebook = DraggingNotebook([object()], "GdkWaylandDisplay")
+
+    # A reorder within the strip, which begins no drag.
+    assert wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1)) is False
+    assert cancel.calls == []
+
+    # And after a drag that ended.
+    wmain.on_notebook_drag_begin(notebook, object())
+    wmain.on_notebook_drag_end(notebook, None)
+    wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1))
+    assert cancel.calls == []
+
+
+@pytest.mark.parametrize("button", [2, 3])
+def test_another_buttons_release_neither_ends_a_drag_nor_cancels_it(
+    app_module, monkeypatch, button
+):
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    page, context, join = object(), object(), (object(), object())
+    wmain.dragged_tab, wmain.dragged_context, wmain.pending_join = page, context, join
+
+    assert wmain.on_notebook_button_release(None, types.SimpleNamespace(button=button)) is False
+
+    assert cancel.calls == []
+    assert (wmain.dragged_tab, wmain.dragged_context, wmain.pending_join) == (page, context, join)
+
+
+def test_a_release_with_no_context_kept_ends_the_drag_on_gcms_side_alone(app_module, monkeypatch):
+    """The page set by hand, as `a-tab-reorders-after-a-drag-that-never-ended` sets it."""
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    wmain.dragged_tab = object()
+    wmain.pending_join = (object(), object())
+
+    assert wmain.on_notebook_button_release(None, types.SimpleNamespace(button=1)) is False
+
+    assert cancel.calls == []
+    assert wmain.dragged_tab is None
+    assert wmain.pending_join is None
+
+
+def test_a_drag_a_release_ended_is_not_cancelled_again(app_module, monkeypatch):
+    """A second release, or the press that starts the next click, finds no drag on."""
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    notebook = DraggingNotebook([object()], "GdkWaylandDisplay")
+    wmain.on_notebook_drag_begin(notebook, object())
+
+    wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1))
+    wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1))
+    # Cancelled at the release, before any press came.
+    assert len(cancel.calls) == 1
+
+    wmain.on_notebook_button_press(notebook, types.SimpleNamespace(button=1))
+    assert len(cancel.calls) == 1
 
 
 def _failed_drag(app_module, monkeypatch, backend, result):
@@ -7762,8 +7844,9 @@ class RaisingHandler(logging.Handler):
 def test_a_failing_trace_changes_no_result(
     app_module, monkeypatch, drag_trace, failing, dragged, state, swallowed
 ):
-    wmain = _pointer_wmain(app_module, monkeypatch)
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
     wmain.dragged_tab = dragged
+    wmain.dragged_context = None if dragged is None else object()
     notebook = TracedNotebook(1)
     if failing == "handler":
         logger = logging.getLogger("gnome_connection_manager.drag")
@@ -7772,8 +7855,48 @@ def test_a_failing_trace_changes_no_result(
         notebook = ExplodingNotebook()
 
     assert wmain.on_notebook_motion(notebook, types.SimpleNamespace(state=state)) is swallowed
+    # The release ends the drag that is on, and GTK's with it, trace or no trace (#537).
+    assert wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1)) is False
+    assert wmain.dragged_tab is None
+    assert len(cancel.calls) == (0 if dragged is None else 1)
+    # And so does the press, for a drag whose release reached no notebook (#533).
+    wmain.dragged_tab = dragged
+    wmain.dragged_context = None if dragged is None else object()
     assert wmain.on_notebook_button_press(notebook, types.SimpleNamespace(button=1)) is False
     assert wmain.dragged_tab is None
+    assert len(cancel.calls) == (0 if dragged is None else 2)
+
+
+def test_a_release_is_logged_with_whether_a_drag_is_on(app_module, monkeypatch, drag_trace):
+    """#537: each release that reaches a tab bar says whether a drag was on, and returns
+    False so GtkNotebook still sees it. Another button's release ends nothing."""
+    wmain = _pointer_wmain(app_module, monkeypatch)
+
+    assert (
+        wmain.on_notebook_button_release(TracedNotebook(2), types.SimpleNamespace(button=1))
+        is False
+    )
+    wmain.dragged_tab = page = _page("web01")
+    assert (
+        wmain.on_notebook_button_release(TracedNotebook(3), types.SimpleNamespace(button=3))
+        is False
+    )
+    assert wmain.dragged_tab is page
+    assert (
+        wmain.on_notebook_button_release(TracedNotebook(3), types.SimpleNamespace(button=1))
+        is False
+    )
+    assert wmain.dragged_tab is None
+
+    lines = drag_trace.getvalue().splitlines()
+    assert len(lines) == 4, lines
+    assert lines[0].endswith("button-release: button 1 on notebook 2, no drag on"), lines[0]
+    assert lines[1].endswith("button-release: button 3 on notebook 3, drag of web01 on"), lines[1]
+    assert lines[2].endswith("button-release: button 1 on notebook 3, drag of web01 on"), lines[2]
+    # With no context kept, only GCM's side ended.
+    assert lines[3].endswith(
+        "stale drag ended at a release: web01, GTK's drag not cancelled, no context kept"
+    ), lines[3]
 
 
 def test_a_press_is_logged_and_a_stale_drag_it_ends_is_named(app_module, monkeypatch, drag_trace):
@@ -7805,11 +7928,46 @@ def test_a_stale_drag_says_whether_gtks_drag_was_cancelled(app_module, monkeypat
     assert len(cancel.calls) == 1
 
 
-def test_a_stale_drag_is_logged_before_the_signals_of_its_cancel(
+def test_a_stale_drag_a_release_ends_says_whether_gtks_drag_was_cancelled(
     app_module, monkeypatch, drag_trace
 ):
-    """Read top to bottom, a trace shows the press, then the drag it found, then what the
-    cancel made GTK emit: no window queued, and nothing of the console in any line."""
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    wmain.dragged_tab, wmain.dragged_context = _page("web01"), object()
+
+    wmain.on_notebook_button_release(TracedNotebook(3), types.SimpleNamespace(button=1))
+    wmain.dragged_tab = _page("db02")  # a drag that kept no context
+    wmain.on_notebook_button_release(TracedNotebook(3), types.SimpleNamespace(button=1))
+    wmain.on_notebook_button_release(TracedNotebook(3), types.SimpleNamespace(button=1))
+
+    lines = [line for line in drag_trace.getvalue().splitlines() if "stale drag ended" in line]
+    assert len(lines) == 2
+    assert lines[0].endswith("stale drag ended at a release: web01, cancelling GTK's drag")
+    assert lines[1].endswith(
+        "stale drag ended at a release: db02, GTK's drag not cancelled, no context kept"
+    )
+    assert len(cancel.calls) == 1
+
+
+def test_a_press_after_a_release_that_ended_a_drag_finds_none(app_module, monkeypatch, drag_trace):
+    """Only the line the release wrote says a drag was ended: the press that follows it
+    traces itself and nothing more, and the press's own words stay the press's (#537)."""
+    wmain, cancel = _cancelling_wmain(app_module, monkeypatch)
+    wmain.dragged_tab, wmain.dragged_context = _page("web01"), object()
+
+    wmain.on_notebook_button_release(TracedNotebook(3), types.SimpleNamespace(button=1))
+    wmain.on_notebook_button_press(TracedNotebook(3), types.SimpleNamespace(button=1))
+
+    text = drag_trace.getvalue()
+    assert text.count("stale drag ended at a release: web01") == 1
+    assert "stale drag ended: " not in text
+    assert "button-press: button 1 on notebook 3" in text
+    assert len(cancel.calls) == 1
+
+
+def _drag_that_gtk_cancels_under_wayland(app_module, monkeypatch):
+    """A drag of `db01` begun on a Wayland notebook, with a `Gtk.drag_cancel` that makes the
+    notebook emit what GTK's does, `drag-failed` with ERROR and then `drag-end`. The Wmain,
+    the notebook, and what `GLib.idle_add` was asked to run."""
     results = types.SimpleNamespace(ERROR=types.SimpleNamespace(value_nick="error"))
     monkeypatch.setattr(app_module.Gtk, "DragResult", results)
     scheduled = []
@@ -7830,6 +7988,15 @@ def test_a_stale_drag_is_logged_before_the_signals_of_its_cancel(
 
     monkeypatch.setattr(app_module.Gtk, "drag_cancel", drag_cancel)
     wmain.on_notebook_drag_begin(notebook, object())
+    return wmain, notebook, scheduled
+
+
+def test_a_stale_drag_is_logged_before_the_signals_of_its_cancel(
+    app_module, monkeypatch, drag_trace
+):
+    """Read top to bottom, a trace shows the press, then the drag it found, then what the
+    cancel made GTK emit: no window queued, and nothing of the console in any line."""
+    wmain, notebook, scheduled = _drag_that_gtk_cancels_under_wayland(app_module, monkeypatch)
 
     wmain.on_notebook_button_press(notebook, types.SimpleNamespace(button=1))
 
@@ -7845,6 +8012,31 @@ def test_a_stale_drag_is_logged_before_the_signals_of_its_cancel(
     assert at == sorted(at) and len(set(at)) == len(wanted), lines
     assert [callback for callback, _ in scheduled] == [wmain.trace_tabs_after_drag]
     assert "secret-text" not in drag_trace.getvalue()
+
+
+def test_a_drag_a_release_ends_is_logged_before_the_signals_of_its_cancel(
+    app_module, monkeypatch, drag_trace
+):
+    """The same order for a release (#537): the release, then the drag it ended, in words
+    the press's do not share, then what the cancel made GTK emit. No window is queued."""
+    wmain, notebook, scheduled = _drag_that_gtk_cancels_under_wayland(app_module, monkeypatch)
+
+    wmain.on_notebook_button_release(notebook, types.SimpleNamespace(button=1))
+
+    written = drag_trace.getvalue()
+    lines = written.splitlines()
+    wanted = (
+        "drag-begin: db01 from notebook 2",
+        "button-release: button 1 on notebook 2, drag of db01 on",
+        "stale drag ended at a release: db01, cancelling GTK's drag",
+        "drag-failed: ?, result error, wayland True, move out queued False",
+        "drag-end: ? on notebook 2",
+    )
+    at = [next(i for i, line in enumerate(lines) if text in line) for text in wanted]
+    assert at == sorted(at) and len(set(at)) == len(wanted), lines
+    assert [callback for callback, _ in scheduled] == [wmain.trace_tabs_after_drag]
+    assert "stale drag ended: " not in written
+    assert "secret-text" not in written
 
 
 def test_begin_end_and_failed_are_logged(app_module, monkeypatch, drag_trace):

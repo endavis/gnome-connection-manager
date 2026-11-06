@@ -74,10 +74,12 @@ the git log.
 ### Fixed
 - A tab drag that never gets an answer no longer leaves its tab bar hiding tabs. One came in
   30 drags under WSLg, and the bar then hid tabs, the dragged one among them, until something
-  else ended GTK's drag: here a console opened in that pane two minutes later. The next click
-  on a tab bar now ends GTK's drag as well as GCM's, so the tab's label comes back and every
-  tab shows again. Measured under X11 with the click made by hand during a real drag; the stuck
-  drag cannot be made to happen on demand under WSLg, so the fix is not seen there (#533).
+  else ended GTK's drag: here a console opened in that pane two minutes later. The tab's label
+  now comes back as the button goes up (#537), and at the latest at the next click on a tab
+  bar (#533), either of which ends GTK's drag as well as GCM's. Measured under X11 with the
+  release or the click made by hand during a real drag. On WSLg the click ended the stuck
+  drags of a hand check (#533); every stuck drag of the next had a release reach a tab bar,
+  and in a third the release ended all 8 stuck drags, with no click needed (#537).
 - A tab let go on the bar between the panes of a split stays where it was, where a console
   window opened for it. The bar takes a tab over its own width only: let go anywhere else
   outside the notebooks (the menus, the toolbar, the bar between the server pane and the

@@ -251,11 +251,11 @@ things, as both issues' findings measured on WSLg:
   drag. That drag never ends, and its icon surface stays as WSLg's "pointer drag icon"
   window (#401). A successful drop was not affected.
 
-`Wmain.watch_tab_drags` connects two handlers. `Wmain.on_notebook_motion` returns True,
-which swallows the event, while `dragged_tab` is set and button 1 is held. It is not
-gated on Wayland: under X11, GDK grabs the pointer for a drag and no motion reached a
-notebook mid-drag (measured on #406), so it does nothing there. A reorder within the strip
-emits no `drag-begin`, so `dragged_tab` is None and its motion passes.
+`Wmain.watch_tab_drags` connects two handlers for this, and #537 added a third (below).
+`Wmain.on_notebook_motion` returns True, which swallows the event, while `dragged_tab` is set
+and button 1 is held. It is not gated on Wayland: under X11, GDK grabs the pointer for a drag
+and no motion reached a notebook mid-drag (measured on #406), so it does nothing there. A
+reorder within the strip emits no `drag-begin`, so `dragged_tab` is None and its motion passes.
 
 `Wmain.on_notebook_button_press` clears `dragged_tab` on a button-1 press, cancels GTK's drag
 too since #533 (below), and always returns False. During a drag no press reaches a notebook,
@@ -287,8 +287,9 @@ on `drag-end`. A button release that reaches the notebook makes the detach last,
 Wayland only the compositor ends GTK's drag, so the clicks that followed did not end it.
 
 So `on_notebook_drag_begin` keeps the drag's `Gdk.DragContext` in `dragged_context`, and
-`on_notebook_drag_end` drops it. A stale button-1 press clears `dragged_tab`, `pending_join`
-and `dragged_context`, and then calls `Gtk.drag_cancel` with that context. The cancel has the
+`on_notebook_drag_end` drops it. `Wmain.end_stale_drag` clears `dragged_tab`, `pending_join`
+and `dragged_context`, and then calls `Gtk.drag_cancel` with that context; a stale button-1
+press calls it, and since #537 so does a release (below). The cancel has the
 notebook emit `drag-failed` with ERROR and then `drag-end`, and GtkNotebook's own `drag-end`
 puts the label back. The state is cleared first because `on_notebook_drag_failed` queues
 `move_out_after_drag` under Wayland on an ERROR while `dragged_tab` is set: the other order
@@ -302,8 +303,8 @@ lines the cancel makes. The `drag-failed` line should say `move out queued False
 line after `drag-end` should say `stray labels: none`.
 
 A button-1 release that reaches a notebook while `dragged_tab` is set also means the
-compositor never took the drag, and cancelling there would end it before the bar is drawn
-wrong (#533's "or sooner"). That was not tried.
+compositor never took the drag (#533's "or sooner"). #537 cancels there too, as the next
+subsection sets out; the press stays for a drag whose release reached no notebook.
 
 Measured under X11 (XTest on a private Xvfb, `tests/test_console_window.py`): a real drag of a
 tab from its strip into its console, with the button kept down, takes the tab's label out of
@@ -316,8 +317,65 @@ meanwhile. The label was back in its place, no console window opened, and after 
 selected another tab and a reorder in the strip worked. With the call to `Gtk.drag_cancel`
 removed the label stayed out of the notebook and the scenario failed.
 
-Not measured: WSLg. The stuck drag came once in 30 and cannot be made to happen on demand, so
-neither the cause (one reading fits #533's trace: the button was already up when the
-compositor read GTK's start_drag, so it ignored it) nor this fix has been seen there. That
-`Gtk.drag_cancel` ends a drag Wayland manages is read from the source, and was measured only
-for X11's.
+Seen on WSLg afterwards, in #533's hand check, whose trace #537 records (2026-11-06,
+`GCM_TRACE=drag`): 49 drags began and 49 ended. The two that got no answer were ended by the
+next button-1 press on a tab bar. Each logged `stale drag ended` with `cancelling GTK's drag`,
+then `drag-failed` with `move out queued False`, then `drag-end` within 1 ms, and the tabs line
+after it said `stray labels: none`. So `Gtk.drag_cancel` ends a drag Wayland manages, which had
+been read from the source and measured only for X11's. The tab stayed hidden until that press,
+1.1 s in one and 40 s in the other (#537, which the next subsection answers).
+
+Not measured: the cause. One reading fits #533's trace: the button was already up when the
+compositor read GTK's start_drag, so it ignored it.
+
+### A release ends a drag that never ends (#537)
+
+The press of #533 ended a stuck drag at the next click on a tab bar, and the tab stayed hidden
+until then. During a drag the compositor takes, the pointer belongs to the Wayland data device,
+so a button-1 release that reaches a notebook while `dragged_tab` is set should mean the
+compositor never took the drag (#533's "or sooner").
+
+Measured on WSLg by hand (WSLg 1.0.73.2, GTK 3.24.41, the Wayland backend, `GCM_TRACE=drag`,
+Split V, recorded on #537): 102 drags began and 102 ended, and 11 got no answer. All 11 had a
+button-1 release reach a notebook while `dragged_tab` was set, 1 to 32 ms after `drag-begin`:
+8 at the notebook the drag began from and 3 at the other pane's, where the trace does not say
+whether they came from its tab bar or were passed up from a child. None of the other 91 drags
+had one. The release, not the swallowed motion, tells a stuck drag apart: the stuck ones had 0,
+1 or 2 button-1 motions swallowed. The next press ended each of the 11, as in #533.
+
+So `Wmain.on_notebook_button_release`, which `watch_tab_drags` connects, ends such a drag as the
+button goes up. On button 1 with `dragged_tab` set it calls `end_stale_drag`, the helper the
+press calls, so GCM's side is cleared before `Gtk.drag_cancel` and the `drag-failed` it emits
+queues no window. It returns False always, so GtkNotebook still sees the release. Any other
+button, and a release with no drag on, only trace; a reorder within the strip emits no
+`drag-begin`, so its release finds `dragged_tab` None. The press stays as the end for a stuck
+drag whose release reaches no notebook, which no measurement has shown: all 11 releases above
+reached one.
+
+`GCM_TRACE=drag` writes every release that reaches a notebook, `button-release: button 1 on
+notebook 2, drag of alpha on` or `..., no drag on`. One that ended a drag is followed by
+`stale drag ended at a release`, ending as the press's line does with `cancelling GTK's drag` or
+`GTK's drag not cancelled, no context kept`, and then by the `drag-failed` and `drag-end` lines
+the cancel makes. The press's line begins `stale drag ended:`, so the trace says which of them
+found the drag.
+
+Measured under X11 (XTest on a private Xvfb, `tests/test_console_window.py`): a real drag held
+by XTest takes the tab's label out of its notebook. `on_notebook_button_release` called by hand
+with a real `Gdk.EventButton` of type `BUTTON_RELEASE` and button 3 ended nothing. With button 1,
+`drag-failed` (ERROR) and `drag-end` each came once, in that order, both before the handler
+returned. The label was back in its place, no console window opened, and after the button went
+up a click selected another tab and a reorder in the strip worked. With the handler's call to
+`end_stale_drag` removed the scenario failed, and so did the release's unit tests. GDK grabs the
+pointer for a drag under X11, and no release reached a notebook during one: the two real drags
+of the traced scenario wrote no `button-release` line with a drag on, and the scenarios that
+drop a tab still pass, which a release that cancelled their drag early would have broken.
+
+Seen on WSLg by hand with this change (2026-11-06, `GCM_TRACE=drag`, recorded on #537): 74 drags
+began and 74 ended. 8 got no answer, and each ended at its release, `stale drag ended at a
+release` coming 0.8 to 32.8 ms after its `drag-begin` and its `drag-end` by 34.2 ms. No press
+had to end one, no tabs line found a stray label, and no tab was seen to disappear. The run's
+15 console windows were drags the compositor took and then cancelled, let go before any target
+answered, with the pointer in the pane the drag came from: that is #538, not a stuck drag.
+
+Not measured: whether a release reaches a notebook during a drag the compositor took on another
+compositor, such as sway: a release that did would cancel a drag in progress.
