@@ -616,7 +616,8 @@ or beside another program. Three ways move it out:
 - Dragging its tab off the tab strip and letting go outside every GCM window, on the
   desktop. Under X11 the window opens where you let go; under Wayland the desktop places
   it. Let go over another GCM window's console, or its tab strip, and the tab joins that
-  window instead.
+  window instead. Let go on the bar between two panes of a split, and the tab stays where it
+  was: the bar is next to the places that take a tab, and no window opens for it.
 
 The console keeps its session, its tab's label and marks, and its log. Nothing reconnects.
 

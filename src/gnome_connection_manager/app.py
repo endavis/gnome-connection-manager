@@ -3609,6 +3609,24 @@ class Wmain(GladeComponent):
                 self.collect_notebooks(child, found)
         return found
 
+    def collect_paneds(self, widget: Any, found: list[Any] | None = None) -> list[Any]:
+        """Every paned under `widget`, outermost first: the ones `split_notebook` makes (#534).
+
+        As `collect_notebooks` does, it stops at a notebook: a page need not hold a console
+        (#223), and a paned inside one is not a split's. Walk `console_side()`, not the
+        window: the paned between the server pane and the consoles is not a split's.
+        """
+        if found is None:
+            found = []
+        if isinstance(widget, Gtk.Notebook):
+            return found
+        if isinstance(widget, Gtk.Paned):
+            found.append(widget)
+        if hasattr(widget, "get_children"):
+            for child in widget.get_children():
+                self.collect_paneds(child, found)
+        return found
+
     def console_side(self):
         """The main window's consoles: right of the server pane, a console notebook or the
         panes a split made. Never the whole window, where the server pane's notebook, the
@@ -6644,8 +6662,10 @@ class Wmain(GladeComponent):
         a drop anywhere else but a tab strip, a terminal or the server tree, while Escape
         cancels the drag. Measured on sway with a virtual pointer, Wayland reports a drop
         on the bare desktop as an error instead, and GTK put the tab back. A terminal
-        takes a tab dropped on it since #407, so an error is a drop outside every GCM
-        window. So there GCM moves it out itself, as Move to New Window does, once GTK has.
+        takes a tab dropped on it since #407, and the bar between a split's panes since
+        #534, so an error is a drop outside every GCM window. So there GCM moves it out
+        itself, as Move to New Window does, once GTK has, unless the pointer is on a
+        split's bar then (`move_out_after_drag`).
         """
         page = self.dragged_tab
         wayland = notebook.get_display().__gtype__.name == "GdkWaylandDisplay"
@@ -6662,7 +6682,16 @@ class Wmain(GladeComponent):
             GLib.idle_add(self.move_out_after_drag, page)
         return False
 
-    def move_out_after_drag(self, page):
+    def move_out_after_drag(self, page: Any) -> bool:
+        """Move a tab that a failed drag left outside every GCM window to a window (#255).
+
+        Queued by `on_notebook_drag_failed` under Wayland. Not when the pointer is on a
+        split's bar (#534): the compositor cancels a release made before any drop target
+        has answered, near the bar or not, so the site `watch_split_drops` gives the paned
+        never hears of a quick flick onto it. #534's two drops were released 28 and 33 ms
+        after `drag-begin`, and the first answers to the run's other drags came 19 to 73 ms
+        in. So the bar is asked here, where the window would open, and the tab stays.
+        """
         trace.note(
             trace.DRAG,
             lambda: (
@@ -6670,9 +6699,168 @@ class Wmain(GladeComponent):
                 f"{'STILL ON' if self.dragged_tab is not None else 'over'}"
             ),
         )
-        if page.get_parent() is not None:
+        if page.get_parent() is None:
+            return False
+        try:
+            on_bar = self.pointer_on_split_bar()
+        except Exception:
+            # What GDK knows of the pointer must not stop the tab moving out, as it did
+            # before #534.
+            logger.exception("Could not tell whether the pointer is on a split's bar")
+            on_bar = False
+        if on_bar:
+            trace.note(
+                trace.DRAG,
+                lambda: (
+                    f"move_out_after_drag: {trace_page_name(page)} stays, the pointer is on a bar"
+                ),
+            )
+        else:
             self.move_to_new_window(page)
         return False
+
+    def pointer_on_split_bar(self) -> bool:
+        """Whether the pointer is over the handle of a split's paned in the main window (#534).
+
+        For `move_out_after_drag`, which runs once a drag has failed. Read from WSLg's
+        Weston source, and not measured: on a release it sends the drag's source
+        `cancelled`, ends its drag grab and sends the surface under the pointer
+        `wl_pointer.enter` with the pointer's position, all in one batch. So by the time
+        the idle runs, GDK should know where the pointer is, if it is over a GCM window.
+
+        GDK 3.24's Wayland device computes a window-relative position from the pointer's
+        focus surface (`gdk_wayland_device_query_state`, as read). So the pointer must be
+        over the main window before any handle is asked: over another window of GCM's, or
+        none, the answer is False. Only the paneds a split made are asked, those under
+        `console_side()`.
+
+        `GCM_TRACE=drag` says what was read: the window under the pointer as main, other
+        or none, and the pointer's place in each handle asked, in pixels.
+        """
+        seat = self.wMain.get_display().get_default_seat()
+        pointer = seat.get_pointer() if seat is not None else None
+        under = None
+        if pointer is not None:
+            under, _x, _y = pointer.get_window_at_position()
+        main = self.wMain.get_window()
+        if under is None:
+            where = "none"
+        elif main is not None and under.get_toplevel() is main:
+            where = "main"
+        else:
+            where = "other"
+        readings: list[tuple[int, int, int, int]] = []
+        on_bar = False
+        if where == "main":
+            for paned in self.collect_paneds(self.console_side()):
+                handle = paned.get_handle_window()
+                if handle is None:
+                    continue
+                _window, x, y, _mask = handle.get_device_position(pointer)
+                width, height = handle.get_width(), handle.get_height()
+                readings.append((x, y, width, height))
+                if 0 <= x < width and 0 <= y < height:
+                    on_bar = True
+                    break
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"pointer_on_split_bar: window under the pointer is {where}, "
+                f"{'; '.join(f'{x},{y} of {w}x{h}' for x, y, w, h in readings) or 'no bar read'}"
+                f", on a bar {on_bar}"
+            ),
+        )
+        return on_bar
+
+    def watch_split_drops(self, paned: Any) -> None:
+        """Make the handle of a split's `paned` take a tab let go on it (#534).
+
+        The bar between two panes took no tab: each pane's notebook and consoles take one
+        over their own area, and the bar is the paned's. A tab let go there found no
+        target, so GTK asked for a window (`create-window`) under X11, and under Wayland
+        the compositor cancelled the drop and `on_notebook_drag_failed` opened one. The
+        bar lies between two places that take a tab, so that drop is a near miss, and the
+        tab stays where it was.
+
+        The site has no defaults, so that GCM decides both motion and drop
+        (`on_split_drag_motion`, `on_split_drag_drop`) and only a tab over the handle is
+        taken. GTK asks the widget under the pointer first and then each parent, so the
+        paned also hears about a spot of its panes that took nothing, which keeps opening a
+        window. Only a split's paned has the site: a tab let go on the bar between the
+        server pane and the consoles still opens one.
+
+        The site cannot answer a release made before any drop target has: under Wayland
+        the compositor cancels it. `move_out_after_drag` asks where the pointer is then.
+        """
+        paned.drag_dest_set(
+            0,
+            [Gtk.TargetEntry.new(TAB_DROP_TARGET, Gtk.TargetFlags.SAME_APP, TAB_DROP_INFO)],
+            Gdk.DragAction.MOVE,
+        )
+        paned.connect("drag-motion", self.on_split_drag_motion)
+        paned.connect("drag-drop", self.on_split_drag_drop)
+
+    def over_split_handle(self, paned: Any, x: int, y: int) -> bool:
+        """Whether the point (x, y) a drop site is given is on the handle of `paned` (#534).
+
+        The point is relative to the paned's allocation. A paned has no window of its own,
+        and its handle is a window placed in the one it is drawn in, as its allocation is,
+        so the allocation's origin takes the point to the handle's. Measured under X11, the
+        point is the pointer's less the origin of that window and of the allocation
+        (`tests/test_console_window.py`). A paned not yet realized has no handle, and
+        nothing is over it.
+        """
+        handle = paned.get_handle_window()
+        if handle is None:
+            return False
+        origin = paned.get_allocation()
+        left, top = handle.get_position()
+        return bool(
+            left <= origin.x + x < left + handle.get_width()
+            and top <= origin.y + y < top + handle.get_height()
+        )
+
+    def split_takes_drag(self, paned: Any, context: Any, x: int, y: int, what: str) -> bool:
+        """Whether the drag over `paned` at (x, y) is one of this application's tabs, on its
+        handle (#534). Any other is not the paned's to take. `what` names the signal in
+        GCM_TRACE's line, which says which of the three was missing."""
+        names = [target.name() for target in context.list_targets()]
+        tab = TAB_DROP_TARGET in names
+        dragged = self.dragged_tab is not None
+        handle = self.over_split_handle(paned, x, y)
+        taken = tab and dragged and handle
+        trace.note(
+            trace.DRAG,
+            lambda: (
+                f"{what}: {trace_page_name(self.dragged_tab)} at {x},{y}, tab target {tab}, "
+                f"tab dragged {dragged}, on handle {handle}, taken {taken}"
+            ),
+        )
+        return taken
+
+    def on_split_drag_motion(self, paned: Any, context: Any, x: int, y: int, time: int) -> bool:
+        """Offer MOVE for a tab over a split's handle, and nothing else (#534).
+
+        Returning False for any other drag lets GTK go on up the widget tree, as it did
+        before the paned was a drop site.
+        """
+        taken = self.split_takes_drag(paned, context, x, y, "split drag-motion")
+        if taken:
+            Gdk.drag_status(context, Gdk.DragAction.MOVE, time)
+        return taken
+
+    def on_split_drag_drop(self, paned: Any, context: Any, x: int, y: int, time: int) -> bool:
+        """A tab let go on a split's handle stays where it was (#534).
+
+        The drop finishes as a success and moves nothing, as `take_dropped_tab` does for a
+        tab let go on its own console. A drag that ends as a drop emits no `drag-failed`,
+        so no window opens for the tab, and GtkNotebook's `drag-end` puts its label back.
+        Nothing is queued, as the tab does not move.
+        """
+        taken = self.split_takes_drag(paned, context, x, y, "split drag-drop")
+        if taken:
+            Gtk.drag_finish(context, True, False, time)
+        return taken
 
     def move_all_to_main_window(self) -> None:
         """Move every console in every console window back into the main window (#404).
@@ -6768,6 +6956,7 @@ class Wmain(GladeComponent):
                 p = cnb.get_allocated_height() / 2
             hp.set_position(p)
             hp.set_wide_handle(True)
+            self.watch_split_drops(hp)
 
             cp.remove(cnb)
             cp.add(hp)

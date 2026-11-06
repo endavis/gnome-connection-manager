@@ -4809,6 +4809,522 @@ def test_the_terminal_drag_fakes_match_real_gtk():
     assert hasattr(Gtk, "drag_finish") and hasattr(Gdk, "drag_status")
 
 
+# -- a tab let go on the bar between a split's panes (#534) ------------------
+
+
+class HandleWindow:
+    """A paned's handle, a Gdk.Window: where it lies in the window the paned is drawn in,
+    and where the pointer is in it, which `get_device_position` reports."""
+
+    def __init__(self, left, top, width, height, pointer=(0, 0)):
+        self.left, self.top, self.width, self.height = left, top, width, height
+        self.pointer = pointer
+        self.asked = []
+
+    def get_position(self):
+        return self.left, self.top
+
+    def get_width(self):
+        return self.width
+
+    def get_height(self):
+        return self.height
+
+    def get_device_position(self, device):
+        self.asked.append(device)
+        return None, *self.pointer, 0
+
+
+class SplitPaned:
+    """The paned of a vertical split, as the drop handlers and split_notebook use it.
+
+    899 by 631 at `origin`, with a handle 5 pixels tall across it, 315 down: the sizes
+    measured under X11 in tests/test_console_window.py.
+    """
+
+    def __init__(self, origin=(0, 0), realized=True, pointer=(0, 0)):
+        self.origin = origin
+        left, top = origin
+        self.handle = HandleWindow(left, top + 315, 899, 5, pointer) if realized else None
+        self.dest = None
+        self.handlers = {}
+        self.children = []
+
+    def get_handle_window(self):
+        return self.handle
+
+    def get_children(self):
+        return list(self.children)
+
+    def get_allocation(self):
+        return types.SimpleNamespace(x=self.origin[0], y=self.origin[1], width=899, height=631)
+
+    def drag_dest_set(self, flags, targets, actions):
+        self.dest = (flags, targets, actions)
+
+    def connect(self, signal, handler):
+        self.handlers[signal] = handler
+
+    def set_position(self, position):
+        pass
+
+    def set_wide_handle(self, wide):
+        pass
+
+    def add1(self, child):
+        self.children.append(child)
+
+    def add2(self, child):
+        self.children.append(child)
+
+    def show(self):
+        pass
+
+    def queue_draw(self):
+        pass
+
+
+def _split_drag(app_module, monkeypatch, dragged=True):
+    """A Wmain with the drag calls recorded: (wmain, statuses, finished, scheduled)."""
+    statuses, finished, scheduled = [], [], []
+    monkeypatch.setattr(
+        app_module.Gdk, "drag_status", lambda ctx, action, t: statuses.append((ctx, action, t))
+    )
+    monkeypatch.setattr(app_module.Gdk, "DragAction", types.SimpleNamespace(MOVE="move"))
+    monkeypatch.setattr(
+        app_module.Gtk,
+        "drag_finish",
+        lambda ctx, ok, delete, t: finished.append((ctx, ok, delete, t)),
+    )
+    monkeypatch.setattr(
+        app_module.GLib, "idle_add", lambda callback, *args: scheduled.append((callback, args))
+    )
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = object() if dragged else None
+    wmain.pending_join = None
+    return wmain, statuses, finished, scheduled
+
+
+ON_THE_BAR = (449, 317)
+# Each of these is a drag the bar must leave to GTK: not a tab, no tab of ours dragged, a
+# point off the handle (the handle is x 0..898 and y 315..319), and a paned with no handle yet.
+LEFT_TO_GTK = {
+    "another target": {"names": ("text/uri-list",)},
+    "no tab dragged": {"dragged": False},
+    "above the handle": {"at": (449, 314)},
+    "below the handle": {"at": (449, 320)},
+    "left of the paned": {"at": (-1, 317)},
+    "right of the paned": {"at": (899, 317)},
+    "no handle yet": {"realized": False},
+}
+
+
+@pytest.mark.parametrize("at", [ON_THE_BAR, (0, 315), (898, 319)])
+def test_a_tab_over_a_splits_handle_is_offered_move(app_module, monkeypatch, at):
+    wmain, statuses, finished, _ = _split_drag(app_module, monkeypatch)
+    context = TabDragContext("GTK_NOTEBOOK_TAB")
+
+    assert wmain.on_split_drag_motion(SplitPaned(), context, *at, 5) is True
+
+    assert statuses == [(context, "move", 5)]
+    assert finished == []
+
+
+@pytest.mark.parametrize("case", LEFT_TO_GTK)
+def test_anything_else_over_a_splits_paned_is_left_to_gtk(app_module, monkeypatch, case):
+    """False sends GTK on up the tree, where nothing takes it: a window opens, as before."""
+    kind = LEFT_TO_GTK[case]
+    wmain, statuses, finished, _ = _split_drag(app_module, monkeypatch, kind.get("dragged", True))
+    paned = SplitPaned(realized=kind.get("realized", True))
+    context = TabDragContext(*kind.get("names", ("GTK_NOTEBOOK_TAB",)))
+    at = kind.get("at", ON_THE_BAR)
+
+    assert wmain.on_split_drag_motion(paned, context, *at, 5) is False
+    assert wmain.on_split_drag_drop(paned, context, *at, 5) is False
+
+    assert statuses == []
+    assert finished == []
+
+
+def test_the_point_is_taken_from_the_panes_allocation(app_module, monkeypatch):
+    """A drop site hears the point relative to its allocation, and the handle is a window
+    placed where the allocation is: so an allocation off the window's corner moves both."""
+    wmain, statuses, _, _ = _split_drag(app_module, monkeypatch)
+    context = TabDragContext("GTK_NOTEBOOK_TAB")
+    paned = SplitPaned(origin=(7, 11))
+
+    assert wmain.on_split_drag_motion(paned, context, 0, 315, 5) is True
+    assert wmain.on_split_drag_motion(paned, context, 7, 326, 5) is False
+    assert wmain.on_split_drag_motion(paned, context, 898, 319, 5) is True
+    assert wmain.on_split_drag_motion(paned, context, 899, 319, 5) is False
+    assert wmain.on_split_drag_motion(paned, context, 0, 320, 5) is False
+    assert len(statuses) == 2
+
+
+def test_a_tab_let_go_on_a_splits_handle_finishes_as_a_success_and_moves_nothing(
+    app_module, monkeypatch
+):
+    wmain, statuses, finished, scheduled = _split_drag(app_module, monkeypatch)
+    dragged = wmain.dragged_tab
+    context = TabDragContext("GTK_NOTEBOOK_TAB")
+
+    assert wmain.on_split_drag_drop(SplitPaned(), context, *ON_THE_BAR, 9) is True
+
+    # Finished as a success, without asking the source to delete the tab.
+    assert finished == [(context, True, False, 9)]
+    assert statuses == []
+    # Nothing is queued and nothing joins: the tab stays where it was.
+    assert scheduled == []
+    assert wmain.pending_join is None
+    assert wmain.dragged_tab is dragged
+    wmain.on_notebook_drag_end(Parent(notebook=True), None)
+    assert scheduled == []
+
+
+@pytest.mark.parametrize("direction", ["HSPLIT", "VSPLIT"])
+def test_each_split_gives_its_paned_a_drop_site_for_a_tab(app_module, monkeypatch, direction):
+    made = []
+
+    def paned(kind):
+        def make():
+            made.append((kind, SplitPaned()))
+            return made[-1][1]
+
+        return make
+
+    monkeypatch.setattr(app_module.Gtk, "HPaned", paned("h"), raising=False)
+    monkeypatch.setattr(app_module.Gtk, "VPaned", paned("v"), raising=False)
+    monkeypatch.setattr(
+        app_module.Gtk, "TargetEntry", types.SimpleNamespace(new=lambda *args: args), raising=False
+    )
+    monkeypatch.setattr(
+        app_module.Gtk, "TargetFlags", types.SimpleNamespace(SAME_APP="same-app"), raising=False
+    )
+    monkeypatch.setattr(app_module.Gdk, "DragAction", types.SimpleNamespace(MOVE="move"))
+    parent = types.SimpleNamespace(remove=lambda child: None, add=lambda child: None)
+    page = types.SimpleNamespace()
+    notebook = types.SimpleNamespace(
+        get_n_pages=lambda: 2,
+        get_parent=lambda: parent,
+        get_allocated_width=lambda: 800,
+        get_allocated_height=lambda: 600,
+        get_nth_page=lambda number: page,
+        get_current_page=lambda: 0,
+    )
+    page.get_parent = lambda: notebook
+    new_notebook = types.SimpleNamespace(show=lambda: None)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.get_context_tab_widget = lambda: page
+    wmain.console_window_of = lambda _notebook: None
+    wmain.new_console_notebook = lambda: new_notebook
+    wmain.move_page = lambda *_args: None
+    wmain.on_tab_focus = lambda *_args: None
+
+    wmain.split_notebook(getattr(app_module, direction))
+
+    [(kind, split)] = made
+    assert kind == ("h" if direction == "HSPLIT" else "v")
+    # No defaults, so that GCM decides motion and drop; a tab of the application is what
+    # the site takes.
+    assert split.dest == (0, [("GTK_NOTEBOOK_TAB", "same-app", 407)], "move")
+    assert split.handlers == {
+        "drag-motion": wmain.on_split_drag_motion,
+        "drag-drop": wmain.on_split_drag_drop,
+    }
+    assert split.children == [notebook, new_notebook]
+
+
+def test_only_a_splits_paned_is_given_the_drop_site(app_module):
+    """The bar between the server pane and the consoles takes no tab: a tab let go there
+    still opens a window (#534). Nothing but split_notebook gives a paned the site."""
+    tree = ast.parse(Path(app_module.__file__).read_text())
+    callers = [
+        function.name
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "watch_split_drops"
+    ]
+
+    assert callers == ["split_notebook"]
+
+
+def test_the_split_drop_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, Gtk
+
+    for name in ("get_handle_window", "set_position", "set_wide_handle", "add1", "add2"):
+        assert hasattr(SplitPaned, name) and hasattr(Gtk.Paned, name), name
+    for name in ("get_allocation", "drag_dest_set", "connect", "show", "queue_draw"):
+        assert hasattr(SplitPaned, name) and hasattr(Gtk.Widget, name), name
+    for name in ("get_position", "get_width", "get_height"):
+        assert hasattr(HandleWindow, name) and hasattr(Gdk.Window, name), name
+    assert issubclass(Gtk.HPaned, Gtk.Paned) and issubclass(Gtk.VPaned, Gtk.Paned)
+    assert hasattr(Gtk.TargetEntry, "new") and hasattr(Gtk.TargetFlags, "SAME_APP")
+    assert hasattr(Gdk.DragAction, "MOVE")
+
+
+def test_a_split_drag_is_traced_by_tab_and_never_by_console(app_module, monkeypatch, drag_trace):
+    wmain, _, _, _ = _split_drag(app_module, monkeypatch)
+    wmain.dragged_tab = _page("web01")
+    wmain.dragged_tab.terminal = types.SimpleNamespace(screen="secret-text")
+    context = TabDragContext("GTK_NOTEBOOK_TAB")
+
+    wmain.on_split_drag_motion(SplitPaned(), context, *ON_THE_BAR, 5)
+    wmain.on_split_drag_motion(SplitPaned(), context, 449, 100, 5)
+    wmain.on_split_drag_drop(SplitPaned(), context, *ON_THE_BAR, 5)
+
+    lines = drag_trace.getvalue().splitlines()
+    assert len(lines) == 3
+    assert "split drag-motion: web01 at 449,317, tab target True, tab dragged True, " in lines[0]
+    assert lines[0].endswith("on handle True, taken True")
+    assert "split drag-motion: web01 at 449,100, " in lines[1]
+    assert lines[1].endswith("on handle False, taken False")
+    assert "split drag-drop: web01 at 449,317, " in lines[2]
+    assert lines[2].endswith("on handle True, taken True")
+    assert "secret-text" not in drag_trace.getvalue()
+
+
+# -- a quick flick onto a split's bar under Wayland (#534) --------------------
+
+
+class PaneNotebook:
+    """A console notebook as the walk for panes meets it: it ends the descent."""
+
+    def __init__(self, pages=()):
+        self.pages = list(pages)
+
+    def get_children(self):
+        return list(self.pages)
+
+
+class UnderPointer:
+    """The Gdk.Window under the pointer, which belongs to a toplevel."""
+
+    def __init__(self, toplevel):
+        self.toplevel = toplevel
+
+    def get_toplevel(self):
+        return self.toplevel
+
+
+class FakePointer:
+    """A Gdk.Device: the window it is over."""
+
+    def __init__(self, under):
+        self.under = under
+
+    def get_window_at_position(self):
+        return self.under, 7, 9
+
+
+def _bars(app_module, monkeypatch, root, under="main", seat=True):
+    """A Wmain whose consoles' side is `root`, with the pointer over `under`: the main
+    window, another one ("other") or none. The pointer comes back too."""
+    monkeypatch.setattr(app_module.Gtk, "Notebook", PaneNotebook)
+    monkeypatch.setattr(app_module.Gtk, "Paned", SplitPaned)
+    main = object()
+    window = {"main": UnderPointer(main), "other": UnderPointer(object()), None: None}[under]
+    pointer = FakePointer(window)
+    found = types.SimpleNamespace(get_pointer=lambda: pointer) if seat else None
+    display = types.SimpleNamespace(get_default_seat=lambda: found)
+    wmain = object.__new__(app_module.Wmain)
+    wmain.wMain = types.SimpleNamespace(get_display=lambda: display, get_window=lambda: main)
+    wmain.console_side = lambda: root
+    return wmain, pointer
+
+
+@pytest.mark.parametrize("at", [(449, 2), (0, 0), (898, 4)])
+def test_the_pointer_over_a_splits_handle_is_on_a_bar(app_module, monkeypatch, at):
+    paned = SplitPaned(pointer=at)
+    wmain, pointer = _bars(app_module, monkeypatch, paned)
+
+    assert wmain.pointer_on_split_bar() is True
+    assert paned.handle.asked == [pointer]
+
+
+@pytest.mark.parametrize("at", [(449, -1), (449, 5), (-1, 2), (899, 2), (449, 200)])
+def test_the_pointer_beside_a_splits_handle_is_not_on_a_bar(app_module, monkeypatch, at):
+    paned = SplitPaned(pointer=at)
+    wmain, pointer = _bars(app_module, monkeypatch, paned)
+
+    assert wmain.pointer_on_split_bar() is False
+    assert paned.handle.asked == [pointer]
+
+
+@pytest.mark.parametrize("under", ["other", None])
+def test_the_pointer_over_another_window_or_none_is_asked_of_no_bar(app_module, monkeypatch, under):
+    """Wayland works a window-relative position out from the pointer's focus surface, so a
+    handle is asked only while the pointer is over the main window."""
+    paned = SplitPaned(pointer=(449, 2))
+    wmain, _ = _bars(app_module, monkeypatch, paned, under=under)
+
+    assert wmain.pointer_on_split_bar() is False
+    assert paned.handle.asked == []
+
+
+def test_with_no_split_the_pointer_is_on_no_bar(app_module, monkeypatch):
+    wmain, _ = _bars(app_module, monkeypatch, PaneNotebook())
+
+    assert wmain.pointer_on_split_bar() is False
+
+
+def test_with_no_seat_the_pointer_is_on_no_bar(app_module, monkeypatch):
+    paned = SplitPaned(pointer=(449, 2))
+    wmain, _ = _bars(app_module, monkeypatch, paned, seat=False)
+
+    assert wmain.pointer_on_split_bar() is False
+    assert paned.handle.asked == []
+
+
+def test_every_splits_bar_is_asked_and_the_walk_stops_at_a_notebook(app_module, monkeypatch):
+    """The outermost first; a paned inside a page is not a split's."""
+    buried = SplitPaned(pointer=(449, 2))
+    first = PaneNotebook([types.SimpleNamespace(get_children=lambda: [buried])])
+    inner = SplitPaned(pointer=(30, 2))
+    inner.children = [PaneNotebook(), PaneNotebook()]
+    outer = SplitPaned(pointer=(449, 200))
+    outer.children = [first, inner]
+    wmain, pointer = _bars(app_module, monkeypatch, outer)
+
+    assert wmain.collect_paneds(outer) == [outer, inner]
+    assert wmain.pointer_on_split_bar() is True
+    assert outer.handle.asked == [pointer] and inner.handle.asked == [pointer]
+    assert buried.handle.asked == []
+
+
+def test_a_paned_with_no_handle_yet_is_passed_over(app_module, monkeypatch):
+    realized = SplitPaned(pointer=(10, 1))
+    unrealized = SplitPaned(realized=False)
+    unrealized.children = [PaneNotebook(), realized]
+    wmain, _ = _bars(app_module, monkeypatch, unrealized)
+
+    assert wmain.pointer_on_split_bar() is True
+
+
+def _move_out(app_module, monkeypatch, on_bar):
+    """A Wmain whose pointer check answers `on_bar`, and a tab that is still open: the
+    wmain, the tab and the list of tabs moved to a window."""
+    moved = []
+    monkeypatch.setattr(
+        app_module.Wmain,
+        "move_to_new_window",
+        lambda self, page: moved.append(page) or object(),
+        raising=False,
+    )
+    wmain = object.__new__(app_module.Wmain)
+    wmain.dragged_tab = None
+    wmain.pointer_on_split_bar = on_bar
+    page = _page("app01")
+    page.get_parent = lambda: object()
+    return wmain, page, moved
+
+
+def test_a_tab_stays_when_the_pointer_is_on_a_splits_bar(app_module, monkeypatch):
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: True)
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert moved == []
+
+
+def test_a_tab_moves_out_when_the_pointer_is_not_on_a_bar(app_module, monkeypatch):
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: False)
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert moved == [page]
+
+
+def test_a_tab_moves_out_when_the_pointer_cannot_be_read(app_module, monkeypatch):
+    """What GDK knows of the pointer must not stop a tab moving out, as it did before."""
+
+    def broken():
+        raise RuntimeError("no pointer")
+
+    wmain, page, moved = _move_out(app_module, monkeypatch, broken)
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert moved == [page]
+
+
+def test_the_pointer_is_not_asked_about_a_tab_that_has_closed(app_module, monkeypatch):
+    asked = []
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: asked.append(1) or True)
+    page.get_parent = lambda: None
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert asked == [] and moved == []
+
+
+@pytest.mark.parametrize(
+    ("under", "read"),
+    [
+        ("main", "449,2 of 899x5, on a bar True"),
+        ("other", "no bar read, on a bar False"),
+        (None, "no bar read, on a bar False"),
+    ],
+)
+def test_what_was_read_of_the_pointer_is_traced(app_module, monkeypatch, drag_trace, under, read):
+    wmain, _ = _bars(app_module, monkeypatch, SplitPaned(pointer=(449, 2)), under=under)
+
+    wmain.pointer_on_split_bar()
+
+    word = under or "none"
+    assert (
+        f"pointer_on_split_bar: window under the pointer is {word}, {read}" in drag_trace.getvalue()
+    )
+
+
+def test_each_bar_read_is_traced_in_pixels(app_module, monkeypatch, drag_trace):
+    inner = SplitPaned(pointer=(30, 7))
+    outer = SplitPaned(pointer=(449, 200))
+    outer.children = [PaneNotebook(), inner]
+    wmain, _ = _bars(app_module, monkeypatch, outer)
+
+    wmain.pointer_on_split_bar()
+
+    assert "is main, 449,200 of 899x5; 30,7 of 899x5, on a bar False" in drag_trace.getvalue()
+
+
+def test_a_tab_that_stays_is_traced_by_name_and_never_by_console(
+    app_module, monkeypatch, drag_trace
+):
+    wmain, page, _ = _move_out(app_module, monkeypatch, lambda: True)
+    page.terminal = types.SimpleNamespace(screen="secret-text")
+
+    wmain.move_out_after_drag(page)
+
+    text = drag_trace.getvalue()
+    assert "move_out_after_drag: app01, drag is over" in text
+    assert "move_out_after_drag: app01 stays, the pointer is on a bar" in text
+    assert "secret-text" not in text
+
+
+def test_the_pointer_fakes_match_real_gtk():
+    gi = pytest.importorskip("gi", reason="PyGObject not available")
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, Gtk
+
+    assert hasattr(HandleWindow, "get_device_position")
+    assert hasattr(Gdk.Window, "get_device_position")
+    assert hasattr(UnderPointer, "get_toplevel") and hasattr(Gdk.Window, "get_toplevel")
+    assert hasattr(FakePointer, "get_window_at_position")
+    assert hasattr(Gdk.Device, "get_window_at_position")
+    assert hasattr(Gdk.Display, "get_default_seat") and hasattr(Gdk.Seat, "get_pointer")
+    assert hasattr(Gtk.Widget, "get_display") and hasattr(Gtk.Widget, "get_window")
+    for fake in (SplitPaned, PaneNotebook):
+        assert hasattr(fake, "get_children")
+    assert hasattr(Gtk.Container, "get_children")
+
+
 # -- file:line links (#23) --------------------------------------------------
 
 
@@ -5653,6 +6169,7 @@ def test_a_tab_moves_out_after_its_drag_only_while_still_open(app_module, monkey
         raising=False,
     )
     wmain = object.__new__(app_module.Wmain)
+    wmain.pointer_on_split_bar = lambda: False  # asked only for a tab still open (#534)
     still_open = types.SimpleNamespace(get_parent=lambda: object())
     closed = types.SimpleNamespace(get_parent=lambda: None)
 
