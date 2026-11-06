@@ -319,6 +319,12 @@ def app_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         setattr(repository, name, module)
         monkeypatch.setitem(sys.modules, f"gi.repository.{name}", module)
 
+    # app.py imports GtkVnc and GdkX11 optionally. The stub repository has neither, so
+    # Python would look in sys.modules and take the real module a test on the same xdist
+    # worker had imported (#528). A None entry makes the import fail, so both are None.
+    for optional in ("GtkVnc", "GdkX11"):
+        monkeypatch.setitem(sys.modules, f"gi.repository.{optional}", None)
+
     monkeypatch.setitem(sys.modules, "gi", fake_gi)
     monkeypatch.setitem(sys.modules, "gi.repository", repository)
 
