@@ -72,6 +72,14 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- A tab let go over a notebook under Wayland no longer opens a console window. WSLg's
+  compositor cancels a release made before any drop target has answered, and GCM then moved
+  the tab to a window wherever the pointer was but on a split's bar: 15 of 74 drags in one
+  hand check opened one, each let go in the main window. The tab now stays when the pointer is
+  over its own notebook, tab strip or console, and joins another console notebook it is over,
+  in a pane or a console window, as a drop there does. A window still opens for a tab let go
+  outside every notebook. Measured under X11 with the pointer put by XTest and the move-out
+  called by hand, and checked by hand on WSLg (#538).
 - A tab drag that never gets an answer no longer leaves its tab bar hiding tabs. One came in
   30 drags under WSLg, and the bar then hid tabs, the dragged one among them, until something
   else ended GTK's drag: here a console opened in that pane two minutes later. The tab's label
