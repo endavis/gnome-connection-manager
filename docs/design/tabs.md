@@ -161,7 +161,9 @@ no window opens. A page that is not a terminal is out of scope and still opens a
 
 The target is found from the widget tree, not by asking GDK which window has the pointer when
 the drag fails: under Wayland the pointer belongs to the data device for the whole drag, so
-that is a timing question, and the drop would have failed already.
+that is a timing question, and the drop would have failed already. (#534 does ask GDK where
+the pointer is once a drag has failed, but only to keep a tab on a split's bar, never to find
+a target. See below.)
 
 Measured with a real pointer: under X11 (XTest on a private Xvfb) a tab dropped on a console
 window's terminal gets `drag-data-received` with `TAB_DROP_INFO` and joins that window, where
@@ -169,6 +171,73 @@ before the change it opened a third. On sway 1.11, headless, with a virtual poin
 a console window's terminal, on the main window's, and on the tab's own terminal each did the
 same. A drop on the bare output there was not measured: the drag never ended, before the
 change or after it.
+
+### A tab let go on a split's bar stays (#534)
+
+The bar between two panes of a split is the paned's handle, and it took no tab. GTK looks for a
+drop site from the widget under the pointer up through its parents, and each pane's notebook
+and consoles take a tab over their own area, so a tab let go on the bar found none. Measured
+under X11 (XTest on a private Xvfb, `tests/test_console_window.py`), it opened a console
+window, as a drop anywhere else outside the notebooks does. Under Wayland, where WSLg's
+compositor sends `cancelled` for every release no client accepted, as #534 read in WSLg's
+Weston source, `on_notebook_drag_failed` moved the tab out. The bar lies between two places
+that take a tab, so a drop on it is a near miss and not a drop outside every window.
+
+So `split_notebook` gives each split's paned a drop site of its own, `watch_split_drops`, with
+no defaults, as a terminal has: `on_split_drag_motion` offers MOVE for a tab of this
+application (`dragged_tab` set) over the handle and returns False for anything else, so GTK
+goes on up the tree as it did before. `on_split_drag_drop` finishes the drop as a success and
+moves nothing, as `take_dropped_tab` does for a tab let go on its own console. The drag then
+ends as a drop, with no window, and GtkNotebook's own `drag-end` puts the label back. Nothing
+is queued, as no tab moves.
+
+The handle is `Gtk.Paned.get_handle_window`, not the gap between the panes' allocations: the
+second pane's allocation starts at 0,0 in a window whose origin is that pane's own corner, so
+it cannot be compared with the handle's. The point a drop site is given is relative to the
+paned's allocation, in the window the paned is drawn in, and the scenario asserts it against
+where it put the pointer. A drag straight from the bottom pane's strip to the bar was never
+heard by the paned. The tab stayed in its notebook and no window opened, but whether a drag
+began was not recorded. So for that pane the scenario goes up into the top pane and back down
+onto the bar.
+
+Only a split's paned has the site. A tab let go on the bar between the server pane and the
+consoles still opens a window, and so does one let go on the toolbar, which the scenario checks
+too. The first bar's hit area is 9 pixels wide and reaches into the consoles' side, where the
+split's paned hears the drag over the margin of its first pane and declines it, as it does any
+spot that is not its handle.
+
+A quick flick onto the bar is a drop the site cannot take. Under WSLg a release made before any
+drop target has answered is cancelled by the compositor, near the bar or not. #534's trace has
+the two drops that opened a window released 28 and 33 ms after `drag-begin`, and the first
+answers to the run's other drags came 19 to 73 ms in. So where GCM opens the window,
+`move_out_after_drag` first asks `pointer_on_split_bar`, and the tab stays if the pointer is on
+the handle of a split's paned. Under X11 `move_out_after_drag` is never queued, and
+`on_notebook_create_window` is untouched.
+
+`pointer_on_split_bar` first requires the pointer to be over the main window: the window
+`Gdk.Device.get_window_at_position` returns must have the main window as its toplevel, or the
+answer is False. GDK 3.24's Wayland device computes a window-relative position from the
+pointer's focus surface (`gdk_wayland_device_query_state`, as read), so over another window of
+GCM's the position would not be the handle's. Then it reads the pointer's place in the handle
+window of each split's paned with `Gdk.Window.get_device_position`, walking `console_side()`
+with `collect_paneds`, so the paned between the server pane and the consoles is not among
+them. If asking raises, the tab moves out as it did before.
+
+Why GDK should know the pointer's place when the idle runs, read from WSLg's Weston source: on
+the release it sends the source `cancelled`, ends its drag grab and sends the surface under the
+pointer `wl_pointer.enter` with the pointer's position, all in one batch. `GCM_TRACE=drag`
+writes what `pointer_on_split_bar` read (the window under the pointer as main, other or none,
+and the pointer's place in each handle in pixels), and that a tab stayed, so the hand check on
+WSLg will show it. Measured under X11, with `move_out_after_drag` called by hand and the
+pointer put by XTest (`tests/test_console_window.py`): the pointer is on the bar from the
+handle's first pixel row to its last, and not a pixel beyond; over a console, the toolbar, the
+bar between the server pane and the consoles, another window of GCM's and outside every window
+it is not; and the tab stays on the bar and moves out elsewhere.
+
+Not measured: WSLg by hand with this change, so Wayland is the source's reading and not a
+measurement. That covers the drop site and the flick check alike. For the flick check it leaves
+open whether GDK knows the pointer's place when `move_out_after_drag` runs, and what it reports
+for a handle window then.
 
 ### A drag begins once (#401, #406)
 

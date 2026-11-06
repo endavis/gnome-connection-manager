@@ -121,13 +121,16 @@ def text_of(item):
     child = item.get_child()
     return child.get_text() if isinstance(child, Gtk.Label) else None
 
-def split_off(name):
-    """Split H with `name` in use, which moves it into a pane of its own."""
+def split_off(name, vertical=False):
+    """Split H, or Split V, with `name` in use, which moves it into a pane of its own."""
     page = page_of(name)
     page.get_parent().set_current_page(page.get_parent().page_num(page))
     w.wMain.set_focus(terminal(name))
     pump()
-    application._on_action_split_horizontal(None, None)
+    if vertical:
+        application._on_action_split_vertical(None, None)
+    else:
+        application._on_action_split_horizontal(None, None)
     pump()
 
 # Real input, through XTest, on the scenario's own display.
@@ -183,20 +186,37 @@ def centre(widget):
     _, x, y = widget.get_window().get_origin()
     return x + allocation.x + allocation.width // 2, y + allocation.y + allocation.height // 2
 
-def drag(start, end):
-    """Press at `start`, move to `end` in steps, as a hand does, and let go there."""
+def drag(start, end, via=()):
+    """Press at `start`, move through `via` to `end` in steps, as a hand does, and let go there."""
     point(*start)
     pump(0.1)
     button(1, True)
     pump(0.1)
     steps = 25
-    for step in range(1, steps + 1):
-        point(start[0] + (end[0] - start[0]) * step // steps,
-              start[1] + (end[1] - start[1]) * step // steps)
-        pump(0.03)
+    here = start
+    for there in (*via, end):
+        for step in range(1, steps + 1):
+            point(here[0] + (there[0] - here[0]) * step // steps,
+                  here[1] + (there[1] - here[1]) * step // steps)
+            pump(0.03)
+        here = there
     pump(0.2)
     button(1, False)
     pump(0.8)
+
+def middle(widget):
+    """Where the middle of `widget` is on the screen, for a widget with a window or without."""
+    top = widget.get_toplevel()
+    x, y = widget.translate_coordinates(top, 0, 0)
+    _, left, above = top.get_window().get_origin()
+    allocation = widget.get_allocation()
+    return left + x + allocation.width // 2, above + y + allocation.height // 2
+
+def middle_of_handle(paned):
+    """Where the middle of `paned`'s handle is on the screen."""
+    handle = paned.get_handle_window()
+    _, x, y = handle.get_origin()
+    return x + handle.get_width() // 2, y + handle.get_height() // 2
 
 def terminal_menu(name):
     """Open `name`'s terminal menu by a real Ctrl+right-click, and report its Split items."""
@@ -703,6 +723,148 @@ elif scenario == "a-tab-dropped-on-its-own-console-stays":
     assert w.console_windows == (window,)
     assert page_of("B") is page and page.get_parent() is window.notebook
 
+elif scenario == "a-tab-dropped-on-a-splits-bar-stays":
+    # The bar between a split's panes takes a tab and moves nothing, where a console window
+    # opened for it (#534). Anywhere else outside the notebooks, one still does.
+    heard = []
+    hear_motion = w.on_split_drag_motion
+
+    def hear(paned, context, x, y, time):
+        taken = hear_motion(paned, context, x, y, time)
+        heard.append((x, y, taken))
+        return taken
+
+    w.on_split_drag_motion = hear  # split_notebook connects the handler by this name
+    open_tabs("A", "B", "C")
+    run("B", "KEPT=yes; echo ready", "ready")
+    split_off("B", vertical=True)
+    assert names() == [["A", "C"], ["B"]], names()
+    paned = page_of("A").get_parent().get_parent()
+    assert isinstance(paned, Gtk.VPaned), paned
+    bar = middle_of_handle(paned)
+
+    def window_opened_for(name):
+        return page_of(name) is not None and window_of(name) is not None
+
+    def let_go_on_the_bar(name, via=()):
+        page, pane, label, kept = page_of(name), page_of(name).get_parent(), label_of(name), terminal(name)
+        before = names()
+        del heard[:]
+        drag(centre(label.label), bar, via)
+        assert w.console_windows == (), names()
+        assert names() == before, names()
+        assert page_of(name) is page and page.get_parent() is pane
+        assert label_of(name) is label and label.get_parent() is pane, label.get_parent()
+        assert terminal(name) is kept
+        assert until(lambda: w.dragged_tab is None) and w.pending_join is None
+        # The handler was given the pointer's place relative to the paned's allocation, in
+        # the window the paned is drawn in, and said the handle took the tab.
+        _, left, above = paned.get_window().get_origin()
+        origin = paned.get_allocation()
+        place = (bar[0] - left - origin.x, bar[1] - above - origin.y)
+        assert heard and heard[-1] == (*place, True), (heard, place)
+
+    # From the top pane's strip, down to the bar. The bar is a few pixels above the bottom
+    # pane's strip. A drag straight there was not heard by the paned (measured: the tab
+    # stayed and no window opened, but whether a drag began was not recorded), so that one
+    # goes up into the top pane and back down onto the bar.
+    let_go_on_the_bar("A")
+    let_go_on_the_bar("B", via=((bar[0], bar[1] - 120),))
+    run("B", "echo out-$KEPT", "out-yes")
+    run("A", "echo A-$((6*7))", "A-42")
+
+    # Unchanged: a spot outside the notebooks that takes no tab opens a console window. One
+    # is the bar between the server pane and the consoles, which is not a split's. Its hit
+    # area is 9 pixels wide and reaches into the consoles' side, whose margin the split's
+    # paned owns, and its middle is on the split's own bar. So it is aimed a quarter of the
+    # way down, where the split's paned hears the drag over its margin and declines it.
+    handle = w.hpMain.get_handle_window()
+    _, left, above = handle.get_origin()
+    del heard[:]
+    drag(centre(label_of("C").label), (left + handle.get_width() // 2, above + handle.get_height() // 4))
+    assert heard and heard[-1][2] is False, heard
+    assert until(lambda: window_opened_for("C")), names()
+    opened = window_of("C")
+    assert w.console_windows == (opened,), names()
+    assert names() == [["A"], ["B"], ["C"]], names()
+
+    # The toolbar is another. Straight there from the strip no window opened (measured), so
+    # the drag goes down into the top pane, above the window just opened, and back up.
+    toolbar = middle(w.get_widget("toolbar1"))
+    drag(centre(label_of("A").label), toolbar, via=((toolbar[0], 200),))
+    assert until(lambda: window_opened_for("A")), names()
+    toolbar_window = window_of("A")
+    assert toolbar_window is not opened, names()
+    assert w.console_windows == (opened, toolbar_window), names()
+
+elif scenario == "a-tab-moved-out-with-the-pointer-on-a-splits-bar-stays":
+    # Under Wayland a release made before any drop target has answered is cancelled, and an
+    # idle moves the tab out unless the pointer is on a split's bar then (#534). X11 never
+    # queues that idle, so it is called by hand here with the pointer put where it would be,
+    # through XTest. The GDK calls it makes are real; Wayland's answers to them are not.
+    open_tabs("A", "B", "C")
+    run("B", "KEPT=yes; echo ready", "ready")
+    split_off("B", vertical=True)
+    assert names() == [["A", "C"], ["B"]], names()
+    paned = page_of("A").get_parent().get_parent()
+    assert isinstance(paned, Gtk.VPaned), paned
+    handle = paned.get_handle_window()
+    _, left, above = handle.get_origin()
+    width, height = handle.get_width(), handle.get_height()
+    across, along = left + width // 2, above + height // 2
+    top = page_of("A").get_parent()
+
+    def on_a_bar(where):
+        """Put the pointer at `where`, and ask whether it is on a split's bar."""
+        point(*where)
+        pump(0.3)
+        return w.pointer_on_split_bar()
+
+    def showing():
+        """The console the top pane shows: a page not showing has no window to aim at."""
+        return top.get_nth_page(top.get_current_page()).get_children()[0]
+
+    # On the handle, to each edge of it, and not a pixel beyond.
+    assert on_a_bar((across, along))
+    assert on_a_bar((across, above)) and on_a_bar((across, above + height - 1))
+    assert on_a_bar((left, along)) and on_a_bar((left + width - 1, along))
+    assert not on_a_bar((across, above - 1)) and not on_a_bar((across, above + height))
+    # In the main window and beside the bar: the bar between the server pane and the consoles.
+    assert not on_a_bar((left - 1, along))
+    # A pixel past the main window's right edge, which is the paned's.
+    assert not on_a_bar((left + width, along))
+    # Over a console, over the toolbar, and outside every window of GCM's.
+    assert not on_a_bar(centre(showing()))
+    assert not on_a_bar(middle(w.get_widget("toolbar1")))
+    assert not on_a_bar((1500, 850))
+
+    # With the pointer on the bar, the tab is left where it was.
+    page, pane, label, kept = page_of("B"), page_of("B").get_parent(), label_of("B"), terminal("B")
+    assert on_a_bar((across, along))
+    assert w.move_out_after_drag(page) is False
+    assert w.console_windows == (), names()
+    assert names() == [["A", "C"], ["B"]], names()
+    assert page_of("B") is page and page.get_parent() is pane
+    assert label_of("B") is label and terminal("B") is kept
+    run("B", "echo still-$KEPT", "still-yes")
+
+    # Over another window of GCM's the answer is False, whatever that window holds.
+    w.move_to_new_window(page_of("C"))
+    other = window_of("C")
+    other.move(1000, 300)
+    pump(0.5)
+    assert not on_a_bar(centre(terminal("C")))
+
+    # With the pointer over a console of the main window, the tab moves out as it did.
+    point(*centre(showing()))
+    pump(0.3)
+    assert w.move_out_after_drag(page) is False
+    moved = window_of("B")
+    assert moved is not None and moved is not other, names()
+    assert w.console_windows == (other, moved), names()
+    assert label_of("B") is label and terminal("B") is kept
+    run("B", "echo out-$KEPT", "out-yes")
+
 elif scenario == "a-tab-reorders-in-its-strip":
     # A reorder within the strip begins no drag, so the handler on motion leaves it alone.
     open_tabs("A", "B", "C")
@@ -814,6 +976,8 @@ def _run_scenario(scenario, tmp_path, **extra):
         "a-tab-dropped-on-a-console-window-joins-it",
         "a-tab-dropped-on-the-main-window-joins-it",
         "a-tab-dropped-on-its-own-console-stays",
+        "a-tab-dropped-on-a-splits-bar-stays",
+        "a-tab-moved-out-with-the-pointer-on-a-splits-bar-stays",
         "a-tab-reorders-in-its-strip",
         "a-tab-reorders-after-a-drag-that-never-ended",
         "untraced-catches-no-user-signal",

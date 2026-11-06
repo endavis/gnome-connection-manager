@@ -72,6 +72,13 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- A tab let go on the bar between the panes of a split stays where it was, where a console
+  window opened for it. The bar takes a tab over its own width only: let go anywhere else
+  outside the notebooks (the menus, the toolbar, the bar between the server pane and the
+  consoles, the desktop) and a window still opens. Under Wayland a quick flick onto the bar,
+  released before any drop target has answered, is cancelled by the compositor before the
+  bar can take it, so GCM also keeps the tab then when the pointer is on the bar. That check
+  is read from GDK's and WSLg's sources and is not measured on WSLg (#534).
 - The log line for an `[options]` entry GCM cannot read, and the start-up dialog's line for a
   host it cannot read, name the error's kind and the option at fault, no longer the error's
   text, which quoted the value it choked on (#522).

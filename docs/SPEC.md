@@ -566,14 +566,14 @@ those improvements "in the rewrite instead" means building the substrate first.
 
 #### Effort
 
-Measured from the current tree: `app.py` is 10,948 lines with ~659 direct toolkit calls
-(468 `Gtk.`, 151 `Gdk.`, 40 `Vte.`), plus 2,612 lines of Glade and 54,384 lines of tests.
+Measured from the current tree: `app.py` is 12,665 lines with ~683 direct toolkit calls
+(485 `Gtk.`, 159 `Gdk.`, 39 `Vte.`), plus 2,667 lines of Glade and 64,758 lines of tests.
 The code that imports no toolkit — `relay.py`, the `utils` package and the entry points —
-is 4,818 lines, and the `conf` class inside `app.py` another 56. So about 69% of the
+is 5,699 lines, and the `conf` class inside `app.py` another 64. So about 69% of the
 application is rewritten, before the new scope this spec adds.
 
 These figures have grown substantially since first measured in 490670f, when `app.py` was
-4,865 lines and the tests were 2,104: `app.py` by 125% and the tests by 2,485%. That
+4,865 lines and the tests were 2,104: `app.py` by 160% and the tests by 2,978%. That
 strengthens rather than weakens the conclusion below: there is more to rebuild than when
 the recommendation was made, and more test coverage that a port would have to re-earn.
 
