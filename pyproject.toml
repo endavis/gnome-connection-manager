@@ -335,6 +335,7 @@ also_copy = ["data", "lang", "Makefile", "README.md"]
 pytest_add_cli_args_test_selection = [
     "tests/test_activity.py",
     "tests/test_afterlogin.py",
+    "tests/test_app_module_isolation.py",
     "tests/test_application.py",
     "tests/test_childpython.py",
     "tests/test_command_hosts.py",
