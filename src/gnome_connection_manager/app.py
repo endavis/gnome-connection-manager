@@ -3090,12 +3090,13 @@ def with_path(markup, path):
 
 class Wmain(GladeComponent):
     # new() gives each Wmain its own. These are for one built without it, as tests
-    # build one: no console window, none in use, and no tab being dragged (#255), and no
-    # host being mounted, and no application whose menus list the mounts (#267), and no
-    # console open (#346), and no update check running (#369).
+    # build one: no console window, none in use, and no tab being dragged (#255) nor a
+    # drag's context kept (#533), and no host being mounted, and no application whose menus
+    # list the mounts (#267), and no console open (#346), and no update check running (#369).
     console_windows: tuple = ()
     window_in_use: object = None
     dragged_tab: object = None
+    dragged_context: object = None
     pending_join: tuple | None = None
     mounting: frozenset = frozenset()
     application: object = None
@@ -3292,6 +3293,8 @@ class Wmain(GladeComponent):
         self.window_in_use = None
         # The tab a drag between notebooks carries, while it does (#255).
         self.dragged_tab = None
+        # That drag's Gdk.DragContext, kept so that a drag with no end can be cancelled (#533).
+        self.dragged_context = None
         # The (page, notebook) a drop asked for, joined once the drag has ended (#505).
         self.pending_join = None
         # The number of the notebook that tab was dragged from, for a trace (#507).
@@ -6564,30 +6567,54 @@ class Wmain(GladeComponent):
         return swallowed
 
     def on_notebook_button_press(self, notebook, event) -> bool:
-        """A button-1 press means the drag that set `dragged_tab` is over (#401).
+        """A button-1 press means the drag that set `dragged_tab` is over (#401, #533).
 
         During a drag the pointer belongs to X11's grab or the Wayland data device, so no
         press reaches a notebook, and the press that starts a drag comes before
         `drag-begin`. A drag whose `drag-end` never came would otherwise leave
-        `on_notebook_motion` swallowing the next drag's start for good. Returns False
-        always, so `on_double_click` and GtkNotebook still see the press.
+        `on_notebook_motion` swallowing the next drag's start for good.
+
+        GTK's drag is ended too, with the context `on_notebook_drag_begin` kept (#533).
+        GtkNotebook holds the dragged tab's label in the drag's icon, draws no current tab
+        while it does, and puts the label back only on `drag-end`: a drag left running
+        left its bar hiding tabs until something else ended it. The state is cleared
+        before the cancel, so the `drag-failed` the cancel emits finds no `dragged_tab`
+        and queues no window (`on_notebook_drag_failed`). With no context kept, only
+        GCM's side ends, as before #533. Returns False always, so `on_double_click` and
+        GtkNotebook still see the press.
         """
         stale = self.dragged_tab
+        context = self.dragged_context
         trace.note(
             trace.DRAG,
             lambda: f"button-press: button {event.button} on notebook {notebook.trace_number}",
         )
         if event.button == 1:
             self.dragged_tab = None
+            self.dragged_context = None
             self.pending_join = None
             if stale is not None:
-                trace.note(trace.DRAG, lambda: f"stale drag ended: {trace_page_name(stale)}")
+                trace.note(
+                    trace.DRAG,
+                    lambda: (
+                        f"stale drag ended: {trace_page_name(stale)}, "
+                        + (
+                            "cancelling GTK's drag"
+                            if context is not None
+                            else "GTK's drag not cancelled, no context kept"
+                        )
+                    ),
+                )
+                if context is not None:
+                    Gtk.drag_cancel(context)
         return False
 
-    def on_notebook_drag_begin(self, notebook, _context):
+    def on_notebook_drag_begin(self, notebook, context):
         # GTK shows a tab as it is pressed, so the one showing as a drag begins is the
         # one dragged: measured on sway, dragging a tab that was not showing.
         self.dragged_tab = notebook.get_nth_page(notebook.get_current_page())
+        # Kept for a press that finds this drag never ended, which cancels it (#533).
+        self.dragged_context = context
         self.pending_join = None
         self.dragged_from = getattr(notebook, "trace_number", None)
         trace.note(
@@ -6601,6 +6628,7 @@ class Wmain(GladeComponent):
     def on_notebook_drag_end(self, notebook, _context):
         page = self.dragged_tab
         self.dragged_tab = None
+        self.dragged_context = None
         self.dragged_from = None
         join, self.pending_join = self.pending_join, None
         trace.note(
