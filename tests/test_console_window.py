@@ -942,7 +942,9 @@ elif scenario == "a-tab-comes-back-from-a-drag-that-never-ended":
     heard = []
 
     def hear(_notebook, event):
-        heard.append(event)
+        # Read inside the handler: GTK frees the event once the signal has run, and a field
+        # read later can find another event's memory (#537's scenario read button 0 so).
+        heard.append((type(event), event.type, event.button))
         return False
 
     notebook.connect("button-press-event", hear)
@@ -953,7 +955,91 @@ elif scenario == "a-tab-comes-back-from-a-drag-that-never-ended":
     button(1, True)
     button(1, False)
     assert until(lambda: notebook.get_current_page() == notebook.page_num(page_of("C")))
-    assert heard and type(heard[-1]) is type(press) and heard[-1].button == press.button, heard
+    assert heard and heard[-1] == (type(press), press.type, press.button), heard
+    drag(centre(label_of("A").label), centre(label_of("C").label))
+    assert names() == [["B", "C", "A"]], names()
+    assert w.dragged_tab is None
+    assert seen == [("drag-failed", Gtk.DragResult.ERROR), ("drag-end", None)], seen
+
+elif scenario == "a-tab-comes-back-at-the-release-of-a-drag-that-never-ended":
+    # The same drag, ended sooner (#537). Under WSLg every drag the compositor never took had
+    # its button-1 release reach a notebook within 32 ms of drag-begin, and the release now
+    # ends GTK's drag as the button goes up, where #533's press ended it at the next click on
+    # a tab bar. Under X11 GDK grabs the pointer for a drag, so no release reaches a notebook
+    # during one: the drag here is a real one, held by XTest, and the release is the handler
+    # called by hand with a real Gdk.EventButton (what the button-release-event signal passes
+    # it), as Wayland would deliver it.
+    open_tabs("A", "B", "C")
+    notebook = w.nbConsole
+    notebook.set_current_page(notebook.page_num(page_of("B")))
+    pump()
+    page, label, kept = page_of("B"), label_of("B"), terminal("B")
+    before, places = names(), [centre(label_of(name).label) for name in "ABC"]
+    seen = []
+
+    def failed(_notebook, _context, result):
+        seen.append(("drag-failed", result))
+        return False
+
+    notebook.connect("drag-failed", failed)
+    notebook.connect("drag-end", lambda *_args: seen.append(("drag-end", None)))
+
+    # B's tab, dragged from its strip into its console, with the button still down.
+    hold(places[1], centre(kept))
+    assert until(lambda: label.get_parent() is not notebook), "no drag began"
+    assert w.dragged_tab is page and isinstance(w.dragged_context, Gdk.DragContext)
+    assert seen == [], seen
+
+    # The release of another button is not the drag's: nothing ends.
+    other = Gdk.EventButton()
+    other.type = Gdk.EventType.BUTTON_RELEASE
+    other.button = 3
+    assert w.on_notebook_button_release(notebook, other) is False
+    pump(0.3)
+    assert seen == [], seen
+    assert w.dragged_tab is page and isinstance(w.dragged_context, Gdk.DragContext)
+    assert label.get_parent() is not notebook
+
+    release = Gdk.EventButton()
+    release.type = Gdk.EventType.BUTTON_RELEASE
+    release.button = 1
+    assert w.on_notebook_button_release(notebook, release) is False
+    # Both came inside the cancel, before the handler returned: a drag-end that came later
+    # could clear the state of a drag begun meanwhile.
+    assert seen == [("drag-failed", Gtk.DragResult.ERROR), ("drag-end", None)], seen
+
+    assert until(lambda: label.get_parent() is notebook), "GTK's drag was not ended"
+    pump(0.8)
+    # Once each, in GTK's order, and the failure an ERROR. A failure for want of a target
+    # asks for a window through create-window (#255), and none opened.
+    assert seen == [("drag-failed", Gtk.DragResult.ERROR), ("drag-end", None)], seen
+    assert w.dragged_tab is None and w.dragged_context is None and w.pending_join is None
+    assert w.console_windows == (), names()
+    assert names() == before, names()
+    assert page_of("B") is page and label_of("B") is label and terminal("B") is kept
+    assert [centre(label_of(name).label) for name in "ABC"] == places
+
+    # The button goes up over the console. Nothing is left of the drag: a click selects a
+    # tab, and a tab still reorders in its strip. The click is a real press and release,
+    # which shows that the event handed to the handler above is the class a release brings.
+    # What a release holds is read inside the handler: an event kept past it read as another
+    # type with button 0, measured.
+    heard = []
+
+    def hear(_notebook, event):
+        heard.append((type(event), event.type, event.button))
+        return False
+
+    notebook.connect("button-release-event", hear)
+    button(1, False)
+    pump(0.5)
+    point(*places[2])
+    pump(0.1)
+    button(1, True)
+    button(1, False)
+    assert until(lambda: notebook.get_current_page() == notebook.page_num(page_of("C")))
+    pump(0.3)
+    assert heard and set(heard) == {(type(release), release.type, release.button)}, heard
     drag(centre(label_of("A").label), centre(label_of("C").label))
     assert names() == [["B", "C", "A"]], names()
     assert w.dragged_tab is None
@@ -1056,6 +1142,7 @@ def _run_scenario(scenario, tmp_path, **extra):
         "a-tab-reorders-in-its-strip",
         "a-tab-reorders-after-a-drag-that-never-ended",
         "a-tab-comes-back-from-a-drag-that-never-ended",
+        "a-tab-comes-back-at-the-release-of-a-drag-that-never-ended",
         "untraced-catches-no-user-signal",
     ],
 )
@@ -1101,6 +1188,10 @@ def test_a_traced_drag_against_real_gtk(tmp_path):
     # drag-failed there, so none is asserted.
     created = position("create-window: A from notebook 1", tabs)
     assert not any("drag-failed" in line for line in lines)
+    # GDK grabs the pointer for a drag under X11, so no release reached a notebook while one
+    # was on, and the release that ends a drag the compositor never took (#537) has nothing
+    # to end here.
+    assert not any("button-release" in line and "drag of" in line for line in lines), lines
     position("tabs notebook 1", created)
     mark = position("=== MARK after the drops ===", created)
     assert "tabs notebook 1" in lines[mark + 1]
