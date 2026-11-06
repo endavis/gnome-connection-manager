@@ -1635,6 +1635,7 @@ def read_config_option(cp, section, option, kind, default):
     """
     value, unread = configfile.read_option(cp, section, option, kind, default)
     if unread:
+        # unread.reason is the error's class: its text would quote the value (#522).
         logger.error(
             "%s: [%s] %s: %s",
             _("Invalid entry in configuration file"),
@@ -5653,7 +5654,17 @@ class Wmain(GladeComponent):
         """
         if not unread_hosts:
             return False
-        lines = [f"{unread.label}  ({unread.reason})" for unread in unread_hosts]
+        lines = []
+        for unread in unread_hosts:
+            if unread.reason == "NoOptionError" and unread.option:
+                problem = _("the {option} line is missing").format(option=unread.option)
+            elif unread.reason == "NotAWholeNumber" and unread.option:
+                problem = _("the value of {option} is not a whole number").format(
+                    option=unread.option
+                )
+            else:
+                problem = unread.reason
+            lines.append(f"{unread.label}  ({problem})")
         dialog = Gtk.MessageDialog(
             parent=dialog_parent(self.wMain),
             modal=True,
@@ -5794,7 +5805,8 @@ class Wmain(GladeComponent):
                     configfile.UnreadHost(
                         section,
                         {k: v for k, v in cp.items(section) if k not in cp.defaults()},
-                        str(e),
+                        error_class,
+                        getattr(e, "option", ""),
                     )
                 )
 

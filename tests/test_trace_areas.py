@@ -540,7 +540,7 @@ def test_gcm_started_with_the_config_area_traces_its_own_load(
 
     written = capsys.readouterr().err
     assert "host section [host 2] refused" in written
-    assert "host section [host 3] refused, ValueError" in written
+    assert "host section [host 3] refused, NotAWholeNumber" in written
     assert "host section [host 1] read" in written
     assert "[host 1] refused" not in written
     assert "router1" not in written and "netops" not in written and "plaintext" not in written

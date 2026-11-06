@@ -390,7 +390,8 @@ def test_read_option_reports_a_value_it_cannot_read(line, kind, default):
         text,
         default,
     )
-    assert text in unread.reason, "configparser's or int()'s own words, quoting the value"
+    assert unread.reason == "ValueError"
+    assert text not in unread.reason, "the class only, never the value (#522)"
 
 
 @pytest.mark.parametrize(

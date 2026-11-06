@@ -1108,3 +1108,33 @@ def test_prefix_keys_are_not_a_types_setting():
     loaded = hosts.HostUtils.load_host_from_ini(reread(config), "host 1", pwd="secret")
 
     assert loaded.type_settings == {}
+
+
+# -- a word where a whole number belongs (#522) ---------------------------------------------
+
+
+def _cp(**options: str) -> configparser.RawConfigParser:
+    cp = configparser.RawConfigParser()
+    cp.add_section("host 1")
+    for key, value in options.items():
+        cp.set("host 1", key.replace("_", "-"), value)
+    return cp
+
+
+def test_whole_number_reads_the_number_and_defaults_when_absent() -> None:
+    assert hosts.whole_number(_cp(backspace_key="3"), "host 1", "backspace-key", 7) == 3
+    assert hosts.whole_number(_cp(), "host 1", "backspace-key", 7) == 7
+
+
+@pytest.mark.parametrize("option", ["backspace-key", "delete-key"])
+def test_a_word_for_an_erase_key_raises_without_the_value(option: str) -> None:
+    cp = _cp(**{option.replace("-", "_"): "hunter2"})
+    with pytest.raises(hosts.NotAWholeNumber) as caught:
+        hosts.whole_number(cp, "host 1", option, 7)
+
+    error = caught.value
+    assert isinstance(error, ValueError)
+    assert error.option == option
+    assert "hunter2" not in str(error)
+    assert error.__cause__ is None
+    assert error.__suppress_context__

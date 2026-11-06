@@ -72,6 +72,9 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- The log line for an `[options]` entry GCM cannot read, and the start-up dialog's line for a
+  host it cannot read, name the error's kind and the option at fault, no longer the error's
+  text, which quoted the value it choked on (#522).
 - The error GCM logs for a host section it cannot read names the section and the kind of
   error, no longer the error's text, which quoted the value it choked on, a password
   among them (#511).

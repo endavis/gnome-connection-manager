@@ -755,6 +755,12 @@ msgstr "No se pudieron leer algunos servidores de gcm.conf, así que no están e
 msgid "GCM keeps these hosts in the file as they are. To bring one back, correct it in the file with GCM closed."
 msgstr "GCM conserva estos servidores en el archivo tal como están. Para recuperar uno, corríjalo en el archivo con GCM cerrado."
 
+msgid "the {option} line is missing"
+msgstr "falta la línea {option}"
+
+msgid "the value of {option} is not a whole number"
+msgstr "el valor de {option} no es un número entero"
+
 msgid "expects true or false"
 msgstr "espera true o false"
 
