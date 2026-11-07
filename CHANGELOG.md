@@ -77,7 +77,7 @@ the git log.
   of the main window still stays where it was. A slow drop and, under Wayland, a quick flick
   that the compositor cancels end alike, and the drop's join waits for the drag to end (#505).
   Measured under X11 with a real drag, and with the move-out called by hand and the pointer put
-  by XTest; not yet checked by hand on WSLg (#541).
+  by XTest, and checked by hand on WSLg (#541).
 - A tab let go over a notebook under Wayland no longer opens a console window. WSLg's
   compositor cancels a release made before any drop target has answered, and GCM then moved
   the tab to a window wherever the pointer was but on a split's bar: 15 of 74 drags in one

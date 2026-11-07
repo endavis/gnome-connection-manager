@@ -379,10 +379,14 @@ its session came through unchanged. With `app.py` as it was before this change, 
 still taken by the site at that place, and the tab went back to its console window. So X11 did
 what WSLg did, which #541 had only inferred.
 
+Checked by hand on WSLg on 2026-11-07, by Eric, with the steps in the description of PR #542.
+He reported that it looks good. No trace was kept, as the sandbox run in the foreground writes
+it to the terminal, so how many drops there were, and which path each took, are not on record.
+
 Not measured:
 
-- **WSLg by hand,** so Wayland is the source's reading and not a measurement until Eric's check.
-- **A flick onto a bar under WSLg.** None is on record (#538).
+- **A flick onto a bar under WSLg.** None is on record (#538), and the hand check kept no trace
+  that could show one.
 - **sway.**
 
 ### A drag begins once (#401, #406)
