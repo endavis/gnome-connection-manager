@@ -6737,9 +6737,10 @@ class Wmain(GladeComponent):
         takes a tab dropped on it since #407, and the bar between a split's panes since
         #534, so an error is a drop outside every GCM window, or one the compositor
         cancelled before any target answered (#538). So there GCM decides itself, once GTK
-        has, from where the pointer is (`move_out_after_drag`): the tab stays on a split's
-        bar or over its own notebook, joins another notebook it is over, and else moves
-        out as Move to New Window does.
+        has, from where the pointer is (`move_out_after_drag`): a tab of the main window
+        stays on a split's bar and one from a console window joins the main window's pane
+        in use (#541); the tab stays over its own notebook, joins another notebook it is
+        over, and else moves out as Move to New Window does.
         """
         page = self.dragged_tab
         wayland = notebook.get_display().__gtype__.name == "GdkWaylandDisplay"
@@ -6766,7 +6767,9 @@ class Wmain(GladeComponent):
         74 drags failed so (#538), each with the pointer in the main window. So where the
         pointer is, once the drag is over, decides:
 
-        - on the handle of a split's paned (`pointer_on_split_bar`, #534): the tab stays;
+        - on the handle of a split's paned (`pointer_on_split_bar`, #534): a tab of the main
+          window stays, and one from a console window joins the main window's pane in use
+          (`split_bar_join`, #541), as a drop there does;
         - over a console notebook (`notebook_under_pointer`, #538), its tab strip or its
           console: the tab stays if that is its own notebook, and joins it otherwise, as a
           drop there would (`join_after_drop`);
@@ -6793,12 +6796,26 @@ class Wmain(GladeComponent):
             logger.exception("Could not tell whether the pointer is on a split's bar")
             on_bar = False
         if on_bar:
+            # Only GCM's own widgets are read here, not GDK, so nothing is caught.
+            target = self.split_bar_join(page)
+            if target is None:
+                trace.note(
+                    trace.DRAG,
+                    lambda: (
+                        f"move_out_after_drag: {trace_page_name(page)} stays, "
+                        "the pointer is on a bar"
+                    ),
+                )
+                return False
             trace.note(
                 trace.DRAG,
                 lambda: (
-                    f"move_out_after_drag: {trace_page_name(page)} stays, the pointer is on a bar"
+                    f"move_out_after_drag: {trace_page_name(page)} joins notebook "
+                    f"{getattr(target, 'trace_number', None)}, the main window's pane in use, "
+                    "the pointer is on a bar"
                 ),
             )
+            self.join_after_drop(page, target)
             return False
         try:
             notebook = self.notebook_under_pointer()
@@ -6833,6 +6850,21 @@ class Wmain(GladeComponent):
             )
             self.join_after_drop(page, notebook)
         return False
+
+    def split_bar_join(self, page: Any) -> Any:
+        """The notebook a tab let go on a split's bar joins, or None where it stays (#541).
+
+        For `on_split_drag_drop` and `move_out_after_drag`, so that a drop and a flick end
+        alike. A tab of the main window stays where it was (#534). One from a console
+        window joins the main window's pane in use, `main_notebook()`, where Move to Main
+        Window puts a console; no other tab asks for it. The bar is a few pixels across,
+        between two panes, so nobody can aim for one side of it, and a pane chosen by side
+        would look random. A page with no parent has gone, and stays.
+        """
+        parent = page.get_parent()
+        if parent is None or self.console_window_of(parent) is None:
+            return None
+        return self.main_notebook()
 
     def pointer_on_split_bar(self) -> bool:
         """Whether the pointer is over the handle of a split's paned in the main window (#534).
@@ -6957,8 +6989,9 @@ class Wmain(GladeComponent):
         over their own area, and the bar is the paned's. A tab let go there found no
         target, so GTK asked for a window (`create-window`) under X11, and under Wayland
         the compositor cancelled the drop and `on_notebook_drag_failed` opened one. The
-        bar lies between two places that take a tab, so that drop is a near miss, and the
-        tab stays where it was.
+        bar lies between two places that take a tab, so that drop is a near miss. A tab of
+        the main window stays where it was, and one from a console window joins the main
+        window's pane in use (`split_bar_join`, #541).
 
         The site has no defaults, so that GCM decides both motion and drop
         (`on_split_drag_motion`, `on_split_drag_drop`) and only a tab over the handle is
@@ -7028,15 +7061,31 @@ class Wmain(GladeComponent):
         return taken
 
     def on_split_drag_drop(self, paned: Any, context: Any, x: int, y: int, time: int) -> bool:
-        """A tab let go on a split's handle stays where it was (#534).
+        """A tab let go on a split's handle stays in the main window, or joins it (#534, #541).
 
-        The drop finishes as a success and moves nothing, as `take_dropped_tab` does for a
-        tab let go on its own console. A drag that ends as a drop emits no `drag-failed`,
-        so no window opens for the tab, and GtkNotebook's `drag-end` puts its label back.
-        Nothing is queued, as the tab does not move.
+        The drop finishes as a success, so that no window opens for the tab. A drag that
+        ends as a drop emits no `drag-failed`, and GtkNotebook's `drag-end` puts the label
+        back. A tab of the main window moves nothing, as `take_dropped_tab` does for a tab
+        let go on its own console, and nothing is queued. One from a console window joins
+        `split_bar_join`'s notebook, and as in `take_dropped_tab` the move waits for the
+        source notebook's `drag-end` (`pending_join`, which `on_notebook_drag_end` queues),
+        as an idle queued here can run before it under Wayland (#505). It is set before the
+        drop finishes, so that a `drag-end` the finish brings at once finds it.
         """
         taken = self.split_takes_drag(paned, context, x, y, "split drag-drop")
         if taken:
+            page = self.dragged_tab
+            target = self.split_bar_join(page)
+            if target is not None:
+                self.pending_join = (page, target)
+                trace.note(
+                    trace.DRAG,
+                    lambda: (
+                        f"split drag-drop: join of {trace_page_name(page)} to notebook "
+                        f"{getattr(target, 'trace_number', None)}, the main window's pane in "
+                        "use, waits for drag-end"
+                    ),
+                )
             Gtk.drag_finish(context, True, False, time)
         return taken
 

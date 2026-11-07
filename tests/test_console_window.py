@@ -991,6 +991,87 @@ elif scenario == "a-tab-moved-out-over-a-notebook-stays-or-joins-it":
     assert w.console_windows == (window, toolbar_window, tree_window), names()
     assert names() == [["B"], ["C", "E"], ["A"], ["D"]], names()
 
+elif scenario == "a-tab-from-a-console-window-let-go-on-a-splits-bar-joins-the-main-window":
+    # A tab of the main window let go on the bar between a split's panes stays (the two
+    # scenarios above on the bar measure that). One from a console window joins the main
+    # window's pane in use instead, as Move to Main Window puts it, where it went back to its
+    # window (#541). A slow drop is taken by the paned's drop site and joins once the drag is
+    # over (#505). Under Wayland a quick flick is cancelled before any site answers and an idle
+    # calls move_out_after_drag; X11 never queues that idle, so it is called by hand here with
+    # the pointer put on the bar through XTest.
+    heard = []
+    hear_drop = w.on_split_drag_drop
+
+    def hear(paned, context, x, y, time):
+        taken = hear_drop(paned, context, x, y, time)
+        heard.append((x, y, taken))
+        return taken
+
+    w.on_split_drag_drop = hear  # split_notebook connects the handler by this name
+    open_tabs("A", "B", "C")
+    run("C", "KEPT=yes; echo ready", "ready")
+    split_off("B", vertical=True)
+    assert names() == [["A", "C"], ["B"]], names()
+    paned = page_of("A").get_parent().get_parent()
+    assert isinstance(paned, Gtk.VPaned), paned
+    bar = middle_of_handle(paned)
+
+    def out(name):
+        """Move `name`'s tab to a console window of its own, off to the right of the main window."""
+        w.move_to_new_window(page_of(name))
+        pump(0.5)
+        window = window_of(name)
+        window.move(1100, 300)
+        pump(0.5)
+        return window
+
+    def bottom_in_use():
+        """Put the keyboard in the bottom pane. The top pane is the original notebook, which
+        is also what the pane in use falls back to, so a join there would prove nothing."""
+        w.wMain.set_focus(terminal("B"))
+        pump()
+        assert w.main_notebook() is page_of("B").get_parent() is not w.nbConsole, names()
+
+    # A slow drop from the console window, onto the bar. It comes down onto the bar from the
+    # top pane, as the bottom pane's tab does in the scenario above, where a drag straight
+    # there was not heard by the paned. A straight drag from a console window was not tried.
+    window = out("C")
+    assert names() == [["A"], ["B"], ["C"]], names()
+    bottom_in_use()
+    page, label, kept = page_of("C"), label_of("C"), terminal("C")
+    del heard[:]
+    drag(centre(label.label), bar, via=((bar[0], bar[1] - 120),))
+    # The paned's drop site took it. An overshoot onto the bottom pane's strip would also put
+    # the tab in that pane, through GtkNotebook's own drop, so the site is asked as well.
+    _, left, above = paned.get_window().get_origin()
+    origin = paned.get_allocation()
+    place = (bar[0] - left - origin.x, bar[1] - above - origin.y)
+    assert heard and heard[-1] == (*place, True), (heard, place)
+    assert until(lambda: w.console_windows == ()), names()
+    assert not window.get_visible()
+    assert until(lambda: w.dragged_tab is None) and w.pending_join is None
+    assert names() == [["A"], ["B", "C"]], names()
+    assert page_of("C") is page and page.get_parent() is page_of("B").get_parent()
+    assert label_of("C") is label and label.get_parent() is page.get_parent()
+    assert terminal("C") is kept
+    run("C", "echo back-$KEPT", "back-yes")
+
+    # A quick flick: the idle's pointer checks are real, and so is the move.
+    window = out("C")
+    assert names() == [["A"], ["B"], ["C"]], names()
+    bottom_in_use()
+    point(*bar)
+    pump(0.3)
+    assert w.pointer_on_split_bar()
+    assert w.move_out_after_drag(page_of("C")) is False
+    assert until(lambda: w.console_windows == ()), names()
+    assert not window.get_visible()
+    assert names() == [["A"], ["B", "C"]], names()
+    assert page_of("C") is page and page.get_parent() is page_of("B").get_parent()
+    assert label_of("C") is label and label.get_parent() is page.get_parent()
+    assert terminal("C") is kept
+    run("C", "echo flick-$KEPT", "flick-yes")
+
 elif scenario == "a-tab-reorders-in-its-strip":
     # A reorder within the strip begins no drag, so the handler on motion leaves it alone.
     open_tabs("A", "B", "C")
@@ -1262,6 +1343,7 @@ def _run_scenario(scenario, tmp_path, **extra):
         "a-tab-dropped-on-a-splits-bar-stays",
         "a-tab-moved-out-with-the-pointer-on-a-splits-bar-stays",
         "a-tab-moved-out-over-a-notebook-stays-or-joins-it",
+        "a-tab-from-a-console-window-let-go-on-a-splits-bar-joins-the-main-window",
         "a-tab-reorders-in-its-strip",
         "a-tab-reorders-after-a-drag-that-never-ended",
         "a-tab-comes-back-from-a-drag-that-never-ended",

@@ -616,8 +616,10 @@ or beside another program. Three ways move it out:
 - Dragging its tab off the tab strip and letting go outside every GCM window, on the
   desktop. Under X11 the window opens where you let go; under Wayland the desktop places
   it. Let go over another GCM window's console, or its tab strip, and the tab joins that
-  window instead. Let go on the bar between two panes of a split, and the tab stays where it
-  was: the bar is next to the places that take a tab, and no window opens for it.
+  window instead. Let go on the bar between two panes of a split, and no window opens for
+  it: the bar is next to the places that take a tab. A tab of the main window stays where it
+  was. One from a console window joins the main window's pane in use, as Move to Main Window
+  puts it.
 
 The console keeps its session, its tab's label and marks, and its log. Nothing reconnects.
 
@@ -636,6 +638,8 @@ To bring a console back:
 
 - `Ctrl+Shift+M` again, or **Move to Main Window** in its tab's menu.
 - Drag its tab into a tab strip in the main window, or let go over a console there.
+- Drag its tab onto the bar between two panes of a split in the main window and let go
+  there, which puts it in the pane in use.
 - Close the window, which brings back every console in it. Closing it ends none of them:
   to end a session, close its tab.
 - **View → Move All to Main Window**, or the toolbar button after Split Horizontal, Split
