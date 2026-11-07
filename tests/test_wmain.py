@@ -4885,7 +4885,10 @@ class SplitPaned:
 
 
 def _split_drag(app_module, monkeypatch, dragged=True):
-    """A Wmain with the drag calls recorded: (wmain, statuses, finished, scheduled)."""
+    """A Wmain with the drag calls recorded: (wmain, statuses, finished, scheduled).
+
+    The tab dragged is one of a pane's notebook, as the drop handler asks it for its parent
+    (#541): the Wmain has no console window, so it is the main window's."""
     statuses, finished, scheduled = [], [], []
     monkeypatch.setattr(
         app_module.Gdk, "drag_status", lambda ctx, action, t: statuses.append((ctx, action, t))
@@ -4900,7 +4903,7 @@ def _split_drag(app_module, monkeypatch, dragged=True):
         app_module.GLib, "idle_add", lambda callback, *args: scheduled.append((callback, args))
     )
     wmain = object.__new__(app_module.Wmain)
-    wmain.dragged_tab = object() if dragged else None
+    wmain.dragged_tab = Parent(Parent(notebook=True)) if dragged else None
     wmain.pending_join = None
     return wmain, statuses, finished, scheduled
 
@@ -4979,6 +4982,72 @@ def test_a_tab_let_go_on_a_splits_handle_finishes_as_a_success_and_moves_nothing
     assert wmain.dragged_tab is dragged
     wmain.on_notebook_drag_end(Parent(notebook=True), None)
     assert scheduled == []
+
+
+def test_a_tab_from_a_console_window_let_go_on_a_splits_handle_joins_the_pane_in_use(
+    app_module, monkeypatch
+):
+    """The main window's tab stays (the test above); one from a console window joins the
+    main window's pane in use, once the drag is over (#541, #505)."""
+    wmain, statuses, finished, scheduled = _split_drag(app_module, monkeypatch)
+    window, pane = Parent(notebook=True), Parent(notebook=True)
+    page = Parent(window)
+    wmain.dragged_tab = page
+    wmain.console_windows = (types.SimpleNamespace(notebook=window),)
+    wmain.main_notebook = lambda: pane
+    context = TabDragContext("GTK_NOTEBOOK_TAB")
+
+    assert wmain.on_split_drag_drop(SplitPaned(), context, *ON_THE_BAR, 9) is True
+
+    # Finished as a success, so no window opens, and the join waits for drag-end.
+    assert finished == [(context, True, False, 9)]
+    assert statuses == []
+    assert scheduled == []
+    assert wmain.dragged_tab is page
+    assert wmain.pending_join == (page, pane)
+
+    wmain.on_notebook_drag_end(window, None)
+
+    assert wmain.pending_join is None
+    assert scheduled == [(wmain.join_after_drop, (page, pane))]
+    wmain.on_notebook_drag_end(window, None)
+    assert len(scheduled) == 1
+
+
+def test_the_join_of_a_split_drop_is_set_before_the_drop_finishes(app_module, monkeypatch):
+    """A `drag-end` that the finish brings at once must find the join (#541)."""
+    wmain, _, _, scheduled = _split_drag(app_module, monkeypatch)
+    window, pane = Parent(notebook=True), Parent(notebook=True)
+    page = Parent(window)
+    wmain.dragged_tab = page
+    wmain.console_windows = (types.SimpleNamespace(notebook=window),)
+    wmain.main_notebook = lambda: pane
+    monkeypatch.setattr(
+        app_module.Gtk, "drag_finish", lambda *_args: wmain.on_notebook_drag_end(window, None)
+    )
+
+    wmain.on_split_drag_drop(SplitPaned(), TabDragContext("GTK_NOTEBOOK_TAB"), *ON_THE_BAR, 9)
+
+    assert scheduled == [(wmain.join_after_drop, (page, pane))]
+    assert wmain.pending_join is None
+
+
+def test_split_bar_join_names_the_pane_in_use_only_for_a_console_windows_tab(app_module):
+    asked = []
+    window, pane, main = (Parent(notebook=True) for _ in range(3))
+    wmain = object.__new__(app_module.Wmain)
+    wmain.console_windows = (types.SimpleNamespace(notebook=window),)
+    wmain.main_notebook = lambda: asked.append("asked") or main
+
+    # A console window's tab joins the pane in use.
+    assert wmain.split_bar_join(Parent(window)) is main
+    assert asked == ["asked"]
+    # A tab of a pane of the main window stays, and the pane in use is not asked.
+    del asked[:]
+    assert wmain.split_bar_join(Parent(pane)) is None
+    # A page with no parent has gone, and stays.
+    assert wmain.split_bar_join(Parent()) is None
+    assert asked == []
 
 
 @pytest.mark.parametrize("direction", ["HSPLIT", "VSPLIT"])
@@ -5086,6 +5155,32 @@ def test_a_split_drag_is_traced_by_tab_and_never_by_console(app_module, monkeypa
     assert lines[1].endswith("on handle False, taken False")
     assert "split drag-drop: web01 at 449,317, " in lines[2]
     assert lines[2].endswith("on handle True, taken True")
+    assert "secret-text" not in drag_trace.getvalue()
+
+
+def test_a_split_drop_that_joins_is_traced_by_tab_and_never_by_console(
+    app_module, monkeypatch, drag_trace
+):
+    wmain, _, _, _ = _split_drag(app_module, monkeypatch)
+    window, pane = Parent(notebook=True), Parent(notebook=True)
+    pane.trace_number = 1
+    page = _page("web01")
+    page.get_parent = lambda: window
+    page.terminal = types.SimpleNamespace(screen="secret-text")
+    wmain.dragged_tab = page
+    wmain.console_windows = (types.SimpleNamespace(notebook=window),)
+    wmain.main_notebook = lambda: pane
+
+    wmain.on_split_drag_drop(SplitPaned(), TabDragContext("GTK_NOTEBOOK_TAB"), *ON_THE_BAR, 5)
+
+    lines = drag_trace.getvalue().splitlines()
+    assert len(lines) == 2
+    assert "split drag-drop: web01 at 449,317, " in lines[0]
+    assert lines[0].endswith("on handle True, taken True")
+    assert lines[1].endswith(
+        "split drag-drop: join of web01 to notebook 1, the main window's pane in use, "
+        "waits for drag-end"
+    )
     assert "secret-text" not in drag_trace.getvalue()
 
 
@@ -5389,12 +5484,15 @@ def test_the_notebooks_of_a_nested_split_are_asked(app_module, monkeypatch):
     assert _number(wmain.notebook_under_pointer()) == 3
 
 
-def _move_out(app_module, monkeypatch, on_bar, under="none"):
+def _move_out(app_module, monkeypatch, on_bar, under="none", console=False):
     """A Wmain whose pointer checks answer `on_bar` and, for the notebook under the pointer,
     `under`: "none", "own" (the tab's notebook), "other" (a second notebook) or a function
     to call. And a tab that is still open: the wmain, the tab and the list of tabs moved to
     a window. `wmain.joined` has the (tab, notebook) pairs joined to a notebook, and
-    `wmain.other` is the second notebook. Neither question reaches the real GDK."""
+    `wmain.other` is the second notebook. Neither question reaches the real GDK.
+
+    With `console`, the tab's notebook is a console window's and the main window's pane in
+    use is `wmain.main` (#541); otherwise the tab is the main window's."""
     moved = []
     monkeypatch.setattr(
         app_module.Wmain,
@@ -5413,6 +5511,10 @@ def _move_out(app_module, monkeypatch, on_bar, under="none"):
     wmain.join_after_drop = lambda page, notebook: wmain.joined.append((page, notebook)) or False
     page = _page("app01")
     page.get_parent = lambda: own
+    if console:
+        wmain.console_windows = (types.SimpleNamespace(notebook=own),)
+        wmain.main = PointerNotebook(3, 0, 0, 10, 10)
+        wmain.main_notebook = lambda: wmain.main
     return wmain, page, moved
 
 
@@ -5422,6 +5524,23 @@ def test_a_tab_stays_when_the_pointer_is_on_a_splits_bar(app_module, monkeypatch
     assert wmain.move_out_after_drag(page) is False
 
     assert moved == [] and wmain.joined == []
+
+
+@pytest.mark.parametrize("under", ["own", "other", "none"])
+def test_a_tab_from_a_console_window_joins_the_pane_in_use_when_the_pointer_is_on_a_bar(
+    app_module, monkeypatch, under
+):
+    """What a drop there does (#541). The notebook under the pointer is not asked: the
+    bar is no notebook's, and nothing it could answer changes the pane."""
+    asked = []
+    wmain, page, moved = _move_out(app_module, monkeypatch, lambda: True, under, console=True)
+    answer = wmain.notebook_under_pointer
+    wmain.notebook_under_pointer = lambda: asked.append(under) or answer()
+
+    assert wmain.move_out_after_drag(page) is False
+
+    assert wmain.joined == [(page, wmain.main)]
+    assert moved == [] and asked == []
 
 
 def test_a_tab_moves_out_when_the_pointer_is_not_on_a_bar(app_module, monkeypatch):
@@ -5563,6 +5682,24 @@ def test_a_tab_that_stays_is_traced_by_name_and_never_by_console(
     text = drag_trace.getvalue()
     assert "move_out_after_drag: app01, drag is over" in text
     assert "move_out_after_drag: app01 stays, the pointer is on a bar" in text
+    assert "secret-text" not in text
+
+
+def test_a_tab_that_joins_from_a_bar_is_traced_by_name_and_never_by_console(
+    app_module, monkeypatch, drag_trace
+):
+    wmain, page, _ = _move_out(app_module, monkeypatch, lambda: True, console=True)
+    page.terminal = types.SimpleNamespace(screen="secret-text")
+
+    wmain.move_out_after_drag(page)
+
+    text = drag_trace.getvalue()
+    assert "move_out_after_drag: app01, drag is over" in text
+    assert (
+        "move_out_after_drag: app01 joins notebook 3, the main window's pane in use, "
+        "the pointer is on a bar"
+    ) in text
+    assert "stays" not in text
     assert "secret-text" not in text
 
 
