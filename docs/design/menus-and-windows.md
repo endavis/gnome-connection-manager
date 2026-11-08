@@ -380,6 +380,8 @@ At scale 1, its content, by `get_origin()`, began 6 across and 27 down from that
 point, so the frame starts 32 pixels above and to the left of it. A window moved to
 y = 0 read y = −32, or −16 at scale 2: under Weston, a negative y is a window at the top
 of the screen, not one off it. On Xvfb, a window read back the place it was moved to.
+A place worked out from `get_position()` and given to `move()` lands that far short under
+Weston, and the fit makes that good (#554, below).
 
 A window with client-side decorations (a header bar for its title bar) has a margin of its
 own inside its GDK window, 5 pixels at its top and left on Xvfb and under Weston.
@@ -444,7 +446,8 @@ after `show()`, and `get_position()` read (0, 0) throughout.
 `show()`, since the loop after `show()` may dispatch the report. Its handler asks
 `placement_reported`, which is true for a `configure-event` with `send_event` true whose
 (x, y) equals `get_origin()`; Weston's earlier, frame-relative reports never equal it. It
-then removes the wait and queues `fit_window_to_monitor` on an idle at low priority. The
+then removes the wait and queues `fit_window_to_monitor` on an idle at low priority. (The
+handler and the wait are `when_reported`'s since #554, which `move_to_position` uses too.) The
 handler is connected with `connect`, not `connect_after`: from GTK's source, and not
 measured, GTK's own handler of the event can end the emission before one connected after
 it runs. The wait has no condition on `map-event`: the frame-relative events already fail
@@ -476,8 +479,103 @@ Rejected, for the placement:
 The scenarios in `tests/test_window_fit.py` run on an Xvfb, which has no window manager, so
 they stand in for one: they send the dialog a synthetic ConfigureNotify through ctypes,
 `XSendEvent`, and count the fits. On that Xvfb a `configure-event` handler gets it with
-`send_event` true and the (x, y) sent. Not measured: GNOME, mutter, KWin, or any window
-manager but Weston's.
+`send_event` true and the (x, y) sent. The placement scenario also puts the dialog 16 short
+of where the fit moved it, and then reports that, to stand in for Weston's shortfall (#554).
+Not measured: GNOME, mutter, KWin, or any window manager but Weston's.
+
+**The fit's move is made good** (#554). `get_position()` counts the frame's shadow, so a
+place worked out from it lands short when it is given to `move()`. Measured with GTK 3.24.41
+on WSLg's X11, with a probe that showed a `Gtk.Dialog` over a parent and moved it 40 pixels
+down from where `get_position()` read it, keeping x, as the fit does. At scale 2, a move from
+(861, 618) to (861, 658) left `get_position()` reading (845, 642). At scale 1, a move from
+(2760, 2007) to (2760, 2047) left it reading (2728, 2015). That is 16 short on each axis at
+scale 2 and 32 at scale 1. Weston reports a move as it reports a placement, with two
+synthetic `configure-event`s, both at the new place of the window's content. When the first
+was handled, `get_origin()` still gave the old place, and when the second was, it gave the
+new one, so `placement_reported` accepts the second. Each of the three moves at each scale
+brought such a pair. A second move, by what the first fell short, landed exactly: from
+(845, 642) a move to (877, 674) left `get_position()` reading (861, 658) at scale 2, and
+from (2728, 2015) a move to (2792, 2079) left it reading (2760, 2047) at scale 1.
+With GCM's own `show_dialog`, on a dialog too tall to fit below a parent staged at the foot
+of the work area, at scale 2: before this change the fit moved it to (388, 754) and it read
+(372, 738). After it, the second move went to (404, 770), and it read (388, 754). At scale 1
+the fit's (678, 2269) read (646, 2237) before, and (678, 2269) after.
+
+Nothing read before the move gives the shortfall. `_NET_FRAME_EXTENTS`, read on the dialog
+through Xlib, as PyGObject could not call GDK's own reader of a window's properties, was
+(38, 38, 59, 38) at both scales: left, right, top and bottom, in pixels. It counts the
+shadow in with the frame. At scale 1 it equals the frame's whole offset, `get_origin()` less
+`get_position()`, which was (38, 59): a 32-pixel shadow, a 6-pixel border and a 27-pixel
+title bar. Taking it off the offset leaves 0, not 32. Nor does `GDK_GRAVITY_STATIC` help, as
+Weston ignores it. With that gravity `get_position()` read the content's origin, and a move
+to that origin plus 40 down still put the frame's visible edge at the point given, so the
+content landed 6 across and 27 down from it at scale 1, and 3 and 13 at scale 2.
+
+So the fit moves a dialog through `move_to_position`. It moves the window, waits for the
+window manager's report of that move as `fit_when_placed` waits for a placement
+(`when_reported`), and on an idle has `correct_move` move the window once more, by the
+shortfall `move_shortfall` reports. `move_shortfall` takes the target less `get_position()`,
+and counts it only if it is not (0, 0) and lies between 0 and `WINDOW_FRAME_ALLOWANCE` on
+both axes. A frame's hidden part is never negative, and never more than everything a window
+manager puts around a window. The lower bound also refuses a report handled before the move
+took effect. That reads the place before the move, which gives the move itself as the
+shortfall, and when the fit moved the window up or to the left that is negative. It covers
+those moves only. The fit moves a window down or to the right when `get_position()` reads it
+above or to the left of the work area, and a report handled early then gives a positive
+shortfall that passes, so the window is moved the same distance again. The only source of
+an early report seen is another move still in flight, as `Wconfig.center_window` makes one
+on an idle, and a window it centres is one the fit moves up, if at all. That was not
+measured. Under a window manager whose `move()` puts the frame's corner where it is asked,
+the shortfall is (0, 0) and the window moves once.
+
+The wait for a move's report is `MOVE_REPORT_WAIT_MS`, 500 ms, where the placement's is
+`PLACEMENT_WAIT_MS`, 2000 ms. A report is the only cue, and the two waits fail differently.
+A drag taken for the placement's report costs one fit, which is harmless. A drag taken for a
+move's report would be undone: a window dragged up or to the left by no more than
+`WINDOW_FRAME_ALLOWANCE` would be moved back by that much. That can only happen under a
+window manager that does not report the move itself. Under Weston the report comes as the
+move takes effect, and ends the wait. A report later than the bound leaves the window where
+it was before this change, short by the shadow. The bound was chosen, not measured under
+load.
+
+Three trade-offs follow:
+
+- Under Weston the dialog moves twice, the second time after the report of the first.
+- A dialog at the very top of the work area ends lower. Its visible top is at the work
+  area's top, and `get_position()` reads it 32 above that, 16 at scale 2, so the fit, which
+  works in `get_position()`'s terms, moves it down to the work area's top. Measured before
+  this change, at scale 1, with a dialog shown through GCM's own `show_dialog` and staged at
+  the top: its visible top was at the work area's top, 1083, and `get_position()` read
+  (678, 1051), so the fit moved it to (678, 1083). That left its visible top where it was
+  and its x 32 to the left, and `get_position()` read (646, 1051) afterwards. After this
+  change, measured the same way, the fit moved it to (678, 1083), found it at (646, 1051)
+  and moved it on to (710, 1115). It ended at (678, 1083), its x kept and its visible top
+  at 1115, 32 below the work area's top, after two moves. At scale 2 the same staging did
+  not put the dialog at the top, and the fit did not run.
+- Under Wayland `move()` does nothing, and `show_dialog` still queues the fit on an idle,
+  so a fit that moves a dialog now arms this wait as well. It either gives up, or a report
+  comes and `correct_move` makes a second move that does nothing. In one run under WSLg's
+  Wayland after this change, with GCM's own `show_dialog`, the fit made no move, so nothing
+  was armed. Nor could the staging move the parent there.
+
+Rejected, for the move:
+
+- **`_NET_FRAME_EXTENTS`**, for the reason above: it counts the shadow in with the frame.
+- **Static gravity**, which Weston ignores.
+- **Learning the shortfall once**, and applying it before later moves. It keeps state across
+  dialogs for a rare move.
+- **GTK's requested position**, which `get_position()` gives while a window is unmapped, to
+  work the shortfall out before `show()`. Not tried. It relies on Weston putting the
+  visible frame there. #552 measured that in six runs, but in a run at scale 2 for #554,
+  staged at the top, the dialog landed at x 1187, far from its parent at 387, where GTK
+  centres it. That suggests Weston does not always do so; the requested position itself
+  was not read.
+- **No bound on the shortfall.** A report handled before the move took effect, or a drag,
+  would be taken for the frame's.
+- **One bound for both waits**, for the drag above.
+
+Not measured: any window manager but Weston's, whether the second move can be seen, and an
+early report for a move down or to the right.
 
 **Whether a user can see a widget** is settled in root coordinates. Take the bottom of
 the widget's allocation through `get_window().get_root_coords()`, and compare it with the

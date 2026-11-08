@@ -80,6 +80,12 @@ the git log.
   - GCM now moves a dialog only to bring its buttons onto the screen, and only once the window
     manager has reported where it put it. Under Wayland nothing changes.
   - Measured under Weston on WSLg's X11 (#550, #552).
+- Under Weston's X11 window manager, as WSLg's X11 has, a dialog GCM moves to bring its buttons
+  onto the screen now lands where it was moved, not 32 pixels above and to the left of that, 16
+  at scale 2. GCM moves it a second time, by what the first move fell short, once the window
+  manager has reported the first. A dialog at the very top of the screen now keeps its x and
+  ends 32 pixels lower, where before it ended 32 pixels to the left. Measured under Weston only
+  (#554).
 - A tab from a console window let go on the bar between the panes of a split now joins the main
   window's pane in use, as Move to Main Window puts it, where it went back to its window. A tab
   of the main window still stays where it was. A slow drop and, under Wayland, a quick flick

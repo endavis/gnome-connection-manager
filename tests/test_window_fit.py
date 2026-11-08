@@ -113,12 +113,13 @@ class GdkWindowStub:
 
 
 class DialogStub:
-    """What fit_when_placed and show_dialog ask of a dialog.
+    """What fit_when_placed, move_to_position and show_dialog ask of a dialog.
 
     Its signal handling is GObject's: a handler is disconnected once, and a destroyed
     window has lost every one. `deliver` is the stub's own, a `configure-event` sent to
-    the handlers still connected. Every other name here is held against the real
-    Gtk.Window by `test_the_stubs_match_real_gtk`.
+    the handlers still connected. `move` only records the call: where the window manager
+    puts the window is the test's to say, in `position`. Every other name here is held
+    against the real Gtk.Window by `test_the_stubs_match_real_gtk`.
     """
 
     GTK_NAMES = (
@@ -127,15 +128,26 @@ class DialogStub:
         "handler_is_connected",
         "get_window",
         "get_display",
+        "get_position",
+        "get_visible",
+        "move",
         "show",
         "present",
         "destroy",
     )
 
-    def __init__(self, origin: tuple[int, int] = (894, 864), wayland: bool = False):
+    def __init__(
+        self,
+        origin: tuple[int, int] = (894, 864),
+        wayland: bool = False,
+        position: tuple[int, int] = (0, 0),
+    ):
         self.gdk_window: GdkWindowStub | None = GdkWindowStub(*origin)
         self.origin = origin
         self.wayland = wayland
+        self.position = position
+        self.visible = True
+        self.moves: list[tuple[int, int]] = []
         self.handlers: dict[int, tuple[str, Any]] = {}
         self.calls: list[str] = []
         self.last_handler = 0
@@ -159,6 +171,15 @@ class DialogStub:
     def get_display(self):
         name = "GdkWaylandDisplay" if self.wayland else "GdkX11Display"
         return types.SimpleNamespace(__gtype__=types.SimpleNamespace(name=name))
+
+    def get_position(self):
+        return self.position
+
+    def get_visible(self):
+        return self.visible
+
+    def move(self, x, y):
+        self.moves.append((x, y))
 
     def show(self):
         self.calls.append("show")
@@ -390,6 +411,120 @@ def test_under_wayland_the_fit_is_queued_on_an_idle_as_it_was(app_module, source
     ]
 
 
+# -- the fit's move is made good once reported (#554) --------------------------
+
+# The issue's numbers, GCM at scale 2: the fit moved a dialog from (388, 834) up to (388, 754),
+# and Weston put its frame's corner 16 up and to the left of that.
+TARGET = (388, 754)
+
+# The shortfalls a move to TARGET can have, as TARGET less `get_position()` once the window
+# manager has taken the move, each given the frame allowance, which the code reads from the
+# module. What is made good is moved on by, and what is refused is not.
+MADE_GOOD = {
+    "the allowance across": lambda allowance: (allowance, 0),
+    "the allowance down": lambda allowance: (0, allowance),
+}
+REFUSED = {
+    "it landed where it was asked": lambda allowance: (0, 0),
+    "the place before the move": lambda allowance: (0, -80),  # (388, 834), the issue's
+    "x negative": lambda allowance: (-1, 16),
+    "y negative": lambda allowance: (16, -1),
+    "x more than the allowance": lambda allowance: (allowance + 1, 0),
+    "y more than the allowance": lambda allowance: (0, allowance + 1),
+}
+
+
+def run_first_idle(sources):
+    """Run the first idle the code under test queued, as GLib does, and give its answer."""
+    callback, args, _priority = sources.idles[0]
+    return callback(*args)
+
+
+def left_short_by(app_module, sources, short, visible=True):
+    """Move a dialog to TARGET, put it `short` of TARGET, report the move and run the idle."""
+    dialog = DialogStub()
+    app_module.move_to_position(dialog, TARGET)
+    dialog.position = (TARGET[0] - short[0], TARGET[1] - short[1])
+    dialog.visible = visible
+    dialog.deliver(configure(*dialog.origin))
+    run_first_idle(sources)
+    return dialog
+
+
+def test_a_move_waits_for_the_report_of_it_and_queues_the_correction_once(app_module, sources):
+    """Weston reports a move with two events at the new place, and `get_origin()` gives that
+    place only as the second is handled, so the first is not the report (#554)."""
+    before, after = (407, 863), (391, 767)  # where the content sat, and sits, at scale 2
+    dialog = DialogStub(origin=before)
+
+    app_module.move_to_position(dialog, TARGET)
+
+    assert dialog.moves == [TARGET]
+    assert [interval for interval, _callback in sources.timers.values()] == [
+        app_module.MOVE_REPORT_WAIT_MS
+    ]
+    dialog.deliver(configure(*after))  # get_origin() still gives the place before the move
+    assert sources.idles == []
+    dialog.gdk_window.origin = after
+    dialog.deliver(configure(*after))
+    dialog.deliver(configure(*after))  # nothing listens now
+    assert sources.idles == [
+        (app_module.correct_move, (dialog, TARGET), app_module.GLib.PRIORITY_LOW)
+    ]
+    assert dialog.handlers == {}, "the handler is disconnected"
+    assert sources.timers == {}, "the timer is removed"
+
+
+@pytest.mark.parametrize(
+    ("target", "landed", "second"),
+    [
+        pytest.param((388, 754), (372, 738), (404, 770), id="the issue, scale 2"),
+        pytest.param((861, 658), (845, 642), (877, 674), id="findings 1 and 3, scale 2"),
+        pytest.param((2760, 2047), (2728, 2015), (2792, 2079), id="findings 1 and 3, scale 1"),
+    ],
+)
+def test_the_correction_moves_the_dialog_on_by_what_the_move_fell_short(
+    app_module, sources, target, landed, second
+):
+    """Measured under Weston: the move landed 16 up and left of its target at scale 2 and 32
+    at scale 1, and a second move by that much landed exactly (#554)."""
+    dialog = DialogStub()
+    app_module.move_to_position(dialog, target)
+    dialog.position = landed
+    dialog.deliver(configure(*dialog.origin))
+    assert sources.idles, "the report queues the correction"
+
+    keep = run_first_idle(sources)
+
+    assert dialog.moves == [target, second]
+    assert keep is False, "an idle that answers True runs again, as does every events_pending loop"
+
+
+@pytest.mark.parametrize("make", MADE_GOOD.values(), ids=list(MADE_GOOD))
+def test_a_shortfall_within_the_frame_allowance_is_made_good(app_module, sources, make):
+    short = make(app_module.WINDOW_FRAME_ALLOWANCE)
+
+    dialog = left_short_by(app_module, sources, short)
+
+    assert dialog.moves == [TARGET, (TARGET[0] + short[0], TARGET[1] + short[1])]
+
+
+@pytest.mark.parametrize("make", REFUSED.values(), ids=list(REFUSED))
+def test_a_shortfall_the_frame_cannot_have_is_not_made_good(app_module, sources, make):
+    """Nothing hidden by a frame is negative or more than a window manager puts around a
+    window, and a report handled before the move reads the place before it (#554)."""
+    dialog = left_short_by(app_module, sources, make(app_module.WINDOW_FRAME_ALLOWANCE))
+
+    assert dialog.moves == [TARGET]
+
+
+def test_a_dialog_hidden_before_the_correction_runs_is_not_moved(app_module, sources):
+    """It was closed again before the idle ran; there is nothing left to move."""
+    dialog = left_short_by(app_module, sources, (16, 16), visible=False)
+
+    assert dialog.moves == [TARGET]
+
+
 # conftest stubs gi for the whole session, so the dialog cannot be built in process.
 # This runs in a clean interpreter, the only way to size a real GtkDialog. The work
 # area is faked small so the assertions mean the same thing on any monitor.
@@ -482,9 +617,10 @@ def test_preferences_dialog_fits_a_small_monitor_against_real_gtk():
 # and the Xvfb these scenarios run on has none. So a scenario stands in for one: it sends
 # the dialog a synthetic ConfigureNotify, as a window manager does, by ctypes as python-xlib
 # is not a dependency. A `configure-event` handler gets it with `send_event` true and the
-# (x, y) sent, as `placement_reported` reads it. The scenario also lengthens the wait, or its
-# bound of 2 s runs out while the scenario settles, and counts the fits, so that a report the
-# wait missed fails the scenario instead of passing it unfitted. Inserted at `# REPORTS`.
+# (x, y) sent, as `placement_reported` reads it. The scenario also lengthens the waits, or the
+# bound of 2 s on a placement and of 500 ms on a move run out while the scenario settles, and
+# counts the fits, so that a report the wait missed fails the scenario instead of passing it
+# unfitted. Inserted at `# REPORTS`.
 _REPORTS = r'''
 import ctypes
 gi.require_version("GdkX11", "3.0")
@@ -532,6 +668,7 @@ def report_placement(window, x=None, y=None):
     xlib.XCloseDisplay(xdisplay)
 
 app.PLACEMENT_WAIT_MS = 60000
+app.MOVE_REPORT_WAIT_MS = 60000
 fits = []
 real_fit = app.fit_window_to_monitor
 def counted_fit(window):
@@ -1126,7 +1263,9 @@ def test_the_dialog_fits_the_monitor_it_is_really_on():
 # the script asserts first. The old idle fit moved it up at once, on a reading that was not
 # the window manager's report. An Xvfb has no window manager, so nothing but
 # `report_placement` says where the dialog is: first a place relative to the frame, as
-# Weston's earlier reports are, then its own origin.
+# Weston's earlier reports are, then its own origin. Then the dialog is put 16 short of where
+# the fit moved it, as Weston's frame leaves a move at scale 2 (#554), and that is reported:
+# the fit moves it on by the 16, once.
 _PLACEMENT_SCRIPT = """
 import os, sys, tempfile, time, types
 os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
@@ -1197,6 +1336,33 @@ assert y + dialog.get_size()[1] + app.WINDOW_FRAME_ALLOWANCE <= bottom, (
     "the fit left the dialog at y=%d, %d tall; the work area ends at %d"
     % (y, dialog.get_size()[1], bottom))
 assert y < placed[1], "the dialog was not moved up from y=%d" % placed[1]
+
+# 4. Under Weston the fit's move lands short: move() puts the frame's visible edge where it
+#    is asked, and get_position() reads the corner of its shadow, 16 further up and to the
+#    left at scale 2 (#554). Played here: the dialog is put 16 short of where the fit moved
+#    it, and that is reported. The fit moves it on by the 16, once.
+target = tuple(dialog.get_position())
+moves = []
+def recording_move(x, y):
+    moves.append((x, y))
+    Gtk.Window.move(dialog, x, y)
+dialog.move = recording_move
+Gtk.Window.move(dialog, target[0] - 16, target[1] - 16)
+settle()
+assert moves == [], "moved again before the window manager reported the move: %r" % (moves,)
+report_placement(dialog)
+settle()
+assert moves == [(target[0] + 16, target[1] + 16)], (
+    "expected one move on by the 16 the first fell short of %r: %r" % (target, moves))
+# With no window manager to take the shadow off again, it lands where it was moved.
+assert tuple(dialog.get_position()) == (target[0] + 16, target[1] + 16), (
+    "the dialog is at %r" % (tuple(dialog.get_position()),))
+# Once: put short again and reported again, it is not moved on a second time.
+Gtk.Window.move(dialog, target[0] - 16, target[1] - 16)
+settle()
+report_placement(dialog)
+settle()
+assert len(moves) == 1, "a second report moved the dialog again: %r" % (moves,)
 dialog.destroy()
 
 # The wait gives up after its bound: a report that comes later fits nothing. The bound is
@@ -1222,7 +1388,9 @@ print("PLACED-OK")
 def test_a_dialog_is_fitted_once_the_manager_reports_its_place_against_real_gtk():
     """The idle fit read (0, 0) before Weston had placed a dialog, and moved it to the
     corner of a monitor its parent was not on (#552). The report of the placement queues the
-    fit now; a report relative to the frame, and a wait that has given up, queue none."""
+    fit now; a report relative to the frame, and a wait that has given up, queue none. The
+    fit's move is reported too, and the fit moves a dialog on by what that move fell short,
+    once (#554)."""
     pytest.importorskip("gi", reason="PyGObject not available")
     result = subprocess.run(
         [sys.executable, "-c", _PLACEMENT_SCRIPT],
