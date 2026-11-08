@@ -321,9 +321,11 @@ A dialog used to be presented by `GladeComponent.__init__` before `new()` filled
 it opened small and grew, and the window manager placed it once at the small size and
 then again after `fit_window_to_monitor`. `GladeComponent` now shows a dialog's children
 only, so that `new()` can still hide what a type does not use, and `show_dialog` sizes
-the window with `size_window_for_monitor`, maps it, and queues `fit_window_to_monitor`
-for placement alone. Before a window is realized `monitor_workarea` reads the monitor of
-its transient parent. `Whost` is filled after `__init__` returns, so it sets
+the window with `size_window_for_monitor` and maps it. `fit_window_to_monitor` is for
+placement alone. Under X11 `fit_when_placed` queues it once the window manager has
+reported where it placed the dialog (#552, under "A window's geometry" below); under
+Wayland it is queued on an idle. Before a window is realized `monitor_workarea` reads the
+monitor of its transient parent. `Whost` is filled after `__init__` returns, so it sets
 `SHOWN_BY_INIT` and its `init` calls `fill` and then `show_dialog`. The signals are still
 connected after `new()` and before the dialog is shown, so a new host's dialog runs no
 `on_cmbType_changed`. `tests/test_window_fit.py` records each dialog's size at its first
@@ -398,14 +400,84 @@ plain window's move to the same point. Why was not established.
 (38, 59) and (19, 29) are where the window's content sits inside its frame. The sentinel
 is −32768 divided by the scale, like every other coordinate.
 
-`onscreen_position` counts a coordinate at or below `UNPLACED_WINDOW_COORD`, −30000, as
-not yet placed. That catches the sentinel at scale 1 and none of the other readings. This
-was measured with GCM's own code, following `GladeComponent.show_dialog`'s steps on a
-`Gtk.Dialog` under Weston. In each of three runs, the idle that runs
-`fit_window_to_monitor` read (0, 0), before the dialog was placed. At scale 2 it moved the
-dialog both times, to the top left corner of a monitor its parent was not on, and once the
-dialog stayed there. At scale 1 it moved nothing, in one run. Under Wayland, which GTK
-picks whenever `WAYLAND_DISPLAY` is set, as WSLg sets it, `move()` does nothing (below).
+`onscreen_position` used to count a coordinate at or below `UNPLACED_WINDOW_COORD`,
+−30000, as not yet placed. That caught the sentinel at scale 1 and none of the other
+readings. This was measured with GCM's own code, following `GladeComponent.show_dialog`'s
+steps on a `Gtk.Dialog` under Weston, with the fit queued on an idle. In each of three
+runs, the idle that ran `fit_window_to_monitor` read (0, 0), before the dialog was placed.
+At scale 2 it moved the dialog both times, to the top left corner of a monitor its parent
+was not on, and once the dialog stayed there. At scale 1 it moved nothing, in one run.
+Under Wayland, which GTK picks whenever `WAYLAND_DISPLAY` is set, as WSLg sets it,
+`move()` does nothing (below). (0, 0) and the frame's offset are places a window could
+really have, so a lower threshold would not have done, and nor would reading again, as
+two readings gave (0, 0) and then another. So `onscreen_position` now divides the
+threshold by the scale, as the sentinel is, and the fit no longer runs before the window
+manager has said where it put the dialog (#552).
+
+**What marks the placement** is the window manager's report of it. This was measured with
+GTK 3.24.41, for #552: a `Gtk.Dialog` with a placed transient parent was shown and
+presented, and every `map-event`, `configure-event` and `window-state-event` from `show()`
+on was recorded, with `get_position()` and `get_origin()` read in each handler. It ran on
+WSLg's X11 under Weston WM, four times at scale 2 and twice at scale 1, and on a private
+Xvfb. Under Weston the sequence was the same in every run:
+
+- three synthetic `configure-event`s, `send_event` true, whose places are relative to the
+  frame, not the root window: (16, 16), (16, 16) and (19, 29) at scale 2, and (32, 32),
+  (32, 32) and (38, 59) at scale 1;
+- the `map-event`, after properties set on the window;
+- the frame extents, then another synthetic `configure-event` at (19, 29), or (38, 59);
+- a last synthetic `configure-event` whose (x, y) is the window's place on the screen. In
+  the three runs that read `get_origin()`, it gave (894, 864), (505, 937) and (2151, 1531),
+  and `get_origin()` read in the same handler gave the same each time.
+
+No earlier event marks the placement. The point at which `get_position()` turned real
+differed from run to run: by the first `configure-event` in one, at `map-event` in
+another, and after the frame extents in a third. The configure events before the last one
+never gave `get_origin()`. And the two readings can disagree: `get_position()` and
+`get_origin()`, read in one handler, gave the real place and the sentinel, one each, in two
+runs, as each asks the X server separately. Weston placed the dialog's visible frame
+exactly where GTK put the dialog at `realize`, centred on its parent, in every run. On
+Xvfb, with no window manager, no `configure-event` arrived at all: `map-event` came 13 ms
+after `show()`, and `get_position()` read (0, 0) throughout.
+
+**The fit waits for that report** under X11. `show_dialog` calls `fit_when_placed` before
+`show()`, since the loop after `show()` may dispatch the report. Its handler asks
+`placement_reported`, which is true for a `configure-event` with `send_event` true whose
+(x, y) equals `get_origin()`; Weston's earlier, frame-relative reports never equal it. It
+then removes the wait and queues `fit_window_to_monitor` on an idle at low priority. The
+handler is connected with `connect`, not `connect_after`: from GTK's source, and not
+measured, GTK's own handler of the event can end the emission before one connected after
+it runs. The wait has no condition on `map-event`: the frame-relative events already fail
+the test of the origin, and a window manager that reports before it maps the window still
+gets its fit. It gives up after `PLACEMENT_WAIT_MS`, 2000 ms. With no bound, a window
+manager that never reports the placement would have the fit run on the first report it
+does send, which is the user's first drag of the dialog. With no window manager nothing
+moves the dialog, and the place GTK gave it stands.
+
+Two trade-offs follow. A window manager that never reports gets no fit, and the place it
+chose stands. One that reports a drag within `PLACEMENT_WAIT_MS` but never the placement
+gets one fit then, which pulls the dialog on screen once if it is past the work area, and
+is safe. Under Wayland `show_dialog` queues the fit on an idle, as it did: `move()` does
+nothing there, so the bug cannot occur, and whether GDK's Wayland backend reports synthetic
+configure events was not measured. Wayland is told by the display's type name, as in
+`fit_placed_menu`.
+
+Rejected, for the placement:
+
+- **Only a lower threshold**, for the reason above.
+- **A settle timer**, fitting once no `configure-event` has come for some milliseconds. It
+  is timing, with no event to anchor it.
+- **Positioning the dialog before it is mapped, and dropping the rescue.** That narrows the
+  issue, which expects the fit to keep correcting a placed dialog.
+- **Requiring `map-event` first.** It guarded only against a coincidence the test of the
+  origin already covers, made a window manager that reports before it maps lose its fit,
+  and a second map orphaned a timer.
+
+The scenarios in `tests/test_window_fit.py` run on an Xvfb, which has no window manager, so
+they stand in for one: they send the dialog a synthetic ConfigureNotify through ctypes,
+`XSendEvent`, and count the fits. On that Xvfb a `configure-event` handler gets it with
+`send_event` true and the (x, y) sent. Not measured: GNOME, mutter, KWin, or any window
+manager but Weston's.
 
 **Whether a user can see a widget** is settled in root coordinates. Take the bottom of
 the widget's allocation through `get_window().get_root_coords()`, and compare it with the

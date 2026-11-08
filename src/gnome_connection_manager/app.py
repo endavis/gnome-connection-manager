@@ -956,15 +956,24 @@ class GladeComponent:
         """Show the dialog at the size it will keep, now that it is filled (#424).
 
         It is sized to the monitor before it is mapped, so that the window manager
-        places it once. The idle then rescues a placement the manager got wrong.
+        places it once. The fit then rescues a placement the manager got wrong. Under
+        X11 it waits for the manager to report where it placed the dialog, as a read
+        of the position before then is not the dialog's (`fit_when_placed`, #552).
+        Under Wayland `move()` does nothing and the compositor places the window, so
+        the fit is queued on an idle, as it was.
         """
         window = self.main_widget
         size_window_for_monitor(window)
+        wayland = window.get_display().__gtype__.name == "GdkWaylandDisplay"
+        if not wayland:
+            # Before show(): the loop below may dispatch the report.
+            fit_when_placed(window)
         window.show()
         window.present()
         while Gtk.events_pending():
             Gtk.main_iteration()
-        GLib.idle_add(fit_window_to_monitor, window, priority=GLib.PRIORITY_LOW)
+        if wayland:
+            GLib.idle_add(fit_window_to_monitor, window, priority=GLib.PRIORITY_LOW)
 
     def new(self):
         pass
@@ -1837,8 +1846,18 @@ def paste_preview(text: str, max_lines: int = 10, max_width: int = 80) -> str:
 # Erring large only costs a window some height it had no room for anyway.
 WINDOW_FRAME_ALLOWANCE = 96
 
-# What GTK reports as a position before the window manager has placed a window.
+# Before the window manager has placed a window GTK reports (0, 0), the frame's offset and
+# -32768 divided by the scale (-16384 at scale 2), not always all three: measured under
+# Weston's (#550). Only the last can be told by its value, as a coordinate at or below this
+# constant divided by the scale (`onscreen_position`); the other two are places a window
+# could really have. So under X11 the fit waits for the window manager to report the
+# placement (`fit_when_placed`).
 UNPLACED_WINDOW_COORD = -30000
+
+# How long `fit_when_placed` waits for that report, in milliseconds. Without a bound, a
+# window manager that never reports a placement would have the fit run on the first report it
+# does send, which is the user's first drag of the dialog (#552).
+PLACEMENT_WAIT_MS = 2000
 
 
 def overlap_area(first, second):
@@ -1868,9 +1887,11 @@ def monitor_showing(display, window):
         return None
     if window.get_window() is None:
         return None
-    # A window the manager has not placed sits at a large negative sentinel, which
+    # A window the manager has not placed can read as a large negative sentinel, which
     # overlaps no monitor -- so the arithmetic below already answers "nowhere" for
-    # it, and a guard on the sentinel would only restate that.
+    # it, and a guard on the sentinel would only restate that. It can also read (0, 0)
+    # or its frame's offset, which do overlap a monitor (#550): under X11 the fit does
+    # not run until the manager has reported the placement (`fit_when_placed`).
     x, y = window.get_position()
     width, height = window.get_size()
     bounds = (x, y, width, height)
@@ -1987,9 +2008,10 @@ def monitor_workarea(window=None):
     rule = "showing"
     monitor = monitor_showing(display, window)
     if monitor is None and window is not None:
-        # A dialog measured on the idle after it is shown is often not placed yet.
-        # It opens on its parent's monitor, and the parent is placed, so ask that
-        # rather than let the guesses below pick an arbitrary screen.
+        # A dialog that is not mapped yet is on no monitor, and `size_window_for_monitor`
+        # reads it so before `show_dialog` maps it. It opens on its parent's monitor, and
+        # the parent is placed, so ask that rather than let the guesses below pick an
+        # arbitrary screen.
         monitor = monitor_showing(display, window.get_transient_for())
         rule = "parent"
     if monitor is None:
@@ -2427,14 +2449,18 @@ def scroll_oversized_content(window, workarea):
 def onscreen_position(window, workarea, width, height):
     """Where a `width` x `height` `window` has to sit to stay inside `workarea`.
 
-    None when it is already inside, or when the window manager has not placed it
-    yet — GTK reports a large negative sentinel until it does, and it places the
-    window once, later, at its final size, so there is nothing to correct.
+    None when it is already inside, or when GTK reports the sentinel it gives a window the
+    window manager has not placed yet: -32768 divided by the scale. The window manager
+    places the window once, later, at its final size, so there is nothing to correct. The
+    readings before the sentinel, (0, 0) and the frame's offset, are places a window could
+    really have, and this cannot tell them apart: `fit_when_placed` keeps the fit from
+    running until the window manager has reported the placement (#552).
     """
     if workarea is None:
         return None
     x, y = window.get_position()
-    if x <= UNPLACED_WINDOW_COORD or y <= UNPLACED_WINDOW_COORD:
+    unplaced = UNPLACED_WINDOW_COORD // max(window.get_scale_factor(), 1)
+    if x <= unplaced or y <= unplaced:
         return None
     room_x = workarea.x + workarea.width - width - WINDOW_FRAME_ALLOWANCE
     room_y = workarea.y + workarea.height - height - WINDOW_FRAME_ALLOWANCE
@@ -2467,7 +2493,9 @@ def fit_window_to_monitor(window):
 
     A dialog is sized before it is shown (`GladeComponent.show_dialog`), so this
     only rescues placement: a window manager may still put the bottom edge, and
-    with it the OK/Cancel row, off the screen.
+    with it the OK/Cancel row, off the screen. Under X11 `fit_when_placed` runs it
+    once the window manager has reported where it put the dialog, since the place
+    `get_position()` gives before then is not the dialog's (#552).
     """
     if not window.get_visible():
         # Closed again before the idle ran; there is nothing left to fit.
@@ -2484,6 +2512,74 @@ def fit_window_to_monitor(window):
     placed = onscreen_position(window, workarea, *capped)
     if placed is not None:
         window.move(*placed)
+
+
+def placement_reported(event: Gdk.EventConfigure, window: Gtk.Window) -> bool:
+    """Whether `event` is the window manager saying where it placed `window` (#552).
+
+    It is a `configure-event` the window manager sent, `send_event` true, whose (x, y) is
+    where `window`'s content sits on the screen, its `get_origin()`. Under Weston the
+    reports before that one are relative to the frame, so they never equal it. PyGObject's
+    `get_origin()` returns `(ret, x, y)`.
+    """
+    gdk_window = window.get_window()
+    if not event.send_event or gdk_window is None:
+        return False
+    return (event.x, event.y) == tuple(gdk_window.get_origin())[1:]
+
+
+def fit_when_placed(window: Gtk.Window) -> None:
+    """Fit `window` to its monitor once the window manager has reported where it placed it.
+
+    Under Weston WM, on WSLg's X11, `get_position()` reads (0, 0), the frame's offset and a
+    sentinel in turn before the window manager places a window, and two of them are places a
+    window could really have (#550). A fit run on an idle after `present()` read one of them
+    and moved the dialog to the corner of a monitor its parent was not on. No reading of the
+    position says the window manager has placed the window, but its report does: the last of
+    Weston's synthetic `configure-event`s has the window's `get_origin()` for its (x, y), and
+    the ones before it, relative to the frame, do not (`placement_reported`). So this waits
+    for that report, then queues the fit on an idle (#552). Arm it before `show()`: the loop
+    after `show()` may dispatch the report.
+
+    With no window manager no report comes, nothing moves the window, and the place GTK
+    gave it stands, centred on its parent. The wait gives up after `PLACEMENT_WAIT_MS`. The
+    trade-offs: a window manager that never reports the placement gets no fit, and the
+    place it chose stands; one that reports a drag within the wait, but not the placement,
+    gets one fit then, which pulls the dialog on screen only if it is past the work area.
+
+    The handler is connected with `connect`: GTK's own handler of the event can end the
+    emission before one connected after it runs. `fit_window_to_monitor` and
+    `PLACEMENT_WAIT_MS` are read as globals when this runs, so that a scenario can
+    lengthen the bound and count the fits.
+    """
+    handler: int | None = None
+    timer: int | None = None
+
+    def stop() -> None:
+        """Safe to run twice; a window destroyed before its placement has lost its handler."""
+        nonlocal handler, timer
+        stopped_handler, stopped_timer = handler, timer
+        handler = timer = None
+        if stopped_handler is not None and window.handler_is_connected(stopped_handler):
+            window.disconnect(stopped_handler)
+        if stopped_timer is not None:
+            GLib.source_remove(stopped_timer)
+
+    def on_configure(widget: Gtk.Window, event: Gdk.EventConfigure) -> bool:
+        if placement_reported(event, widget):
+            stop()
+            GLib.idle_add(fit_window_to_monitor, window, priority=GLib.PRIORITY_LOW)
+        # Not handled here: GTK's own handling of the event goes on.
+        return False
+
+    def give_up() -> bool:
+        nonlocal timer
+        timer = None  # this source is finished: stopping must not remove it
+        stop()
+        return False
+
+    handler = window.connect("configure-event", on_configure)
+    timer = GLib.timeout_add(PLACEMENT_WAIT_MS, give_up)
 
 
 def apply_font_to_widget(widget, font_desc):
