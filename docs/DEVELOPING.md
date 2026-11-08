@@ -137,6 +137,9 @@ timeout 12 uv run doit sandbox --xvfb --fresh
 Agents: say before starting one on a real display, as it opens over the developer's work and
 takes the focus, and batch what you check.
 
+For a probe outside the test suite, on an Xvfb of its own, a fresh Ubuntu, an sshd, TigerVNC,
+headless sway or WSLg, see [Probing GCM Outside the Test Suite](PROBING.md).
+
 ### Listing WSLg's windows
 
 Under WSL, `doit wslg_windows` lists the windows of WSLg's own `msrdc.exe` through
