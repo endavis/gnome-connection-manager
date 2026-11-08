@@ -72,6 +72,7 @@ import tempfile
 import time
 import tokenize
 import weakref
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -1859,6 +1860,15 @@ UNPLACED_WINDOW_COORD = -30000
 # does send, which is the user's first drag of the dialog (#552).
 PLACEMENT_WAIT_MS = 2000
 
+# How long `move_to_position` waits for the window manager to report a move, in milliseconds.
+# Under Weston a window's place changed 7 to 13 ms after a move (#550), and the report came
+# as `get_origin()` changed: the second of two synthetic `configure-event`s, both at the new
+# place (#554). It is shorter than `PLACEMENT_WAIT_MS` because a drag taken for this report
+# would be undone, not fitted: a window dragged up or left by no more than
+# `WINDOW_FRAME_ALLOWANCE` would be moved back (#554). The value was chosen, not measured
+# under load, and a report later than it leaves the window where the move put it.
+MOVE_REPORT_WAIT_MS = 500
+
 
 def overlap_area(first, second):
     """Area two `(x, y, width, height)` rectangles share, or 0 when they do not meet."""
@@ -2495,7 +2505,8 @@ def fit_window_to_monitor(window):
     only rescues placement: a window manager may still put the bottom edge, and
     with it the OK/Cancel row, off the screen. Under X11 `fit_when_placed` runs it
     once the window manager has reported where it put the dialog, since the place
-    `get_position()` gives before then is not the dialog's (#552).
+    `get_position()` gives before then is not the dialog's (#552). The move goes through
+    `move_to_position`, which makes good what Weston's frame leaves short (#554).
     """
     if not window.get_visible():
         # Closed again before the idle ran; there is nothing left to fit.
@@ -2511,7 +2522,7 @@ def fit_window_to_monitor(window):
     # the size just asked for rather than reading one back.
     placed = onscreen_position(window, workarea, *capped)
     if placed is not None:
-        window.move(*placed)
+        move_to_position(window, placed)
 
 
 def placement_reported(event: Gdk.EventConfigure, window: Gtk.Window) -> bool:
@@ -2520,12 +2531,58 @@ def placement_reported(event: Gdk.EventConfigure, window: Gtk.Window) -> bool:
     It is a `configure-event` the window manager sent, `send_event` true, whose (x, y) is
     where `window`'s content sits on the screen, its `get_origin()`. Under Weston the
     reports before that one are relative to the frame, so they never equal it. PyGObject's
-    `get_origin()` returns `(ret, x, y)`.
+    `get_origin()` returns `(ret, x, y)`. Weston reports a move the same way, with two such
+    events, the second at `get_origin()` (#554), so a move's report is accepted as well.
     """
     gdk_window = window.get_window()
     if not event.send_event or gdk_window is None:
         return False
     return (event.x, event.y) == tuple(gdk_window.get_origin())[1:]
+
+
+def when_reported(
+    window: Gtk.Window, wait_ms: int, callback: Callable[..., object], *args: object
+) -> None:
+    """Queue `callback(*args)` on an idle once the window manager reports `window`'s place.
+
+    The report is a `configure-event` that `placement_reported` accepts. The wait gives up
+    after `wait_ms` and ends quietly when the window is destroyed first. It is the wait of
+    `fit_when_placed` for a window's placement (#552) and of `move_to_position` for a move
+    (#554).
+
+    The handler is connected with `connect`: GTK's own handler of the event can end the
+    emission before one connected after it runs. `callback` and `wait_ms` are what the
+    caller read when it ran, as the globals they are, so that a scenario can count the fits
+    and lengthen the bounds.
+    """
+    handler: int | None = None
+    timer: int | None = None
+
+    def stop() -> None:
+        """Safe to run twice; a window destroyed before its report has lost its handler."""
+        nonlocal handler, timer
+        stopped_handler, stopped_timer = handler, timer
+        handler = timer = None
+        if stopped_handler is not None and window.handler_is_connected(stopped_handler):
+            window.disconnect(stopped_handler)
+        if stopped_timer is not None:
+            GLib.source_remove(stopped_timer)
+
+    def on_configure(widget: Gtk.Window, event: Gdk.EventConfigure) -> bool:
+        if placement_reported(event, widget):
+            stop()
+            GLib.idle_add(callback, *args, priority=GLib.PRIORITY_LOW)
+        # Not handled here: GTK's own handling of the event goes on.
+        return False
+
+    def give_up() -> bool:
+        nonlocal timer
+        timer = None  # this source is finished: stopping must not remove it
+        stop()
+        return False
+
+    handler = window.connect("configure-event", on_configure)
+    timer = GLib.timeout_add(wait_ms, give_up)
 
 
 def fit_when_placed(window: Gtk.Window) -> None:
@@ -2538,48 +2595,58 @@ def fit_when_placed(window: Gtk.Window) -> None:
     position says the window manager has placed the window, but its report does: the last of
     Weston's synthetic `configure-event`s has the window's `get_origin()` for its (x, y), and
     the ones before it, relative to the frame, do not (`placement_reported`). So this waits
-    for that report, then queues the fit on an idle (#552). Arm it before `show()`: the loop
-    after `show()` may dispatch the report.
+    for that report, through `when_reported`, then queues the fit on an idle (#552). Arm it
+    before `show()`: the loop after `show()` may dispatch the report.
 
     With no window manager no report comes, nothing moves the window, and the place GTK
     gave it stands, centred on its parent. The wait gives up after `PLACEMENT_WAIT_MS`. The
     trade-offs: a window manager that never reports the placement gets no fit, and the
     place it chose stands; one that reports a drag within the wait, but not the placement,
     gets one fit then, which pulls the dialog on screen only if it is past the work area.
-
-    The handler is connected with `connect`: GTK's own handler of the event can end the
-    emission before one connected after it runs. `fit_window_to_monitor` and
-    `PLACEMENT_WAIT_MS` are read as globals when this runs, so that a scenario can
-    lengthen the bound and count the fits.
     """
-    handler: int | None = None
-    timer: int | None = None
+    when_reported(window, PLACEMENT_WAIT_MS, fit_window_to_monitor, window)
 
-    def stop() -> None:
-        """Safe to run twice; a window destroyed before its placement has lost its handler."""
-        nonlocal handler, timer
-        stopped_handler, stopped_timer = handler, timer
-        handler = timer = None
-        if stopped_handler is not None and window.handler_is_connected(stopped_handler):
-            window.disconnect(stopped_handler)
-        if stopped_timer is not None:
-            GLib.source_remove(stopped_timer)
 
-    def on_configure(widget: Gtk.Window, event: Gdk.EventConfigure) -> bool:
-        if placement_reported(event, widget):
-            stop()
-            GLib.idle_add(fit_window_to_monitor, window, priority=GLib.PRIORITY_LOW)
-        # Not handled here: GTK's own handling of the event goes on.
-        return False
+def move_to_position(window: Gtk.Window, target: tuple[int, int]) -> None:
+    """Move `window` to where `get_position()` will read `target`, whatever its frame (#554).
 
-    def give_up() -> bool:
-        nonlocal timer
-        timer = None  # this source is finished: stopping must not remove it
-        stop()
-        return False
+    Under Weston WM `move(x, y)` puts the frame's visible edge at (x, y), and `get_position()`
+    then reads the corner of the frame's shadow, 32 pixels up and to the left of it at scale 1
+    and 16 at scale 2. A place worked out from `get_position()` lands that far short. Nothing
+    read before the move says by how much: Weston's `_NET_FRAME_EXTENTS` counts the shadow in
+    with the frame, and Weston ignores `GDK_GRAVITY_STATIC`. Its report of the move does, so
+    this moves the window, waits up to `MOVE_REPORT_WAIT_MS` for that report (`when_reported`),
+    and has `correct_move` move it on by what it fell short. Under a window manager that puts
+    the frame's corner where it is asked, the window moves once.
+    """
+    window.move(*target)
+    when_reported(window, MOVE_REPORT_WAIT_MS, correct_move, window, target)
 
-    handler = window.connect("configure-event", on_configure)
-    timer = GLib.timeout_add(PLACEMENT_WAIT_MS, give_up)
+
+def move_shortfall(window: Gtk.Window, target: tuple[int, int]) -> tuple[int, int] | None:
+    """How far short of `target` a move to it left `window`, or None where the frame did not.
+
+    The frame's hidden part is never negative, nor more than everything a window manager puts
+    around a window, `WINDOW_FRAME_ALLOWANCE`. A shortfall outside that is not the frame's.
+    A report handled before the move took effect reads the place before it, and that gives
+    the move itself as the shortfall. When the move went up or left, as the fit's does for a
+    window past the bottom or right of the work area, that is negative and refused. When it
+    went down or right it passes, and the window is moved the same distance again (#554).
+    """
+    x, y = window.get_position()
+    short = (target[0] - x, target[1] - y)
+    if short == (0, 0) or not all(0 <= part <= WINDOW_FRAME_ALLOWANCE for part in short):
+        return None
+    return short
+
+
+def correct_move(window: Gtk.Window, target: tuple[int, int]) -> bool:
+    """Move `window` on by what its move to `target` fell short, once; an idle's callback (#554)."""
+    if window.get_visible():
+        short = move_shortfall(window, target)
+        if short is not None:
+            window.move(target[0] + short[0], target[1] + short[1])
+    return False
 
 
 def apply_font_to_widget(widget, font_desc):
