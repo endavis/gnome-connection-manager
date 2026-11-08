@@ -72,6 +72,14 @@ the git log.
   two were accepted and never sent, as the accelerator took the key first.
 
 ### Fixed
+- A dialog under X11 now opens where the window manager places it, beside its parent.
+  - Before, GCM fitted it to the monitor right after showing it. Under X11 that ran before the
+    window manager had placed the dialog, and the fit read a position that was not yet the
+    dialog's. Under WSLg's X11 at scale 2, one dialog opened in the corner of a monitor its parent
+    was not on.
+  - GCM now moves a dialog only to bring its buttons onto the screen, and only once the window
+    manager has reported where it put it. Under Wayland nothing changes.
+  - Measured under Weston on WSLg's X11 (#550, #552).
 - A tab from a console window let go on the bar between the panes of a split now joins the main
   window's pane in use, as Move to Main Window puts it, where it went back to its window. A tab
   of the main window still stays where it was. A slow drop and, under Wayland, a quick flick
