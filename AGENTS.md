@@ -219,13 +219,13 @@ Practices below have each caught real bugs in this repo. They are worth the time
   output from View buffer (#179). The cursor is reported in the numbering
   `get_text_range_format` takes; the adjustment is not.
 - **Mutation-test new tests.** Revert the fix and confirm the test fails. This has caught
-  several tests that passed against broken code. In a worktree, unset `GCM_DATA_DIR`,
-  `GCM_GLADE_DIR` and `GCM_SCRIPTS_DIR`: `main()` sets them, a shell in a GCM tab inherits
-  them, and measured, they gave the worktree's GCM the main checkout's `data/`, so a
-  mutant of a script there went unseen and survived. And a mutant the size of the code it
-  replaces, as `exists` is of `is_dir`, written within the second of the file's last change,
-  runs the old `.pyc`: Python checks only a source's size and its time to the second,
-  measured on 3.12.3. Delete `__pycache__` first.
+  several tests that passed against broken code. The suite clears `GCM_DATA_DIR`,
+  `GCM_GLADE_DIR` and `GCM_SCRIPTS_DIR` itself (#547): `main()` sets them, a shell in a GCM
+  tab inherits them, and measured, they gave the worktree's GCM the main checkout's
+  `data/`, so a mutant of a script there went unseen and survived. And a mutant the size of
+  the code it replaces, as `exists` is of `is_dir`, written within the second of the file's
+  last change, runs the old `.pyc`: Python checks only a source's size and its time to the
+  second, measured on 3.12.3. Delete `__pycache__` first.
 - **The weekly mutation run is mutmut over `utils/`, `relay.py` and `main.py`** (#326),
   as `[tool.mutmut]` in `pyproject.toml` sets it up. Not `app.py`: mutmut's copy of a
   module holds every mutant of it, and `app_module` imports `app.py` afresh for each

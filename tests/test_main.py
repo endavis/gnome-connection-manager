@@ -101,9 +101,13 @@ def test_these_tests_leave_the_environment_as_they_found_it(tmp_path: Path) -> N
     own, followed by one that reads what they left: a variable that was not set must
     still not be, and one that was must keep its value (#281)."""
     probe = tmp_path / "test_left_behind.py"
-    expected = {"GCM_DATA_DIR": None, "GCM_GLADE_DIR": None, "GCM_SCRIPTS_DIR": "/before"}
+    before = "/before"
+    expected = {"GCM_DATA_DIR": None, "GCM_GLADE_DIR": None, "GCM_SCRIPTS_DIR": before}
+    # tests/conftest.py clears the three as a run starts (#547), so one handed to the run in
+    # its environment would not be set for the tests. The probe sets it as it is collected:
+    # after that clearing, and before the first of the tests has run.
     probe.write_text(
-        "import os\n\n\n"
+        f"import os\n\nos.environ['GCM_SCRIPTS_DIR'] = {before!r}\n\n\n"
         "def test_left_behind():\n"
         f"    assert {{key: os.environ.get(key) for key in {PATH_VARIABLES!r}}} == {expected!r}\n"
     )
@@ -121,7 +125,6 @@ def test_these_tests_leave_the_environment_as_they_found_it(tmp_path: Path) -> N
         for key, value in os.environ.items()
         if key not in PATH_VARIABLES and not key.startswith("PYTEST_")
     }
-    env["GCM_SCRIPTS_DIR"] = "/before"
     # These tests open no window, so the run needs no Xvfb of its own.
     env["GCM_TEST_REAL_DISPLAY"] = "1"
     result = subprocess.run(

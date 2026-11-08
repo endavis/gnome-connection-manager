@@ -45,6 +45,12 @@ def pytest_configure(config):
     # .gcm.key. GitHub's runners set it; so do some desktops. Popping it here reaches the
     # subprocess tests too, which inherit this environment and set only HOME themselves.
     os.environ.pop("XDG_CONFIG_HOME", None)
+    # The same goes for the three paths main() sets, with setdefault, for the GCM it starts.
+    # A shell in a GCM tab inherits them, and app.py takes its data folder from GCM_DATA_DIR
+    # when it is imported: the suite then read the running GCM's data/ -- its glade file and
+    # scripts -- instead of the checkout's (#547).
+    for name in ("GCM_DATA_DIR", "GCM_GLADE_DIR", "GCM_SCRIPTS_DIR"):
+        os.environ.pop(name, None)
     # mutmut makes every pytest run in its own process, setting MUTANT_UNDER_TEST for each:
     # its stats run, its clean run, then a forked child for each mutant. GTK stays
     # connected to the display it first opened, and pytest_unconfigure ends that run's
