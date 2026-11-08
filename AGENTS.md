@@ -210,8 +210,8 @@ tests with behavior changes rather than documenting a manual test surface.
 
 Practices below have each caught real bugs in this repo. They are worth the time:
 
-- **Measure, don't assume.** Write throwaway probes against real GTK/VTE — `DISPLAY=:0`
-  works under WSLg. Assumptions about VTE behavior have been wrong far more often than right:
+- **Measure, don't assume.** Write throwaway probes against real GTK/VTE, set up as
+  `docs/PROBING.md` says. Assumptions about VTE behavior have been wrong far more often than right:
   VTE 0.76 does not emit `increase-font-size` on Ctrl+scroll, it clamps `set_font_scale()` to
   0.25–4.0 itself, and a line selection reaches the clipboard as `text\n\n`. Its row
   numbers keep counting once the scrollback drops the oldest rows, while the vertical

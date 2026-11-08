@@ -105,6 +105,7 @@ nav:
   - Running on WSL: WSL-SETUP.md
   - Developing: DEVELOPING.md
   - Developing headless: HEADLESS-DEVELOPMENT.md
+  - Probing outside the tests: PROBING.md
   - Project structure: PROJECT_STRUCTURE.md
   - Specification: SPEC.md
   - Design:
