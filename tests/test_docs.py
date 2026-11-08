@@ -885,6 +885,8 @@ FOREIGN_NAMES = {
     "gtk_menu_popdown",
     "gtk_window_set_unlimited_guessed_size",
     "Gdk.Window.add_filter",
+    # A GDK call no code of GCM's makes, measured for a design page (#550)
+    "Gdk.Window.get_frame_extents()",
     # The method a fake offered that the real Vte.Terminal lacks (#30)
     "select_none()",
     # Words: a Spanish locale, and a form of address in Spanish

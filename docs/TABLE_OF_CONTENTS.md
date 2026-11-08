@@ -26,7 +26,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [Developing on a Headless Machine](HEADLESS-DEVELOPMENT.md) - Coding GCM and running its full test suite on an Ubuntu 26.04 VM or LXC container with no screen, which steps each needs, and what stays on the Windows machine
 - [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
-- [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
+- [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place and size, and why
 - [Packaging, the Installer and Releases](design/packaging.md) - Why the .deb and the .rpm declare what they do and run no script, how install.sh installs and updates GCM, and what a release is, with what was measured of each
 - [Probing GCM Outside the Test Suite](PROBING.md) - Recipes for measuring GCM against real GTK, VTE, Wayland and packages without installing anything, from an Xvfb of a probe's own to a fresh Ubuntu, sshd, TigerVNC, headless sway and WSLg, with the traps each one hides
 - [Session Logs, Recording and Transcripts](design/recording.md) - What GCM writes of a session and reads back, and why: the relay a session runs under, the names of a session's files, and the transcript rebuilt from a raw recording
@@ -107,7 +107,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
 - [install_tools Framework](development/install-tools-framework.md) - Reusable framework for installing developer tools from GitHub releases or other URLs into ~/.local/bin
 - [LSP Tool and Diagnostic Noise](development/ai/lsp-tool.md) - What the LSP tool gives an AI agent, why pyright diagnostics arrive stale, and the two opt-outs agents can flip on themselves
-- [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
+- [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place and size, and why
 - [Optional Extensions](development/extensions.md) - Additional tools and extensions for testing, security, and more
 - [Packaging, the Installer and Releases](design/packaging.md) - Why the .deb and the .rpm declare what they do and run no script, how install.sh installs and updates GCM, and what a release is, with what was measured of each
 - [Per-Stack Rule Files](development/ai/rule-files.md) - How to author, load and mirror the short self-check rule files in .claude/rules/
@@ -206,7 +206,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [install_tools Framework](development/install-tools-framework.md) - Reusable framework for installing developer tools from GitHub releases or other URLs into ~/.local/bin
 - [Keeping Up to Date](template/updates.md) - Stay in sync with improvements to the pyproject-template
 - [LSP Tool and Diagnostic Noise](development/ai/lsp-tool.md) - What the LSP tool gives an AI agent, why pyright diagnostics arrive stale, and the two opt-outs agents can flip on themselves
-- [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why
+- [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place and size, and why
 - [Migration Guide](template/migration.md) - Migrate existing Python projects to use this template
 - [New Project Setup](template/new-project.md) - Create a new Python project from this template
 - [Optional Extensions](development/extensions.md) - Additional tools and extensions for testing, security, and more

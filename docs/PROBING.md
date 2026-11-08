@@ -58,7 +58,7 @@ it.
 
 ## Traps a probe meets
 
-Each was measured on an Xvfb of the probe's own.
+Each was measured on an Xvfb of the probe's own, and on another display where it says so.
 
 - **A probe ended by `timeout` loses what it printed.** Its standard output is
   block-buffered: `timeout 2 python3 -c 'print("started"); ...'` into a file left it
@@ -121,6 +121,32 @@ Each was measured on an Xvfb of the probe's own.
     <include ignore_missing="no">/etc/fonts/fonts.conf</include>
   </fontconfig>
   ```
+
+- **Xvfb has no window manager.** A window there has no frame, `move()` lands at once,
+  and before the window is placed `get_position()` read (0, 0), never the sentinel a
+  window manager gives. Measure a window's place or size under a window manager instead:
+  WSLg's X11, with `DISPLAY=:0` and `GDK_BACKEND=x11`, which opens windows on the
+  desktop, or sway, where `swaymsg -t get_tree` gives where sway put a window.
+  [A window's geometry](design/menus-and-windows.md#a-windows-geometry) has what each
+  one gave (#550).
+- **Under `Gtk.main()`, a failed assertion in a callback does not end the probe.** An
+  `assert` that failed in a `GLib.idle_add` callback printed its traceback, and the probe
+  ran on until the runner killed it 5 s later. PyGObject prints a callback's exception
+  and carries on, as AGENTS.md says of a signal handler's. Instead, run the loop in the
+  probe's own code: call `Gtk.main_iteration_do(False)` until a condition holds or a
+  deadline passes, as `pump` in `tests/test_wmain.py` does, and assert there. The same
+  assertion at the top level ended the probe with status 1.
+- **A menu popped up with no event warns, and under WSLg's Wayland it did not open.**
+  `popup_at_rect` and `popup_at_widget` given `None` for the event print
+  `no trigger event for menu popup`. Both opened the menu all the same on Xvfb, and
+  `popup_at_rect` did on sway, at the place asked for. That warning is the probe's own:
+  `popup_menu_at` passes on the event that opened a GCM menu.
+  - `popup_at_pointer(None)` opened nothing on Xvfb, and GTK printed
+    `gtk_menu_popup_at_rect: assertion 'GDK_IS_WINDOW (rect_window)' failed`.
+  - Under WSLg's Wayland, `popup_at_rect` with no event opened nothing: `get_visible()`
+    was False a second later.
+  - Whether a real click's event opens it there was not measured, as WSLg takes no
+    synthetic input.
 
 ## Packages without installing them
 

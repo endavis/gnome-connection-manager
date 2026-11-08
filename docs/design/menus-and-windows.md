@@ -1,6 +1,6 @@
 ---
 title: "Menus and Window Placement"
-description: "Where GCM puts a pop-up menu so that it stays on the screen, and which window each window it opens is placed over, and why"
+description: "Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place and size, and why"
 audience:
   - contributors
 tags:
@@ -336,3 +336,96 @@ dialog's xdg_surface was given, a size listed again only when it changed. Before
 `main`: Preferences `289x245 -> 597x1013 -> 794x984` and a host dialog
 `544x453 -> 544x474`, every time. After: `794x984` and `544x474`, so each window's
 first set_window_geometry is its last. This was not measured on WSLg's Weston.
+
+## A window's geometry
+
+What GTK 3 reports of a toplevel's place and size, which `fit_window_to_monitor` and its
+helpers read. Measured for #550 with GTK 3.24.41 on three servers:
+
+- a private Xvfb, which has no window manager;
+- WSLg's X11, `DISPLAY=:0` and `GDK_BACKEND=x11`, whose window manager names itself
+  Weston WM, at `GDK_SCALE` 1 and 2, with `GDK_DPI_SCALE` alike;
+- Wayland, on headless sway 1.9 and on WSLg.
+
+Places and sizes are in GDK's units, pixels divided by the scale. No GNOME, mutter or
+KWin was available.
+
+**The frame is not read back.** `Gdk.Window.get_frame_extents()` is the window manager's
+frame around a window, and `Gtk.Window.get_size()` is GTK's own size. After a `resize()`
+the two change at different moments. Under Weston at scale 2, a 400 by 300 window had a
+frame 39 wide and 49 tall. Resized to 900 by 700, the extents had the new size several
+milliseconds before `get_size()` did, so the extents less the size made a frame of 539
+by 449; resized back, the frame was −461 by −351. Xvfb, with no frame at all, gave 500
+by 400 and −500 by −400 in the same way. That subtraction, made during a resize, once
+gave a frame of 736 pixels and shrank a dialog to 127 (#82). So `WINDOW_FRAME_ALLOWANCE`
+allows a fixed 96 for the frame, in GDK's units. Weston's frame was 97 tall at scale 1
+and 49 at scale 2, so at scale 2 the allowance is about twice the frame. The 89 to 97
+pixels under GNOME in the constant's comment, from #82, were not measured again.
+
+**`resize()` and `move()` are asynchronous.** Right after `resize()`, `get_size()` gave
+the old size, and the new one 7 to 8 ms later, under Weston and on Xvfb alike. Right
+after `move()` under Weston, `get_position()` gave the old place, and the new one 7 to
+13 ms later. On Xvfb, with no window manager to wait for, it gave the new place at once.
+So `fit_window_to_monitor` works from the size `size_window_for_monitor` asked for,
+not one read back. Nor does a reading hold still between events. Two readings taken in
+one idle callback, with no event handled between them, gave (0, 0) and then (19, 29)
+in one run, and (0, 0) and then −16384 in another.
+
+**What `get_position()` counts** is where the window manager's frame starts, not the
+point a window was moved to. Under Weston, a window moved to (x, y) read back
+(x − 32, y − 32) at scale 1 and (x − 16, y − 16) at scale 2, in each of seven moves.
+At scale 1, its content, by `get_origin()`, began 6 across and 27 down from that
+point, so the frame starts 32 pixels above and to the left of it. A window moved to
+y = 0 read y = −32, or −16 at scale 2: under Weston, a negative y is a window at the top
+of the screen, not one off it. On Xvfb, a window read back the place it was moved to.
+
+A window with client-side decorations (a header bar for its title bar) has a margin of its
+own inside its GDK window, 5 pixels at its top and left on Xvfb and under Weston.
+`get_position()` leaves that margin out: on Xvfb, such a window moved to (200, 0) read
+(200, 0), with its GDK window at (195, −5). Under Weston it read back (x − 19, y − 30).
+In both runs that tried, Weston ignored its move to (200, 0), though it honoured the
+plain window's move to the same point. Why was not established.
+
+**Before a window is placed**, `get_position()` gives more than one reading. From
+`show_all()` until Weston placed a window, the readings were:
+
+- at scale 1: (38, 59), then (−32768, −32768), then its place, 13 ms after `show_all()`;
+- at scale 2: (0, 0), (19, 29), then (−16384, −16384), then its place, 18 ms after;
+- for a `Gtk.Dialog` with a transient parent, at scale 2: (1122, 1000) until shown, then
+  (0, 0), (−16384, −16384) and its place;
+- on Xvfb: (0, 0) throughout, for both.
+
+(38, 59) and (19, 29) are where the window's content sits inside its frame. The sentinel
+is −32768 divided by the scale, like every other coordinate.
+
+`onscreen_position` counts a coordinate at or below `UNPLACED_WINDOW_COORD`, −30000, as
+not yet placed. That catches the sentinel at scale 1 and none of the other readings. This
+was measured with GCM's own code, following `GladeComponent.show_dialog`'s steps on a
+`Gtk.Dialog` under Weston. In each of three runs, the idle that runs
+`fit_window_to_monitor` read (0, 0), before the dialog was placed. At scale 2 it moved the
+dialog both times, to the top left corner of a monitor its parent was not on, and once the
+dialog stayed there. At scale 1 it moved nothing, in one run. Under Wayland, which GTK
+picks whenever `WAYLAND_DISPLAY` is set, as WSLg sets it, `move()` does nothing (below).
+
+**Whether a user can see a widget** is settled in root coordinates. Take the bottom of
+the widget's allocation through `get_window().get_root_coords()`, and compare it with the
+bottom of its monitor's `get_workarea()`. On Xvfb, a window 300 tall moved down until 150
+of it showed put its OK button's bottom edge at 1230, against a work area ending at 1080.
+`test_a_dialog_left_below_the_screen_is_brought_back_against_real_gtk` in
+`tests/test_window_fit.py` reads its buttons this way.
+
+**Placement varies from run to run.** Weston placed the same 400 by 300 window at
+(532, 984), (1287, 1071) and (312, 981) in three runs at scale 2. So a test of a
+placement fix puts the window where it needs rescuing, as that test moves a dialog below
+the screen. It does not wait for a window manager to put it there.
+
+**Under Wayland** the compositor places a toplevel, and GTK cannot. On sway, a window
+moved to (300, 200) stayed where sway had centred it, at (758, 390) by
+`swaymsg -t get_tree`. Under WSLg's Wayland, neither `get_position()` nor `get_origin()`
+changed. Nor does a client learn where its windows are, as
+[The room a menu has](#the-room-a-menu-has) says. `get_origin()` gave (0, 0) on both, and
+`get_position()` gave (0, 0) on sway and (26, 23) on WSLg; neither is a place on the
+screen. A menu opened at (100, 100) in its window gave `get_origin()` (100, 100) on sway,
+a place in that window. So a probe that measures where a window lands on WSLg runs with
+`GDK_BACKEND=x11`, under Weston's X11 window manager. It measures X11's placement, not
+the compositor's, which GCM's windows get there by default.
