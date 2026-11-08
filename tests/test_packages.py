@@ -3,6 +3,9 @@
 `tools/packages.py` reads them. These hold the README's tables, `tests/test_install.py`'s
 lists and the desktop entry to them. In CI, a job builds both packages and holds what fpm
 wrote into them to the same reading, which needs fpm and rpmbuild, so it is not a test.
+
+One test holds the `install` recipe, which both package recipes run first, to the image
+files the glade file names (#545).
 """
 
 from __future__ import annotations
@@ -151,3 +154,21 @@ def test_no_package_runs_a_script() -> None:
         scripts = [word for word in words if word.startswith(("--after-", "--before-"))]
         assert scripts == [], f"the {target} recipe runs {scripts}"
     assert not (REPO / "postinst").exists()
+
+
+def test_every_image_the_glade_names_is_installed_beside_it() -> None:
+    """GtkBuilder looks for an image in the glade file's own folder, `ui/`. Both package
+    recipes run `install` first, and it left out `icon.png`, so the About dialog's logo and
+    the main window's icon were a 16x16 stand-in (#545)."""
+    ui = REPO / "data" / "ui"
+    glade = (ui / "gnome-connection-manager.glade").read_text(encoding="utf-8")
+    image = r'<property name="[^"]+"[^>]*>([^<>]+\.(?:png|gif|svg|jpe?g|xpm|ico))</property>'
+    names: set[str] = set(re.findall(image, glade))
+    install = re.search(r"^install:.*?(?=^[\w.-]+:|\Z)", MAKEFILE, re.MULTILINE | re.DOTALL)
+
+    assert {"icon.png", "donate.gif"} <= names
+    assert install, "the Makefile has no install target"
+    for name in sorted(names):
+        copy = rf"^\tcp data/ui/{re.escape(name)} \$\(DATADIR\)/ui/$"
+        assert (ui / name).is_file(), f"the glade file names {name}, and data/ui lacks it"
+        assert re.search(copy, install.group(), re.MULTILINE), f"install does not copy {name}"
