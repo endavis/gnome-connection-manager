@@ -41,7 +41,8 @@ it.
   configuration or checkout, and `SSH_AUTH_SOCK` and `SSH_AGENT_PID`. A shell in a GCM tab
   carries the `GCM_*_DIR` variables `main()` set for that GCM. Here they named an installed
   GCM's data, and `doit check` run with them failed 37 tests that passed once they were
-  unset.
+  unset. The suite clears them itself since #547 (`tests/conftest.py`), but a probe runs
+  outside pytest, so it still unsets them.
 - **Start GCM as `main()` does**, so that its shortcuts are accelerators:
   `app.GcmApplication()`, then `run(["gcm"])`, reaching the window through
   `application._controller` from `GLib.timeout_add` callbacks while `run` owns the main
