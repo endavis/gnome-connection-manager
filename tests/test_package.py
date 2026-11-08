@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import pwd
+import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
 
 import gnome_connection_manager
 from gnome_connection_manager import __main__ as gcm_entrypoint
+from tests.test_connections import glib_complaints
 
 
 def test_package_exports_run_from_main_module() -> None:
@@ -203,3 +208,199 @@ def test_require_expect_reports_on_stderr_when_there_is_no_display(monkeypatch, 
 
     assert exit_info.value.code == 1
     assert "install expect" in capsys.readouterr().err
+
+
+# -- the shell a local console runs where SHELL is unset (#544) --------------
+
+
+def _login_shell() -> str:
+    """What `local_shell` gives where `SHELL` is unset: the shell of this user's passwd
+    entry, or /bin/sh where there is no entry or its shell field is empty."""
+    try:
+        return pwd.getpwuid(os.getuid()).pw_shell or "/bin/sh"
+    except KeyError:
+        return "/bin/sh"
+
+
+def _answer_passwd(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType, shell: str | None
+) -> list[int]:
+    """Make the app's `pwd.getpwuid` answer with a passwd entry whose shell field is
+    `shell`, or raise the KeyError it raises for a uid passwd has no line for when `shell`
+    is None. The list returned gets each uid it is asked for."""
+    asked: list[int] = []
+
+    def getpwuid(uid: int) -> types.SimpleNamespace:
+        asked.append(uid)
+        if shell is None:
+            raise KeyError(f"getpwuid(): uid not found: {uid}")
+        return types.SimpleNamespace(pw_shell=shell)
+
+    monkeypatch.setattr(app_module.pwd, "getpwuid", getpwuid)
+    return asked
+
+
+def test_a_local_console_runs_shell_where_it_is_set(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """Where `SHELL` is set the console runs it, as it did before #544, and the passwd entry
+    is not read: a wrapper given as `SHELL` stays the shell."""
+    asked = _answer_passwd(monkeypatch, app_module, "/bin/dash")
+
+    assert app_module.local_shell({"SHELL": "/usr/bin/zsh"}) == "/usr/bin/zsh"
+    assert asked == [], "the passwd entry was read although SHELL is set"
+
+
+def test_a_local_console_runs_the_passwd_shell_where_shell_is_unset(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """Under `env -i`, with no `SHELL`, GCM stopped at import with `KeyError: 'SHELL'`
+    (#544). The console runs the shell of the user's passwd entry now."""
+    _answer_passwd(monkeypatch, app_module, "/bin/dash")
+
+    assert app_module.local_shell({}) == "/bin/dash"
+
+
+def test_an_empty_shell_counts_as_unset(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """`SHELL=` names no program, so it is read as unset."""
+    _answer_passwd(monkeypatch, app_module, "/bin/dash")
+
+    assert app_module.local_shell({"SHELL": ""}) == "/bin/dash"
+
+
+def test_a_uid_passwd_has_no_line_for_runs_bin_sh(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """Measured, `getent passwd 54321` found no line and `pwd.getpwuid(54321)` raised
+    `KeyError`: not every uid has an entry to read the shell from (#544)."""
+    _answer_passwd(monkeypatch, app_module, None)
+
+    assert app_module.local_shell({}) == "/bin/sh"
+
+
+def test_an_empty_shell_field_in_the_passwd_entry_means_bin_sh(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """passwd(5): "If this field is empty, it defaults to the value /bin/sh." """
+    _answer_passwd(monkeypatch, app_module, "")
+
+    assert app_module.local_shell({}) == "/bin/sh"
+
+
+def test_the_passwd_entry_read_is_the_real_uids(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """The entry is looked up by the real uid, `os.getuid()`."""
+    asked = _answer_passwd(monkeypatch, app_module, "/bin/dash")
+    monkeypatch.setattr(app_module.os, "getuid", lambda: 4242)
+
+    assert app_module.local_shell({}) == "/bin/dash"
+    assert asked == [4242]
+
+
+_NO_SHELL_PROBE = """
+import os, sys, tempfile
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+os.environ.pop("SHELL", None)
+from gnome_connection_manager import app
+print("SHELL-IS", app.SHELL)
+"""
+
+
+def test_the_app_imports_without_shell() -> None:
+    """The import stopped with `KeyError: 'SHELL'` where `SHELL` was unset, as under
+    `env -i`, and `gnome-connection-manager` exited before any window opened (#544). The
+    shell is the passwd entry's now. The import opens no window, so this needs no display."""
+    result = subprocess.run(
+        [sys.executable, "-c", _NO_SHELL_PROBE],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert f"SHELL-IS {_login_shell()}" in result.stdout.splitlines()
+
+
+# GCM opens a local console as it starts, and nothing is typed or clicked. The script waits
+# on conditions, each with a deadline, never on a pause of a fixed length.
+_LOCAL_CONSOLE_SCRIPT = r"""
+import faulthandler, os, sys, tempfile, time
+faulthandler.dump_traceback_later(60, exit=True)
+os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
+os.environ.pop("SHELL", None)
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+def until(condition, seconds=10):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and not condition():
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+    return condition()
+
+def program_of(pid):
+    # What /proc says the process runs, its argv[0]: None once there is no such process, and
+    # "" where its command line reads empty.
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as handle:
+            return handle.read().split(b"\0")[0].decode()
+    except OSError:
+        return None
+
+app.conf.CHECK_UPDATES = False
+# The startup console, with no relay between GCM and its shell: with either option on, the
+# child would be the relay's Python.
+app.conf.STARTUP_LOCAL = True
+app.conf.OSC52_ENABLED = 0
+app.conf.RAW_SESSION_LOG = 0
+app.wMain = app.Wmain(application=None)
+
+notebook = app.wMain.nbConsole
+assert notebook.get_n_pages() == 1, "expected the startup console, found %d tabs" % (
+    notebook.get_n_pages())
+terminal = app.page_terminal(notebook.get_nth_page(0))
+assert terminal is not None, "the startup console holds no terminal"
+assert until(lambda: getattr(terminal, "child_pid", None)), "the console started no process"
+pid = terminal.child_pid
+
+# The console runs `env -u VIRTUAL_ENV <shell>` and env execs the shell, so the process is
+# env first and the shell after. A command line that reads empty is no more the shell's than
+# env's, so it is waited out too, up to the deadline. A process that is gone is not waited for.
+programs = []
+def shell_started():
+    programs.append(program_of(pid))
+    return programs[-1] not in ("env", "")
+
+assert until(shell_started), "the console's process %d was not the shell after 10 s: %r" % (
+    pid, programs[-3:])
+assert programs[-1], "the console's process %d has ended" % pid
+print("SHELL-RAN", programs[-1])
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs an X server")
+def test_a_local_console_runs_the_login_shell_without_shell_against_real_gtk() -> None:
+    """GCM opens a local console as it starts. With `SHELL` unset its process, once
+    `env -u VIRTUAL_ENV` has started the shell, is the shell of the user's passwd entry
+    (#544). Before, GCM stopped at import and opened no console at all."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _LOCAL_CONSOLE_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "GDK_BACKEND": "x11"},
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert f"SHELL-RAN {_login_shell()}" in result.stdout.splitlines()
+    # PyGObject prints what a signal handler raises, and carries on.
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert glib_complaints(result.stderr) == []

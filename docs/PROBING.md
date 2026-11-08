@@ -216,8 +216,10 @@ alone, so the root filesystem runs under proot, and installs in a chroot.
    not run.
 7. **Run GCM in it, on an Xvfb inside, and read that Xvfb from outside.** The chroot shares
    the network namespace, so its Xvfb's abstract socket is the host's:
-   `xwininfo -display :91 -root -tree` outside listed GCM's window. GCM needs `SHELL` in its
-   environment. Under `env -i` without it, GCM stopped at import with `KeyError: 'SHELL'`.
+   `xwininfo -display :91 -root -tree` outside listed GCM's window. A GCM from before #544,
+   release 2.2.1 among them, needs `SHELL` in its environment: under `env -i` without it, it
+   stopped at import with `KeyError: 'SHELL'`. Since #544 a GCM started without `SHELL` runs
+   the shell of the user's passwd entry; that was not re-run in this chroot.
 8. **Size.** The image is 30 MB, and the root filesystem was 1.2 GB with GTK in it.
 
 ## sshd as the user, for probes that open shell sessions

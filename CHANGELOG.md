@@ -202,6 +202,10 @@ the git log.
   by then. A copy made in Windows after the ignored write, and before the keyboard next
   changes window, is replaced by the write at that change. The terminal guide's OSC 52
   section has the other limits.
+- GCM starts where `SHELL` is unset, as under `env -i`, where it stopped at import with
+  `KeyError: 'SHELL'` before any window opened. A local console then runs the shell of the
+  user's passwd entry, or `/bin/sh` where there is none. The programs started in that console
+  still see no `SHELL`, as bash does not export the one it sets (#544).
 
 ## [2.2.1] - 2026-10-30
 
