@@ -60,6 +60,7 @@ import itertools
 import json
 import logging
 import os
+import pwd
 import re
 import secrets
 import shlex
@@ -72,7 +73,7 @@ import tempfile
 import time
 import tokenize
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -346,7 +347,30 @@ if not Path(BASE_PATH).exists():
 
 SSH_BIN = "ssh"
 TEL_BIN = "telnet"
-SHELL = os.environ["SHELL"]
+
+
+def local_shell(environ: Mapping[str, str]) -> str:
+    """The shell a local console runs: `$SHELL`, else the user's login shell (#544).
+
+    GCM read `os.environ["SHELL"]` at import, so where `SHELL` was unset, as under
+    `env -i`, it stopped with `KeyError: 'SHELL'` before any window opened. Where `SHELL`
+    is unset or empty this gives the shell of the user's passwd entry, as
+    `Vte.get_user_shell()` does, measured, without asking GTK at import. That entry can be
+    missing, for a uid passwd has no line for, and its shell field can be empty, which
+    passwd(5) says means /bin/sh. The programs such a console starts see no `SHELL`:
+    bash sets it without exporting it, and dash does not set it, measured.
+    """
+    shell = environ.get("SHELL")
+    if shell:
+        return shell
+    try:
+        shell = pwd.getpwuid(os.getuid()).pw_shell
+    except KeyError:
+        shell = ""
+    return shell or "/bin/sh"
+
+
+SHELL = local_shell(os.environ)
 # Seconds counted down in the tab before each reconnect of a dropped session (#239).
 RECONNECT_DELAY = 5
 # Seconds a reconnected session must last for a later drop to start the count over. One

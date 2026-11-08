@@ -183,8 +183,8 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 - Runtime: Python 3, PyGObject (`python3-gi`), GTK 3, `gir1.2-vte-2.91`, and `expect`.
   `expect` is checked in `main()`, not at import: the check used to run while the module
   was being imported and report through a modal dialog, so importing it headless hung
-  forever (#118). Keep imports side-effect free. VTE
-  terminals expect a usable `$SHELL` and system `ssh`/`telnet` binaries.
+  forever (#118). Keep imports side-effect free. A local console runs
+  `$SHELL`, or where it is unset the shell of the user's passwd entry (`local_shell`, #544); connections need system `ssh`/`telnet` binaries.
 - Build/packaging: gettext `msgfmt`, Ruby + `fpm` (for `.deb` and `.rpm`), gzip, binutils
   for the `ar` fpm builds a `.deb` with, and `rpm` for `rpmbuild`. CI's `package` job
   installs them on ubuntu-24.04, fpm 1.18.0 among them, and `desktop-file-validate` for
