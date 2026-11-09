@@ -59,6 +59,7 @@ install: translate
 	mkdir -p $(DATADIR)/scripts
 	cp data/ui/gnome-connection-manager.glade $(DATADIR)/ui/
 	cp data/ui/donate.gif $(DATADIR)/ui/
+	cp data/ui/icon.png $(DATADIR)/ui/
 	cp data/scripts/ssh.expect $(DATADIR)/scripts/
 	chmod +x $(DATADIR)/scripts/ssh.expect
 	cp data/scripts/gcm-askpass $(DATADIR)/scripts/
