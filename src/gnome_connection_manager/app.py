@@ -330,7 +330,7 @@ def require_readable_config() -> None:
 # Gdk.threads_init()
 
 app_name = "Gnome Connection Manager"
-app_version = "2.2.1"
+app_version = "2.3.0"
 app_web = "https://github.com/endavis/gnome-connection-manager"
 app_fileversion = "1"
 

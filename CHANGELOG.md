@@ -11,6 +11,8 @@ the git log.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-09
+
 ### Added
 - **`doit wslg_windows`** lists, from inside WSL, the windows of WSLg's own `msrdc.exe`
   through `powershell.exe`, matched by its full path so a Remote Desktop client is left out.
@@ -46,6 +48,13 @@ the git log.
   console in every console window back into the main window at once and end none of them,
   as closing each console window does. The consoles go into the main window's pane in use,
   and each emptied console window closes (#404).
+- The cluster window shows which window each console is in, **Main window** or
+  **Console window N**, before the host's folders under its name, and a console moved to
+  another window is listed under it at once (#451).
+- Under WSLg, where WSLg's log shows that it could not open the shared memory it draws
+  windows through, GCM prints a line on the console as it starts. The line says that GCM's
+  window may stay blank, its title starting `[WARN:COPY MODE]`, and to run `wsl --shutdown`
+  in Windows, then start GCM again. GCM then starts as before (#414).
 
 ### Changed
 - A long menu scrolls a row for each notch of the mouse wheel, not 15 pixels, at any
@@ -70,6 +79,11 @@ the git log.
 - A custom sequence in `[keys]` on `Ctrl+Q`, `Ctrl+R`, `Ctrl+E`, `F1`, `F9` or `Shift+F9`
   is sent in a console. The first four were refused, with a line in the log, and the last
   two were accepted and never sent, as the accelerator took the key first.
+- A VNC tab that ends before its desktop is shown says so the same way on gtk-vnc 1.3 and
+  1.5: "Disconnected before the desktop was shown", followed by gtk-vnc's reason where it
+  gives one. On 1.5 the tab showed gtk-vnc's bare reason, such as "No supported auth
+  types". A failed login, where the server asked for credentials, keeps gtk-vnc's wording
+  (#433).
 
 ### Fixed
 - A dialog under X11 now opens where the window manager places it, beside its parent.
@@ -209,6 +223,10 @@ the git log.
 - GCM installed from the `.deb` or the `.rpm` loaded the About dialog's logo and the main
   window's icon as a 16x16 stand-in, after a GTK warning for each, because the packages
   left out `ui/icon.png`. They now install it (#545).
+- Six toolbar buttons, Split Horizontal, Split Vertical, Unsplit, Preferences, Find
+  Previous and Find Next, had glade's placeholder names, such as `__glade_unnamed_28`, for
+  labels. A screen reader read those out, and the toolbar's overflow menu showed them. They
+  have their real names now (#388).
 
 ## [2.2.1] - 2026-10-30
 
@@ -223,9 +241,6 @@ the git log.
 ## [2.2.0] - 2026-10-30
 
 ### Added
-- The cluster window shows which window each console is in, **Main window** or
-  **Console window N**, before the host's folders under its name, and a console moved to
-  another window is listed under it at once.
 - Where a tab's host is filed now shows wherever there is room for it. Hover a tab, and
   under its label the tooltip gives the host's folders and name,
   `1. Projects/pyproject-template/ansible`. The open-console list, behind the ▾ button
