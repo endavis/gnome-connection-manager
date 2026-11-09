@@ -119,6 +119,10 @@ Ubuntu's `~/.profile` puts `~/.local/bin` on your `PATH` when you log in, once t
 exists. The script says so if it is not there yet: until you log in again, start GCM as
 `~/.local/bin/gnome-connection-manager`.
 
+Where `/usr/bin/python3` is older than the version asks for in the `requires-python` of its
+`pyproject.toml`, as Ubuntu 22.04's Python 3.10 is, the script stops before apt installs GCM's
+packages and says why, and the version in use stays as it was.
+
 ### Updating
 
 Run the same line again. It installs the newest release beside the one you have, and the

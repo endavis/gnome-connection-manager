@@ -49,6 +49,45 @@ job does, and `--names deb` lists every package the `.deb` names, which that job
 apt for. `tests/test_packages.py` holds the README's tables and `tests/test_install.py`'s
 lists to the same reading.
 
+Both recipes require the Python that `pyproject.toml`'s `requires-python` names, in one
+form: the quoted word `-d 'python3 >= 3.12'`, with 3.12 as today's floor (#564). They
+declared `python3` with no version, which Ubuntu 22.04's Python 3.10 satisfies. apt refuses
+a `.deb` that needs a newer `python3` than the one installed, and says why: `apt-get -s install`
+of a `.deb` needing 3.99 exited 100 and printed
+`Depends: python3 (>= 3.99) but 3.12.3-0ubuntu2.1 is to be installed`.
+`tests/test_packages.py` holds both recipes to `requires-python` in
+`test_the_packages_require_the_python_pyproject_requires`, so a raise of the floor that
+misses the Makefile fails there, and its message names the line to write.
+
+`install.sh` splits a recipe at every space, quoted or not, and takes the word after each
+option without its quotes, so from `'python3 >= 3.12'` it takes `python3` and asks apt for
+the package alone. The Python's version is checked from the `pyproject.toml` of the version
+it installs, as the section on the installer says. A version inside an alternative,
+`'a >= 1|b'`, would lose the alternatives after it, so
+`test_every_package_is_one_word_install_sh_can_read` allows a version on a package alone.
+`tools/packages.py` takes the same word where it wants a name: `unversioned` gives it, and
+`names` gives apt `python3`, not `>=` and `3.12`.
+
+A built `.deb` is read back in dpkg's form. Measured with dpkg 1.22.6, `dpkg-deb -f` gives
+a relation in one form whatever spacing the control file had: a `Depends` written
+`python3 (>=3.12),python3-gi,  a|b` comes back as `python3 (>= 3.12), python3-gi, a | b`.
+`as_written` turns that into the recipe's word, `python3 >= 3.12`, as it turns `a | b` into
+`a|b`. It converts only `>=`, the one operator the recipes' words allow, so a `.deb` holding
+`python3 (>> 3.12)` matches no word and is reported. The other direction, converting the
+recipe's word into dpkg's form to compare, was rejected. Its reason was to fail a `.deb`
+holding the bare `python3 >= 3.12`, and dpkg already does. With it in the control file,
+`dpkg-deb --build` exits 2, saying the `Depends` field has a syntax error after the
+reference to package `python3`. Built with `--nocheck`, `dpkg-deb -f` exits 2 with the same
+error, and `apt-get -s install` exits 100. So that direction is no stricter, and it needs a
+second conversion running the other way. `_run` runs with `check=True`, so CI's check fails
+on such a `.deb` as well, and its log names the exit status and not dpkg-deb's message,
+since `_run` captures stderr.
+
+fpm 1.18.0 takes `-d 'python3 >= 3.12'` for both packages. The `.deb`'s reads back through
+`dpkg-deb -f` as `python3 (>= 3.12)`, and the `.rpm`'s through `rpm -qp --requires` as
+`python3 >= 3.12`. That was measured by CI's `package` job, which holds each package to that
+form and passed on PR #565.
+
 ## The installer
 
 `install.sh` is the one-line installer (#294), served from `main` and piped to bash. It
@@ -74,6 +113,37 @@ without its arguments. GLib's `get_executable` reads a quoted Exec up to the fir
 space, quote included, measured, so the desktop entry quotes the launcher's path only
 where it must.
 
+`check_python` refuses a version that needs a newer Python than the launcher runs (#564).
+The launcher's first line names `PYTHON`, which is `/usr/bin/python3`, and `check_python`
+asks that same variable for its version, so the Python checked and the Python run cannot
+drift apart. `PYTHON` has no override as `GCM_REPO_URL` has: the launcher always runs it, so
+checking another would check the wrong one. The floor is the `requires-python = ">=X.Y"` line
+of the version's own `pyproject.toml`, which every release has, read by `python_floor` with
+`sed`. Not from the recipe's `'python3 >= 3.12'`, which is in no release yet, and not with
+`tomllib`, which is new in 3.11 and may be newer than the Python being checked. The Python is
+asked its version with `print("%d.%d" % sys.version_info[:2])`, which has no f-string for an
+old Python to fail to parse, and an answer that is not `X.Y` refuses the version too. The two
+are compared as numbers, major and then minor. Nothing is checked where there is no
+`/usr/bin/python3`, as without apt, where `install_packages` has named `python3` among what
+GCM needs and the install goes on as it did, nor where the version has no `pyproject.toml` or
+no floor in that form.
+
+`main` calls it twice, on lines of their own. The first call is after `add_version` and
+before `install_packages`, so that where `python3` is installed and too old the install stops
+before apt installs GCM's packages. Two things can still run before it: `need_git`, which
+comes before the clone since the floor cannot be read without it, so where git is missing
+sudo and apt install it first, and `fetch_repo` and `add_version`, which clone and add the
+version's worktree. The second call is after `install_packages`, so that a `python3` apt
+installed in that run is checked as well, and the packages apt installed stay, as
+`--uninstall` keeps them. Both come before `use_version`, so a refusal changes none of `current`,
+`previous`, `channel`, the launcher and the desktop entry. A refused version's worktree stays
+under `versions/`, as after a run cut short: the next run that succeeds prunes it, and
+`--uninstall` removes it. Reading the floor with `git show` before `add_version` was
+rejected. It would leave no worktree when `python3` is too old, but a refused fresh install
+still leaves the clone, and the message names `--uninstall`, so it would save a few files at
+the cost of a second way to read the floor. Nothing ran on an actual Ubuntu 22.04, as there
+was none to run it on: the tests answer for the Python with a fake that says 3.10.
+
 ## Testing the installer
 
 `tests/test_install.py` pipes it to bash against a repository of the test's own, with
@@ -82,6 +152,23 @@ Each scenario runs in a session of its own, with no terminal: measured, run from
 developer's terminal without that, the script asked its question there. One that
 answers it runs on a pty of its own, which `TAKE_TERMINAL` makes its controlling
 terminal.
+
+The Python it checks (#564) is a fake in most of the scenarios about it. `Rig.install` takes
+`python=`, which replaces the script's one `PYTHON=/usr/bin/python3` line in the text it
+pipes, and `fake_python` makes the interpreter: a `#!/bin/sh` script that prints a version
+whatever it is asked, or fails. It goes in a folder of the test's own and never in the
+home, whose path holds a space on purpose: the launcher's first line names it, and a
+shebang cannot hold a space. Where apt is to install it, `FAKE_PYTHON_FROM` and
+`FAKE_PYTHON_TO` have the fake `apt-get` copy one into place when it installs `python3`,
+matched as a word of its own and not as the start of `python3-gi`, as `FAKE_GIT_TO` does for
+git. The upstream holds the real `pyproject.toml`, so every scenario that swaps nothing
+checks the real floor against the real `/usr/bin/python3`: each needs it to meet
+`requires-python`, and a raise of the floor fails them all where it is older. `Rig.release`
+takes `pyproject=` as it takes `makefile=`, and `None` removes the file. A function of the
+script is tested through the seam an install uses: `Rig.run_functions` asserts that the text
+ends with the line that runs `main`, replaces that line with the calls under test and pipes
+the rest to bash, so `set -euo pipefail` holds and nothing is cut out of the script. One
+test holds `python_floor`'s `sed` to `tomllib`'s reading of the real `pyproject.toml`.
 
 ## Releases
 

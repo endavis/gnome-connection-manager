@@ -82,7 +82,8 @@ install: translate
 # installs the depends (-d) and recommends, and asks whether to install the suggests. An
 # alternative is one quoted word, `'a|b'`, as install.sh reads a word at a time: fpm
 # writes it as given, and dpkg and apt read it as `a | b`. tools/packages.py reads the
-# recipe too (#273).
+# recipe too (#273). Both packages require the Python that pyproject.toml's requires-python
+# names, as one quoted word, and tests/test_packages.py holds them to it (#564).
 #
 # No maintainer script: dpkg's desktop-file-utils trigger updates the desktop database for
 # a file in /usr/share/applications. The postinst that ran xdg-desktop-menu left the
@@ -92,7 +93,7 @@ install: translate
 deb: install
 	rm -f $(PKG_DEB)
 	fpm -t deb -p $(PKG_DEB) $(FPM_OPTS) \
-		-d python3 \
+		-d 'python3 >= 3.12' \
 		-d python3-gi \
 		-d python3-gi-cairo \
 		-d gir1.2-gtk-3.0 \
@@ -118,7 +119,7 @@ rpm: install
 	rm -f $(PKG_RPM)
 	fpm -t rpm -p $(PKG_RPM) $(FPM_OPTS) \
 		-a $(PKG_ARCH_RPM) \
-		-d python3 \
+		-d 'python3 >= 3.12' \
 		-d python3-gobject \
 		-d gtk3 \
 		-d vte291 \
