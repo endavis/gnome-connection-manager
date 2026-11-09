@@ -945,6 +945,8 @@ def test_main_checks_the_config_before_the_application_exists(app_module, monkey
         calls.append("config")
         raise SystemExit(1)
 
+    # Stubbed, so that the real one does not write SHELL into this process where it is unset.
+    monkeypatch.setattr(app_module, "pass_shell_on", lambda environ: calls.append("shell"))
     monkeypatch.setattr(app_module, "require_expect", lambda: calls.append("expect"))
     monkeypatch.setattr(app_module, "require_readable_config", refuse)
     monkeypatch.setattr(app_module, "GcmApplication", lambda: calls.append("application"))
@@ -952,7 +954,7 @@ def test_main_checks_the_config_before_the_application_exists(app_module, monkey
     with pytest.raises(SystemExit):
         app_module.main(["gcm"])
 
-    assert calls == ["expect", "config"]
+    assert calls == ["shell", "expect", "config"]
 
 
 # -- what a save keeps of the file it replaces (#163) ----------------------------

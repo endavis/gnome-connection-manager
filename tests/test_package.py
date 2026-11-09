@@ -300,6 +300,74 @@ def test_the_passwd_entry_read_is_the_real_uids(
     assert asked == [4242]
 
 
+def test_a_shell_is_passed_on_where_the_environment_has_none(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """The programs GCM starts inherit its environment, and bash does not export the `SHELL`
+    it sets, so with none in GCM's own the programs in a console saw none (#559). The value
+    is the shell the console runs, the module's `SHELL`, and not one worked out again."""
+    monkeypatch.setattr(app_module, "SHELL", "/opt/probe/shell")
+    environ: dict[str, str] = {}
+
+    app_module.pass_shell_on(environ)
+
+    assert environ == {"SHELL": "/opt/probe/shell"}
+
+
+def test_an_empty_shell_is_passed_on_too(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """`SHELL=` names no program and `local_shell` reads it as unset, so it is filled as an
+    unset one is. `os.environ.setdefault` alone would keep it."""
+    monkeypatch.setattr(app_module, "SHELL", "/opt/probe/shell")
+    environ = {"SHELL": ""}
+
+    app_module.pass_shell_on(environ)
+
+    assert environ == {"SHELL": "/opt/probe/shell"}
+
+
+def test_a_shell_given_is_left_as_it_is(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """A `SHELL` given stays, a wrapper among them, and nothing else is touched: the
+    programs GCM starts see it as they did before #559."""
+    monkeypatch.setattr(app_module, "SHELL", "/opt/probe/shell")
+    environ = {"SHELL": "/usr/bin/zsh", "HOME": "/h"}
+
+    app_module.pass_shell_on(environ)
+
+    assert environ == {"SHELL": "/usr/bin/zsh", "HOME": "/h"}
+
+
+def test_main_gives_the_programs_it_starts_shell_where_it_is_unset(
+    monkeypatch: pytest.MonkeyPatch, app_module: types.ModuleType
+) -> None:
+    """`main()` passes the shell on before its first step: `require_expect` starts a program
+    of its own, `expect -v`, and the programs GCM starts inherit its environment (#559)."""
+    # Both calls, in this order: `setenv` records what was there, so that `main()`'s write is
+    # undone at teardown, whatever it was. A bare `delenv("SHELL", raising=False)` records
+    # nothing where `SHELL` is absent, and `main()`'s would stay in the pytest process.
+    monkeypatch.setenv("SHELL", "")
+    monkeypatch.delenv("SHELL")
+    seen: list[str | None] = []
+
+    def stop() -> None:
+        seen.append(os.environ.get("SHELL"))
+        raise SystemExit(1)
+
+    def never_built() -> None:
+        pytest.fail("main() built the application")
+
+    monkeypatch.setattr(app_module, "require_expect", stop)
+    monkeypatch.setattr(app_module, "GcmApplication", never_built)
+
+    with pytest.raises(SystemExit):
+        app_module.main(["gcm"])
+
+    assert seen == [app_module.SHELL]
+
+
 _NO_SHELL_PROBE = """
 import os, sys, tempfile
 os.environ["HOME"] = tempfile.mkdtemp(); sys.argv = ["gcm"]
@@ -401,6 +469,107 @@ def test_a_local_console_runs_the_login_shell_without_shell_against_real_gtk() -
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert f"SHELL-RAN {_login_shell()}" in result.stdout.splitlines()
+    # PyGObject prints what a signal handler raises, and carries on.
+    assert "Traceback" not in result.stderr, result.stderr[-2000:]
+    assert glib_complaints(result.stderr) == []
+
+
+# The same console, and a program typed into it. What `printenv SHELL` prints there is what
+# the programs GCM starts see. `main()` opens the application's window, so the scenario makes
+# `main()`'s first call itself and builds the window as the script above does. It prints no
+# `SHELL-RAN`: the passwd shell is in stdout whether or not `pass_shell_on` did its work.
+_LOCAL_CONSOLE_PROGRAM_SCRIPT = r"""
+import faulthandler, os, shlex, sys, tempfile, time
+faulthandler.dump_traceback_later(60, exit=True)
+home = tempfile.mkdtemp()
+os.environ["HOME"] = home; sys.argv = ["gcm"]
+os.environ.pop("SHELL", None)
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")
+from gi.repository import Gtk
+from gnome_connection_manager import app
+
+def until(condition, seconds=10):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and not condition():
+        Gtk.main_iteration_do(False)
+        time.sleep(0.005)
+    return condition()
+
+def program_of(pid):
+    # What /proc says the process runs, its argv[0]: None once there is no such process, and
+    # "" where its command line reads empty.
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as handle:
+            return handle.read().split(b"\0")[0].decode()
+    except OSError:
+        return None
+
+app.pass_shell_on(os.environ)
+app.conf.CHECK_UPDATES = False
+# With no relay between GCM and its shell, as in the script above.
+app.conf.STARTUP_LOCAL = True
+app.conf.OSC52_ENABLED = 0
+app.conf.RAW_SESSION_LOG = 0
+app.wMain = app.Wmain(application=None)
+
+notebook = app.wMain.nbConsole
+assert notebook.get_n_pages() == 1, "expected the startup console, found %d tabs" % (
+    notebook.get_n_pages())
+terminal = app.page_terminal(notebook.get_nth_page(0))
+assert terminal is not None, "the startup console holds no terminal"
+assert until(lambda: getattr(terminal, "child_pid", None)), "the console started no process"
+pid = terminal.child_pid
+
+# `env -u VIRTUAL_ENV <shell>`: env first and the shell after, as in the script above.
+programs = []
+def shell_started():
+    programs.append(program_of(pid))
+    return programs[-1] not in ("env", "")
+
+assert until(shell_started), "the console's process %d was not the shell after 10 s: %r" % (
+    pid, programs[-3:])
+assert programs[-1], "the console's process %d has ended" % pid
+
+# The redirection creates the file before printenv writes to it, so it is END, written after
+# printenv has ended, that is waited for. The line uses no `$?`, so that it runs in any
+# login shell.
+seen = os.path.join(home, "shell-seen")
+quoted = shlex.quote(seen)
+app.vte_feed(terminal, "printenv SHELL > %s; echo END >> %s\r" % (quoted, quoted))
+
+def lines_written():
+    try:
+        with open(seen) as handle:
+            return handle.read().splitlines()
+    except OSError:
+        return []
+
+assert until(lambda: "END" in lines_written()), (
+    "printenv had not ended after 10 s, the file holds %r" % lines_written())
+lines = lines_written()
+for line in lines[:lines.index("END")]:
+    print("SHELL-SEEN", line)
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="needs an X server")
+def test_a_local_consoles_programs_see_shell_without_it_against_real_gtk() -> None:
+    """The console runs the passwd shell where `SHELL` is unset (#544), and `printenv SHELL`
+    typed into it prints that shell once `main()`'s first call has been made: bash does not
+    export the `SHELL` it sets, so before #559 the programs in the console saw none."""
+    pytest.importorskip("gi", reason="PyGObject not available")
+    result = subprocess.run(
+        [sys.executable, "-c", _LOCAL_CONSOLE_PROGRAM_SCRIPT],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "GDK_BACKEND": "x11"},
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert f"SHELL-SEEN {_login_shell()}" in result.stdout.splitlines()
     # PyGObject prints what a signal handler raises, and carries on.
     assert "Traceback" not in result.stderr, result.stderr[-2000:]
     assert glib_complaints(result.stderr) == []
