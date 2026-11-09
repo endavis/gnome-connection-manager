@@ -54,6 +54,8 @@ def test_invalid_bytes_do_not_raise(tmp_path: Path):
 
 
 def test_main_prints_notice(app_module, monkeypatch, capsys):
+    # Stubbed, so that the real one does not write SHELL into this process where it is unset.
+    monkeypatch.setattr(app_module, "pass_shell_on", lambda environ: None)
     monkeypatch.setattr(app_module, "require_expect", lambda: None)
     monkeypatch.setattr(app_module, "require_config_dir", lambda: None)
     monkeypatch.setattr(app_module, "require_readable_config", lambda: None)

@@ -73,7 +73,7 @@ import tempfile
 import time
 import tokenize
 import weakref
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -357,8 +357,8 @@ def local_shell(environ: Mapping[str, str]) -> str:
     is unset or empty this gives the shell of the user's passwd entry, as
     `Vte.get_user_shell()` does, measured, without asking GTK at import. That entry can be
     missing, for a uid passwd has no line for, and its shell field can be empty, which
-    passwd(5) says means /bin/sh. The programs such a console starts see no `SHELL`:
-    bash sets it without exporting it, and dash does not set it, measured.
+    passwd(5) says means /bin/sh. `main()` passes the shell chosen here on to the programs
+    GCM starts, as `SHELL`, through `pass_shell_on` (#559).
     """
     shell = environ.get("SHELL")
     if shell:
@@ -371,6 +371,23 @@ def local_shell(environ: Mapping[str, str]) -> str:
 
 
 SHELL = local_shell(os.environ)
+
+
+def pass_shell_on(environ: MutableMapping[str, str]) -> None:
+    """Give `environ` the `SHELL` a local console runs, where it has none (#559).
+
+    Where GCM was started without `SHELL`, the programs it started saw none: bash sets
+    `SHELL` without exporting it, and a program `sh -c` starts sees none either, measured.
+    So `script -c` in a local console ran its command under /bin/sh. `main()` calls this
+    before anything else, and the programs GCM starts inherit the variable with the rest
+    of its environment: measured for a console's programs, with the relay and without,
+    and for a host's commands on this computer. Not at import, which has no side effects
+    (#118). An empty `SHELL=` counts as none, as it does for `local_shell`.
+    """
+    if not environ.get("SHELL"):
+        environ["SHELL"] = SHELL
+
+
 # Seconds counted down in the tab before each reconnect of a dropped session (#239).
 RECONNECT_DELAY = 5
 # Seconds a reconnected session must last for a later drop to start the count over. One
@@ -13063,6 +13080,7 @@ class GcmApplication(Gtk.Application):
 def main(argv=None):
     if argv is None:
         argv = sys.argv
+    pass_shell_on(os.environ)
     require_expect()
     require_config_dir()
     require_readable_config()

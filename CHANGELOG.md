@@ -204,8 +204,8 @@ the git log.
   section has the other limits.
 - GCM starts where `SHELL` is unset, as under `env -i`, where it stopped at import with
   `KeyError: 'SHELL'` before any window opened. A local console then runs the shell of the
-  user's passwd entry, or `/bin/sh` where there is none. The programs started in that console
-  still see no `SHELL`, as bash does not export the one it sets (#544).
+  user's passwd entry, or `/bin/sh` where there is none, and GCM sets `SHELL` to that shell
+  for the programs it starts (#544, #559).
 - GCM installed from the `.deb` or the `.rpm` loaded the About dialog's logo and the main
   window's icon as a 16x16 stand-in, after a GTK warning for each, because the packages
   left out `ui/icon.png`. They now install it (#545).
