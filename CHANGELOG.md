@@ -14,8 +14,11 @@ the git log.
 ### Fixed
 - The `.deb` and the `.rpm` now declare the Python that GCM requires, `python3 >= 3.12`, the
   floor `pyproject.toml`'s `requires-python` sets. Both declared `python3` with no version,
-  which Ubuntu 22.04's Python 3.10 satisfies. The install line still checks no version: it
-  asks apt for `python3` by name, as before (#564).
+  which Ubuntu 22.04's Python 3.10 satisfies. The install line now refuses a version that
+  needs a newer Python than `/usr/bin/python3`, which its launcher runs, as that version's
+  `requires-python` states it. It refuses before the version replaces the one in use: before
+  apt installs GCM's packages where `python3` is installed already, and after, where apt has
+  just installed it (#564).
 
 ## [2.3.0] - 2026-11-09
 

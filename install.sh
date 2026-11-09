@@ -27,6 +27,9 @@
 # it suggests, GCM's optional programs, it installs too if the person running this says
 # so, asked once for all of them.
 #
+# A version that needs a newer Python than /usr/bin/python3, which the launcher runs, is
+# refused before it replaces the one in use (#564).
+#
 # Everything is done in functions called from the script's last line, so a download cut
 # short runs nothing, and nothing the script runs can read the rest of it as its input,
 # which it is when piped.
@@ -34,6 +37,10 @@
 set -euo pipefail
 
 REPO_URL=${GCM_REPO_URL:-https://github.com/endavis/gnome-connection-manager.git}
+# The Python the launcher runs, and the one check_python asks for its version (#564). It has
+# no override, as REPO_URL has GCM_REPO_URL: the launcher always runs this one, so checking
+# another would check the wrong one.
+PYTHON=/usr/bin/python3
 MARKER="Written by GCM's install.sh"
 
 say() { printf '%s\n' "$*"; }
@@ -89,8 +96,9 @@ check_ours() {
 # The packages a version's .deb names with the options given, read from its Makefile, so
 # that a version needing another one gets it. Alternatives are one quoted word there,
 # `'a|b'`, read without the quotes (#273). A required version, such as `'python3 >= 3.12'`,
-# is read as its first word, the package, so apt is asked for the package and no version is
-# checked (#564).
+# is read as its first word, the package, so apt is asked for the package alone. The
+# Python's version is checked from the version's pyproject.toml instead, by check_python
+# (#564).
 deb_packages() {
     awk -v option="^($2)\$" -v quote="'" '
         /^deb:/ { deb = 1; next }
@@ -263,6 +271,50 @@ link_name() {
     say "${target##*/}"
 }
 
+# The Python a version needs, as X.Y, from the `requires-python = ">=X.Y"` line of its
+# pyproject.toml: nothing where it has no such file or line, which checks nothing (#564).
+# Read with sed, not tomllib, which is new in 3.11: the Python to check may be older.
+python_floor() {
+    [[ -f $1/pyproject.toml ]] || return 0
+    sed -n '/^requires-python[[:space:]]*=/{
+        s/^[^"]*"[[:space:]]*>=[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\)[[:space:]]*".*$/\1/p
+        q
+    }' "$1/pyproject.toml"
+}
+
+# Refuses a version that needs a newer Python than $PYTHON is, before it becomes the one in
+# use, so that `current`, `previous`, `channel`, the launcher and the desktop entry stay as
+# they were (#564). It runs twice. Before install_packages, where python3 is installed and
+# too old, it stops the install before apt installs GCM's packages; after, it asks the Python
+# apt has just installed where there was none. It checks nothing where there is no $PYTHON,
+# as without apt, where install_packages has named python3 among what GCM needs, or where the
+# version states no floor in the form python_floor reads. A version refused stays under
+# versions/, as after a run cut short: the next run that succeeds prunes it, and --uninstall
+# removes it. Called plainly: in an `if` or before `||`, `set -e` is off inside it.
+check_python() {
+    local floor have current after have_major have_minor floor_major floor_minor
+    [[ -x $PYTHON ]] || return 0
+    floor=$(python_floor "$VERSIONS/$VERSION_NAME")
+    [[ -n $floor ]] || return 0
+    # No f-string: this is asked of a Python that may be too old to parse one.
+    have=$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null) || have=
+    current=$(link_name current)
+    if [[ -n $current ]]; then
+        after=". $current stays in use."
+    else
+        after=", so GCM was not installed. install.sh --uninstall removes what this run fetched."
+    fi
+    [[ $have =~ ^[0-9]+\.[0-9]+$ ]] ||
+        die "GCM $VERSION_NAME needs Python $floor or newer, and $PYTHON gave no version number$after"
+    IFS=. read -r have_major have_minor <<<"$have"
+    IFS=. read -r floor_major floor_minor <<<"$floor"
+    # As numbers: 3.9 is older than 3.12, which a string would put the other way round.
+    if ((10#$have_major < 10#$floor_major)) ||
+        ((10#$have_major == 10#$floor_major && 10#$have_minor < 10#$floor_minor)); then
+        die "GCM $VERSION_NAME needs Python $floor or newer, and $PYTHON is Python $have$after"
+    fi
+}
+
 # Replaces a link in one step, so that a launcher starting meanwhile never finds none.
 relink() {
     ln -sfn "$1" "$2.new"
@@ -307,8 +359,9 @@ prune() {
 
 write_launcher() {
     mkdir -p "${LAUNCHER%/*}"
+    # Its first line names $PYTHON, the Python check_python asked (#564).
     cat >"$LAUNCHER.new" <<EOF
-#!/usr/bin/python3
+#!$PYTHON
 # $MARKER (#294), which writes it again at each update.
 """Starts the version of GCM that current names, resolved once, as GCM starts.
 
@@ -446,10 +499,12 @@ main() {
     fi
     resolve "$channel"
     add_version
+    check_python
     mapfile -t packages < <(version_packages "$VERSIONS/$VERSION_NAME")
     ((${#packages[@]} > 1)) || die "found no packages in $VERSIONS/$VERSION_NAME/Makefile"
     mapfile -t optional < <(optional_packages "$VERSIONS/$VERSION_NAME")
     install_packages "${packages[@]}" -- "${optional[@]}"
+    check_python
     use_version
     write_launcher
     write_desktop_entry

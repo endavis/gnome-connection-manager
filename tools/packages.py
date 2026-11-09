@@ -16,7 +16,8 @@ its own for them.
 
 The Python both packages require is `pyproject.toml`'s `requires-python`, written the same in
 both recipes as one quoted word, `-d 'python3 >= 3.12'` while the floor is 3.12 (#564).
-`install.sh` reads the first word of it, the package, and checks no version, so `unversioned`
+`install.sh` reads the first word of it, the package, to ask apt for, and takes the version
+from the `requires-python` of the version's own `pyproject.toml` instead, so `unversioned`
 gives that word where a name is wanted, as `names` does for apt. `dpkg-deb -f` gives a
 relation back in one form whatever spacing it was written with, `python3 (>= 3.12)`, measured
 with dpkg 1.22.6, and `as_written` turns that into the recipe's word. A control file holding

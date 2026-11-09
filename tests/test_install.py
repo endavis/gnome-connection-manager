@@ -8,6 +8,11 @@ installed, as on a new Ubuntu. A version's package is a fake that reports what i
 started with, so the launcher is tested without GTK; the real GCM it installs was started
 by hand on Xvfb.
 
+The Python the script checks (#564) is the real /usr/bin/python3 unless a scenario swaps
+the script's `PYTHON=` line for a fake interpreter, which answers with a version of the
+scenario's choosing. The upstream holds the real pyproject.toml, so every scenario that
+does not swap it checks the real floor against the real Python.
+
 The script asks on the terminal whether to install GCM's optional programs, so it runs in
 a session of its own, with no terminal to ask on, unless a scenario gives it one and
 answers there: run from a developer's terminal, it would ask there.
@@ -20,11 +25,14 @@ import hashlib
 import json
 import os
 import pty
+import re
 import select
+import shlex
 import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -56,6 +64,14 @@ ALTERNATIVES = ["freerdp2-x11"]
 
 # How the question ends, on the terminal.
 QUESTION_END = b"[y/N] "
+
+# The line of install.sh that names the Python the launcher runs and the check asks (#564),
+# and the line that runs `main`, which a test of one function runs its calls in place of.
+PYTHON_LINE = "PYTHON=/usr/bin/python3"
+LAST_LINE = '{ main "$@"; }'
+
+# What `Rig.release` is given to leave a file as it is: None removes the file.
+KEEP: Any = object()
 
 # Run in a session of its own, it opens the terminal named first, which so becomes its
 # controlling terminal, the one /dev/tty opens, and runs the rest.
@@ -111,14 +127,19 @@ exec "$@"
 """
 
 # Installs nothing, except git when asked to and FAKE_GIT_TO names where it goes, and
-# fails to install what FAKE_APT_FAIL names. It reads all of its input first: piped, the
-# script must not be there to read.
+# python3 when asked to: FAKE_PYTHON_TO names where it goes, and FAKE_PYTHON_FROM the
+# interpreter that appears there. python3 is matched as a word of its own, not as the start
+# of python3-gi. It fails to install what FAKE_APT_FAIL names. It reads all of its input
+# first: piped, the script must not be there to read.
 FAKE_APT_GET = """\
 #!/bin/sh
 cat > /dev/null
 echo "apt-get $*" >> "$FAKE_LOG"
 case " $* " in
     *" install "*" git "*) [ -n "$FAKE_GIT_TO" ] && ln -s /usr/bin/git "$FAKE_GIT_TO/git" ;;
+esac
+case " $* " in
+    *" install "*" python3 "*) [ -n "$FAKE_PYTHON_TO" ] && cp "$FAKE_PYTHON_FROM" "$FAKE_PYTHON_TO" ;;
 esac
 if [ -n "$FAKE_APT_FAIL" ]; then
     case " $* " in
@@ -165,6 +186,33 @@ def tree_digest(folder: Path) -> dict[str, str]:
     }
 
 
+def script_text(python: Path | None = None) -> str:
+    """install.sh as it is piped, with its `PYTHON=` line naming `python` if one is given."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    if python is None:
+        return text
+    line = re.compile(rf"^{re.escape(PYTHON_LINE)}$", re.MULTILINE)
+    assert len(line.findall(text)) == 1, f"install.sh must have one line, {PYTHON_LINE}"
+    return line.sub(lambda _: f"PYTHON={shlex.quote(str(python))}", text)
+
+
+def fake_python(path: Path, reply: str | None) -> Path:
+    """An interpreter that answers whatever it is asked with `reply`, or fails if that is None.
+
+    It goes in a folder of the test's own and never in the home, whose path holds a space on
+    purpose: the launcher's first line names it, and a shebang cannot hold a space.
+    """
+    body = "exit 1" if reply is None else f"echo {shlex.quote(reply)}"
+    path.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def pyproject_requiring(floor: str) -> str:
+    """A pyproject.toml that asks for Python `floor` or newer, in the form install.sh reads."""
+    return f'[project]\nname = "fake"\nrequires-python = ">={floor}"\n'
+
+
 @dataclass
 class Rig:
     root: Path
@@ -198,16 +246,24 @@ class Rig:
             "FAKE_LOG": str(self.log),
             "FAKE_MISSING": "",
             "FAKE_GIT_TO": "",
+            "FAKE_PYTHON_FROM": "",
+            "FAKE_PYTHON_TO": "",
             "FAKE_APT_FAIL": "",
             **extra,
         }
 
     def install(
-        self, *args: str, ok: bool = True, cwd: Path | None = None, **env: str
+        self,
+        *args: str,
+        ok: bool = True,
+        cwd: Path | None = None,
+        python: Path | None = None,
+        **env: str,
     ) -> subprocess.CompletedProcess[str]:
+        """Pipes the script to bash. Given `python`, the script checks and runs that one."""
         done = subprocess.run(
             ["bash", "-s", "--", *args],
-            input=SCRIPT.read_text(encoding="utf-8"),
+            input=script_text(python),
             env=self.env(**env),
             cwd=cwd or self.root,
             capture_output=True,
@@ -218,6 +274,27 @@ class Rig:
         if ok:
             assert done.returncode == 0, done.stdout + done.stderr
         return done
+
+    def run_functions(
+        self, calls: str, python: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Runs `calls` in place of the script's last line, which would run `main`.
+
+        Piped to bash as an install pipes it, so `set -euo pipefail` holds for the functions
+        run, and nothing is cut out of the text.
+        """
+        text = script_text(python)
+        assert text.endswith(f"{LAST_LINE}\n"), "install.sh no longer ends by running main"
+        return subprocess.run(
+            ["bash", "-s", "--"],
+            input=text.removesuffix(f"{LAST_LINE}\n") + calls + "\n",
+            env=self.env(),
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            start_new_session=True,
+        )
 
     def install_on_terminal(
         self, answer: str | None, *args: str, **env: str
@@ -268,9 +345,15 @@ class Rig:
         assert done.returncode == 0, done.stdout + done.stderr
         return done, shown.decode().replace("\r\n", "\n")
 
-    def release(self, tag: str, makefile: str | None = None) -> str:
+    def release(self, tag: str, makefile: str | None = None, pyproject: str | None = KEEP) -> str:
+        """Commits and tags the upstream as `tag`. A `makefile` or `pyproject` replaces that
+        file first, and `pyproject=None` removes it."""
         if makefile is not None:
             (self.upstream / "Makefile").write_text(makefile, encoding="utf-8")
+        if pyproject is None:
+            (self.upstream / "pyproject.toml").unlink()
+        elif pyproject is not KEEP:
+            (self.upstream / "pyproject.toml").write_text(pyproject, encoding="utf-8")
         (self.upstream / "RELEASE").write_text(tag, encoding="utf-8")
         git(self.upstream, "add", "-A")
         git(self.upstream, "commit", "-q", "-m", tag)
@@ -342,6 +425,10 @@ def rig(tmp_path: Path) -> Rig:
     (upstream / "data").mkdir()
     shutil.copy(REPO_ROOT / "data" / "icon.png", upstream / "data")
     shutil.copy(REPO_ROOT / "Makefile", upstream)
+    # The real pyproject.toml, so that every scenario runs the Python check against the real
+    # floor and the real /usr/bin/python3 (#564). Each therefore needs that Python to meet
+    # requires-python: a later raise of the floor fails every one of them where it is older.
+    shutil.copy(REPO_ROOT / "pyproject.toml", upstream)
     shutil.copy(REPO_ROOT / "gnome-connection-manager.desktop", upstream)
     subprocess.run(["git", "init", "-q", "-b", "main", str(upstream)], check=True)
 
@@ -662,6 +749,241 @@ def test_without_git_installs_it_first(rig: Rig) -> None:
         "apt-get install -y git",
     ]
     assert rig.link("current") == "versions/v1.0.0"
+
+
+# -- the Python a version needs (#564) ---------------------------------------------------
+
+
+def test_refuses_a_python_older_than_the_version_needs_before_apt_installs_its_packages(
+    rig: Rig,
+) -> None:
+    """python3 is installed and too old: nothing of GCM's goes in, not by apt and not in the
+    home. A package is missing, so that apt would run were it not for the check."""
+    rig.release("v1.0.0", pyproject=pyproject_requiring("3.12"))
+    python = fake_python(rig.root / "python3", "3.10")
+
+    done = rig.install(python=python, FAKE_MISSING="python3-pyaes", ok=False)
+
+    assert done.returncode == 1
+    assert (
+        f"install.sh: GCM v1.0.0 needs Python 3.12 or newer, and {python} is Python 3.10, "
+        "so GCM was not installed. install.sh --uninstall removes what this run fetched.\n"
+    ) in done.stderr
+    assert rig.link("current") is None
+    assert not rig.launcher.exists()
+    assert not rig.desktop_entry.exists()
+    assert not rig.log.exists()
+
+
+def test_an_update_to_a_version_needing_a_newer_python_keeps_the_one_in_use(rig: Rig) -> None:
+    """Refused before `use_version`, so `current`, `previous`, `channel` and the launcher stay
+    as they were. The refused version's worktree stays too, as after a run cut short."""
+    rig.release("v1.0.0")
+    rig.install()
+    launcher = rig.launcher.read_bytes()
+    rig.release("v1.1.0", pyproject=pyproject_requiring("3.99"))
+
+    done = rig.install("release", ok=False)
+
+    assert done.returncode == 1
+    assert "GCM v1.1.0 needs Python 3.99 or newer, and /usr/bin/python3 is Python " in done.stderr
+    assert done.stderr.endswith(". v1.0.0 stays in use.\n")
+    assert rig.link("current") == "versions/v1.0.0"
+    assert rig.link("previous") is None
+    assert not (rig.gcm_home / "channel").exists()
+    assert rig.launcher.read_bytes() == launcher
+    assert rig.installed() == ["v1.0.0", "v1.1.0"]
+
+
+def test_checks_the_python_apt_installs(rig: Rig) -> None:
+    """With no python3 until apt installs one, the check before apt has nothing to ask. The
+    one after it asks the Python apt put there, and refuses before anything is made current."""
+    rig.release("v1.0.0", pyproject=pyproject_requiring("3.12"))
+    installed = rig.root / "python3"
+    staged = fake_python(rig.root / "staged-python3", "3.10")
+
+    done = rig.install(
+        python=installed,
+        FAKE_MISSING="python3",
+        FAKE_PYTHON_FROM=str(staged),
+        FAKE_PYTHON_TO=str(installed),
+        ok=False,
+    )
+
+    assert done.returncode == 1
+    assert f"GCM v1.0.0 needs Python 3.12 or newer, and {installed} is Python 3.10" in done.stderr
+    assert "apt-get install -y python3" in rig.log.read_text().splitlines()
+    assert rig.link("current") is None
+    assert not rig.launcher.exists()
+    assert not rig.desktop_entry.exists()
+
+
+def test_a_missing_python_without_apt_installs_as_before(rig: Rig) -> None:
+    """There is nothing to ask and no apt to install it, which the run has said: it goes on."""
+    rig.release("v1.0.0")
+    programs = programs_without(rig.root, "apt-get", "dpkg-query", "sudo")
+    (rig.fakebin / "apt-get").unlink()
+    (rig.fakebin / "dpkg-query").unlink()
+    missing = rig.root / "no-python3"
+
+    done = rig.install(python=missing, PATH=f"{rig.fakebin}:{programs}")
+
+    assert "There is no apt here to install what GCM needs. In Debian's names: python3 " in (
+        done.stdout
+    )
+    assert not missing.exists()
+    assert rig.link("current") == "versions/v1.0.0"
+
+
+@pytest.mark.parametrize(
+    "pyproject",
+    ['[project]\nname = "fake"\n', None],
+    ids=["names no Python", "has no pyproject.toml"],
+)
+def test_a_version_stating_no_floor_installs_whatever_the_python(
+    rig: Rig, pyproject: str | None
+) -> None:
+    """Nothing to check against, and a missing file does not end the script. The launcher's
+    first line names the Python that would have been checked."""
+    rig.release("v1.0.0", pyproject=pyproject)
+    python = fake_python(rig.root / "python3", "3.10")
+
+    done = rig.install(python=python)
+
+    assert done.stderr == ""
+    assert rig.link("current") == "versions/v1.0.0"
+    assert rig.launcher.read_text(encoding="utf-8").splitlines()[0] == f"#!{python}"
+
+
+def test_the_launcher_runs_the_python_the_script_checks(rig: Rig) -> None:
+    """Its first line is still `#!/usr/bin/python3`: one name, for the check and the launcher."""
+    rig.release("v1.0.0")
+
+    rig.install()
+
+    assert rig.launcher.read_text(encoding="utf-8").splitlines()[0] == "#!/usr/bin/python3"
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [None, "", "3.x", "Python 3.12.3"],
+    ids=["fails", "prints nothing", "prints 3.x", "prints a sentence"],
+)
+def test_refuses_a_python_that_gives_no_version_before_apt_installs_its_packages(
+    rig: Rig, reply: str | None
+) -> None:
+    """An answer that is not X.Y cannot be compared, and is not taken as good enough."""
+    rig.release("v1.0.0", pyproject=pyproject_requiring("3.12"))
+    python = fake_python(rig.root / "python3", reply)
+
+    done = rig.install(python=python, FAKE_MISSING="python3-pyaes", ok=False)
+
+    assert done.returncode == 1
+    assert f"GCM v1.0.0 needs Python 3.12 or newer, and {python} gave no version number" in (
+        done.stderr
+    )
+    assert rig.link("current") is None
+    assert not rig.log.exists()
+
+
+@pytest.mark.parametrize(
+    ("floor", "version", "enough"),
+    [
+        ("3.12", "2.99", False),
+        ("3.12", "3.9", False),
+        ("3.12", "3.11", False),
+        ("3.12", "3.12", True),
+        ("3.12", "3.13", True),
+        ("3.12", "4.0", True),
+        # A floor written with a leading zero is a number, not an octal one.
+        ("3.08", "3.7", False),
+        ("3.08", "3.9", True),
+    ],
+)
+def test_compares_the_python_as_numbers(rig: Rig, floor: str, version: str, enough: bool) -> None:
+    """Major, then minor: 3.9 is older than 3.12, which a string would put the other way, and
+    4.0 is newer. Run as the install runs it, through the script's own functions."""
+    versions = rig.root / "versions-of-its-own"
+    (versions / "v1.0.0").mkdir(parents=True)
+    (versions / "v1.0.0" / "pyproject.toml").write_text(pyproject_requiring(floor), "utf-8")
+    python = fake_python(rig.root / "python3", version)
+
+    done = rig.run_functions(
+        f"set_paths; VERSIONS={shlex.quote(str(versions))}; VERSION_NAME=v1.0.0; check_python",
+        python=python,
+    )
+
+    if enough:
+        assert (done.returncode, done.stderr) == (0, "")
+    else:
+        assert done.returncode == 1
+        assert f"needs Python {floor} or newer, and {python} is Python {version}" in done.stderr
+
+
+def test_reads_the_floor_pyproject_states_as_tomllib_does(rig: Rig) -> None:
+    """The script reads the line with sed, since the Python it checks may be older than
+    tomllib. This holds that reading to tomllib's, in the form test_docs.py takes a floor in."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    requires = pyproject["project"]["requires-python"]
+    floor = re.fullmatch(r">=\s*(\d+\.\d+)", requires)
+    assert floor, f"requires-python is {requires!r}, not a floor install.sh can read"
+
+    done = rig.run_functions(f"python_floor {shlex.quote(str(REPO_ROOT))}")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == f"{floor.group(1)}\n"
+
+
+@pytest.mark.parametrize(
+    ("pyproject", "floor"),
+    [
+        ('[project]\nrequires-python = ">=3.12"\n', "3.12"),
+        ('[project]\nname = "fake"\nrequires-python = ">=3.9"\nreadme = "README.md"\n', "3.9"),
+        ('requires-python=">=3.12"\n', "3.12"),
+        ('requires-python = ">= 3.12"  # the floor\n', "3.12"),
+        ('requires-python = ">=3.12"\r\n', "3.12"),
+        ('requires-python = ">=3.12.1"\n', ""),
+        ('requires-python = ">=3.12,<4"\n', ""),
+        ('requires-python = ">3.12"\n', ""),
+        ('requires-python = "~=3.12"\n', ""),
+        ("requires-python = '>=3.12'\n", ""),
+        ('# requires-python = ">=3.12"\n', ""),
+        ('[project]\nname = "fake"\n', ""),
+        ("", ""),
+        (None, ""),
+    ],
+    ids=[
+        "the usual line",
+        "among others",
+        "no spaces",
+        "a space after >= and a comment",
+        "a Windows line end",
+        "a patch version",
+        "an upper bound",
+        "a bare >",
+        "a compatible release",
+        "single quotes",
+        "commented out",
+        "no such line",
+        "an empty file",
+        "no file",
+    ],
+)
+def test_reads_a_floor_only_in_the_form_it_checks(
+    rig: Rig, pyproject: str | None, floor: str
+) -> None:
+    """Anything else gives no floor, which checks nothing, and never ends the script."""
+    folder = rig.root / "a-version"
+    folder.mkdir()
+    if pyproject is not None:
+        (folder / "pyproject.toml").write_bytes(pyproject.encode())
+
+    done = rig.run_functions(
+        f'floor=$(python_floor {shlex.quote(str(folder))}); printf "%s" "$floor"'
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout == floor
 
 
 # -- the optional programs ---------------------------------------------------------------
