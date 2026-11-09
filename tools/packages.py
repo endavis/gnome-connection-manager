@@ -20,10 +20,10 @@ both recipes as one quoted word, `-d 'python3 >= 3.12'` while the floor is 3.12 
 gives that word where a name is wanted, as `names` does for apt. `dpkg-deb -f` gives a
 relation back in one form whatever spacing it was written with, `python3 (>= 3.12)`, measured
 with dpkg 1.22.6, and `as_written` turns that into the recipe's word. A control file holding
-the bare `python3 >= 3.12` cannot be read at all: dpkg-deb exits 2. What fpm 1.18.0 writes for
-the word was not measured when this was written. CI's check passes only if `dpkg-deb -f`
-gives `python3 (>= 3.12)` for the .deb, the one form `as_written` turns into the recipe's
-word, and `rpm -qp --requires` prints `python3 >= 3.12` for the .rpm.
+the bare `python3 >= 3.12` cannot be read at all: dpkg-deb exits 2. In the .deb fpm builds,
+the word reads back through `dpkg-deb -f` as `python3 (>= 3.12)`, the one form `as_written`
+turns into the recipe's word, and in the .rpm through `rpm -qp --requires` as
+`python3 >= 3.12`. That was measured with fpm 1.18.0 by CI's check, which passed on PR #565.
 """
 
 from __future__ import annotations

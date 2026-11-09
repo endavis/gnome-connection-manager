@@ -82,10 +82,10 @@ second conversion running the other way. `_run` runs with `check=True`, so CI's 
 on such a `.deb` as well, and its log names the exit status and not dpkg-deb's message,
 since `_run` captures stderr.
 
-What fpm 1.18.0 writes for `-d 'python3 >= 3.12'` was not measured when this was written,
-as fpm was not installed. CI's `package` job holds the `.deb` to `python3 (>= 3.12)`, as
-`dpkg-deb -f` gives it, and the `.rpm` to `python3 >= 3.12`, as `rpm -qp --requires` prints
-it.
+fpm 1.18.0 takes `-d 'python3 >= 3.12'` for both packages. The `.deb`'s reads back through
+`dpkg-deb -f` as `python3 (>= 3.12)`, and the `.rpm`'s through `rpm -qp --requires` as
+`python3 >= 3.12`. That was measured by CI's `package` job, which holds each package to that
+form and passed on PR #565.
 
 ## The installer
 
