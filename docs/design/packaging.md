@@ -49,6 +49,44 @@ job does, and `--names deb` lists every package the `.deb` names, which that job
 apt for. `tests/test_packages.py` holds the README's tables and `tests/test_install.py`'s
 lists to the same reading.
 
+Both recipes require the Python that `pyproject.toml`'s `requires-python` names, in one
+form: the quoted word `-d 'python3 >= 3.12'`, with 3.12 as today's floor (#564). They
+declared `python3` with no version, which Ubuntu 22.04's Python 3.10 satisfies. apt refuses
+a `.deb` that needs a newer `python3` than the one installed, and says why: `apt-get -s install`
+of a `.deb` needing 3.99 exited 100 and printed
+`Depends: python3 (>= 3.99) but 3.12.3-0ubuntu2.1 is to be installed`.
+`tests/test_packages.py` holds both recipes to `requires-python` in
+`test_the_packages_require_the_python_pyproject_requires`, so a raise of the floor that
+misses the Makefile fails there, and its message names the line to write.
+
+`install.sh` splits a recipe at every space, quoted or not, and takes the word after each
+option without its quotes, so from `'python3 >= 3.12'` it takes `python3` and checks no
+version. A version inside an alternative, `'a >= 1|b'`, would lose the alternatives after
+it, so
+`test_every_package_is_one_word_install_sh_can_read` allows a version on a package alone.
+`tools/packages.py` takes the same word where it wants a name: `unversioned` gives it, and
+`names` gives apt `python3`, not `>=` and `3.12`.
+
+A built `.deb` is read back in dpkg's form. Measured with dpkg 1.22.6, `dpkg-deb -f` gives
+a relation in one form whatever spacing the control file had: a `Depends` written
+`python3 (>=3.12),python3-gi,  a|b` comes back as `python3 (>= 3.12), python3-gi, a | b`.
+`as_written` turns that into the recipe's word, `python3 >= 3.12`, as it turns `a | b` into
+`a|b`. It converts only `>=`, the one operator the recipes' words allow, so a `.deb` holding
+`python3 (>> 3.12)` matches no word and is reported. The other direction, converting the
+recipe's word into dpkg's form to compare, was rejected. Its reason was to fail a `.deb`
+holding the bare `python3 >= 3.12`, and dpkg already does. With it in the control file,
+`dpkg-deb --build` exits 2, saying the `Depends` field has a syntax error after the
+reference to package `python3`. Built with `--nocheck`, `dpkg-deb -f` exits 2 with the same
+error, and `apt-get -s install` exits 100. So that direction is no stricter, and it needs a
+second conversion running the other way. `_run` runs with `check=True`, so CI's check fails
+on such a `.deb` as well, and its log names the exit status and not dpkg-deb's message,
+since `_run` captures stderr.
+
+What fpm 1.18.0 writes for `-d 'python3 >= 3.12'` was not measured when this was written,
+as fpm was not installed. CI's `package` job holds the `.deb` to `python3 (>= 3.12)`, as
+`dpkg-deb -f` gives it, and the `.rpm` to `python3 >= 3.12`, as `rpm -qp --requires` prints
+it.
+
 ## The installer
 
 `install.sh` is the one-line installer (#294), served from `main` and piped to bash. It

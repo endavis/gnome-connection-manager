@@ -88,7 +88,9 @@ check_ours() {
 
 # The packages a version's .deb names with the options given, read from its Makefile, so
 # that a version needing another one gets it. Alternatives are one quoted word there,
-# `'a|b'`, read without the quotes (#273).
+# `'a|b'`, read without the quotes (#273). A required version, such as `'python3 >= 3.12'`,
+# is read as its first word, the package, so apt is asked for the package and no version is
+# checked (#564).
 deb_packages() {
     awk -v option="^($2)\$" -v quote="'" '
         /^deb:/ { deb = 1; next }

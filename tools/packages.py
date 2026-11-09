@@ -13,6 +13,17 @@ An alternative is one word, `freerdp3-x11|freerdp2-x11`, quoted in the recipe, a
 read `freerdp3-x11 | freerdp2-x11`, which is how `dpkg-deb -f` gives it back. The .rpm's
 weak dependencies are spec tags, `--rpm-tag 'Recommends: x'`, since fpm has no option of
 its own for them.
+
+The Python both packages require is `pyproject.toml`'s `requires-python`, written the same in
+both recipes as one quoted word, `-d 'python3 >= 3.12'` while the floor is 3.12 (#564).
+`install.sh` reads the first word of it, the package, and checks no version, so `unversioned`
+gives that word where a name is wanted, as `names` does for apt. `dpkg-deb -f` gives a
+relation back in one form whatever spacing it was written with, `python3 (>= 3.12)`, measured
+with dpkg 1.22.6, and `as_written` turns that into the recipe's word. A control file holding
+the bare `python3 >= 3.12` cannot be read at all: dpkg-deb exits 2. What fpm 1.18.0 writes for
+the word was not measured when this was written. CI's check passes only if `dpkg-deb -f`
+gives `python3 (>= 3.12)` for the .deb, the one form `as_written` turns into the recipe's
+word, and `rpm -qp --requires` prints `python3 >= 3.12` for the .rpm.
 """
 
 from __future__ import annotations
@@ -69,9 +80,28 @@ def declared(makefile: str, target: str) -> dict[str, list[str]]:
     return relations
 
 
-def alternatives(package: str) -> str:
-    """An alternative as `dpkg-deb -f` gives it, `a | b`, as the recipe writes it, `a|b`."""
-    return "|".join(part.strip() for part in package.split("|"))
+# A package with a version as `dpkg-deb -f` gives it, `python3 (>= 3.12)`.
+DPKG_VERSION = re.compile(r"(\S+) \(>= ([^()\s]+)\)")
+
+
+def as_written(package: str) -> str:
+    """A relation as `dpkg-deb -f` gives it, as the recipe writes it: an alternative, `a | b`,
+    as `a|b`, and a version, `python3 (>= 3.12)`, as `python3 >= 3.12`. dpkg prints a relation
+    in one form whatever spacing it was written with, measured with dpkg 1.22.6, so only that
+    form is read. Only `>=` is converted, the one operator a recipe's words allow: a relation
+    with another stays as dpkg prints it, matches no word of the recipe, and is reported."""
+    written = []
+    for part in package.split("|"):
+        stripped = part.strip()
+        version = DPKG_VERSION.fullmatch(stripped)
+        written.append(f"{version[1]} >= {version[2]}" if version else stripped)
+    return "|".join(written)
+
+
+def unversioned(package: str) -> str:
+    """The package a recipe word names, its first word, as `install.sh` reads it:
+    `python3 >= 3.12` is `python3`, and an alternative, `a|b`, is itself."""
+    return package.partition(" ")[0]
 
 
 def built_deb(path: str) -> dict[str, object]:
@@ -80,7 +110,7 @@ def built_deb(path: str) -> dict[str, object]:
     found: dict[str, object] = {}
     for relation, field in fields.items():
         value = _run(["dpkg-deb", "-f", path, field]).strip()
-        found[relation] = [alternatives(package) for package in value.split(",") if package]
+        found[relation] = [as_written(package) for package in value.split(",") if package]
     found["description"] = _run(["dpkg-deb", "-f", path, "Description"]).strip()
     found["maintainer"] = _run(["dpkg-deb", "-f", path, "Maintainer"]).strip()
     return found
@@ -125,13 +155,13 @@ def differences(makefile: str, target: str, found: dict[str, object]) -> list[st
 
 
 def names(makefile: str, target: str) -> list[str]:
-    """Every package `target`'s recipe names, each alternative on its own."""
+    """Every package `target`'s recipe names, each alternative on its own, without versions."""
     relations = declared(makefile, target)
     return [
         name
         for relation in RELATIONS
         for package in relations[relation]
-        for name in package.split("|")
+        for name in unversioned(package).split("|")
     ]
 
 
