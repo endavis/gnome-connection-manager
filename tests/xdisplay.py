@@ -68,6 +68,9 @@ def start(size: str = SCREEN) -> tuple[subprocess.Popen[bytes], str] | None:
     then shared a display: each one's keys reached the other's windows, and the first to
     finish took the server down under the other. So a display counts as its own only once
     the lock file Xvfb writes names its own process.
+
+    An attempt it gives up on ends through `give_up`, not a bare kill: a lock left behind
+    would make `free_number()` skip that number from then on (#568).
     """
     xvfb = shutil.which("Xvfb")
     if xvfb is None:
@@ -90,8 +93,7 @@ def start(size: str = SCREEN) -> tuple[subprocess.Popen[bytes], str] | None:
             if is_up(number) and holder(lock) == process.pid:
                 return process, f":{number}"
             time.sleep(0.02)
-        process.kill()
-        process.wait()
+        give_up(process, lock)
     return None
 
 
@@ -104,3 +106,28 @@ def stop(process: subprocess.Popen[bytes], grace: float = 5.0) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+
+
+def give_up(process: subprocess.Popen[bytes], lock: Path) -> None:
+    """End an attempt `start()` gives up on, leaving no lock that names it (#568).
+
+    A lock left behind makes `free_number()` skip its number from then on. This ends the
+    process through `stop()`, whose SIGTERM lets Xvfb remove its lock as it ends, where
+    SIGKILL runs no clean-up at all (#555). But SIGTERM does not do it alone. Measured,
+    one sent as soon as the lock named the process, before the display was up, left the
+    lock in 40 of 40 rounds, and one sent 0.04 s after the start, with the display up,
+    removed it in 40 of 40. So the lock goes here too, where it still names `process`
+    once that has ended: a lock that names a process that has ended is stale, and an
+    Xvfb takes such a lock over by itself.
+
+    The removal has one race, found by reasoning and not measured. The pid is read and
+    the file then removed by its path, so a server that took the lock over between the
+    two would lose its new lock. That needs a server to reach this number in that instant
+    after a give-up, which is rare: a 10 s wait run out, a server that exited by itself,
+    or a test of this. The harm would be bounded: `free_number()` still skips the number
+    while `is_up` is true, and a `start()` whose lock never names its process gives up
+    after its wait and tries another number.
+    """
+    stop(process)
+    if holder(lock) == process.pid:
+        lock.unlink(missing_ok=True)

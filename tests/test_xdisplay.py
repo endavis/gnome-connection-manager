@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 
@@ -87,10 +89,19 @@ def test_start_gives_a_display_that_is_up_and_ours_and_stop_ends_it() -> None:
 def test_a_display_whose_lock_names_another_process_is_not_ours() -> None:
     spawned: list[subprocess.Popen[bytes]] = []
     real_popen = subprocess.Popen
+    real_is_up = xdisplay.is_up
 
-    def recording_popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
-        process = real_popen(*args, **kwargs)  # type: ignore[call-overload]
+    def recording_popen(argv: list[str], **kwargs: object) -> subprocess.Popen[bytes]:
+        process = real_popen(argv, **kwargs)  # type: ignore[call-overload]
         spawned.append(process)
+        # The clock is patched, so `start()` gives up after two sleeps, wherever Xvfb's
+        # start-up has got to. Wait here instead, counting real sleeps, until the server is
+        # up and so holds its lock: what ends it is then what the test measures (#568).
+        number = int(argv[1].removeprefix(":"))
+        for _ in range(500):
+            if real_is_up(number) or process.poll() is not None:
+                break
+            time.sleep(0.02)
         return process  # type: ignore[no-any-return]
 
     try:
@@ -99,16 +110,52 @@ def test_a_display_whose_lock_names_another_process_is_not_ours() -> None:
             patch.object(xdisplay, "free_number", side_effect=[95, 96]),
             patch.object(xdisplay, "is_up", return_value=True),
             patch.object(xdisplay, "holder", return_value=-1),
+            patch.object(xdisplay, "give_up", wraps=xdisplay.give_up) as gave_up,
             patch.object(xdisplay.time, "monotonic", side_effect=_fast_clock()),
             patch.object(xdisplay.subprocess, "Popen", side_effect=recording_popen),
         ):
             assert xdisplay.start() is None
         assert len(spawned) == 2, "it tried again"
         assert all(process.poll() is not None for process in spawned), "and left none running"
+        # That no lock names a process this test spawned, not that no lock is left: once
+        # nothing leaves one, another worker may be given :95 or :96, and its lock names its
+        # own server (#555, #568).
+        ours = {process.pid for process in spawned}
+        for number in (95, 96):
+            named = xdisplay.holder(xdisplay.lock_file(number))
+            assert named not in ours, f"the lock of :{number} names {named}, a process spawned here"
+        # SIGTERM alone clears the lock of a server that is up, so the lock cannot tell
+        # `give_up` from a bare `stop()`. That `start()` ends each attempt through it can.
+        assert gave_up.call_args_list == [
+            call(spawned[0], xdisplay.lock_file(95)),
+            call(spawned[1], xdisplay.lock_file(96)),
+        ]
     finally:
         for process in spawned:
-            process.kill()
-            process.wait()
+            xdisplay.stop(process)
+
+
+@pytest.mark.parametrize(
+    ("holds", "kept"),
+    [("the process", False), ("another process", True), ("no lock", False)],
+)
+def test_give_up_removes_the_lock_its_process_left(tmp_path: Path, holds: str, kept: bool) -> None:
+    """A `sleep` stands in for an Xvfb that ends on SIGTERM leaving its lock (#568)."""
+    process = subprocess.Popen(["sleep", "30"])
+    lock = tmp_path / "lock"
+    try:
+        # Written as Xvfb writes one: the pid, padded to ten columns.
+        if holds == "the process":
+            lock.write_text(f"{process.pid:>10}\n")
+        elif holds == "another process":
+            lock.write_text(f"{os.getpid():>10}\n")
+        xdisplay.give_up(process, lock)
+        assert process.poll() is not None, "it ended the process"
+        assert lock.exists() is kept
+        if kept:
+            assert xdisplay.holder(lock) == os.getpid(), "and left the other's lock as it was"
+    finally:
+        xdisplay.stop(process)
 
 
 def _fast_clock():
