@@ -610,7 +610,14 @@ def kill_run(record: Path, out: str) -> None:
 
 
 def nothing_left(out: str, record: Path) -> tuple[list[int], int]:
-    """The pids of GCM and Xvfb, and the display number, once a run's output is in."""
+    """The pids of GCM and Xvfb, and the display number, once a run's output is in.
+
+    The pids come as GCM's, then Xvfb's, and Xvfb's is the one the display's lock named when
+    `xdisplay.start()` returned. So no pid running shows that the run's server is gone, and a
+    lock that is missing or names another process shows that it left none behind. A test never
+    asks whether the display is up once the run is over: another worker may take the number as
+    soon as it is free, and `is_up` cannot tell its server from the run's (#555).
+    """
     xvfb = re.search(r"DISPLAY=:(\d+) \(Xvfb PID (\d+)\)", out)
     assert xvfb, out
     return [int(read_record(record)["pid"]), int(xvfb.group(2))], int(xvfb.group(1))
@@ -655,7 +662,7 @@ def test_xvfb_leaves_nothing_once_gcm_exits(
         got = read_record(record)
         assert (got["display"], got["backend"], got["wayland"]) == (f":{number}", "x11", "unset")
         assert not any(is_running(pid) for pid in pids)
-        assert not xdisplay.is_up(number)
+        assert xdisplay.holder(xdisplay.lock_file(number)) != pids[1]
     finally:
         kill_run(record, out + capsys.readouterr().out)
 
@@ -671,7 +678,7 @@ def test_xvfb_leaves_nothing_under_timeout(checkout: Path, monkeypatch: pytest.M
         pids, number = nothing_left(out, record)
 
         assert not any(is_running(pid) for pid in pids)
-        assert not xdisplay.is_up(number)
+        assert xdisplay.holder(xdisplay.lock_file(number)) != pids[1]
     finally:
         kill_run(record, out)
 
@@ -713,7 +720,7 @@ def test_xvfb_leaves_nothing_when_only_doit_is_signalled(
         pids, number = nothing_left(out, record)
 
         assert not any(is_running(pid) for pid in pids)
-        assert not xdisplay.is_up(number)
+        assert xdisplay.holder(xdisplay.lock_file(number)) != pids[1]
     finally:
         kill_run(record, out)
 
@@ -757,6 +764,6 @@ def test_xvfb_leaves_nothing_when_the_signal_comes_before_popen_returns(
 
         assert result is False
         assert not any(is_running(pid) for pid in pids)
-        assert not xdisplay.is_up(number)
+        assert xdisplay.holder(xdisplay.lock_file(number)) != pids[1]
     finally:
         kill_run(record, out + capsys.readouterr().out)
