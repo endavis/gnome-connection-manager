@@ -452,103 +452,64 @@ From the checks themselves:
 
 ## The README screenshot
 
-`docs/images/screenshot.png` is a real window, not a mock-up (#271). Run again with the
-script below, it gave a 1180x700 shot whose layout matched the committed one: the tree,
-four tabs, the pane, the prompt and the font. The two differed only in today's toolbar,
-the log the console showed, and the cursor, which the committed one shows.
+`docs/images/screenshot.png` is a real window, not a mock-up (#271). `uv run doit screenshot`
+writes it from a checkout, with no step by hand (#546). Its code is `tools/screenshot.py`,
+and `tests/test_screenshot.py` runs it on an Xvfb of its own. This page held its steps and its
+script as a recipe to run by hand (#494); the code holds them now, where a test fails once they
+stop working. Commit first: the console of each tab shows the checkout's `git log` and
+`git status -sb`.
 
-- **An Xvfb of its own**, `1920x1080x24`, with no window manager, so the window has no
-  title bar. Unset `WAYLAND_DISPLAY`, `XDG_CONFIG_HOME`, `GDK_SCALE`, `GDK_DPI_SCALE` and the
-  `GCM_*` variables, and set `GDK_BACKEND=x11`.
-- **A scratch HOME with no GTK `settings.ini`**, so that the font is GTK's default.
-  `touch $HOME/.sudo_as_admin_successful`, or `/etc/bash.bashrc` prints its hint about
-  sudo in the console, for a user in the sudo group.
-- **`SHELL` a wrapper** running `bash --rcfile demo.rc -i`, where `demo.rc` sets the prompt
-  and shows the checkout. Commit first, so that `git status -sb` is clean:
+- **What it sets up.** An Xvfb from `tests/xdisplay.py`, `1920x1080x24` with no window manager,
+  so the window has no title bar. A scratch HOME in the system's temp folder, removed with the
+  run, holding a `gcm.conf` of five folders and six hosts. The environment is
+  `tools/sandbox.py`'s, with what `UNSET` and `AGENT` name removed, `GDK_BACKEND=x11`, and no
+  `WAYLAND_DISPLAY` or `GDK_DPI_SCALE`.
+- **Two things for the look.** The HOME has no GTK `settings.ini`, so the font is GTK's
+  default, and `GTK_THEME`, which overrides the theme setting, is unset. The locale is
+  `C.UTF-8`, with `LANGUAGE` and `LC_*` unset, so GCM is in English whatever the developer's
+  locale.
+- **A shell that shows the checkout.** `SHELL` is a wrapper running
+  `bash --rcfile demo.rc -i`, where `demo.rc` sets the prompt and runs `git log` and
+  `git status -sb`. The HOME holds `.sudo_as_admin_successful`, or `/etc/bash.bashrc` prints
+  its hint about sudo in the console, for a user in the sudo group. `--rcfile` does not skip
+  that file, though bash(1) says it does: without the file, on 2026-11-10, the wrapper's
+  shell printed the hint, as a plain `bash -i` did.
+- **A window that checks itself.** GCM opens one local tab and the window half opens three
+  more. Before it captures it checks that four tabs are open, that the tree's rows are the
+  seeded folders and hosts, each folder expanded, and that no other window is showing: a read
+  of a window returns what covers it. A failed check, or an exception in a step, ends the
+  process at once through `os._exit`. PyGObject prints an exception in a GLib callback and
+  GCM carries on, so the run would never end (#546's findings). Those recorded a PNG of the
+  right size with no host in the tree and a black rectangle over its middle, from a run that
+  never ended. Dropping the port from `Host(...)` in the run of 2026-11-10 gave a tree with no
+  host, three folders collapsed and a `MessageDialog` showing, and the run ended at the
+  capture, in 5.1 s, with those three reported.
+- **A file that changes only for a good run.** The README's file is replaced after a run that
+  exited 0 within 60 s, printed no traceback and wrote a 1180x700 PNG, and is as it was after
+  any other. `--out <file>` writes elsewhere, which is how to try the command without
+  replacing the shot.
 
-  ```bash
-  cd <checkout>
-  PS1='\[\e[01;32m\]you@workstation\[\e[00m\]:\[\e[01;34m\]~/src/gcm\[\e[00m\]\$ '
-  git --no-pager log --oneline --decorate --color=always -6; echo; git -c color.status=always status -sb; echo
-  ```
+Compared with the committed shot on 2026-11-10: `uv run doit screenshot --out <file>`, run
+from the branch of #546 on main's 2f304f8 with the change not yet committed, so the console
+listed it as modified and untracked. The command took 5.2 s and wrote a 1180x700 PNG.
 
-- **The window**, run as `python -u readme_shot.py <out.png>` with that HOME and SHELL, on
-  that Xvfb. GCM opens one local tab at start, so the script opens three more:
-
-  ```python
-  import configparser
-  import os
-  import sys
-  from pathlib import Path
-
-  import gi
-
-  gi.require_version("Gtk", "3.0")
-  gi.require_version("Gdk", "3.0")
-  from gi.repository import Gdk, GLib
-
-  from gnome_connection_manager import app
-  from gnome_connection_manager.utils.folders import FolderTree
-  from gnome_connection_manager.utils.hosts import ERASE_BINDING_AUTO, Host, HostUtils
-
-  TREE = (
-      ("Home lab/Edge", ("opnsense", "switch-01")),
-      ("Home lab", ("nas",)),
-      ("Projects/gnome-connection-manager", ("build", "docs")),
-      ("Projects/pyproject-template", ("ci-runner",)),
-  )
-
-
-  def write_config(path):
-      cp = configparser.RawConfigParser()
-      cp.add_section("options")
-      cp.set("options", "check-updates", "False")
-      tree = FolderTree()
-      number = 0
-      for group, names in TREE:
-          folder = tree.ensure_path(group)
-          for name in names:
-              number += 1
-              host = Host(
-                  group, name, "", f"{name}.invalid", "you", "", "", "22", "", "ssh", "",
-                  "0", "", "", "False", "False", "False", "", "", "False",
-                  ERASE_BINDING_AUTO, ERASE_BINDING_AUTO, "", "False", "", folder,
-              )
-              section = f"host {number}"
-              cp.add_section(section)
-              HostUtils.save_host_to_ini(cp, section, host, "")
-              cp.set(section, "pass", "")
-      tree.save(cp)
-      path.parent.mkdir(parents=True, exist_ok=True)
-      with path.open("w", encoding="utf-8") as stream:
-          cp.write(stream)
-
-
-  write_config(Path(os.environ["HOME"]) / ".config" / "gcm" / "gcm.conf")
-  app.conf.CHECK_UPDATES = False
-  application = app.GcmApplication()
-
-
-  def start():
-      w = application._controller
-      w.treeServers.expand_all()
-      w.wMain.resize(1180, 700)
-      w.hpMain.set_position(250)
-      for _ in range(4 - w.nbConsole.get_n_pages()):
-          application.activate_action("new-local", None)
-      GLib.timeout_add(3000, capture)
-      return False
-
-
-  def capture():
-      w = application._controller
-      width, height = w.wMain.get_allocated_width(), w.wMain.get_allocated_height()
-      pixbuf = Gdk.pixbuf_get_from_window(w.wMain.get_window(), 0, 0, width, height)
-      pixbuf.savev(sys.argv[1], "png", [], [])
-      application.quit()
-      return False
-
-
-  GLib.timeout_add(1500, start)
-  sys.exit(application.run(["gcm"]))
-  ```
+- **Pixel for pixel the same:** the menu bar, the server tree, the divider, the tab strip
+  with its four `local` tabs and the last one selected, the console's empty area, the scroll
+  bar, and the prompt line with its cursor. So GTK's default font, the theme and the
+  terminal's font matched under `C.UTF-8`.
+- **Different:** the toolbar from its fourth icon on, and the console's text, which is this
+  checkout's `git log` and `git status -sb`. The group of Split Horizontal, Split Vertical and
+  Unsplit has a fourth button now, Move All to Main Window (#404), and it moves Cluster 43 px
+  to the right: the committed shot's Cluster button matches the new shot's at that shift.
+  Donate is not drawn. The toolbar moves what no longer fits into an overflow menu, where
+  Donate has no item (`app.py`'s toolbar comment), and at that shift Donate's right edge would
+  be at x=1190, past the window's last column, 1179. The cause is inferred from those two
+  facts, not measured.
+- **So a retaken shot differs from the committed one** in its toolbar, with no Donate button.
+  #546 kept the committed shot as it was.
+- **The cursor** was drawn in this run's shot, as in the committed one. This page said then
+  that the run of 2026-11-08 did not draw it, so the cursor is not the same from run to run;
+  why was not measured.
+- **Not run:** `doit screenshot` without `--out`, which replaces the committed shot, and any
+  run on WSLg's own display or on Wayland: an Xvfb answers for X11 alone. A locale other than
+  this machine's was not tried, only `C.UTF-8`.

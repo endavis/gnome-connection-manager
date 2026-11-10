@@ -11,6 +11,14 @@ the git log.
 
 ## [Unreleased]
 
+### Added
+- **`doit screenshot`** writes the README's screenshot, `docs/images/screenshot.png`, from the
+  checkout: GCM on an Xvfb of its own, under a scratch HOME in English, with a seeded tree of
+  hosts and four tabs, whose consoles show the checkout's `git log` and `git status -sb`. The
+  file is replaced only after a run that exited 0 in time, printed no traceback and wrote a
+  1180x700 PNG, and `--out` writes it elsewhere. The steps were a script on
+  `docs/PROBING.md` to run by hand (#494, #546).
+
 ### Fixed
 - The `.deb` and the `.rpm` now declare the Python that GCM requires, `python3 >= 3.12`, the
   floor `pyproject.toml`'s `requires-python` sets. Both declared `python3` with no version,
