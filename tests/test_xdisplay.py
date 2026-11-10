@@ -78,7 +78,8 @@ def test_start_gives_a_display_that_is_up_and_ours_and_stop_ends_it() -> None:
     finally:
         xdisplay.stop(process)
     assert process.poll() is not None
-    assert not xdisplay.is_up(number)
+    # The lock, not is_up: another worker may take the number as soon as it is free (#555).
+    assert xdisplay.holder(xdisplay.lock_file(number)) != process.pid
     xdisplay.stop(process)  # safe once it has exited
 
 
