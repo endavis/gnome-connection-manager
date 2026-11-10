@@ -278,6 +278,42 @@ def task_wslg_windows() -> dict[str, Any]:
     }
 
 
+def _write_screenshot(out: str) -> bool:
+    """Write the README's screenshot to `out`; False when the run failed (#546)."""
+    from tools import screenshot
+
+    return screenshot.run(Path(out))
+
+
+def task_screenshot() -> dict[str, Any]:
+    """Write the README's screenshot, docs/images/screenshot.png, from this checkout (#546).
+
+    This replaces the file the README shows. GCM runs on an Xvfb of its own, under a scratch
+    HOME with a seeded tree of hosts and four tabs, in English, so nothing reaches your
+    desktop or your ~/.config/gcm. The console of each tab shows this checkout's `git log`
+    and `git status -sb`, so commit first. The file is replaced only after a run that ended
+    as it should; after any other it is as it was. Unlike `doit sandbox --xvfb` (#527), it
+    does not handle a SIGTERM sent to doit alone, which leaves the Xvfb running; a
+    terminal's Ctrl+C and `timeout` reach the Xvfb and GCM as they reach doit.
+
+    Options:
+        --out: Where to write the PNG (default docs/images/screenshot.png).
+    """
+    return {
+        "actions": [_write_screenshot],
+        "params": [
+            {
+                "name": "out",
+                "long": "out",
+                "default": str(REPO / "docs" / "images" / "screenshot.png"),
+                "help": "Where to write the PNG; the default is the README's own.",
+            },
+        ],
+        "title": title_with_actions,
+        "verbosity": 2,
+    }
+
+
 def task_setup() -> dict[str, Any]:
     """Create the development environment.
 

@@ -150,6 +150,21 @@ is `msrdc.exe` too. Anywhere but WSL it prints `Not WSL` and exits non-zero. Run
 with GCM open (#510), it listed GCM's window, as #401's lister did, and left out the Windows
 App's `msrdc.exe`, a Remote Desktop client.
 
+### Taking the README's screenshot
+
+`doit screenshot` writes `docs/images/screenshot.png`, the picture the README shows, from the
+checkout (#546). It runs GCM on an Xvfb of its own, under a scratch HOME in English, with a
+seeded tree of hosts and four tabs, so nothing reaches your desktop or your `~/.config/gcm`.
+The console of each tab shows the checkout's `git log` and `git status -sb`, so commit first.
+The file is replaced only after a run that exited 0 within 60 s, printed no traceback and
+wrote a 1180x700 PNG; after any other run it is as it was. `--out <file>` writes the PNG
+elsewhere, which is how to try the command without replacing the README's shot. The Xvfb is
+stopped however the run ends in Python: a failure, Ctrl+C or the deadline. Unlike
+`doit sandbox --xvfb` (#527), it does not handle a SIGTERM sent to doit alone, which leaves the
+Xvfb running. `tools/screenshot.py` holds the code, and
+[Probing GCM Outside the Test Suite](PROBING.md) what the shot is made of and how a run
+compared with the committed one.
+
 ### Logging
 
 Logs are emitted via Python's `logging` module. Adjust verbosity by setting `GCM_LOG_LEVEL` before running:
