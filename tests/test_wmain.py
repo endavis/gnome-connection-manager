@@ -1678,6 +1678,62 @@ def test_terminal_context_menu_offers_the_clipboard_actions(app_module):
     } <= actions
 
 
+def _menu_item_assignments(app_module: types.ModuleType) -> dict[tuple[str, str], list[ast.Assign]]:
+    """Each `self.<menu>.<item> = ...` in `createMenu`, by menu and item, in source order."""
+    tree = ast.parse(inspect.getsource(app_module))
+    wmain = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Wmain"
+    )
+    create = next(
+        node
+        for node in wmain.body
+        if isinstance(node, ast.FunctionDef) and node.name == "createMenu"
+    )
+    found: dict[tuple[str, str], list[ast.Assign]] = {}
+    for node in ast.walk(create):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Attribute)
+                and isinstance(target.value.value, ast.Name)
+                and target.value.value.id == "self"
+            ):
+                found.setdefault((target.value.attr, target.attr), []).append(node)
+    return found
+
+
+def _label(assignment: ast.Assign) -> str | None:
+    """The text of the `label=_("...")` an item is made with, if it is made with one."""
+    call = assignment.value
+    if not isinstance(call, ast.Call):
+        return None
+    for keyword in call.keywords:
+        text = keyword.value
+        if (
+            keyword.arg == "label"
+            and isinstance(text, ast.Call)
+            and text.args
+            and isinstance(text.args[0], ast.Constant)
+        ):
+            return str(text.args[0].value)
+    return None
+
+
+def test_every_item_createmenu_makes_has_an_attribute_of_its_own(
+    app_module: types.ModuleType,
+) -> None:
+    """createMenu keeps each item of its menus as an attribute of the menu. Save buffer to
+    file once took Select all's, so that `mnuSelect` named Save buffer to file and nothing
+    named Select all (#549)."""
+    assigned = _menu_item_assignments(app_module)
+
+    assert {item: len(nodes) for item, nodes in assigned.items() if len(nodes) > 1} == {}
+    assert _label(assigned["popupMenu", "mnuSelect"][0]) == "Select all"
+    assert _label(assigned["popupMenu", "mnuSaveBuffer"][0]) == "Save buffer to file"
+
+
 def test_the_tree_menu_offers_the_folder_commands(app_module):
     """Right-click on the tree is where folders are managed from."""
     source = Path(app_module.__file__).read_text()

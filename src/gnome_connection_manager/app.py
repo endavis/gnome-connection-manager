@@ -4538,7 +4538,7 @@ class Wmain(GladeComponent):
         menuItem.set_action_name("app.save-transcript")
         menuItem.show()
 
-        self.popupMenu.mnuSelect = menuItem = Gtk.MenuItem(label=_("Save buffer to file"))
+        self.popupMenu.mnuSaveBuffer = menuItem = Gtk.MenuItem(label=_("Save buffer to file"))
         self.popupMenu.append(menuItem)
         menuItem.set_action_name("app.save-buffer")
         menuItem.show()
