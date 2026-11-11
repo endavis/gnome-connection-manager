@@ -25,6 +25,13 @@ Keep a probe's scripts, downloads and logs in the main checkout's
 `doit pr_merge` from removing the worktree (#332). Not in `/tmp`: a restart of WSL empties
 it.
 
+Write each run whose result you will cite to a log there, with its command and its exit
+status, and give a rerun a log of its own, or overwrite the one you cite. After
+`cmd 2>&1 | tee <log>`, the command's status is `${PIPESTATUS[0]}`, not `$?`, which is
+tee's. Twice on #494 a result was kept only in the conversation: one had to be found
+again in the session's transcript, and #545 cites a probe in place of the other, whose
+log was not kept (#495).
+
 ## A display of the probe's own
 
 - **Start an Xvfb with `tests/xdisplay.py`.** `start()` returns the server's process and
@@ -34,8 +41,10 @@ it.
   once the lock file names its process.
 - **Keep the probe off the desktop.** Give it `DISPLAY=:N` and `GDK_BACKEND=x11`, and unset
   `WAYLAND_DISPLAY`, `GDK_SCALE` and `GDK_DPI_SCALE`: GTK prefers Wayland whenever
-  `WAYLAND_DISPLAY` is set. A probe that maps a window on the real desktop takes the
-  developer's keyboard focus, so say so before running one.
+  `WAYLAND_DISPLAY` is set. Under WSLg, with `DISPLAY` alone set to an Xvfb's, GCM's window
+  opened on the desktop, and `xwininfo -root -tree` on the Xvfb reported `0 children` for
+  thirty seconds (#194, not run again). A probe that maps a window on the real desktop
+  takes the developer's keyboard focus, so say so before running one.
 - **Give it a HOME of its own**, and unset what `UNSET` and `AGENT` in `tools/sandbox.py`
   name: `XDG_CONFIG_HOME` and the `GCM_*_DIR` variables, which point GCM at another
   configuration or checkout, and `SSH_AUTH_SOCK` and `SSH_AGENT_PID`. A shell in a GCM tab
@@ -147,6 +156,43 @@ Each was measured on an Xvfb of the probe's own, and on another display where it
     was False a second later.
   - Whether a real click's event opens it there was not measured, as WSLg takes no
     synthetic input.
+
+## The shell a probe runs from
+
+Claude Code's shell tool runs each command as `/bin/bash -c '<the whole command>'`, so the
+whole command is in that shell's own command line, as with any tool that runs commands so.
+Each of these was measured from it on 2026-11-11 (#495).
+
+- **A probe that starts an ssh-agent can end the developer's.** A shell started from GCM
+  inherits the developer's agent, through `SSH_AGENT_PID` and `SSH_AUTH_SOCK`. Given a
+  socket path longer than the 108 bytes a Unix socket's path holds,
+  `ssh-agent -a <socket> -s` printed its error on stderr alone and exited 1. So
+  `eval "$(ssh-agent -a <socket> -s)"` set nothing, and `SSH_AGENT_PID` still named the
+  developer's agent, which `ssh-agent -k` kills: a probe's cleanup ended it so on
+  2026-10-16, and every GCM tab was left with a dead socket. Unset both variables first,
+  keep the socket's folder short, check that the `eval` set a pid of the probe's own, and
+  stop the agent by that pid alone.
+- **`pkill -f` and `pgrep -f` match the shell that runs them**, as the pattern is in its
+  command line. `pkill -f <pattern>; echo survived` ended the shell before the `echo`,
+  exit 144. So a loop waiting on `pgrep -f "doit check"` never ends, and a before-and-after
+  diff of `pgrep -f` counts that shell as a new process, which skewed a measurement on
+  #494.
+  - Match a process by its name, `pgrep -x Xvfb`, then read `/proc/<pid>/cmdline`. The
+    name is the kernel's, cut to 15 characters: `pgrep -x at-spi-bus-launcher` found
+    nothing and warned so, and `pgrep -x at-spi-bus-laun` found it.
+  - Or write the pattern so that it does not match its own text,
+    `pgrep -f '[r]un_x[.]py'`. That holds only while the plain text is nowhere else in
+    the command: twice, an earlier `pgrep` or an `echo` that held it made the bracket
+    pattern match the shell too.
+  - Stop only what the probe started, or what it found by its display, as the session
+    bus's trap above does.
+- **Under WSL, `env … PATH=$X:$PATH` runs a piece of `PATH`.** WSL puts Windows' folders
+  on `PATH`, some with a space in their names, such as `/mnt/c/Program Files/…`. Unquoted,
+  `$PATH` is split into words before `env` sees it, and the word after the first space
+  runs as the command: `env FOO=1 PATH=/nonexistent:$PATH true` exited 127, as `env`
+  found no command `Files/Microsoft/…`. Quote the assignment, `"PATH=$X:$PATH"`, or set
+  `PATH` as the command's prefix, `PATH=$X:$PATH command`, which the shell does not
+  split. Both exited 0.
 
 ## Packages without installing them
 
