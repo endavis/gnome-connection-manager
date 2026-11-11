@@ -237,14 +237,20 @@ A menu that fits does not move, with the hook and without it (six notches).
 
 `tests/test_menuplacement.py` tests `place_menu` and `place_across` with no display, the
 helpers with fakes, and scenarios against real GTK on a display of their own, at twice the usual
-text size, with real clicks through XTest. Eight take the hints from a menu just before it
-opens, `anchor-hints` 0, which leaves it where GCM asked, as a compositor that moves
-nothing does. Five of them fail against the guess, two (`-at-the-right-edge`) fail against code that
-only opens rightwards, and one holds `menu_height` and `menu_width` to the size GTK gives
-each menu. `a-menu-stays-inside-a-short-window` stands in for Wayland's room with
-`window_content` in a window 400 pixels tall (#402). The `-with-its-hints` scenarios keep GCM's hints, so
-that what GCM works out is not undone by the flipping and sliding X11 does itself. They
-are named `against_real_gtk`, which mutmut deselects.
+text size, with real clicks through XTest. A scenario takes the hints from each menu just
+before it opens, `anchor-hints` 0, which leaves it where GCM asked, as a compositor that moves
+nothing does. One whose name ends in `-with-its-hints` keeps GCM's hints instead, so that what
+GCM works out is not undone by the flipping and sliding X11 does itself. The tests that run
+them end in `against_real_gtk`, which mutmut deselects.
+
+Some were shown to test GCM's side and not GTK's, each when it was added:
+`the-tree-menu`, `the-terminal-menu`, `the-tab-menu`, `the-console-list` and
+`the-mounted-tab-menu` failed against the code GCM had before #392, which guessed a menu's
+height or left it to GTK (PR #400), and `the-terminal-menu-at-the-right-edge` and
+`the-tab-menu-at-the-right-edge` against code that only opened rightwards (#398, PR #483).
+`a-menu-is-as-tall-as-the-items-it-shows` holds `menu_height` and `menu_width` to the size GTK
+gives each menu, and `a-menu-stays-inside-a-short-window` stands in for Wayland's room with
+`window_content` in a window 400 pixels tall (#402).
 
 A scenario takes where it clicks from the font in use, not from a count of the rows that fit
 (#500). On a WSL2 Ubuntu 24.04 machine with `fonts-noto-core`, GTK's default font, Sans,
@@ -255,12 +261,12 @@ scrolls the row it clicks into sight, and gives a menu as many items as fit by i
 row, `menu_row_height`. Pinning a font was rejected: the scenarios would test one font's
 metrics, and need that font installed.
 
-Seven more scenarios hold the wheel (#399), six of them at both text sizes: the console list
-from the tab strip, Terminal > Open Consoles, a Hosts folder, the menubar's Snippets, the
-cluster window's Snippets button, the terminal's menu on a screen of 600 pixels, and a menu
-that fits. Each makes six notches and reads how far the first item moved. Without the call
-in `do_startup` every one moves 15 pixels; without the half pixel, the pure test of the
-exact step fails. A menu is opened under its menubar item by `popup_at_widget`: a click on
+Scenarios of their own hold the wheel (#399): the console list from the tab strip,
+Terminal > Open Consoles, a Hosts folder, the menubar's Snippets, the cluster window's
+Snippets button and a menu that fits, each at both text sizes, and the terminal's menu on a
+screen of 600 pixels, at twice the usual text size. Each makes six notches and reads how far
+the first item moved. Without the call in `do_startup` every one moves 15 pixels; without the
+half pixel, the pure test of the exact step fails. A menu is opened under its menubar item by `popup_at_widget`: a click on
 the item made GTK say that a menu's toplevel is no window.
 
 ## Which window a window opens over
