@@ -101,6 +101,10 @@ jobs:
           print(f"gi {gi.__file__}")
           print(f"Gtk {Gtk.MAJOR_VERSION}.{Gtk.MINOR_VERSION}  Vte {Vte.MAJOR_VERSION}.{Vte.MINOR_VERSION}")
           PY
+          # Which font GTK's default Sans is on this runner (#503). #500's scenarios failed where
+          # it was Noto Sans and passed here, and nothing printed what it is here. This only
+          # prints it: a missing fc-match shows in the log and does not fail the step.
+          printf 'Sans  %s\n' "$(fc-match Sans)"
 
       - name: Run tests
         # -rs and the skip check are the point. Twelve tests gate themselves on a display
