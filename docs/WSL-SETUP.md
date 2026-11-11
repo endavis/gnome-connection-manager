@@ -460,6 +460,11 @@ console. [Pasting](TERMINAL-USAGE.md#pasting) and
 
 WSLg has no notification service, so **Notify when a console needs attention** shows
 nothing, and GLib prints one warning on the console GCM was started from, at the first bell.
+GCM also marks its window as needing attention when a tab is marked while the window is
+not the active one. Under Wayland, which GTK draws through on WSLg unless
+`GDK_BACKEND=x11` is set, GTK sent WSLg no message when a window was so marked, measured
+with `WAYLAND_DEBUG=client`, so expect no sign of it. Whether it reaches Windows under X11
+was not measured.
 The tab's mark is what you have, as
 [When a tab needs your attention](TERMINAL-USAGE.md#when-a-tab-needs-your-attention)
 describes.
