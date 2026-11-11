@@ -12,14 +12,14 @@ every menu opened at the bottom of the screen looked right. Wayland leaves that 
 compositor, and Weston's, which WSLg's is built on, applies none of it (read in its source,
 and measured on Weston 13), so a menu landed where it was asked for, past the bottom edge.
 A scenario emulates such a compositor by taking every hint from the menu just before it
-opens, `anchor-hints` 0, which leaves it exactly where GCM asked. Five of the scenarios fail
-against the code that guessed a menu 250 pixels tall, so they test GCM's side and not GTK's,
-and a sixth holds `menu_height` to the height GTK gives each menu. The two that keep GCM's
-hints hold X11, which moves a menu itself, to the same.
+opens, `anchor-hints` 0, which leaves it exactly where GCM asked. One whose name ends in
+`-with-its-hints` keeps GCM's hints, and holds X11, which moves a menu itself, to the same.
+Which scenarios were shown to fail against GCM's older placement, and so to test GCM's side
+and not GTK's, is in `docs/design/menus-and-windows.md`, "Tests of menu placement".
 
-Two more scenarios hold a menu's scroll (#408): GTK keeps it from one opening to the next, so
-a menu scrolled to its end with real wheel notches opened again, shorter or as long, must
-start at its top.
+`a-menu-opens-at-its-top-once-it-is-shorter` and `a-long-menu-opened-again-starts-at-its-top`
+hold a menu's scroll (#408): GTK keeps it from one opening to the next, so a menu scrolled to
+its end with real wheel notches opened again, shorter or as long, must start at its top.
 
 They run at twice the usual text size, where the menus are tall enough to be wrong for the
 old guess on a screen of 1080 pixels: the server tree's menu on a host is 549 pixels there,
