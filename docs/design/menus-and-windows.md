@@ -1,6 +1,6 @@
 ---
 title: "Menus and Window Placement"
-description: "Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place and size, and why"
+description: "Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place, size and monitor, and why"
 audience:
   - contributors
 tags:
@@ -599,3 +599,36 @@ screen. A menu opened at (100, 100) in its window gave `get_origin()` (100, 100)
 a place in that window. So a probe that measures where a window lands on WSLg runs with
 `GDK_BACKEND=x11`, under Weston's X11 window manager. It measures X11's placement, not
 the compositor's, which GCM's windows get there by default.
+
+## Which monitor a window is on
+
+WSLg gave GDK three monitors here, and named no primary one under Wayland. Measured on
+2026-11-11 (#496), with a display connection and no window shown:
+
+- monitor 0, 2880x1920 at (606, 1083);
+- monitor 1, 1920x1080 at (1920, 0);
+- monitor 2, 1920x1080 at (0, 3).
+
+Each monitor's work area was its whole geometry, at scale 1. Under X11, `DISPLAY=:0`, GDK
+gave the same three and called monitor 0 primary.
+
+Wayland tells a client which outputs its surface entered, not where it is. A small window
+shown under WSLg's Wayland was told it entered monitor 0's output, and
+`get_monitor_at_window` answered monitor 0, while `get_position()` read (26, 23). Where
+Windows showed that window was not checked. In #94, a dialog sized for monitor 0 opened
+1617 pixels tall on a 1080-pixel screen, which was not measured again.
+
+`monitor_workarea`, which GCM sizes and fits its windows by, takes the monitor from
+`monitor_showing`, not from GDK. That works out which monitor holds most of a window from
+its place and size, and says that a window overlapping none is nowhere. `monitor_workarea`
+then falls back to the monitor of the window's transient parent, then to the primary, then
+to monitor 0, so on this machine the last two are monitor 0 under either backend. The
+docstring of `monitor_showing` has the account of #94. Its claim that GDK answers the first
+monitor for a window overlapping none was not measured again. Under X11, GDK kept each
+window not yet shown at (0, 0), wherever `move()` had asked for it, and (0, 0) overlaps
+monitor 2 here, so such a window cannot test the claim.
+
+**A placement fault showed only when a dialog was opened and closed in quick succession.**
+The dialog of #94 landed wrong in 10 of 10 such cycles, and in none of 6 opens made one at
+a time (2026-08). That was not measured again, as the code it measured is gone. So a check
+of where a dialog lands cycles it, as well as opening it once.
