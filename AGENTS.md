@@ -112,7 +112,7 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
   `tests/xdisplay.py` starts an Xvfb of a run's own, `doit sandbox --xvfb` too (#509).
 - `lang/` – gettext `.po` sources and compiled `.mo` files under
   `<lang>/LC_MESSAGES/gcm-lang.mo`, for de, es, fr, it, ko, pl, pt and ru. English has none:
-  the msgids are English (ADR-0003, #390). Notes: `docs/design/translations.md`.
+  the msgids are English (ADR-0003, #390). Notes: `docs/design/translations.md`, a conflict in a rebase too.
 - `docs/` – see [Documentation](#documentation).
 - `gnome-connection-manager.desktop`, `Makefile`, `dodo.py`, `pyproject.toml`.
 - `install.sh` – the one-line installer (#294): one worktree per version, a `current` link,
@@ -208,10 +208,15 @@ Notes for future coding agents working on Gnome Connection Manager (GCM).
 **Tests are automated.** `doit test` runs the suite; `doit coverage` adds coverage. Add
 tests with behavior changes rather than documenting a manual test surface.
 
-Practices below have each caught real bugs in this repo. They are worth the time:
+Practices below have each caught real bugs in this repo; `docs/DEVELOPING.md` (Writing a
+test that can fail) has more. Size the checks to the change: for a small one, one revert
+check, a few targeted mutants and one final `doit check`, with no mutmut run or rerun for
+flakiness unless asked.
 
 - **Measure, don't assume.** Write throwaway probes against real GTK/VTE, set up as
-  `docs/PROBING.md` says. Assumptions about VTE behavior have been wrong far more often than right:
+  `docs/PROBING.md` says, with a log of each run you cite and the traps of the shell they
+  run from: `pkill -f`, an inherited ssh-agent, WSL's `PATH`. Assumptions about VTE behavior
+  have been wrong far more often than right:
   VTE 0.76 does not emit `increase-font-size` on Ctrl+scroll, it clamps `set_font_scale()` to
   0.25–4.0 itself, and a line selection reaches the clipboard as `text\n\n`. Its row
   numbers keep counting once the scrollback drops the oldest rows, while the vertical
@@ -316,17 +321,10 @@ Practices below have each caught real bugs in this repo. They are worth the time
   signal is lost still looks alive. The glade rebuild in df18e0a lost the server tree's and
   the About dialog's (#257, #261), and moving the menus to actions left ten behind (#256).
   `test_every_on_handler_is_connected` fails on an `on_*` method that nothing connects.
-- **Run the app for tracebacks** with `timeout 12 uv run doit sandbox --wait`: a throwaway HOME
-  under `tmp/`, with `XDG_CONFIG_HOME` unset, as HOME alone no longer settles which
-  configuration directory is read. Never point it at a real one. Give it a scratch `DISPLAY`
-  too — a real one puts a GCM window over whatever the developer is doing and steals focus
-  for the whole timeout. **`DISPLAY` alone is not enough under WSLg**: GTK prefers Wayland
-  whenever `WAYLAND_DISPLAY` is set, so the window opens on the real desktop and the Xvfb
-  screen stays black (measured: `xwininfo -root -tree` reported `0 children` for thirty
-  seconds). Unset `WAYLAND_DISPLAY` and set `GDK_BACKEND=x11`, as `pytest_configure` does,
-  and `GDK_DPI_SCALE` too if you are measuring geometry. `pytest` starts its own Xvfb
-  (`tests/conftest.py`); do the same, or `timeout 12 uv run doit sandbox --xvfb --fresh`
-  (#509), and use `:0` only for probes that must measure the real compositor.
+- **Run the app for tracebacks** with `timeout 12 uv run doit sandbox --xvfb --fresh` (#509):
+  a throwaway HOME under `tmp/` with `XDG_CONFIG_HOME` unset, on an Xvfb of its own. Never a
+  real configuration, nor a real display, where GCM covers the developer's work: under WSLg
+  `DISPLAY` alone does not keep it off (`docs/PROBING.md`); `:0` is for the real compositor.
 
 ## Configuration & Data Flow
 - User data lives in `~/.config/gcm/`, or in `~/.gcm/` where that was already there --
@@ -530,6 +528,8 @@ templates in `.github/`, and `tools/hooks/ai/` refuses the raw commands (#119). 
   `merge-pr`**: consent to merge that PR and to close the issues it fully addresses, never
   to add `ready-to-merge`. See
   [Slash Commands and Workflows](docs/development/ai/slash-commands.md#merge-pr-n).
+- **`gh` and CI have more traps**, in `docs/DEVELOPING.md` (On GitHub): a merged PR's
+  checks, an issue's comments, where an investigation goes, filing outside `endavis/*`.
 - **A security review's findings stay private until fixed.** Fix those that belong to the
   change at hand. Never put an unfixed one in a public issue, PR, comment or commit
   message: file each as a private draft security advisory, and if that is refused, stop and

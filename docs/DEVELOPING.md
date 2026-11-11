@@ -1,6 +1,6 @@
 ---
 title: "Development Guide"
-description: "Setting up an environment, the task runner, and running the tests"
+description: "Setting up an environment, the task runner, running and writing the tests, and the traps of GitHub's tools"
 audience:
   - contributors
 tags:
@@ -310,6 +310,30 @@ cd -
 PATH="$HOME/tmp/sshd/root/usr/sbin:$PATH" doit test
 ```
 
+#### Writing a test that can fail
+
+- **Read the caller before you test a fallback.** f36024f added a test that a terminal
+  with no host logs to `session/`, while in that commit's `addTab` the log started before
+  the host was set. So the fallback was every terminal's path, and every text log went to
+  `logs/session/` (#111). The suite stayed green, as the other logging test set the host
+  itself, and a revert check would not have caught it: the test ran real code, and only
+  its scenario was wrong. Confirm in the caller that a fallback is the rare path, and test
+  the caller's order too, as `test_addtab_sets_the_host_before_it_starts_logging` does
+  since f12ab87.
+- **A comment that says what a caller does needs a test.** The same commit wrote
+  "terminal.host is set in addTab before any branching" in `set_terminal_logger`. It was
+  false until f12ab87 made it true, and nothing checked it. A precondition worth a comment
+  is one nothing else enforces: check it against the caller, and assert it in a test.
+- **Restore a mutated file through git, or in a `finally`**, and compare it with the
+  baseline afterwards. A restore typed back by hand once left a mutant applied, after the
+  run was killed out of memory.
+- **Check that a run selected the test.** `-k` matches part of a test's name, its
+  parametrize id included: `-k xdg_open` selected `test_a_web_host_needs_only_xdg_open`,
+  not `test_the_registry_against_real_gtk[xdg-open-reaches-the-browser]`, whose id is
+  spelt with hyphens. Two mutants "survived" such a run, which never ran the scenario
+  (#232). Select a test by its node id, and read which test ran, with `-v` or a
+  `--collect-only -q` first: both selections here ran one test.
+
 ### Building
 
 ```bash
@@ -382,6 +406,34 @@ doit translate    # Compile .po files
 3. Write tests for new features
 4. Update documentation
 5. Follow existing GTK patterns
+
+### On GitHub
+
+- **An investigation gets an issue of its own**, with its results posted there. A tool
+  worth keeping reaches main through an issue and a PR of its own, with tests, never on a
+  branch meant never to be merged: a comment on #283 cites a log on such a branch, and the
+  branch is gone.
+- **Prove a merged PR's checks passed with `gh pr checks`**, which shows the latest run of
+  each. `gh pr view --json statusCheckRollup` keeps the `require-label` run that failed
+  before the label beside the one that passed: on PR #570 it held `FAILURE` and `SUCCESS`.
+  For a commit with no PR, take the latest run of each name from
+  `gh api repos/{owner}/{repo}/commits/<sha>/check-runs`.
+- **`gh issue view N --comments` prints the comments alone**, without the issue's body,
+  and nothing at all, with exit 0, for an issue that has none. That was measured with gh
+  2.95.0 where its output is not a terminal, as in an agent's shell. Read an issue with
+  `gh issue view N --json title,body,comments`.
+- **An agent cannot file an issue in a repository outside `endavis/*`**, so it prefills
+  that repository's issue form through a link, for the developer to open.
+  `tools/hooks/ai/block-dangerous-commands.py` refuses `gh issue create`, and on
+  2026-11-04 `gh issue create`, with the token `gh` has here, failed there with
+  `Resource not accessible by personal access token (createIssue)`, filing what became
+  microsoft/wslg#1527. Build the link as
+  `/issues/new?template=<form>.yml&title=…&<field-id>=…`, with the field ids from the
+  form's YAML, and check it with `curl -s -o /dev/null -w '%{http_code}' '<link>'` before
+  handing it over. Without a login, GitHub answered a link of 6,000 characters with 302,
+  and links of 7,000 and 8,000 characters with 500 (2026-11-11). A 302 shows only that
+  GitHub took the link's length, not that its field ids are right. Put long code in a
+  comment on a GCM issue, and link to it from the form.
 
 ## Resources
 

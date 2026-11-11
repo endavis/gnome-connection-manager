@@ -24,7 +24,7 @@ Complete index of all documentation, organized by audience and as a full alphabe
 - [Connection Manager - Feature Specification](SPEC.md) - A statement of behaviour, written as a spec for a Qt 6 port that is not being built
 - [Connection Types](design/connection-types.md) - How GCM opens each kind of host, and why: the registry of connection types, a type's own settings, command hosts, RDP through FreeRDP or Windows Remote Desktop, and web and VNC hosts
 - [Developing on a Headless Machine](HEADLESS-DEVELOPMENT.md) - Coding GCM and running its full test suite on an Ubuntu 26.04 VM or LXC container with no screen, which steps each needs, and what stays on the Windows machine
-- [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
+- [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, running and writing the tests, and the traps of GitHub's tools
 - [Gnome Connection Manager - Modern Project Structure](PROJECT_STRUCTURE.md) - What lives where, and where the modernization work stands
 - [Menus and Window Placement](design/menus-and-windows.md) - Where GCM puts a pop-up menu so that it stays on the screen, which window each window it opens is placed over, what GTK reports of a window's place and size, and why
 - [Packaging, the Installer and Releases](design/packaging.md) - Why the .deb and the .rpm declare what they do and run no script, how install.sh installs and updates GCM, and what a release is, with what was measured of each
@@ -100,7 +100,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Cross-Agent Delegation Matrix](development/ai/cross-agent-delegation.md) - Commands that let any supported AI CLI hand a review task to any other; plan and implement are handled by the shared implement-issue skill instead
 - [Dependabot Auto-merge](development/dependabot-automerge.md) - How the dependabot auto-merge workflow evaluates, enables, and skips PRs
 - [Developing on a Headless Machine](HEADLESS-DEVELOPMENT.md) - Coding GCM and running its full test suite on an Ubuntu 26.04 VM or LXC container with no screen, which steps each needs, and what stays on the Windows machine
-- [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
+- [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, running and writing the tests, and the traps of GitHub's tools
 - [Doit Tasks Reference](development/doit-tasks-reference.md) - Complete reference for all doit automation tasks
 - [First 5 Minutes with an AI Agent](development/ai/first-5-minutes.md) - Narrative walkthrough of the AI agent workflow from issue to merge
 - [GitHub Repository Settings](development/github-repository-settings.md) - Complete reference for all GitHub repository settings the template expects
@@ -196,7 +196,7 @@ this project's tooling is vendored from. "Users" here means users of the templat
 - [Cross-Agent Delegation Matrix](development/ai/cross-agent-delegation.md) - Commands that let any supported AI CLI hand a review task to any other; plan and implement are handled by the shared implement-issue skill instead
 - [Dependabot Auto-merge](development/dependabot-automerge.md) - How the dependabot auto-merge workflow evaluates, enables, and skips PRs
 - [Developing on a Headless Machine](HEADLESS-DEVELOPMENT.md) - Coding GCM and running its full test suite on an Ubuntu 26.04 VM or LXC container with no screen, which steps each needs, and what stays on the Windows machine
-- [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, and running the tests
+- [Development Guide](DEVELOPING.md) - Setting up an environment, the task runner, running and writing the tests, and the traps of GitHub's tools
 - [Doit Tasks Reference](development/doit-tasks-reference.md) - Complete reference for all doit automation tasks
 - [First 5 Minutes with an AI Agent](development/ai/first-5-minutes.md) - Narrative walkthrough of the AI agent workflow from issue to merge
 - [GitHub Repository Settings](development/github-repository-settings.md) - Complete reference for all GitHub repository settings the template expects

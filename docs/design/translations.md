@@ -130,3 +130,32 @@ came to leave about 200 untranslated.
 - A `msgstr` that is its own msgid passes msgfmt and the test alike, and shows English.
   Korean held nine and Polish one, found by asking `gettext` which messages in use come
   back as their msgids.
+
+## A catalog in a rebase
+
+Resolve a conflict in a catalog entry by entry, never by keeping both blocks between the
+markers. Git keeps the lines both sides share at the start and the end of a conflict
+outside its markers. Where both sides had added an entry whose `msgstr` is `""`, the
+conflict held the two msgids alone, above one `msgstr ""`, so the joined file held a
+msgid with no `msgstr`, and `msgfmt --check` refused it: `missing 'msgstr' section`.
+With both entries translated, the conflict held each whole, and the joined file passed.
+Measured on 2026-11-11 (#495) in a clone, where two branches each added an entry at the
+end of `lang/es_ES.po` and one was rebased onto the other.
+
+A message added in the code comes with its translation in every catalog, so two commits
+that each add one may conflict in every catalog. For each catalog in conflict, start
+from HEAD's, which in a rebase is the branch being rebased onto with the commits replayed
+so far, and apply what the commit being replayed changed over its parent, entry by entry:
+the entries it added, changed and removed. Then compile and check:
+
+```bash
+git diff --name-only --diff-filter=U -- lang/        # the catalogs in conflict
+git diff REBASE_HEAD^ REBASE_HEAD -- lang/es_ES.po    # what the replayed commit changed in one
+uv run doit translate
+msgfmt --check -o /dev/null lang/es_ES.po             # for each catalog in conflict
+```
+
+`doit translate` fails while a catalog still holds conflict markers, as msgfmt refuses
+them, and not because another file is unmerged: with `README.md` unmerged and the
+catalog resolved and staged, it compiled every catalog. Where `tools/build_mo.py`
+compiles in msgfmt's place, a catalog with markers was not tried.
