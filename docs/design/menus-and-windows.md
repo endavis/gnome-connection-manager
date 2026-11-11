@@ -261,6 +261,11 @@ scrolls the row it clicks into sight, and gives a menu as many items as fit by i
 row, `menu_row_height`. Pinning a font was rejected: the scenarios would test one font's
 metrics, and need that font installed.
 
+On CI's runner, Sans was DejaVu Sans. The `test` job's "Verify PyGObject is reachable" step
+prints what `fc-match Sans` names, beside GTK's and VTE's versions (#503). In
+[run 43019013534](https://github.com/endavis/gnome-connection-manager/actions/runs/43019013534/job/130517205576),
+on 2026-11-11, it printed `DejaVuSans.ttf: "DejaVu Sans" "Book"`, with GTK 3.24 and VTE 0.76.
+
 Scenarios of their own hold the wheel (#399): the console list from the tab strip,
 Terminal > Open Consoles, a Hosts folder, the menubar's Snippets, the cluster window's
 Snippets button and a menu that fits, each at both text sizes, and the terminal's menu on a
